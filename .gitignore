@@ -1,0 +1,51 @@
+# ── Dependencies / build artifacts (these are Windows junctions to C:\dev-cache) ──
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# ── Python ───────────────────────────────────────────────────────────────────
+venv/
+**/venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# ── Databases / data (do not commit real or dev data) ────────────────────────
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.pre-phase2-backup
+backend/extracare.db*
+backups/
+backend/backups/
+backend/uploads/
+uploads/
+
+# ── Secrets / environment ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!.env.production.example
+*.pem
+*.key
+certs/
+
+# ── Logs / temp ──────────────────────────────────────────────────────────────
+*.log
+dev-error.log
+.DS_Store
+Thumbs.db
+
+# ── Editor / OS ──────────────────────────────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/extensions.json

@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap");
+
+@layer base {
+  :root {
+    --sidebar-width: 256px;
+    --topbar-height: 64px;
+    --right-panel-width: 280px;
+  }
+
+  * { @apply border-slate-200; }
+  body { @apply bg-slate-50 text-slate-900 antialiased font-sans; }
+  html.dark body { @apply bg-slate-950 text-slate-100; }
+}
+
+@layer components {
+  .page-container {
+    @apply ml-[var(--sidebar-width)] mt-[var(--topbar-height)] min-h-[calc(100vh-var(--topbar-height))];
+  }
+
+  .card {
+    @apply bg-white rounded-xl border border-slate-200/70 shadow-sm shadow-slate-100;
+  }
+
+  .card-dark {
+    @apply dark:bg-slate-900 dark:border-slate-800;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold
+    text-white bg-brand-600 rounded-lg shadow-sm shadow-brand-600/20
+    hover:bg-brand-700 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold
+    text-brand-700 bg-brand-50 border border-brand-200 rounded-lg
+    hover:bg-brand-100 active:scale-95 transition-all duration-150;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium
+    text-slate-600 rounded-lg hover:bg-slate-100 active:scale-95 transition-all duration-150;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded text-xs font-semibold border;
+  }
+
+  .input {
+    @apply w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg
+    focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500
+    placeholder:text-slate-400 transition-all;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-slate-700 mb-1.5;
+  }
+
+  /* Stat card number styling */
+  .stat-value {
+    @apply text-2xl font-black tracking-tight text-slate-900;
+  }
+
+  .stat-label {
+    @apply text-xs font-bold uppercase tracking-widest text-slate-500;
+  }
+
+  /* Shimmering skeleton surface — used by <Skeleton /> primitive.
+     Falls back to a flat neutral under prefers-reduced-motion. */
+  .skeleton {
+    background-image: linear-gradient(
+      90deg,
+      rgb(241 245 249) 0%,
+      rgb(226 232 240) 40%,
+      rgb(241 245 249) 80%
+    );
+    background-size: 200% 100%;
+    @apply rounded animate-skeleton-shimmer;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton { animation: none; background: rgb(241 245 249); }
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { @apply bg-transparent; }
+::-webkit-scrollbar-thumb { @apply bg-slate-300 rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-slate-400; }

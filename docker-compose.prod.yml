@@ -1,0 +1,121 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Fairview School Portal — PRODUCTION stack.
+#
+#   cp .env.production.example .env      # then fill in the secrets
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Required secrets use ${VAR:?message} so `docker compose` FAILS FAST if any are
+# missing — production can never silently fall back to a development default.
+# The API container runs `alembic upgrade head` before serving (entrypoint.sh).
+# Swap the bundled MySQL `db` service for managed TiDB/RDS by setting
+# DATABASE_URL and removing the `db` service + depends_on.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: fairview-portal
+
+services:
+  # ── Database (MySQL 8 — TiDB-compatible) ───────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: fairview-db
+    restart: unless-stopped
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-fairview}
+      MYSQL_USER: ${DB_USER:-fairview}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD is required}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # ── Backend API ────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fairview-api
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      AUTO_CREATE_SCHEMA: "false"          # schema managed by Alembic (entrypoint)
+      ENABLE_API_DOCS: "false"             # hide /api/docs in production
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required (openssl rand -hex 32)}
+      DATABASE_URL: ${DATABASE_URL:-mysql+aiomysql://${DB_USER:-fairview}:${DB_PASSWORD}@db:3306/${DB_NAME:-fairview}}
+      ALLOWED_ORIGINS: https://${DOMAIN:?DOMAIN is required (e.g. fairviewschoolng.com)}
+      SINGLE_SCHOOL_MODE: "true"
+      ALLOWED_EMAIL_DOMAIN: ${ALLOWED_EMAIL_DOMAIN:-fairviewschoolng.com}
+      SCHOOL_ORG_SLUG: ${SCHOOL_ORG_SLUG:-fairview-school}
+      SCHOOL_NAME: ${SCHOOL_NAME:-Fairview School}
+      SCHOOL_LATE_AFTER: ${SCHOOL_LATE_AFTER:-08:00}
+      SCHOOL_EARLY_DEPARTURE_BEFORE: ${SCHOOL_EARLY_DEPARTURE_BEFORE:-14:00}
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:?PAYSTACK_SECRET_KEY is required}
+      PAYSTACK_PUBLIC_KEY: ${PAYSTACK_PUBLIC_KEY:-}
+      PAYSTACK_CALLBACK_URL: https://${DOMAIN}/billing/callback
+      REDIS_URL: redis://redis:6379/0
+      REDIS_ENABLED: ${REDIS_ENABLED:-false}
+      LOG_FORMAT: json
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Frontend (Next.js standalone) ──────────────────────────────────────────
+  # NEXT_PUBLIC_API_URL is baked at BUILD time and used by the browser, so it
+  # MUST be the public HTTPS API URL — not an internal docker hostname.
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?Public HTTPS API URL required, e.g. https://api.fairviewschoolng.com}
+    container_name: fairview-web
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NODE_ENV: production
+    depends_on:
+      - api
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: fairview-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+
+  # ── Nginx reverse proxy + TLS ──────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: fairview-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+      - web
+
+volumes:
+  db_data:
+  redis_data:

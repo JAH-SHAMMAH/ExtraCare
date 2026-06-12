@@ -1,0 +1,38 @@
+# Core
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.18
+
+# Database (async SQLite — swap URL for MySQL/TiDB in prod)
+sqlalchemy[asyncio]==2.0.36
+aiosqlite==0.20.0
+alembic==1.14.0
+# Production async driver. MySQL / TiDB use aiomysql (DATABASE_URL
+# mysql+aiomysql://...). For PostgreSQL instead, replace with asyncpg==0.30.0
+# (DATABASE_URL postgresql+asyncpg://...). Not used by the SQLite dev/test path.
+aiomysql==0.2.0
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Settings
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# Timezones — ships the IANA tz database so zoneinfo (e.g. "Africa/Lagos")
+# resolves on platforms without a system tz store (Windows, slim containers).
+# Required for correct attendance check-in/out local times.
+tzdata==2024.2
+
+# HTTP
+httpx==0.28.1
+
+# Optional: Redis (enable for caching + realtime)
+# redis[hiredis]==5.2.1
+# arq==0.26.1  # async task queue
+
+# Dev
+pytest==8.3.4
+pytest-asyncio==0.24.0
+httpx==0.28.1

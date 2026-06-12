@@ -1,0 +1,255 @@
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from sqlalchemy.orm import selectinload
+from app.database import get_db
+from app.deps import get_current_user, get_current_active_user
+from app.core.permissions import PermissionChecker
+from app.models.user import User, UserStatus
+from app.models.role import Role
+from app.schemas.user import (
+    UserCreate, UserUpdate, UserStatusUpdate, UserResponse,
+    UserListResponse, InviteUserRequest,
+)
+from app.services.user_service import create_user, invite_user, get_users_paginated
+from app.services.audit_service import log_action
+from app.models.audit import AuditAction
+
+router = APIRouter(prefix="/users", tags=["Users"])
+
+_can_read = Depends(PermissionChecker("users:read"))
+_can_write = Depends(PermissionChecker("users:write"))
+_can_delete = Depends(PermissionChecker("users:delete"))
+
+
+@router.get("", response_model=UserListResponse, dependencies=[_can_read])
+async def list_users(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    search: str | None = Query(default=None),
+    status: UserStatus | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    return await get_users_paginated(
+        db=db,
+        org_id=current_user.org_id,
+        page=page,
+        page_size=page_size,
+        search=search,
+        status=status,
+    )
+
+
+@router.get("/roles/available", dependencies=[_can_read])
+async def list_available_roles(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """List all available roles for the current organization."""
+    result = await db.execute(
+        select(Role).where(
+            Role.org_id == current_user.org_id,
+            Role.is_deleted == False
+        ).order_by(Role.name)
+    )
+    roles = result.scalars().all()
+    return {
+        "items": [
+            {
+                "id": role.id,
+                "name": role.name,
+                "slug": role.slug,
+                "color": role.color,
+                "description": role.description,
+                "is_system": role.is_system,
+            }
+            for role in roles
+        ]
+    }
+
+
+@router.post("", response_model=UserResponse, status_code=201, dependencies=[_can_write])
+async def create_new_user(
+    data: UserCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    user = await create_user(db, current_user.org_id, data)
+    await log_action(
+        db, AuditAction.USER_CREATED, current_user.org_id, actor=current_user,
+        resource_type="User", resource_id=user.id, resource_label=user.full_name,
+        new_values={"email": user.email, "department": user.department},
+        request=request,
+    )
+    # Re-fetch with selectin-loaded roles to avoid lazy-load in async context
+    result = await db.execute(
+        select(User).options(selectinload(User.roles)).where(User.id == user.id)
+    )
+    user = result.scalar_one()
+    return UserResponse.from_orm_with_roles(user, loaded_roles=list(user.roles))
+
+
+@router.post("/invite", response_model=UserResponse, status_code=201, dependencies=[_can_write])
+async def invite_new_user(
+    data: InviteUserRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    user = await invite_user(db, current_user.org_id, data, invited_by=current_user)
+    await log_action(
+        db, AuditAction.USER_INVITED, current_user.org_id, actor=current_user,
+        resource_type="User", resource_id=user.id, resource_label=user.full_name, request=request,
+    )
+    # Org-wide notification so any admin browsing the feed sees new joiners.
+    from app.services import notifications as _notif
+    from app.models.notification import TYPE_USER_INVITED
+    await _notif.notify(
+        org_id=current_user.org_id,
+        user_id=None,
+        type=TYPE_USER_INVITED,
+        title="New user invited",
+        message=f"{user.full_name} ({user.email}) was invited to join.",
+        payload={"user_id": user.id, "email": user.email, "invited_by": current_user.id},
+        session=db,
+    )
+    # Re-fetch with selectin-loaded roles to avoid lazy-load in async context
+    result = await db.execute(
+        select(User).options(selectinload(User.roles)).where(User.id == user.id)
+    )
+    user = result.scalar_one()
+    return UserResponse.from_orm_with_roles(user, loaded_roles=list(user.roles))
+
+
+@router.get("/{user_id}", response_model=UserResponse, dependencies=[_can_read])
+async def get_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    result = await db.execute(
+        select(User).options(selectinload(User.roles)).where(User.id == user_id, User.org_id == current_user.org_id, User.is_deleted == False)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return UserResponse.from_orm_with_roles(user, loaded_roles=list(user.roles))
+
+
+@router.patch("/{user_id}", response_model=UserResponse, dependencies=[_can_write])
+async def update_user(
+    user_id: str,
+    data: UserUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    result = await db.execute(
+        select(User).options(selectinload(User.roles)).where(User.id == user_id, User.org_id == current_user.org_id, User.is_deleted == False)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    old = {"full_name": user.full_name, "department": user.department}
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(user, field, value)
+
+    await log_action(
+        db, AuditAction.USER_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="User", resource_id=user.id, resource_label=user.full_name,
+        old_values=old, new_values=data.model_dump(exclude_unset=True), request=request,
+    )
+    return UserResponse.from_orm_with_roles(user, loaded_roles=list(user.roles))
+
+
+@router.patch("/{user_id}/status", response_model=UserResponse, dependencies=[_can_write])
+async def update_user_status(
+    user_id: str,
+    data: UserStatusUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    result = await db.execute(
+        select(User).options(selectinload(User.roles)).where(User.id == user_id, User.org_id == current_user.org_id, User.is_deleted == False)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot change your own status.")
+
+    old_status = user.status
+    user.status = data.status
+
+    action = AuditAction.USER_SUSPENDED if data.status == UserStatus.SUSPENDED else AuditAction.USER_UPDATED
+    await log_action(
+        db, action, current_user.org_id, actor=current_user,
+        resource_type="User", resource_id=user.id, resource_label=user.full_name,
+        old_values={"status": old_status.value}, new_values={"status": data.status.value},
+        severity="warning" if data.status == UserStatus.SUSPENDED else "info",
+        request=request,
+    )
+    return UserResponse.from_orm_with_roles(user, loaded_roles=list(user.roles))
+
+
+@router.patch("/{user_id}/roles", response_model=UserResponse, dependencies=[_can_write])
+async def assign_roles(
+    user_id: str,
+    role_ids: list[str],
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    result = await db.execute(
+        select(User).options(selectinload(User.roles)).where(User.id == user_id, User.org_id == current_user.org_id)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    roles_result = await db.execute(
+        select(Role).where(Role.id.in_(role_ids), Role.org_id == current_user.org_id)
+    )
+    roles = roles_result.scalars().all()
+    old_roles = [r.slug for r in user.roles]
+    user.roles = list(roles)
+
+    await log_action(
+        db, AuditAction.ROLE_CHANGED, current_user.org_id, actor=current_user,
+        resource_type="User", resource_id=user.id, resource_label=user.full_name,
+        old_values={"roles": old_roles}, new_values={"roles": [r.slug for r in roles]},
+        severity="warning", request=request,
+    )
+    return UserResponse.from_orm_with_roles(user, loaded_roles=list(user.roles))
+
+
+@router.delete("/{user_id}", status_code=204, dependencies=[_can_delete])
+async def delete_user(
+    user_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    result = await db.execute(
+        select(User).options(selectinload(User.roles)).where(User.id == user_id, User.org_id == current_user.org_id, User.is_deleted == False)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself.")
+
+    from datetime import datetime, timezone
+    user.is_deleted = True
+    user.deleted_at = datetime.now(timezone.utc)
+
+    await log_action(
+        db, AuditAction.USER_DELETED, current_user.org_id, actor=current_user,
+        resource_type="User", resource_id=user.id, resource_label=user.full_name,
+        severity="warning", request=request,
+    )

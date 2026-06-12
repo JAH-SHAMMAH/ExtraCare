@@ -1,0 +1,83 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DEVELOPMENT stack (SQLite, single worker semantics, docs on). For PRODUCTION
+# use docker-compose.prod.yml (real DB, migrations on boot, required secrets,
+# TLS via nginx). Do NOT run this file with ENVIRONMENT=production — the app's
+# prod-safety validator rejects SQLite + dev defaults at boot.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── Backend ────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fairview-api-dev
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////data/extracare.db
+      - SECRET_KEY=${SECRET_KEY:-dev-only-not-for-production}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - ALLOWED_ORIGINS=http://localhost:3000
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_ENABLED=${REDIS_ENABLED:-false}
+    volumes:
+      - api_data:/data
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Frontend ───────────────────────────────────────────────────────────────
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://api:8000
+    container_name: extracare-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=${API_URL:-http://localhost:8000}
+    depends_on:
+      - api
+
+  # ── Redis (cache + optional realtime) ─────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: extracare-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+
+  # ── Nginx reverse proxy ────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: extracare-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+      - web
+    profiles:
+      - production  # only in production: docker compose --profile production up
+
+volumes:
+  api_data:
+  redis_data:
