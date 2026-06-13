@@ -66,7 +66,12 @@ def _dedupe(perms: list[str]) -> list[str]:
 SCHOOL_PERMISSION_PRESETS = {
     "org_admin": _dedupe(CORE_ADMIN_PERMISSIONS + ["school:*", "payments:*"]),
     "manager": _dedupe(CORE_MANAGER_PERMISSIONS + ["school:read", "school:write", "payments:read", "payments:write"]),
-    "teacher": ["users:read", "school:read", "school:write", "analytics:read", "hr:read"],
+    # Phase 1 (2026-06-07): dropped `hr:read` — it gated nothing (HR endpoints
+    # use users:read/users:write) and no frontend surface checked it. `users:read`
+    # is RETAINED: the teacher-reachable Messenger "new conversation" picker lists
+    # users via GET /users (users:read). Removing it would break teacher direct
+    # messaging — see the Phase 1 report. `analytics:read` removal is Phase 2.
+    "teacher": ["users:read", "school:read", "school:write", "analytics:read"],
     "staff": _dedupe(CORE_STAFF_PERMISSIONS + ["school:read"]),
     "student": ["school:read"],
     "parent": _dedupe(["school:read", "payments:read"]),
