@@ -281,18 +281,27 @@ deliberate boundary does not silently become a forgotten one. None is a bug.
   payment page in a browser — that's a click-through/UX check (GO-LIVE CHECKLIST in
   `remita.py`), separate from the API round-trip which is now proven.
 
-### TICKET — Add a Flutterwave provider adapter (currently STORABLE VIA UI, NOT CONSUMED)
-  **Status:** storable via UI, **not consumed** — do not assume parity with Paystack.
-  `PaymentProvider.FLUTTERWAVE` exists and creds can be saved in the UI, but there is
-  **no Flutterwave provider adapter** and nothing reads the stored config.
-  **Scope of the work:**
-    - Build a `FlutterwaveProvider` (mirror `app/services/paystack.py`: initialize
-      transaction, verify, webhook signature) against Flutterwave's API.
-    - Extend `payment_resolver.resolve_for_org` (or a provider factory) to build the
-      right provider class from `TenantPaymentSettings.provider`, decrypting the
-      per-org secret — so any configured provider is consumed, not just Paystack.
-    - Wire the fee-payment initiate/verify/webhook path to the resolved provider.
-    - Tests: per-org Flutterwave secret used; webhook verification.
+### TICKET — Add a Flutterwave provider adapter (HTTP adapter DEFERRED — needs test creds)
+  **Status:** provider-FACTORY infra ✅ done; the Flutterwave **HTTP adapter is
+  deferred** because Flutterwave has NO public sandbox (test keys are per-merchant),
+  so it can't be live-verified the way Remita was — and shipping a blind payment
+  adapter is exactly the risk the Remita live round-trip caught (a moved host).
+  **Done now (the verifiable part):**
+    - `payment_resolver.build_provider(provider, ...)` factory + `SUPPORTED_PROVIDERS`
+      registry (currently `{PAYSTACK}`). `resolve_for_org` builds via the factory.
+    - **Safety win:** an org that configures ONLY an unsupported provider (Flutterwave)
+      now **fails loud** (`PaymentConfigError` → 503) at resolve time instead of
+      silently settling to the platform Paystack account. If both a supported and an
+      unsupported provider are configured, the supported one is used.
+    - Tests: factory builds Paystack + raises for Flutterwave; resolver fails loud on
+      unsupported-only config; prefers supported when both present.
+  **Remaining (needs a Flutterwave TEST secret key + Secret Hash from the dashboard):**
+    - Build `FlutterwaveProvider` (v3 `/payments` create-link, verify-by-id/tx_ref,
+      `verif-hash` webhook) with the same `initialize_payment`/`verify_transaction`
+      interface, then add `FLUTTERWAVE` to `SUPPORTED_PROVIDERS` + a branch in
+      `build_provider`. LIVE round-trip verify against sandbox before trusting it.
+    - Consider a UI hint that Flutterwave is "configured but not yet active" so admins
+      aren't surprised by the 503 (today it's an honest hard error, but silent in UI).
 
 ### TICKET — Remove the legacy raw webhook-secret compatibility shim
   **Status:** shim live, needs an expiry trigger (don't let it live forever silently).

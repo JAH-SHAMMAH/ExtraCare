@@ -21,7 +21,9 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.services import crypto
-from app.services.payment_resolver import PaymentProviderResolver, PaymentConfigError
+from app.services.payment_resolver import (
+    PaymentProviderResolver, PaymentConfigError, build_provider, SUPPORTED_PROVIDERS,
+)
 from app.models.user import User, UserStatus
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.payment import TenantPaymentSettings, PaymentProvider
@@ -223,6 +225,38 @@ async def test_resolver_hard_fails_on_undecryptable_secret(db, org, teacher, enc
     with pytest.raises(PaymentConfigError):
         await resolver.resolve_for_org(org.id, db)
     crypto.reset_keys()
+
+
+async def test_build_provider_paystack_and_unsupported():
+    s = get_settings()
+    prov = build_provider(PaymentProvider.PAYSTACK, secret_key="sk_x", public_key="pk_x", settings=s)
+    assert prov._secret_key == "sk_x" and prov.public_key == "pk_x"
+    # A provider with no adapter yet (Flutterwave) must NOT be silently built.
+    assert PaymentProvider.FLUTTERWAVE not in SUPPORTED_PROVIDERS
+    with pytest.raises(PaymentConfigError):
+        build_provider(PaymentProvider.FLUTTERWAVE, secret_key="fl_x", public_key=None, settings=s)
+
+
+async def test_resolver_fails_loud_on_unsupported_configured_provider(db, org, teacher, enc_key):
+    """The safety win: an org that configures ONLY Flutterwave (no adapter yet) must
+    get a hard error at resolve time — NOT a silent fall-through to the platform
+    Paystack account (which would settle their fees to the wrong gateway)."""
+    await create_payment_gateway(
+        PaymentGatewayCreate(provider="flutterwave", secret_key="fl_live_x"),
+        request=None, db=db, current_user=teacher,
+    )
+    resolver = PaymentProviderResolver(get_settings())
+    with pytest.raises(PaymentConfigError):
+        await resolver.resolve_for_org(org.id, db)
+
+
+async def test_resolver_prefers_supported_when_multiple_configured(db, org, teacher, enc_key):
+    # Org has BOTH Flutterwave (unsupported) and Paystack (supported) → uses Paystack.
+    await create_payment_gateway(PaymentGatewayCreate(provider="flutterwave", secret_key="fl_x"), request=None, db=db, current_user=teacher)
+    await create_payment_gateway(PaymentGatewayCreate(provider="paystack", secret_key="sk_PAYSTACK"), request=None, db=db, current_user=teacher)
+    resolver = PaymentProviderResolver(get_settings())
+    provider = await resolver.resolve_for_org(org.id, db)
+    assert provider._secret_key == "sk_PAYSTACK"
 
 
 async def test_resolver_falls_back_when_no_per_org_secret(db, org, teacher, enc_key, monkeypatch):

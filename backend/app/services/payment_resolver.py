@@ -30,9 +30,35 @@ _logger = logging.getLogger("extracare.payment_resolver")
 
 class PaymentConfigError(RuntimeError):
     """A per-org payment secret exists but is unusable (e.g. it can't be decrypted
-    because the encryption key is missing/rotated). Callers MUST fail loud (503)
-    rather than fall back to the platform account — silently routing a school's fees
-    to the platform's Paystack key is a tenant-isolation / financial bug."""
+    because the encryption key is missing/rotated, OR it's for a provider we don't
+    have an adapter for yet). Callers MUST fail loud (503) rather than fall back to
+    the platform account — silently routing a school's fees to the platform's
+    Paystack key is a tenant-isolation / financial bug."""
+
+
+# Providers we can actually BUILD a working adapter for TODAY. A per-org config for a
+# provider NOT in this set is treated as "configured but unsupported": the fee flow
+# fails loud rather than silently settling to the platform account / wrong gateway.
+# (Remita has its OWN flow/router + resolver, so it's not built through this factory.)
+SUPPORTED_PROVIDERS = {PaymentProvider.PAYSTACK}
+
+
+def build_provider(provider: PaymentProvider, *, secret_key: str, public_key: str | None, settings):
+    """Factory: construct the payment adapter for ``provider`` from ALREADY-DECRYPTED
+    credentials. This is the single extension point for new providers — add a branch
+    here and register the enum in ``SUPPORTED_PROVIDERS``. Raises ``PaymentConfigError``
+    for a provider with no adapter yet (e.g. Flutterwave — pending its own unit)."""
+    if provider == PaymentProvider.PAYSTACK:
+        return PaystackProvider(
+            secret_key=secret_key,
+            public_key=public_key or settings.PAYSTACK_PUBLIC_KEY,
+            api_url=settings.PAYSTACK_API_URL,
+            callback_url=settings.PAYSTACK_CALLBACK_URL,
+        )
+    raise PaymentConfigError(
+        f"Payment provider '{provider.value}' is configured for this school but is not yet "
+        "supported for live payments. Configure Paystack, or contact support."
+    )
 
 
 class PaymentProviderResolver:
@@ -85,50 +111,54 @@ class PaymentProviderResolver:
         Raises:
             ValueError: If provider not configured for org
         """
-        # This resolver builds a PaystackProvider, so scope the lookup to the org's
-        # active Paystack config. `.first()` (not scalar_one_or_none) is deliberate:
-        # an org may now have configs for several providers, so a single-row assertion
-        # would crash. provider_type lets a caller target a specific provider.
+        # The org's active per-org configs that carry a usable (encrypted) secret.
+        # `.all()` (not scalar_one_or_none) because an org may configure several
+        # providers; provider_type lets a caller target one.
         query = (
             select(TenantPaymentSettings)
             .where(
                 TenantPaymentSettings.org_id == org_id,
-                TenantPaymentSettings.provider == (provider_type or PaymentProvider.PAYSTACK),
                 TenantPaymentSettings.is_active == True,
                 TenantPaymentSettings.is_deleted == False,
+                TenantPaymentSettings.encrypted_secret_key.isnot(None),
             )
             .order_by(TenantPaymentSettings.created_at.desc())
         )
-        settings = (await db.execute(query)).scalars().first()
+        if provider_type:
+            query = query.where(TenantPaymentSettings.provider == provider_type)
+        rows = (await db.execute(query)).scalars().all()
 
-        # A real per-org config carries an encrypted secret. Decrypt it here (this is
-        # the ONE point of use) and build a provider bound to THIS school's account —
-        # so fee payments settle to them, not the platform env key.
-        if settings and settings.encrypted_secret_key:
-            _logger.info("payment_resolver.tenant_config_found org_id=%s provider=%s", org_id, settings.provider)
+        # Prefer a config whose provider we can actually build. Decrypt at the point
+        # of use and build via the factory — the provider is bound to THIS school's
+        # account, so fee payments settle to them, not the platform env key.
+        supported = [r for r in rows if r.provider in SUPPORTED_PROVIDERS]
+        if supported:
+            row = supported[0]
+            _logger.info("payment_resolver.tenant_config_found org_id=%s provider=%s", org_id, row.provider)
             try:
-                secret_key = crypto.decrypt(settings.encrypted_secret_key)
+                secret_key = crypto.decrypt(row.encrypted_secret_key)
             except Exception as exc:
-                # A stored-but-undecryptable secret means a key/config problem. Do NOT
-                # silently fall back to the platform account (that would route a
-                # school's fees to the wrong place) — raise a dedicated error the
-                # caller turns into a hard 503. Fail loud, never fail open.
+                # Stored-but-undecryptable secret → key/config problem. Do NOT fall
+                # back to the platform account (wrong-place settlement). Fail loud.
                 _logger.error("payment_resolver.decrypt_failed org_id=%s err=%s", org_id, exc)
                 raise PaymentConfigError(
                     f"Payment secret for organization {org_id} could not be decrypted "
                     "(encryption key missing or rotated). Fix the key or re-enter the gateway secret."
                 ) from exc
-            metadata = settings.metadata_ or {}
-            public_key = metadata.get("public_key") or self.settings.PAYSTACK_PUBLIC_KEY
-            return PaystackProvider(
-                secret_key=secret_key,
-                public_key=public_key,
-                api_url=self.settings.PAYSTACK_API_URL,
-                callback_url=self.settings.PAYSTACK_CALLBACK_URL,
+            md = row.metadata_ or {}
+            return build_provider(row.provider, secret_key=secret_key, public_key=md.get("public_key"), settings=self.settings)
+
+        # The org configured ONLY an unsupported provider (e.g. Flutterwave — no
+        # adapter yet). Fail loud: silently using the platform Paystack account would
+        # settle their fees to the wrong gateway with no visible error.
+        if rows:
+            _logger.error("payment_resolver.unsupported_provider org_id=%s provider=%s", org_id, rows[0].provider)
+            raise PaymentConfigError(
+                f"Payment provider '{rows[0].provider.value}' is configured for this school but is not yet "
+                "supported for live payments. Configure Paystack, or contact support."
             )
 
-        # No per-org secret configured (or only a platform-fallback placeholder row)
-        # → use the platform provider (env key), preserving today's behaviour.
+        # No per-org config → platform provider (env key), preserving today's behaviour.
         _logger.warning("payment_resolver.using_platform_provider org_id=%s", org_id)
         provider = self.platform_paystack
         if not provider:
