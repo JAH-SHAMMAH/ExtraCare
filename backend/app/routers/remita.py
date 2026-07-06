@@ -198,7 +198,7 @@ async def initiate(payload: InitiateRequest, db: AsyncSession = Depends(get_db),
     await db.commit()
     await db.refresh(tx)
 
-    # ┌─ GO-LIVE CHECKLIST (1 of 2) ───────────────────────────────────────────┐
+    # ┌─ GO-LIVE CHECKLIST (2 of 3) ───────────────────────────────────────────┐
     # │ CONFIRM the hosted-redirect URL format against YOUR Remita account docs │
     # │ the moment live credentials are available. This `/remita/onepage/...`   │
     # │ path is a best-reconstruction of Remita Standard Ingestion and may      │

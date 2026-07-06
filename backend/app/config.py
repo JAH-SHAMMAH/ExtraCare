@@ -91,6 +91,16 @@ class Settings(BaseSettings):
     # NB: the demo host is `demo.remita.net`. The older `remitademo.net` now 302-
     # redirects there, and the API POST does not follow redirects — verified with a
     # live sandbox round-trip (RRR generated + status queried) 2026-07-06.
+    #
+    # ┌─ GO-LIVE CHECKLIST (1 of 3) ─────────────────────────────────────────────┐
+    # │ SWITCH THE HOST for production: REMITA_BASE_URL from the SANDBOX           │
+    # │ `https://demo.remita.net` to the LIVE `https://login.remita.net` (via env  │
+    # │ or per-org metadata.base_url), together with LIVE merchant/API/service-type│
+    # │ credentials. ⚠️ The sandbox host "works" — so staging passing does NOT mean │
+    # │ prod is configured. If prod is left on the demo host, RRRs generate against │
+    # │ Remita's SANDBOX and no real money is ever collected, with no error. Verify │
+    # │ the deployed REMITA_BASE_URL points at login.remita.net before go-live.    │
+    # └─────────────────────────────────────────────────────────────────────────────┘
     REMITA_BASE_URL: str = "https://demo.remita.net"
     REMITA_MERCHANT_ID: str = "2547916"
     REMITA_API_KEY: str = "1946"

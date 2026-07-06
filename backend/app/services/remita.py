@@ -143,7 +143,7 @@ async def query_status(rrr: str, *, creds: RemitaCredentials) -> dict:
         return {"error": str(exc)}
 
 
-# ┌─ GO-LIVE CHECKLIST (2 of 2) ─────────────────────────────────────────────────┐
+# ┌─ GO-LIVE CHECKLIST (3 of 3) ─────────────────────────────────────────────────┐
 # │ CONFIRM these success status codes against YOUR Remita account the moment    │
 # │ live credentials are available. Remita Standard Ingestion documents "00" =   │
 # │ "Approved/Successful" and "01" = "Transaction Successful (paid)", but code    │
