@@ -269,9 +269,17 @@ deliberate boundary does not silently become a forgotten one. None is a bug.
       non-secret) and relabel the secret field to "API key"; the api key is encrypted.
     - Tests: per-org creds used (not env), env fallback, decrypt-failure → hard error,
       CRUD stores/exposes the 3-part cred. (`test_remita.py`, `test_payment_gateways.py`.)
-  **Note:** the hosted-redirect URL format (`/remita/onepage/...`) is still a
-  best-reconstruction (GO-LIVE CHECKLIST in `remita.py`) — confirm against a real
-  Remita account. That's a separate go-live verification, not blocking this wiring.
+  **LIVE SANDBOX VERIFIED (2026-07-06):** ran the real HTTP round-trip against
+  Remita's demo host (not mocked): `generate_rrr` returned a valid RRR
+  (statuscode 025), `query_status` returned the transaction status (021 pending),
+  `is_paid()` read it correctly. **This caught a real bug:** the shipped demo host
+  `remitademo.net` now 302-redirects to `demo.remita.net`, and the API POST doesn't
+  follow redirects — so every Remita init was silently failing on the default
+  config. Fixed the `REMITA_BASE_URL` default to `https://demo.remita.net`.
+  **Still NOT verified (narrower now):** whether the reconstructed hosted-redirect
+  URL (`/remita/onepage/{merchant}/{rrr}/payment.spa`) actually renders Remita's
+  payment page in a browser — that's a click-through/UX check (GO-LIVE CHECKLIST in
+  `remita.py`), separate from the API round-trip which is now proven.
 
 ### TICKET — Add a Flutterwave provider adapter (currently STORABLE VIA UI, NOT CONSUMED)
   **Status:** storable via UI, **not consumed** — do not assume parity with Paystack.

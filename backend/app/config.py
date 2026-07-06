@@ -88,7 +88,10 @@ class Settings(BaseSettings):
     # Ships with Remita's PUBLIC demo/test credentials so the flow works out of
     # the box. Override via env for live: REMITA_BASE_URL=https://login.remita.net
     # plus your live Merchant ID / API Key / Service Type ID.
-    REMITA_BASE_URL: str = "https://remitademo.net"
+    # NB: the demo host is `demo.remita.net`. The older `remitademo.net` now 302-
+    # redirects there, and the API POST does not follow redirects — verified with a
+    # live sandbox round-trip (RRR generated + status queried) 2026-07-06.
+    REMITA_BASE_URL: str = "https://demo.remita.net"
     REMITA_MERCHANT_ID: str = "2547916"
     REMITA_API_KEY: str = "1946"
     REMITA_SERVICE_TYPE_ID: str = "4430731"
