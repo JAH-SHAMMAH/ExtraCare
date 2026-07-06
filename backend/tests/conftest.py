@@ -20,6 +20,12 @@ import os
 # call below). New single-school tests opt back in at runtime.
 os.environ.setdefault("SINGLE_SCHOOL_MODE", "false")
 
+# Disable rate limiting by default for the whole suite. Many tests loop over an
+# endpoint (registering ~15 orgs from the same client IP, seeding users, etc.)
+# and would otherwise trip shared-IP/org buckets. test_rate_limit.py re-enables
+# it locally to assert the limiter behaves. Set BEFORE any app import.
+os.environ.setdefault("RATE_LIMITS_ENABLED", "false")
+
 import uuid
 from datetime import datetime, timezone
 
@@ -31,6 +37,18 @@ from app.database import Base
 # Import every module once so Base.metadata is populated before create_all.
 from app.models import user as _user, organization as _org, role as _role, audit as _audit, import_job as _ij  # noqa: F401
 from app.models.modules import school as _school, hospital as _hospital, business as _business  # noqa: F401
+from app.models.modules import admissions as _admissions  # noqa: F401
+from app.models.modules import academics as _academics  # noqa: F401
+from app.models.modules import pastoral as _pastoral  # noqa: F401
+from app.models.modules import finance as _finance  # noqa: F401
+from app.models.modules import wallet as _wallet  # noqa: F401
+from app.models.modules import operations as _operations  # noqa: F401
+from app.models.modules import platform as _platform  # noqa: F401
+from app.models import hrm as _hrm  # noqa: F401  (StaffAssessment / TalentCandidate)
+from app.models import support as _support  # noqa: F401
+from app.models import payment as _payment  # noqa: F401  (StudentFeeRecord — FeeDiscount FKs to it)
+from app.models.modules import remita as _remita  # noqa: F401
+from app.models import hr_extended as _hr_extended  # noqa: F401
 
 from app.models.user import User, UserStatus
 from app.models.organization import Organization, IndustryType

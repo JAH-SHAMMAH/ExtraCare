@@ -37,7 +37,7 @@ export function TopBar() {
   }, [notifOpen]);
 
   return (
-    <header className="fixed top-0 left-64 right-0 z-40 h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/70 flex items-center px-6 gap-4 shadow-sm shadow-slate-100/50">
+    <header className="no-print fixed top-0 left-64 right-0 z-40 h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/70 flex items-center px-6 gap-4 shadow-sm shadow-slate-100/50">
       {/* Global Search */}
       <GlobalSearch />
 

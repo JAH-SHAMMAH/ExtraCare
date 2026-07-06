@@ -20,7 +20,10 @@ Provider:
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from app.services.audit_service import log_action
+from app.models.audit import AuditAction
+from app.core.ratelimit import rate_limit_auth
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,8 +53,8 @@ router = APIRouter(
     dependencies=[Depends(require_role_module("school"))],
 )
 
-_can_read = Depends(PermissionChecker("school:read"))
-_can_write = Depends(PermissionChecker("school:write"))
+_can_read = Depends(PermissionChecker("school_admin:read"))
+_can_write = Depends(PermissionChecker("school_admin:write"))
 
 
 ADMIN_SLUGS = {"org_admin", "manager", "super_admin"}
@@ -285,9 +288,10 @@ async def preview_recipients(
     }
 
 
-@router.post("/campaigns", status_code=201, dependencies=[_can_write])
+@router.post("/campaigns", status_code=201, dependencies=[_can_write, Depends(rate_limit_auth("sms_send"))])
 async def send_campaign(
     payload: dict,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -416,6 +420,15 @@ async def send_campaign(
     campaign.completed_at = now
     await db.flush()
 
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="SmsCampaign", resource_id=campaign.id,
+        resource_label=f"SMS campaign to {campaign.total_recipients} recipient(s)",
+        severity="warning",
+        metadata={"recipients": campaign.total_recipients, "sent": sent, "failed": failed,
+                  "target": label, "sender_id": sender_id},
+        request=request,
+    )
     return _campaign_dict(campaign, creator=current_user)
 
 

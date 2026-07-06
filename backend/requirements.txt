@@ -15,6 +15,10 @@ aiomysql==0.2.0
 # Auth
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+# Encryption-at-rest for stored secrets (gateway API keys). Pinned explicitly —
+# previously only present transitively via python-jose[cryptography]. Provides
+# AES-256-GCM (app/services/crypto.py). See ENCRYPTION_SERVICE_SPEC.md.
+cryptography==46.0.7
 
 # Settings
 pydantic==2.10.3

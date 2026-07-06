@@ -12,6 +12,7 @@ from jose import JWTError
 
 from app.database import get_db
 from app.core.security import decode_token
+from app.config import get_settings
 from app.models.user import User, UserStatus
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -28,11 +29,17 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    if credentials is None:
+    # Dual-mode: prefer the Authorization: Bearer header (mobile / API clients),
+    # fall back to the httpOnly access cookie when cookie-auth is enabled. With
+    # the flag OFF this is exactly the previous Bearer-only behaviour.
+    token = credentials.credentials if credentials is not None else None
+    if token is None and get_settings().COOKIE_AUTH_ENABLED:
+        token = request.cookies.get("access_token")
+    if not token:
         raise credentials_exception
 
     try:
-        payload = decode_token(credentials.credentials)
+        payload = decode_token(token)
         user_id: str = payload.get("sub")
         token_type: str = payload.get("type")
         if not user_id or token_type != "access":

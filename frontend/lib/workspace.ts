@@ -69,7 +69,7 @@ export const WORKSPACE_REGISTRY: Record<IndustryType, WorkspaceDefinition> = {
       "subjects", "teachers", "timetable", "transport", "tuckshop", "hr", "leave",
       "analytics",
     ],
-    permissionScopes: ["school"],
+    permissionScopes: ["school", "school_admin", "medical", "wallet"],
   },
   business: {
     type: "business",
@@ -103,7 +103,7 @@ export const WORKSPACE_REGISTRY: Record<IndustryType, WorkspaceDefinition> = {
       "emr", "billing", "lab", "pharmacy", "wards", "invoices", "procurement",
       "projects",
     ],
-    permissionScopes: ["school", "business", "hospital", "payroll", "finance", "inventory", "crm"],
+    permissionScopes: ["school", "school_admin", "medical", "wallet", "business", "hospital", "payroll", "finance", "inventory", "crm"],
   },
 };
 

@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import get_current_active_user
+from app.core.ratelimit import rate_limit_auth
 from app.models.user import User
 from app.models.feed import Post, PostLike, PostComment
 from app.schemas.feed import (
@@ -109,7 +110,7 @@ def _to_comment_response(c: PostComment) -> CommentResponse:
 
 # ── Posts ──────────────────────────────────────────────────────────────────
 
-@router.post("/posts", response_model=PostResponse, status_code=201)
+@router.post("/posts", response_model=PostResponse, status_code=201, dependencies=[Depends(rate_limit_auth("feed_post"))])
 async def create_post(
     data: PostCreate,
     db: AsyncSession = Depends(get_db),
@@ -290,7 +291,7 @@ async def list_comments(
     return [_to_comment_response(c) for c in rows]
 
 
-@router.post("/posts/{post_id}/comments", response_model=CommentResponse, status_code=201)
+@router.post("/posts/{post_id}/comments", response_model=CommentResponse, status_code=201, dependencies=[Depends(rate_limit_auth("feed_post"))])
 async def create_comment(
     post_id: str,
     data: CommentCreate,

@@ -5,9 +5,11 @@ import { useRouter, usePathname } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { RouteGuard } from "@/components/guards/RouteGuard";
 import { Splash } from "@/components/loading/Splash";
 import { TopProgress } from "@/components/loading/TopProgress";
 import { useAuthStore } from "@/lib/store";
+import { useMe } from "@/hooks/useAuth";
 import { markNavPainted } from "@/lib/perf";
 import { doneProgress } from "@/lib/progress";
 
@@ -16,6 +18,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { isAuthenticated } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
+
+  // Re-sync identity + permissions from the server on dashboard load. Without
+  // this the auth store only ever holds the permission set captured at LOGIN
+  // (persisted to localStorage), so a role/permission change never takes effect
+  // until a manual logout/login. `useMe` is gated on isAuthenticated and cached
+  // for 5 min (staleTime), so a full reload refetches while in-session client
+  // navigation stays cheap. It also soft-logs-out on identity/module drift.
+  useMe();
 
   useEffect(() => {
     setMounted(true);
@@ -50,7 +60,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Sidebar />
       <TopBar />
       <main className="ml-64 mt-16 min-h-[calc(100vh-64px)] animate-fade-in">
-        <ErrorBoundary>{children}</ErrorBoundary>
+        <ErrorBoundary>
+          <RouteGuard>{children}</RouteGuard>
+        </ErrorBoundary>
       </main>
     </div>
   );

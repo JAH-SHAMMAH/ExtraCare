@@ -26,6 +26,7 @@ import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from app.core.ratelimit import rate_limit_auth
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -187,7 +188,7 @@ async def _maybe_first_use_notification(
     "/assist",
     response_model=AIAssistResponse,
     summary="Run a module-aware AI assistant task",
-    dependencies=[Depends(require_feature("ai_assistant"))],
+    dependencies=[Depends(require_feature("ai_assistant")), Depends(rate_limit_auth("ai_assist"))],
 )
 async def assist(
     body: AIAssistRequest,

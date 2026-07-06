@@ -37,8 +37,8 @@ router = APIRouter(
     dependencies=[Depends(require_role_module("school"))],
 )
 
-_can_read = Depends(PermissionChecker("school:read"))
-_can_write = Depends(PermissionChecker("school:write"))
+_can_read = Depends(PermissionChecker("school:journals:read"))
+_can_write = Depends(PermissionChecker("school:journals:write"))
 
 
 # ── Photo Journals ────────────────────────────────────────────────────────────

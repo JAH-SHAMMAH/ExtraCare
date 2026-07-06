@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   Users, UserCircle, Cake, Gavel,
   PieChart as PieChartIcon, Building2, BarChart3, CalendarClock,
+  Briefcase, ShieldAlert, Star, ShieldCheck,
 } from "lucide-react";
 import {
   BarChart, Bar, PieChart, Pie, Cell,
@@ -11,6 +12,7 @@ import {
 } from "recharts";
 import { useHrOverview, useHrBirthdays } from "@/hooks/useHrm";
 import { useLeaveAnalytics } from "@/hooks/useLeave";
+import { useHrStats } from "@/hooks/useHrExtended";
 import { BirthdayPopup } from "@/components/hr/BirthdayPopup";
 
 const PIE_COLORS = ["#6366f1", "#ec4899", "#f59e0b", "#10b981", "#64748b"];
@@ -19,6 +21,7 @@ export default function HrDashboardPage() {
   const { data: overview, isLoading: ovLoading } = useHrOverview();
   const { data: birthdays = [] } = useHrBirthdays();
   const { data: leave } = useLeaveAnalytics();
+  const { data: stats, isLoading: statsLoading } = useHrStats();
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
@@ -34,24 +37,21 @@ export default function HrDashboardPage() {
       </header>
 
       {/* Quick Links */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <QuickLink href="/dashboard/hrm/my-info" icon={UserCircle} label="My HRM Info" tint="bg-indigo-50 text-indigo-600" />
-        <QuickLink href="/dashboard/hrm/leave" icon={CalendarClock} label="My Leave" tint="bg-emerald-50 text-emerald-600" />
-        <QuickLink href="/dashboard/hrm/leave/admin" icon={Gavel} label="Leave Admin" tint="bg-violet-50 text-violet-600" />
-        <QuickLink href="/dashboard/users" icon={Users} label="Staff Directory" tint="bg-sky-50 text-sky-600" />
+      {/* Educare-parity Quick Links: Admin / PIM / Recruitment / Access Control / Performance */}
+      <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <QuickLink href="/dashboard/modules/school/staff" icon={Users} label="Admin" tint="bg-indigo-50 text-indigo-600" />
+        <QuickLink href="/dashboard/hrm/my-info" icon={UserCircle} label="PIM" tint="bg-sky-50 text-sky-600" />
+        <QuickLink href="/dashboard/hrm/recruitment" icon={Briefcase} label="Recruitment" tint="bg-amber-50 text-amber-600" />
+        <QuickLink href="/dashboard/hrm/access-control" icon={ShieldCheck} label="Access Control" tint="bg-teal-50 text-teal-600" />
+        <QuickLink href="/dashboard/hrm/performance" icon={Star} label="Performance" tint="bg-orange-50 text-orange-600" />
       </section>
 
-      {/* Overview cards */}
+      {/* Overview cards — Educare parity (Jobs Opening + Disciplinary now wired via /hr/stats) */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MetricCard label="Total Active Staff" value={overview?.total_active_staff} loading={ovLoading} icon={Users} />
-        <MetricCard label="Profiles Completed" value={overview?.total_profiles} loading={ovLoading} icon={UserCircle} />
-        <MetricCard
-          label="Pending Leave"
-          value={leave?.pending_count ?? 0}
-          loading={false}
-          icon={CalendarClock}
-        />
-        <MetricCard label="Birthdays This Month" value={birthdays.length} loading={false} icon={Cake} />
+        <MetricCard label="Jobs Opening" value={stats?.open_jobs} loading={statsLoading} icon={Briefcase} href="/dashboard/hrm/recruitment" />
+        <MetricCard label="Disciplinary Cases" value={stats?.open_disciplinary} loading={statsLoading} icon={ShieldAlert} href="/dashboard/hrm/disciplinary" />
+        <MetricCard label="Leave Applications" value={leave?.pending_count ?? 0} loading={false} icon={CalendarClock} href="/dashboard/hrm/leave/admin" />
       </section>
 
       {/* Charts */}
@@ -200,10 +200,10 @@ function QuickLink({ href, icon: Icon, label, tint }: { href: string; icon: any;
 }
 
 function MetricCard({
-  label, value, loading, icon: Icon,
-}: { label: string; value: number | undefined; loading: boolean; icon: any }) {
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4">
+  label, value, loading, icon: Icon, href,
+}: { label: string; value: number | undefined; loading: boolean; icon: any; href?: string }) {
+  const inner = (
+    <>
       <div className="flex items-center gap-2 text-slate-500 mb-2">
         <Icon className="w-4 h-4" />
         <span className="text-xs font-semibold uppercase tracking-wide">{label}</span>
@@ -211,7 +211,13 @@ function MetricCard({
       <div className="text-2xl font-black text-slate-900">
         {loading ? <span className="inline-block w-10 h-6 bg-slate-100 animate-pulse rounded" /> : (value ?? 0)}
       </div>
-    </div>
+    </>
+  );
+  const base = "bg-white rounded-xl border border-slate-200 p-4";
+  return href ? (
+    <Link href={href} className={`${base} block hover:shadow-md transition-shadow`}>{inner}</Link>
+  ) : (
+    <div className={base}>{inner}</div>
   );
 }
 

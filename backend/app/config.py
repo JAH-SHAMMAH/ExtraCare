@@ -82,6 +82,18 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     FROM_EMAIL: str = "noreply@fairviewschoolng.com"
+    SUPPORT_EMAIL: str = "shammahbadman@gmail.com"   # where the Support form routes
+
+    # ── Remita payment gateway (parent fee payments) ─────────────────────────
+    # Ships with Remita's PUBLIC demo/test credentials so the flow works out of
+    # the box. Override via env for live: REMITA_BASE_URL=https://login.remita.net
+    # plus your live Merchant ID / API Key / Service Type ID.
+    REMITA_BASE_URL: str = "https://remitademo.net"
+    REMITA_MERCHANT_ID: str = "2547916"
+    REMITA_API_KEY: str = "1946"
+    REMITA_SERVICE_TYPE_ID: str = "4430731"
+    # Where Remita redirects the parent's browser after payment.
+    REMITA_REDIRECT_URL: str = "http://localhost:3000/dashboard/my-children/payments/callback"
 
     # ── File Storage ─────────────────────────────────────────────────────────
     UPLOAD_DIR: str = "./uploads"
@@ -125,11 +137,61 @@ class Settings(BaseSettings):
     # the `reference` query param and calls our verify endpoint.
     PAYSTACK_CALLBACK_URL: str = "http://localhost:3000/billing/callback"
 
+    # ── Encryption-at-rest (stored secrets: gateway API keys) ─────────────────
+    # SEPARATE from SECRET_KEY (JWT signing) on purpose: rotating one must never
+    # disturb the other, and a leaked JWT key must not expose stored secrets.
+    # Value: base64 of 32 random bytes. Generate:
+    #   python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
+    #
+    # ⚠️  KEY CUSTODY (spec decision D): the PRODUCTION key MUST NOT live in any
+    # location that is synced/backed-up ALONGSIDE the database — e.g. a .env
+    # inside a OneDrive-synced folder next to the .db file. Co-locating ciphertext
+    # and key in the same synced store defeats encryption-at-rest entirely: anyone
+    # with that sync account gets both halves. The prod key belongs in the host's
+    # environment / secret store, on a host whose DB backups do NOT also carry the
+    # key. (The dev key below may sit in a synced .env only because it protects
+    # nothing real.) See ENCRYPTION_SERVICE_SPEC.md §5/§11-D.
+    ENCRYPTION_KEY: str = ""            # active key (base64, 32 bytes)
+    ENCRYPTION_KEY_VERSION: int = 1     # label stamped into ciphertext ("v<n>:…")
+    # Retired keys kept for DECRYPT-ONLY during rotation. JSON map of
+    # version->base64key, e.g. {"1":"<old b64>"}. Empty = no rotation in progress.
+    ENCRYPTION_KEYS_OLD: str = ""
+
     # ── Observability ────────────────────────────────────────────────────────
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     # pretty = human-readable (dev); json = one object per line (prod/shippers).
     # Blank lets the env default kick in based on ENVIRONMENT.
     LOG_FORMAT: Literal["pretty", "json", "auto"] = "auto"
+
+    # ── Rate Limiting (Priority 3) ───────────────────────────────────────────
+    # Master switch. The automated test suite sets RATE_LIMITS_ENABLED=false
+    # (see tests/conftest.py) so loop-heavy tests don't trip shared-IP buckets.
+    RATE_LIMITS_ENABLED: bool = True
+    # Global monitoring-only kill-switch: when True, EVERY rule logs a breach to
+    # the security log but never returns 429. Lets us observe real traffic
+    # before enforcing ("if uncertain, monitor first").
+    RATE_LIMIT_MONITOR_ONLY: bool = False
+    # Per-bucket overrides, comma-separated: "bucket=limit/window[/scope][/monitor]".
+    #   scope ∈ ip|user|org|user_org ; append "/monitor" for monitoring-only.
+    #   e.g. "login=30/60,ai_assist=50/60/user_org,imports=8/60/org/monitor"
+    # Keeps thresholds configurable from the environment — no magic numbers at
+    # call sites (rules live in core/ratelimit.py::DEFAULT_RULES).
+    RATE_LIMIT_OVERRIDES: str = ""
+
+    # ── Cookie authentication (Priority 2) ───────────────────────────────────
+    # Feature flag for httpOnly-cookie auth. Default OFF = exact current
+    # Bearer-only behaviour (safe rollback). When ON, login/refresh ALSO set
+    # httpOnly access+refresh cookies + a readable CSRF token, and the API
+    # accepts the access cookie — while STILL honouring `Authorization: Bearer`
+    # for mobile/API clients (dual-mode). Toggle off to instantly revert.
+    COOKIE_AUTH_ENABLED: bool = False
+    # Secure attribute — keep True everywhere except local plain-http dev.
+    COOKIE_SECURE: bool = True
+    # SameSite: "lax" suits a same-origin SPA (blocks cross-site POST CSRF while
+    # allowing top-level navigation); "strict" is tighter; "none" needs Secure.
+    COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+    # Blank = host-only cookie (recommended). Set to share across subdomains.
+    COOKIE_DOMAIN: str = ""
 
     # ── Runtime behaviour ────────────────────────────────────────────────────
     # When true, the app runs Base.metadata.create_all on startup. Dev-only;
@@ -145,6 +207,12 @@ class Settings(BaseSettings):
     #   - true (after 2 weeks): All orgs use workspace system
     # Can be overridden per-org in the Organization model if needed.
     WORKSPACE_ISOLATION_ENABLED: bool = False
+
+    # Payment Gateways (per-org gateway credentials, stored encrypted at rest).
+    # Stays OFF until that feature ships. When ON in production the validator
+    # below REQUIRES ENCRYPTION_KEY, so gateway secrets can never be persisted
+    # unencrypted. The encryption service itself is inert until this is used.
+    PAYMENT_GATEWAYS_ENABLED: bool = False
 
     # ── Validators ───────────────────────────────────────────────────────────
     @field_validator("ALLOWED_ORIGINS", mode="before")
@@ -192,6 +260,14 @@ class Settings(BaseSettings):
                 # never accept billing traffic against the Noop provider.
                 raise ValueError(
                     "PAYSTACK_SECRET_KEY must be set in production."
+                )
+            if self.PAYMENT_GATEWAYS_ENABLED and not self.ENCRYPTION_KEY:
+                # Gateway secrets are stored encrypted at rest — refuse to boot
+                # the feature with no key rather than persist recoverable secrets.
+                raise ValueError(
+                    "ENCRYPTION_KEY must be set when PAYMENT_GATEWAYS_ENABLED is "
+                    "true. Generate one with: python -c \"import os,base64;"
+                    "print(base64.b64encode(os.urandom(32)).decode())\""
                 )
         return self
 

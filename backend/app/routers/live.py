@@ -969,11 +969,12 @@ async def _auth_ws(token: str) -> Optional[User]:
 async def live_ws(
     ws: WebSocket,
     session_id: str,
-    token: str = Query(..., description="JWT access token."),
+    token: str | None = Query(default=None, description="JWT access token (Bearer clients); cookie clients omit it."),
 ):
     """Signaling channel. The host registers first; viewers then connect
     and exchange SDP/ICE with the host through relayed frames."""
-    user = await _auth_ws(token)
+    # Cookie-auth clients rely on the access_token cookie on the WS handshake.
+    user = await _auth_ws(token or ws.cookies.get("access_token"))
     if not user:
         await ws.close(code=4401)
         return

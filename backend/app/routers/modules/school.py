@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.exc import IntegrityError
@@ -10,10 +10,12 @@ from app.deps import get_current_active_user
 from app.models.user import User, UserStatus
 from app.models.modules.school import (
     Student, SchoolClass, AttendanceRecord, Grade, Subject, Timetable,
-    LessonPlan, LessonPlanStatus,
+    LessonPlan, LessonPlanStatus, ParentGuardian,
 )
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
+from app.services.audit_service import log_action
+from app.models.audit import AuditAction
 from app.schemas.student import StudentCreate, StudentUpdate
 from app.schemas.teacher import TeacherCreate, TeacherUpdate
 
@@ -27,6 +29,51 @@ router = APIRouter(
 
 _can_read = Depends(PermissionChecker("school:read"))
 _can_write = Depends(PermissionChecker("school:write"))
+# Fine-grained scopes for student/parent-reachable reads. Broad `school:read`
+# still satisfies these via the scope hierarchy, so admin/teacher/staff are
+# unaffected; students and parents reach them with their narrow grants, and the
+# per-record ownership check below stops them seeing anyone else's data.
+_reports_read = Depends(PermissionChecker("school:reports:read"))
+_attendance_read = Depends(PermissionChecker("school:attendance:read"))
+_lessons_read = Depends(PermissionChecker("school:lessons:read"))
+
+
+async def _user_owns_student(db: AsyncSession, user: User, student_id: str) -> bool:
+    """True if `user` is the student themselves or one of their linked guardians."""
+    own = (await db.execute(
+        select(Student.id).where(
+            Student.id == student_id,
+            Student.org_id == user.org_id,
+            Student.is_deleted == False,
+            or_(Student.user_id == user.id, Student.email == user.email),
+        )
+    )).scalar_one_or_none()
+    if own:
+        return True
+    link = (await db.execute(
+        select(ParentGuardian.id).where(
+            ParentGuardian.user_id == user.id,
+            ParentGuardian.student_id == student_id,
+            ParentGuardian.org_id == user.org_id,
+        )
+    )).scalar_one_or_none()
+    return link is not None
+
+
+async def _ensure_student_visible(db: AsyncSession, user: User, student_id: str) -> None:
+    """Authorize access to a single student's records.
+
+    Staff-side roles — anyone whose grant covers `school:students:read` (admin,
+    manager, teacher, staff, viewer via the broad `school:read`) — may view any
+    student in their org. Students and parents are restricted to their own
+    record / linked children; passing another student's id raises 403 so they
+    can never enumerate or read peers' data.
+    """
+    if user.has_permission("school:students:read"):
+        return
+    if await _user_owns_student(db, user, student_id):
+        return
+    raise HTTPException(status_code=403, detail="You can only access your own records.")
 
 
 # ── Students ──────────────────────────────────────────────────────────────────
@@ -67,6 +114,7 @@ async def list_students(
 @router.post("/students", status_code=201, dependencies=[_can_write])
 async def create_student(
     data: StudentCreate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -116,6 +164,13 @@ async def create_student(
         "student_create.ok org=%s id=%s student_id=%s",
         org_id, student.id, student.student_id,
     )
+    await log_action(
+        db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+        resource_type="Student", resource_id=student.id,
+        resource_label=f"{student.first_name} {student.last_name}",
+        new_values={"student_id": student.student_id, "class_id": student.class_id},
+        request=request,
+    )
     return _student_dict(student)
 
 
@@ -123,6 +178,7 @@ async def create_student(
 async def update_student(
     id: str,
     data: StudentUpdate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -160,12 +216,19 @@ async def update_student(
         await db.rollback()
         logger.warning("student_update.integrity_error org=%s id=%s err=%s", org_id, id, e.orig)
         raise HTTPException(status_code=409, detail="Student update conflicts with an existing record.")
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="Student", resource_id=student.id,
+        resource_label=f"{student.first_name} {student.last_name}",
+        new_values=updates, request=request,
+    )
     return _student_dict(student)
 
 
 @router.delete("/students/{id}", status_code=204, dependencies=[_can_write])
 async def delete_student(
     id: str,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -183,6 +246,12 @@ async def delete_student(
     from datetime import datetime, timezone
     student.deleted_at = datetime.now(timezone.utc)
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
+        resource_type="Student", resource_id=student.id,
+        resource_label=f"{student.first_name} {student.last_name}",
+        severity="warning", request=request,
+    )
 
 
 # ── Attendance ────────────────────────────────────────────────────────────────
@@ -191,6 +260,7 @@ async def delete_student(
 async def mark_attendance(
     records: list[dict],  # [{"student_id": ..., "class_id": ..., "status": "present"}]
     attendance_date: date = Query(default=None),
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -208,6 +278,13 @@ async def mark_attendance(
         )
         db.add(obj)
         created.append(rec["student_id"])
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="AttendanceRecord",
+        resource_label=f"{len(created)} attendance record(s) for {target_date.isoformat()}",
+        metadata={"count": len(created), "date": target_date.isoformat()},
+        request=request,
+    )
     return {"marked": len(created), "date": target_date.isoformat()}
 
 
@@ -243,6 +320,7 @@ async def attendance_summary(
 @router.post("/grades", status_code=201, dependencies=[_can_write])
 async def submit_grades(
     grades: list[dict],
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -260,16 +338,25 @@ async def submit_grades(
         )
         db.add(grade)
         created.append(grade)
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="Grade",
+        resource_label=f"{len(created)} grade(s) submitted",
+        severity="warning",
+        metadata={"count": len(created)},
+        request=request,
+    )
     return {"submitted": len(created)}
 
 
-@router.get("/students/{student_id}/report-card", dependencies=[_can_read])
+@router.get("/students/{student_id}/report-card", dependencies=[_reports_read])
 async def get_report_card(
     student_id: str,
     term: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    await _ensure_student_visible(db, current_user, student_id)
     query = select(Grade).where(
         Grade.student_id == student_id,
         Grade.org_id == current_user.org_id,
@@ -330,6 +417,7 @@ async def list_timetable(
 @router.post("/timetable", status_code=201, dependencies=[_can_write])
 async def create_timetable_slot(
     data: dict,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -339,6 +427,13 @@ async def create_timetable_slot(
     slot = Timetable(**payload, org_id=current_user.org_id)
     db.add(slot)
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="Timetable", resource_id=slot.id,
+        resource_label=f"class {slot.class_id} day {slot.day_of_week} {slot.start_time}",
+        new_values={"class_id": slot.class_id, "subject_id": slot.subject_id, "teacher_id": slot.teacher_id},
+        request=request,
+    )
     return _timetable_dict(slot)
 
 
@@ -346,6 +441,7 @@ async def create_timetable_slot(
 async def update_timetable_slot(
     slot_id: str,
     data: dict,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -364,12 +460,20 @@ async def update_timetable_slot(
             continue
         setattr(slot, key, value)
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="Timetable", resource_id=slot.id,
+        resource_label=f"class {slot.class_id} day {slot.day_of_week} {slot.start_time}",
+        new_values={k: v for k, v in data.items() if k not in ("org_id", "id")},
+        request=request,
+    )
     return _timetable_dict(slot)
 
 
 @router.delete("/timetable/{slot_id}", status_code=204, dependencies=[_can_write])
 async def delete_timetable_slot(
     slot_id: str,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -382,7 +486,13 @@ async def delete_timetable_slot(
     slot = result.scalar_one_or_none()
     if not slot:
         raise HTTPException(status_code=404, detail="Timetable slot not found.")
+    slot_ref, slot_label = slot.id, f"class {slot.class_id} day {slot.day_of_week} {slot.start_time}"
     await db.delete(slot)
+    await log_action(
+        db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
+        resource_type="Timetable", resource_id=slot_ref, resource_label=slot_label,
+        severity="warning", request=request,
+    )
 
 
 def _timetable_dict(t: Timetable) -> dict:
@@ -401,7 +511,7 @@ def _timetable_dict(t: Timetable) -> dict:
 # ── Student Attendance History ────────────────────────────────────────────────
 
 
-@router.get("/attendance/student/{student_id}", dependencies=[_can_read])
+@router.get("/attendance/student/{student_id}", dependencies=[_attendance_read])
 async def student_attendance_history(
     student_id: str,
     start_date: date | None = None,
@@ -410,6 +520,7 @@ async def student_attendance_history(
     current_user: User = Depends(get_current_active_user),
 ):
     """Timeline view used by the student's own dashboard + pastoral reports."""
+    await _ensure_student_visible(db, current_user, student_id)
     query = select(AttendanceRecord).where(
         AttendanceRecord.student_id == student_id,
         AttendanceRecord.org_id == current_user.org_id,
@@ -541,6 +652,7 @@ async def get_teacher(
 @router.post("/teachers", status_code=201, dependencies=[_can_write])
 async def create_teacher(
     data: TeacherCreate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -608,6 +720,13 @@ async def create_teacher(
         "teacher_create.ok org=%s id=%s email=%s",
         org_id, teacher.id, teacher.email,
     )
+    await log_action(
+        db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+        resource_type="Teacher", resource_id=teacher.id,
+        resource_label=teacher.full_name or teacher.email,
+        new_values={"email": teacher.email, "department": teacher.department},
+        request=request,
+    )
     return _teacher_dict(teacher)
 
 
@@ -615,6 +734,7 @@ async def create_teacher(
 async def update_teacher(
     id: str,
     data: TeacherUpdate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -679,12 +799,19 @@ async def update_teacher(
     flag_modified(teacher, "preferences")
 
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="Teacher", resource_id=teacher.id,
+        resource_label=teacher.full_name or teacher.email,
+        new_values=updates, request=request,
+    )
     return _teacher_dict(teacher)
 
 
 @router.delete("/teachers/{id}", status_code=204, dependencies=[_can_write])
 async def delete_teacher(
     id: str,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -698,6 +825,12 @@ async def delete_teacher(
     from datetime import datetime, timezone
     teacher.deleted_at = datetime.now(timezone.utc)
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
+        resource_type="Teacher", resource_id=teacher.id,
+        resource_label=teacher.full_name or teacher.email,
+        severity="warning", request=request,
+    )
 
 
 # ── Lesson Planner (Phase 6.4) ───────────────────────────────────────────────
@@ -741,7 +874,7 @@ def _is_admin_role(user: User) -> bool:
     )
 
 
-@router.get("/lessons", dependencies=[_can_read])
+@router.get("/lessons", dependencies=[_lessons_read])
 async def list_lessons(
     class_id: str | None = None,
     subject_id: str | None = None,
@@ -824,6 +957,7 @@ async def list_lessons(
 @router.post("/lessons", status_code=201, dependencies=[_can_write])
 async def create_lesson(
     payload: dict,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -870,6 +1004,13 @@ async def create_lesson(
         await db.flush()
     except IntegrityError as e:
         raise HTTPException(400, detail=f"Could not create lesson plan: {str(e.orig)}")
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="LessonPlan", resource_id=plan.id, resource_label=plan.title,
+        new_values={"class_id": plan.class_id, "subject_id": plan.subject_id,
+                    "status": plan.status.value if hasattr(plan.status, "value") else plan.status},
+        request=request,
+    )
     return _lesson_dict(plan)
 
 
@@ -893,6 +1034,7 @@ async def _load_plan_or_404(db: AsyncSession, plan_id: str, user: User) -> Lesso
 async def update_lesson(
     plan_id: str,
     payload: dict,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -919,24 +1061,36 @@ async def update_lesson(
         plan.status = LessonPlanStatus(raw)
 
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="LessonPlan", resource_id=plan.id, resource_label=plan.title,
+        new_values=payload, request=request,
+    )
     return _lesson_dict(plan)
 
 
 @router.post("/lessons/{plan_id}/publish", dependencies=[_can_write])
 async def publish_lesson(
     plan_id: str,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     plan = await _load_plan_or_404(db, plan_id, current_user)
     plan.status = LessonPlanStatus.PUBLISHED
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="LessonPlan", resource_id=plan.id, resource_label=plan.title,
+        metadata={"action": "published"}, request=request,
+    )
     return _lesson_dict(plan)
 
 
 @router.delete("/lessons/{plan_id}", status_code=204, dependencies=[_can_write])
 async def delete_lesson(
     plan_id: str,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -945,3 +1099,8 @@ async def delete_lesson(
     plan.is_deleted = True
     plan.deleted_at = datetime.now(timezone.utc)
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
+        resource_type="LessonPlan", resource_id=plan.id, resource_label=plan.title,
+        severity="warning", request=request,
+    )

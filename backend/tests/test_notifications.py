@@ -108,7 +108,10 @@ async def test_plan_limit_fires_notification(client: AsyncClient):
     async with Session() as db:
         org = (await db.execute(select(Organization).where(Organization.slug == "notif-plan"))).scalar_one()
         org.subscription_tier = SubscriptionTier.FREE
-        org.modules_enabled = ["school", "hospital"]  # exceeds free cap of 1
+        # Two IN-WORKSPACE modules (both school) exceed the free cap of 1. A
+        # cross-vertical entry would be stripped by the workspace filter before
+        # the cap check, so it must be a school-workspace module to count.
+        org.modules_enabled = ["school", "attendance"]  # effective count 2 > free cap 1
         org.onboarding_step = "done"
         from datetime import datetime, timezone
         org.onboarding_completed_at = datetime.now(timezone.utc)

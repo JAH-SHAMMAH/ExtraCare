@@ -1,5 +1,5 @@
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -14,13 +14,14 @@ from app.core.security import (
     verify_password, hash_password, create_access_token,
     create_refresh_token, decode_token, generate_secure_token,
 )
+from app.core.cookies import set_auth_cookies, clear_auth_cookies, issue_csrf_token
 from app.schemas.auth import (
     LoginRequest, TokenResponse, RefreshRequest,
     RegisterOrgRequest, PasswordResetRequest, PasswordResetConfirm, UserMeResponse,
 )
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
-from app.core.ratelimit import rate_limit
+from app.core.ratelimit import rate_limit_ip
 from app.deps import get_current_user
 from app.config import get_settings
 
@@ -28,11 +29,17 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 settings = get_settings()
 
 
-@router.post("/register", status_code=201, summary="Register a new organization + admin user")
+@router.post(
+    "/register",
+    status_code=201,
+    summary="Register a new organization + admin user",
+    dependencies=[Depends(rate_limit_ip("register"))],
+)
 async def register_organization(
     data: RegisterOrgRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    response: Response = None,
 ):
     """
     One-shot registration: creates the organization, default roles, and the first admin user.
@@ -100,6 +107,9 @@ async def register_organization(
     access_token = create_access_token(_identity_claims(admin, org))
     refresh_token = create_refresh_token({"sub": admin.id, "org": org.id})
 
+    if settings.COOKIE_AUTH_ENABLED:
+        set_auth_cookies(response, access_token, refresh_token, issue_csrf_token())
+
     return {
         "message": "Organization created successfully.",
         "org_slug": org.slug,
@@ -112,12 +122,13 @@ async def register_organization(
 @router.post(
     "/login",
     response_model=TokenResponse,
-    dependencies=[Depends(rate_limit("login", max_hits=20, window_seconds=60))],
+    dependencies=[Depends(rate_limit_ip("login"))],
 )
 async def login(
     data: LoginRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    response: Response = None,
 ):
     # Normalize the submitted email once. Stored emails are lower-cased, and
     # the domain gate / user lookup both rely on a canonical form.
@@ -195,6 +206,9 @@ async def login(
     access_token = create_access_token(claims)
     refresh_token = create_refresh_token({"sub": user.id, "org": org.id})
 
+    if settings.COOKIE_AUTH_ENABLED:
+        set_auth_cookies(response, access_token, refresh_token, issue_csrf_token())
+
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -206,12 +220,24 @@ async def login(
 @router.post(
     "/refresh",
     response_model=TokenResponse,
-    dependencies=[Depends(rate_limit("refresh", max_hits=60, window_seconds=60))],
+    dependencies=[Depends(rate_limit_ip("refresh"))],
 )
-async def refresh_token(data: RefreshRequest, db: AsyncSession = Depends(get_db)):
+async def refresh_token(
+    data: RefreshRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    request: Request = None,
+    response: Response = None,
+):
     from jose import JWTError
+    # Body carries the refresh token for Bearer/API clients; cookie-auth clients
+    # carry it in the httpOnly refresh cookie.
+    raw = data.refresh_token if (data and data.refresh_token) else None
+    if not raw and settings.COOKIE_AUTH_ENABLED:
+        raw = request.cookies.get("refresh_token")
+    if not raw:
+        raise HTTPException(status_code=401, detail="Missing refresh token.")
     try:
-        payload = decode_token(data.refresh_token)
+        payload = decode_token(raw)
         if payload.get("type") != "refresh":
             raise ValueError()
         user_id = payload["sub"]
@@ -230,12 +256,24 @@ async def refresh_token(data: RefreshRequest, db: AsyncSession = Depends(get_db)
     access_token = create_access_token(_identity_claims(user, org))
     new_refresh = create_refresh_token({"sub": user.id, "org": user.org_id})
 
+    if settings.COOKIE_AUTH_ENABLED:
+        set_auth_cookies(response, access_token, new_refresh, issue_csrf_token())
+
     return TokenResponse(
         access_token=access_token,
         refresh_token=new_refresh,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         user=UserMeResponse.from_user(user, org),
     )
+
+
+@router.post("/logout", summary="Clear auth cookies (cookie-auth clients)")
+async def logout(response: Response):
+    """Clears the httpOnly auth cookies. Safe to call without a valid access
+    token (the cookie may already be expired). Bearer/API clients simply drop
+    their token client-side — this is a harmless no-op for them."""
+    clear_auth_cookies(response)
+    return {"detail": "Logged out."}
 
 
 @router.get("/me", response_model=UserMeResponse)

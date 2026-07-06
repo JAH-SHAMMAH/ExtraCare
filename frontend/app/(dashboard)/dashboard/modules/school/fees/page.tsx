@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useFees, useCreateFee, useRecordFeePayment } from "@/hooks/useSchool";
+import { usePrimaryBankAccount } from "@/hooks/useFinance";
 import { cn, formatDate, formatCurrency } from "@/lib/utils";
-import { Wallet, Plus, X, Loader2, Search, DollarSign } from "lucide-react";
+import { Wallet, Plus, X, Loader2, Search, DollarSign, Landmark } from "lucide-react";
 import type { FeeRecord } from "@/types";
 
 const STATUS_MAP: Record<string, string> = { paid: "bg-emerald-50 text-emerald-700 border-emerald-200", partial: "bg-amber-50 text-amber-700 border-amber-200", unpaid: "bg-red-50 text-red-700 border-red-200", overdue: "bg-red-100 text-red-800 border-red-300" };
@@ -15,6 +16,7 @@ export default function FeesPage() {
   const [payAmount, setPayAmount] = useState("");
 
   const { data, isLoading } = useFees({ status: tab === "all" ? undefined : tab });
+  const { data: payTo } = usePrimaryBankAccount();
   const createFee = useCreateFee();
   const recordPayment = useRecordFeePayment();
 
@@ -43,6 +45,17 @@ export default function FeesPage() {
           <div key={label} className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">{label}</p><p className="text-xl font-black text-slate-900">{value}</p></div>
         ))}
       </div>
+
+      {payTo && (
+        <div className="bg-brand-50 border border-brand-200 rounded-xl p-4 mb-6 flex items-start gap-3">
+          <div className="w-9 h-9 rounded-lg bg-brand-100 flex items-center justify-center shrink-0"><Landmark size={18} className="text-brand-700" /></div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-brand-700 mb-0.5">Pay fees to</p>
+            <p className="text-sm font-bold text-slate-900">{payTo.bank_name} · <span className="font-mono">{payTo.account_number}</span></p>
+            <p className="text-xs text-slate-600">{payTo.account_name}{payTo.bank_code ? ` · ${payTo.bank_code}` : ""}{payTo.account_type ? ` · ${payTo.account_type}` : ""}{payTo.purpose ? ` · ${payTo.purpose}` : ""}</p>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6">

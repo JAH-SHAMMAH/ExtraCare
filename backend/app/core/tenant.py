@@ -267,7 +267,11 @@ def require_role_module(module_name: str, action: str = "read"):
                 ),
             )
 
-        if not current_user.has_permission(required_perm):
+        # Module-entry gate. A caller may open the module door if they hold the
+        # broad `<module>:<action>` OR any fine-grained child scope (e.g. a
+        # student with only `school:cbt:read` can enter the school module). The
+        # specific feature is still enforced by the per-endpoint PermissionChecker.
+        if not current_user.has_module_permission(module_name, action):
             _bump_denial("role_permission_denied", org.id, required_perm)
             _forbidden_logger.warning(
                 "role_permission_denied",

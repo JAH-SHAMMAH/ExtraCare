@@ -5,6 +5,10 @@ from app.models.user import User
 
 
 import decimal
+import enum
+import uuid
+from datetime import date, datetime
+
 
 async def log_action(
     db: AsyncSession,
@@ -30,9 +34,18 @@ async def log_action(
             return None
         if isinstance(obj, decimal.Decimal):
             return float(obj)
+        # Enum (incl. str-enums) → its value; date/datetime → ISO; UUID → str.
+        # Keeps diff payloads JSON-serialisable when a changed field is a date
+        # (hire_date, date_of_birth, lesson_date) or an enum status.
+        if isinstance(obj, enum.Enum):
+            return obj.value
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
         if isinstance(obj, dict):
             return {k: _make_jsonable(v) for k, v in obj.items()}
-        if isinstance(obj, list):
+        if isinstance(obj, (list, tuple, set)):
             return [_make_jsonable(v) for v in obj]
         return obj
 

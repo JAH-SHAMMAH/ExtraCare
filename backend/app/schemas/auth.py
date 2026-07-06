@@ -120,7 +120,9 @@ class TokenResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    # Optional: cookie-auth clients send no body (the refresh token rides in the
+    # httpOnly cookie); Bearer/API clients send it here.
+    refresh_token: str | None = None
 
 
 class RegisterOrgRequest(BaseModel):

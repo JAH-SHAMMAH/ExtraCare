@@ -1,0 +1,87 @@
+"""Student Wallet / PocketMoney + Cooperative models (Batch 6 money features).
+
+Real student money, ledger-backed. Balances are NEVER stored — they are derived
+by summing the subledger (``WalletEntry`` / ``CoopEntry``) over journal entries
+that have not been reversed, and the aggregate liability control account in the
+GL reconciles to the sum of all sub-balances.
+
+  • StudentWallet      — per-student wallet identity + spend controls (PocketMoney
+                          is the SAME wallet: a daily spend limit + the spend path).
+  • WalletEntry        — subledger: +top-up / −spend / −withdrawal, linked to its GL entry.
+  • CooperativeMember  — a cooperative member (funds held on their behalf = liability).
+  • CoopEntry          — subledger: +contribution / −payout.
+
+Top-up/withdrawal and cooperative cash-in/out post Dr/Cr **Cash ↔ liability** (no
+income). A spend is the only moment income is recognised: Dr Wallet-Float / Cr
+Income. All postings go through the shared ledger engine.
+"""
+from __future__ import annotations
+
+from sqlalchemy import Column, String, Date, Numeric, Boolean, ForeignKey, Index, UniqueConstraint
+
+from app.models.base import Base, UUIDMixin, TimestampMixin, TenantMixin
+
+
+class StudentWallet(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """One cashless account per student. Holds CONTROLS, not a balance."""
+    __tablename__ = "student_wallets"
+
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    spend_limit_daily = Column(Numeric(14, 2), nullable=True)   # PocketMoney control; None = unlimited
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "student_id", name="uq_student_wallets_org_student"),
+        Index("ix_student_wallets_student_org", "student_id", "org_id"),
+    )
+
+
+class WalletEntry(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Wallet subledger row. ``signed_amount`` is + for top-up, − for spend /
+    withdrawal. Balance = Σ signed_amount where the linked GL entry isn't reversed."""
+    __tablename__ = "wallet_entries"
+
+    wallet_id = Column(String(36), ForeignKey("student_wallets.id", ondelete="CASCADE"), nullable=False, index=True)
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String(20), nullable=False)              # top_up | spend | withdrawal
+    signed_amount = Column(Numeric(14, 2), nullable=False)  # +/−
+    journal_entry_id = Column(String(36), ForeignKey("journal_entries.id", ondelete="SET NULL"), nullable=True)
+    memo = Column(String(255), nullable=True)
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        Index("ix_wallet_entries_student_org", "student_id", "org_id"),
+        Index("ix_wallet_entries_wallet_org", "wallet_id", "org_id"),
+    )
+
+
+class CooperativeMember(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A cooperative member. Their contributions are funds held on their behalf
+    (a liability), not school income."""
+    __tablename__ = "cooperative_members"
+
+    member_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    member_name = Column(String(200), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    joined_on = Column(Date, nullable=True)
+
+    __table_args__ = (
+        Index("ix_cooperative_members_org", "org_id"),
+    )
+
+
+class CoopEntry(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Cooperative subledger row. + contribution, − payout. Balance = Σ over
+    non-reversed GL entries."""
+    __tablename__ = "coop_entries"
+
+    member_id = Column(String(36), ForeignKey("cooperative_members.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String(20), nullable=False)              # contribution | payout
+    signed_amount = Column(Numeric(14, 2), nullable=False)
+    journal_entry_id = Column(String(36), ForeignKey("journal_entries.id", ondelete="SET NULL"), nullable=True)
+    memo = Column(String(255), nullable=True)
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        Index("ix_coop_entries_member_org", "member_id", "org_id"),
+    )

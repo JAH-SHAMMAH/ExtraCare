@@ -21,6 +21,7 @@ import enum
 class PaymentProvider(str, enum.Enum):
     """Supported payment gateway providers."""
     PAYSTACK = "paystack"
+    REMITA = "remita"
     FLUTTERWAVE = "flutterwave"
     STRIPE = "stripe"
     BANK_TRANSFER = "bank_transfer"

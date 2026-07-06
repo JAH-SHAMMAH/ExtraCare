@@ -4,9 +4,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { messengerApi } from "@/lib/api";
-import type { ChatMessage, Conversation, UploadResponse } from "@/types";
+import type { ChatMessage, Conversation, MessengerMember, UploadResponse } from "@/types";
 
 const STALE_MS = 15_000;
+
+/**
+ * Messageable peers for the DM/group picker. Hits the auth-only
+ * /messenger/contacts endpoint (not /users, which is admin-gated and returns a
+ * paginated envelope) so every role can start a conversation.
+ */
+export function useContacts(search?: string) {
+  const term = search?.trim() || undefined;
+  return useQuery<MessengerMember[]>({
+    queryKey: ["messenger", "contacts", term ?? ""],
+    queryFn: () => messengerApi.contacts.list(term ? { search: term } : undefined),
+    staleTime: STALE_MS,
+  });
+}
 
 export function useConversations() {
   return useQuery<Conversation[]>({

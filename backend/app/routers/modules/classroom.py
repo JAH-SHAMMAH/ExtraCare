@@ -11,7 +11,7 @@ Tenant isolation: every query pins org_id = current_user.org_id, never client.
 """
 
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +38,8 @@ from app.schemas.school_experience import (
 )
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
+from app.services.audit_service import log_action
+from app.models.audit import AuditAction
 from app.core.school_identity import (
     resolve_linked_student_id,
     resolve_taught_class_ids,
@@ -49,8 +51,8 @@ router = APIRouter(
     dependencies=[Depends(require_role_module("school"))],
 )
 
-_can_read = Depends(PermissionChecker("school:read"))
-_can_write = Depends(PermissionChecker("school:write"))
+_can_read = Depends(PermissionChecker("school:classroom:read"))
+_can_write = Depends(PermissionChecker("school:classroom:write"))
 
 
 # ── Assignments ───────────────────────────────────────────────────────────────
@@ -115,6 +117,7 @@ async def list_assignments(
 @router.post("/assignments", status_code=201, dependencies=[_can_write])
 async def create_assignment(
     payload: AssignmentCreate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -125,6 +128,12 @@ async def create_assignment(
     )
     db.add(assignment)
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="Assignment", resource_id=assignment.id,
+        resource_label=getattr(assignment, "title", None) or assignment.id,
+        request=request,
+    )
     return AssignmentResponse.model_validate(assignment).model_dump()
 
 
@@ -151,6 +160,7 @@ async def get_assignment(
 async def update_assignment(
     assignment_id: str,
     payload: AssignmentUpdate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -165,15 +175,23 @@ async def update_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found.")
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    for field, value in changes.items():
         setattr(assignment, field, value)
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="Assignment", resource_id=assignment.id,
+        resource_label=getattr(assignment, "title", None) or assignment.id,
+        new_values=changes, request=request,
+    )
     return AssignmentResponse.model_validate(assignment).model_dump()
 
 
 @router.delete("/assignments/{assignment_id}", status_code=204, dependencies=[_can_write])
 async def delete_assignment(
     assignment_id: str,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -188,6 +206,12 @@ async def delete_assignment(
         raise HTTPException(status_code=404, detail="Assignment not found.")
     assignment.is_deleted = True
     assignment.deleted_at = datetime.now(timezone.utc)
+    await log_action(
+        db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
+        resource_type="Assignment", resource_id=assignment.id,
+        resource_label=getattr(assignment, "title", None) or assignment.id,
+        severity="warning", request=request,
+    )
 
 
 # ── Submissions ───────────────────────────────────────────────────────────────
@@ -243,6 +267,7 @@ async def create_submission(
 async def grade_submission(
     submission_id: str,
     payload: SubmissionGrade,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -262,6 +287,14 @@ async def grade_submission(
     sub.graded_at = datetime.now(timezone.utc)
     sub.status = SubmissionStatus.GRADED
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="AssignmentSubmission", resource_id=sub.id,
+        resource_label=f"graded submission {sub.id}",
+        severity="warning",
+        metadata={"score": payload.score, "assignment_id": sub.assignment_id, "student_id": sub.student_id},
+        request=request,
+    )
     return SubmissionResponse.model_validate(sub).model_dump()
 
 

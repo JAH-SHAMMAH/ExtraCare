@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
 import { SEO_KEYWORDS, SITE_URL } from "@/lib/seo";
@@ -39,7 +39,22 @@ export const metadata: Metadata = {
       "max-video-preview": -1,
     },
   },
-  icons: { icon: "/favicon.ico" },
+  // Browser tab + PWA. Next's metadata API emits the equivalent of the guide's
+  // <head> <link> tags; manifest ties into the PWA / Mobile Manager install icon.
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-16.png", type: "image/png", sizes: "16x16" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
+  manifest: "/manifest.webmanifest",
+};
+
+// theme_color for the address bar / PWA splash (crest green).
+export const viewport: Viewport = {
+  themeColor: "#1d8a3a",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

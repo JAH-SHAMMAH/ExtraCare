@@ -24,7 +24,7 @@ from app.models.organization import Organization, IndustryType
 from app.models.messenger import Conversation, ConversationKind, Message, MessageType
 from app.routers.messenger import (
     list_conversations, create_conversation, list_messages, create_message,
-    _authorize_conversation, _dm_pair_key,
+    list_contacts, _authorize_conversation, _dm_pair_key,
 )
 from app.schemas.messenger import ConversationCreate, MessageCreate
 
@@ -284,3 +284,62 @@ async def test_list_is_org_scoped(db, teacher, other_org_user):
     convs_b = await list_conversations(db=db, current_user=other_org_user)
     assert all(c.org_id == other_org_user.org_id for c in convs_b)
     assert {c.id for c in convs_a}.isdisjoint({c.id for c in convs_b})
+
+
+# ── Contacts (messageable users) ──────────────────────────────────────────────
+
+async def test_contacts_lists_active_org_peers_excluding_self(db, teacher, second_user, student_user):
+    rows = await list_contacts(search=None, limit=50, offset=0, db=db, current_user=teacher)
+    ids = {r.id for r in rows}
+    assert teacher.id not in ids            # excludes self
+    assert second_user.id in ids            # active peer
+    assert student_user.id in ids           # active peer
+    # projection shape (reuses MemberSummary: id, full_name, email, avatar_url)
+    peer = next(r for r in rows if r.id == second_user.id)
+    assert peer.full_name == "Peer Two"
+    assert peer.email == "peer@example.com"
+
+
+async def test_contacts_excludes_deleted_and_inactive(db, teacher, org):
+    deleted = User(id=str(uuid.uuid4()), email="gone@example.com", full_name="Gone User",
+                   status=UserStatus.ACTIVE, org_id=org.id, is_deleted=True)
+    suspended = User(id=str(uuid.uuid4()), email="susp@example.com", full_name="Susp User",
+                     status=UserStatus.SUSPENDED, org_id=org.id)
+    db.add_all([deleted, suspended])
+    await db.commit()
+    ids = {r.id for r in await list_contacts(search=None, limit=50, offset=0, db=db, current_user=teacher)}
+    assert deleted.id not in ids
+    assert suspended.id not in ids
+
+
+async def test_contacts_search_by_name_and_email(db, teacher, second_user, student_user):
+    by_name = await list_contacts(search="peer", limit=50, offset=0, db=db, current_user=teacher)
+    assert {r.id for r in by_name} == {second_user.id}
+
+    by_email = await list_contacts(search="STUDENT@", limit=50, offset=0, db=db, current_user=teacher)
+    assert {r.id for r in by_email} == {student_user.id}
+
+    none = await list_contacts(search="zzz-no-match", limit=50, offset=0, db=db, current_user=teacher)
+    assert none == []
+
+
+async def test_contacts_pagination_distinct_pages(db, teacher, second_user, student_user, unlinked_user):
+    # Peers ordered by full_name: "Peer Two", "Student One", "Unlinked Staff".
+    page1 = await list_contacts(search=None, limit=1, offset=0, db=db, current_user=teacher)
+    page2 = await list_contacts(search=None, limit=1, offset=1, db=db, current_user=teacher)
+    assert len(page1) == 1 and len(page2) == 1
+    assert page1[0].id != page2[0].id
+
+
+async def test_contacts_org_scoped(db, teacher, second_user, other_org_user):
+    ids = {r.id for r in await list_contacts(search=None, limit=50, offset=0, db=db, current_user=teacher)}
+    assert second_user.id in ids
+    assert other_org_user.id not in ids     # cross-tenant isolation
+
+
+async def test_contacts_requires_no_users_read(db, teacher, second_user):
+    # The teacher fixture has no roles assigned (see conftest) → no users:read.
+    # The endpoint is auth-only, so it must still return data (never 403),
+    # proving Messenger contacts are decoupled from the users:read grant.
+    rows = await list_contacts(search=None, limit=50, offset=0, db=db, current_user=teacher)
+    assert any(r.id == second_user.id for r in rows)

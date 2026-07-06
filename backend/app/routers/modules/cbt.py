@@ -17,7 +17,7 @@ RBAC:
 """
 
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,6 +46,8 @@ from app.schemas.school_experience import (
 )
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
+from app.services.audit_service import log_action
+from app.models.audit import AuditAction
 from app.core.events import log_event
 from app.core.school_identity import (
     resolve_linked_student_id,
@@ -59,8 +61,8 @@ router = APIRouter(
     dependencies=[Depends(require_role_module("school"))],
 )
 
-_can_read = Depends(PermissionChecker("school:read"))
-_can_write = Depends(PermissionChecker("school:write"))
+_can_read = Depends(PermissionChecker("school:cbt:read"))
+_can_write = Depends(PermissionChecker("school:cbt:write"))
 
 
 # ── Exams ─────────────────────────────────────────────────────────────────────
@@ -151,6 +153,7 @@ def _exam_with_live(exam: CBTExam, now: datetime) -> dict:
 @router.post("/exams", status_code=201, dependencies=[_can_write])
 async def create_exam(
     payload: ExamCreate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -161,6 +164,12 @@ async def create_exam(
     )
     db.add(exam)
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="CBTExam", resource_id=exam.id,
+        resource_label=getattr(exam, "title", None) or exam.id,
+        request=request,
+    )
     return ExamResponse.model_validate(exam).model_dump()
 
 
@@ -178,25 +187,40 @@ async def get_exam(
 async def update_exam(
     exam_id: str,
     payload: ExamUpdate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     exam = await _get_exam_or_404(db, exam_id, current_user.org_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    for field, value in changes.items():
         setattr(exam, field, value)
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="CBTExam", resource_id=exam.id,
+        resource_label=getattr(exam, "title", None) or exam.id,
+        new_values=changes, request=request,
+    )
     return ExamResponse.model_validate(exam).model_dump()
 
 
 @router.delete("/exams/{exam_id}", status_code=204, dependencies=[_can_write])
 async def delete_exam(
     exam_id: str,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     exam = await _get_exam_or_404(db, exam_id, current_user.org_id)
     exam.is_deleted = True
     exam.deleted_at = datetime.now(timezone.utc)
+    await log_action(
+        db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
+        resource_type="CBTExam", resource_id=exam.id,
+        resource_label=getattr(exam, "title", None) or exam.id,
+        severity="warning", request=request,
+    )
 
 
 # ── Questions ─────────────────────────────────────────────────────────────────
@@ -232,6 +256,7 @@ async def list_questions(
 async def add_question(
     exam_id: str,
     payload: QuestionCreate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -247,12 +272,19 @@ async def add_question(
     # Keep total_points in sync for quick display in exam lists.
     exam.total_points = (exam.total_points or 0) + payload.points
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="CBTQuestion", resource_id=question.id,
+        resource_label=f"question in exam {exam.id}",
+        metadata={"exam_id": exam.id, "points": payload.points}, request=request,
+    )
     return QuestionWithAnswer.model_validate(question).model_dump()
 
 
 @router.delete("/questions/{question_id}", status_code=204, dependencies=[_can_write])
 async def delete_question(
     question_id: str,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -273,7 +305,14 @@ async def delete_question(
     if exam:
         exam.total_points = max(0, (exam.total_points or 0) - (question.points or 0))
 
+    q_ref, q_exam = question.id, question.exam_id
     await db.delete(question)
+    await log_action(
+        db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
+        resource_type="CBTQuestion", resource_id=q_ref,
+        resource_label=f"question in exam {q_exam}",
+        severity="warning", request=request,
+    )
 
 
 # ── Attempts ──────────────────────────────────────────────────────────────────

@@ -22,9 +22,17 @@ from sqlalchemy import select
 from app.models.organization import Organization
 from app.models.payment import TenantPaymentSettings, PaymentProvider
 from app.services.paystack import PaystackProvider
+from app.services import crypto
 from app.config import get_settings
 
 _logger = logging.getLogger("extracare.payment_resolver")
+
+
+class PaymentConfigError(RuntimeError):
+    """A per-org payment secret exists but is unusable (e.g. it can't be decrypted
+    because the encryption key is missing/rotated). Callers MUST fail loud (503)
+    rather than fall back to the platform account — silently routing a school's fees
+    to the platform's Paystack key is a tenant-isolation / financial bug."""
 
 
 class PaymentProviderResolver:
@@ -77,44 +85,56 @@ class PaymentProviderResolver:
         Raises:
             ValueError: If provider not configured for org
         """
-        # Query tenant-specific payment settings
-        query = select(TenantPaymentSettings).where(
-            TenantPaymentSettings.org_id == org_id,
-            TenantPaymentSettings.is_active == True,
-            TenantPaymentSettings.is_deleted == False,
-        )
-        
-        if provider_type:
-            query = query.where(TenantPaymentSettings.provider == provider_type)
-        
-        result = await db.execute(query)
-        settings = result.scalar_one_or_none()
-        
-        if settings:
-            _logger.info(
-                "payment_resolver.tenant_config_found org_id=%s provider=%s",
-                org_id, settings.provider
+        # This resolver builds a PaystackProvider, so scope the lookup to the org's
+        # active Paystack config. `.first()` (not scalar_one_or_none) is deliberate:
+        # an org may now have configs for several providers, so a single-row assertion
+        # would crash. provider_type lets a caller target a specific provider.
+        query = (
+            select(TenantPaymentSettings)
+            .where(
+                TenantPaymentSettings.org_id == org_id,
+                TenantPaymentSettings.provider == (provider_type or PaymentProvider.PAYSTACK),
+                TenantPaymentSettings.is_active == True,
+                TenantPaymentSettings.is_deleted == False,
             )
-            # TODO: Decrypt credentials from encrypted storage
-            # For now, this is a stub. In production:
-            # secret_key = decrypt(settings.encrypted_secret_key)
-            # public_key = decrypt(settings.encrypted_public_key)
-            raise NotImplementedError(
-                "Tenant-specific payment configuration requires decryption service"
-            )
-        
-        # Fallback to platform provider during MVP
-        _logger.warning(
-            "payment_resolver.using_platform_provider org_id=%s",
-            org_id
+            .order_by(TenantPaymentSettings.created_at.desc())
         )
-        
+        settings = (await db.execute(query)).scalars().first()
+
+        # A real per-org config carries an encrypted secret. Decrypt it here (this is
+        # the ONE point of use) and build a provider bound to THIS school's account —
+        # so fee payments settle to them, not the platform env key.
+        if settings and settings.encrypted_secret_key:
+            _logger.info("payment_resolver.tenant_config_found org_id=%s provider=%s", org_id, settings.provider)
+            try:
+                secret_key = crypto.decrypt(settings.encrypted_secret_key)
+            except Exception as exc:
+                # A stored-but-undecryptable secret means a key/config problem. Do NOT
+                # silently fall back to the platform account (that would route a
+                # school's fees to the wrong place) — raise a dedicated error the
+                # caller turns into a hard 503. Fail loud, never fail open.
+                _logger.error("payment_resolver.decrypt_failed org_id=%s err=%s", org_id, exc)
+                raise PaymentConfigError(
+                    f"Payment secret for organization {org_id} could not be decrypted "
+                    "(encryption key missing or rotated). Fix the key or re-enter the gateway secret."
+                ) from exc
+            metadata = settings.metadata_ or {}
+            public_key = metadata.get("public_key") or self.settings.PAYSTACK_PUBLIC_KEY
+            return PaystackProvider(
+                secret_key=secret_key,
+                public_key=public_key,
+                api_url=self.settings.PAYSTACK_API_URL,
+                callback_url=self.settings.PAYSTACK_CALLBACK_URL,
+            )
+
+        # No per-org secret configured (or only a platform-fallback placeholder row)
+        # → use the platform provider (env key), preserving today's behaviour.
+        _logger.warning("payment_resolver.using_platform_provider org_id=%s", org_id)
         provider = self.platform_paystack
         if not provider:
             raise ValueError(
                 f"No payment provider configured for organization {org_id}"
             )
-        
         return provider
 
     async def get_active_provider_for_org(

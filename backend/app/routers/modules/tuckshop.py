@@ -14,7 +14,7 @@ RBAC:
 """
 
 from datetime import date as date_type, datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import select, func, cast, Date
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +31,8 @@ from app.schemas.school_experience import (
 )
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
+from app.services.audit_service import log_action
+from app.models.audit import AuditAction
 
 router = APIRouter(
     prefix="/tuckshop",
@@ -38,8 +40,8 @@ router = APIRouter(
     dependencies=[Depends(require_role_module("school"))],
 )
 
-_can_read = Depends(PermissionChecker("school:read"))
-_can_write = Depends(PermissionChecker("school:write"))
+_can_read = Depends(PermissionChecker("school_admin:read"))
+_can_write = Depends(PermissionChecker("school_admin:write"))
 
 
 # ── Products ──────────────────────────────────────────────────────────────────
@@ -81,12 +83,18 @@ async def list_products(
 @router.post("/products", status_code=201, dependencies=[_can_write])
 async def create_product(
     payload: TuckshopProductCreate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     product = TuckshopProduct(**payload.model_dump(), org_id=current_user.org_id)
     db.add(product)
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="TuckshopProduct", resource_id=product.id, resource_label=product.name,
+        metadata={"price": product.price, "stock": product.stock}, request=request,
+    )
     return TuckshopProductResponse.model_validate(product).model_dump()
 
 
@@ -94,25 +102,38 @@ async def create_product(
 async def update_product(
     product_id: str,
     payload: TuckshopProductUpdate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     product = await _get_product_or_404(db, product_id, current_user.org_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    for field, value in changes.items():
         setattr(product, field, value)
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="TuckshopProduct", resource_id=product.id, resource_label=product.name,
+        new_values=changes, request=request,
+    )
     return TuckshopProductResponse.model_validate(product).model_dump()
 
 
 @router.delete("/products/{product_id}", status_code=204, dependencies=[_can_write])
 async def delete_product(
     product_id: str,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     product = await _get_product_or_404(db, product_id, current_user.org_id)
     product.is_deleted = True
     product.is_active = False
+    await log_action(
+        db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
+        resource_type="TuckshopProduct", resource_id=product.id, resource_label=product.name,
+        severity="warning", request=request,
+    )
 
 
 # ── Purchases ─────────────────────────────────────────────────────────────────
@@ -121,6 +142,7 @@ async def delete_product(
 @router.post("/purchases", status_code=201, dependencies=[_can_write])
 async def record_purchase(
     payload: TuckshopPurchaseCreate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -157,6 +179,15 @@ async def record_purchase(
     product.stock -= payload.quantity
     db.add(purchase)
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="TuckshopPurchase", resource_id=purchase.id,
+        resource_label=f"{payload.quantity}x {product.name} for student {payload.student_id}",
+        severity="warning",
+        metadata={"total_price": total, "quantity": payload.quantity,
+                  "product_id": product.id, "student_id": payload.student_id},
+        request=request,
+    )
     return TuckshopPurchaseResponse.model_validate(purchase).model_dump()
 
 

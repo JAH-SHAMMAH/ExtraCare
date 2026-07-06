@@ -136,6 +136,7 @@ async def get_users_paginated(
     search: str | None = None,
     status: UserStatus | None = None,
     role_slug: str | None = None,
+    minimal: bool = False,
 ) -> UserListResponse:
     query = select(User).options(selectinload(User.roles)).where(User.org_id == org_id, User.is_deleted == False)
 
@@ -158,8 +159,11 @@ async def get_users_paginated(
     users = result.scalars().all()
 
     import math
+    project = UserResponse.minimal_from if minimal else (
+        lambda u: UserResponse.from_orm_with_roles(u, loaded_roles=list(u.roles))
+    )
     return UserListResponse(
-        items=[UserResponse.from_orm_with_roles(u, loaded_roles=list(u.roles)) for u in users],
+        items=[project(u) for u in users],
         total=total,
         page=page,
         page_size=page_size,

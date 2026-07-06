@@ -1,6 +1,5 @@
 "use client";
 
-import { Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -24,9 +23,9 @@ export function Splash({
   return (
     <div className={cn(container, "animate-fade-in")} role="status" aria-live="polite">
       <div className="relative mb-5">
-        <div className="w-16 h-16 rounded-2xl bg-brand-600 shadow-lg shadow-brand-600/25 flex items-center justify-center">
-          <Building2 size={28} className="text-white" />
-        </div>
+        {/* Crest from /public; falls back to alt text until the asset is added. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-transparent.png" alt="Fairview School" className="w-20 h-20 object-contain animate-pulse" />
         <span className="absolute -inset-1.5 rounded-[1.25rem] border-2 border-brand-400/40 animate-ping" />
       </div>
 

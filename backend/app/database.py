@@ -64,8 +64,8 @@ async def init_db():
     environments can keep it on for zero-config bootstrapping.
     """
     # Import all models so Base knows about them
-    from app.models import user, organization, role, audit, import_job, hrm, leave, messenger, feed, live  # noqa
-    from app.models.modules import school, hospital, business  # noqa
+    from app.models import user, organization, role, audit, import_job, hrm, leave, messenger, feed, live, support, hr_extended  # noqa
+    from app.models.modules import school, hospital, business, admissions, academics, pastoral, finance, wallet, operations, platform, remita  # noqa
 
     if settings.AUTO_CREATE_SCHEMA:
         async with engine.begin() as conn:

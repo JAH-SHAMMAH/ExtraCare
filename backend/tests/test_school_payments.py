@@ -163,6 +163,37 @@ async def test_parent_initiate_and_verify(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_initiate_hard_fails_when_per_org_secret_undecryptable(client: AsyncClient):
+    """Security/tenant-isolation: if a per-org gateway secret exists but can't be
+    decrypted, initiate must return 503 — it must NOT silently fall back to the
+    platform Paystack account (which would route this school's fees to the wrong
+    place with no visible error). Fail loud, never fail open."""
+    res = await _register(client, "school-badkey")
+    Session = client.session_factory  # type: ignore[attr-defined]
+    async with Session() as db:
+        org = (await db.execute(select(_org.Organization).where(_org.Organization.slug == "school-badkey"))).scalar_one()
+        student = Student(first_name="Ada", last_name="X", student_id="S9", org_id=org.id)
+        db.add(student)
+        # A per-org Paystack config whose secret can't be decrypted (token-shaped but
+        # no valid key in this env) → resolver raises PaymentConfigError.
+        db.add(TenantPaymentSettings(
+            org_id=org.id, provider=PaymentProviderEnum.PAYSTACK, is_active=True,
+            encrypted_secret_key="v1:AAAAAAAAAAAAAAAA:BBBBBBBBBBBBBBBBBBBB",
+        ))
+        await db.commit()
+        student_id = student.id
+
+    # Even with a platform provider stub available, the misconfig must hard-fail.
+    _install_paystack([_ok({"authorization_url": "https://paystack.test/x", "reference": "z"})])
+    r = await client.post(
+        "/api/v1/school/payments/parent/initiate-payment",
+        headers=_auth(res["access_token"]),
+        json={"student_id": student_id, "amount_ngn": 1500, "payment_type": "school_fees"},
+    )
+    assert r.status_code == 503, r.text
+
+
+@pytest.mark.asyncio
 async def test_webhook_processing_and_idempotency(client: AsyncClient):
     # Register org and create a pending transaction
     res = await _register(client, "school-hook")

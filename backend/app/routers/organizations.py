@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.core.permissions import require_superadmin
-from app.core.ratelimit import rate_limit
+from app.core.ratelimit import rate_limit_auth
 from app.deps import get_current_active_user
 from app.models.audit import AuditAction
 from app.models.organization import Organization, IndustryType
@@ -124,7 +124,7 @@ async def get_organization(
 @router.patch(
     "/{org_id}/industry",
     summary="Change an organization's industry (super-admin only)",
-    dependencies=[Depends(rate_limit("org_industry", max_hits=10, window_seconds=60))],
+    dependencies=[Depends(rate_limit_auth("org_industry"))],
 )
 async def change_industry(
     org_id: str,

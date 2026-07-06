@@ -83,6 +83,34 @@ class User(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
             return True
         if permission in perms:
             return True
-        # Check wildcard namespace: "modules:*" covers "modules:read"
-        namespace = permission.split(":")[0]
-        return f"{namespace}:*" in perms
+        parts = permission.split(":")
+        namespace = parts[0]
+        # Namespace wildcard: "school:*" covers "school:read" AND "school:students:read".
+        if f"{namespace}:*" in perms:
+            return True
+        # Scope hierarchy: a broad two-part grant covers its fine-grained
+        # children, so holding "school:read" satisfies "school:students:read"
+        # and "school:write" satisfies "school:grades:write". This lets the
+        # fine-grained permission rollout stay non-breaking — roles that still
+        # carry the broad scope keep reaching every sub-scoped endpoint.
+        if len(parts) == 3:
+            return f"{namespace}:{parts[2]}" in perms
+        return False
+
+    def has_module_permission(self, namespace: str, action: str = "read") -> bool:
+        """True if the user can perform `action` ANYWHERE in a module namespace.
+
+        Used by the router-level module gate: a caller may enter the school
+        module if they hold the broad `school:read`, the wildcard `school:*`,
+        OR any fine-grained child such as `school:cbt:read`. The per-endpoint
+        PermissionChecker still enforces the specific feature scope afterwards —
+        this only decides whether the module door opens at all.
+        """
+        if self.is_superadmin:
+            return True
+        perms = self.permissions
+        if "*" in perms or f"{namespace}:*" in perms or f"{namespace}:{action}" in perms:
+            return True
+        prefix = f"{namespace}:"
+        suffix = f":{action}"
+        return any(p.startswith(prefix) and p.endswith(suffix) for p in perms)

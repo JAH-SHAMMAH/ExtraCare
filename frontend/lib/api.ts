@@ -4,16 +4,37 @@ import { env } from "./env";
 
 const API_URL = env.NEXT_PUBLIC_API_URL;
 
+// Cookie-auth mode (Priority 2 rollout). When NEXT_PUBLIC_COOKIE_AUTH=true the
+// backend issues httpOnly access/refresh cookies + a readable csrf_token; the
+// client stops persisting tokens in JS, authenticates via the cookie
+// (withCredentials), and echoes the CSRF token on mutations. Default false =
+// Bearer-token mode (unchanged) so rollout is coordinated + reversible.
+const COOKIE_AUTH = process.env.NEXT_PUBLIC_COOKIE_AUTH === "true";
+
 export const api: AxiosInstance = axios.create({
   baseURL: `${API_URL}/api/v1`,
   headers: { "Content-Type": "application/json" },
   timeout: 30_000,
+  // Send cookies on cross-origin requests (CORS allow_credentials is enabled
+  // server-side). Harmless in Bearer mode; required for cookie auth.
+  withCredentials: true,
 });
 
-// ── Request interceptor: attach JWT + org slug ────────────────────────────────
+// ── Request interceptor: attach auth + org slug ───────────────────────────────
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = Cookies.get("access_token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (!COOKIE_AUTH) {
+    // Bearer mode: attach the JS-readable access token.
+    const token = Cookies.get("access_token");
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+  } else {
+    // Cookie mode: the httpOnly access cookie authenticates via withCredentials.
+    // Echo the CSRF token (double-submit) on state-changing requests.
+    const method = (config.method || "get").toLowerCase();
+    if (method === "post" || method === "put" || method === "patch" || method === "delete") {
+      const csrf = Cookies.get("csrf_token");
+      if (csrf) config.headers["X-CSRF-Token"] = csrf;
+    }
+  }
 
   const orgSlug = Cookies.get("org_slug");
   if (orgSlug) config.headers["X-Org-Slug"] = orgSlug;
@@ -73,15 +94,22 @@ api.interceptors.response.use(
       original._retry = true;
       isRefreshing = true;
 
-      const refreshToken = Cookies.get("refresh_token");
-      if (!refreshToken) {
-        isRefreshing = false;
-        clearAuth();
-        window.location.href = "/login";
-        return Promise.reject(error);
-      }
-
       try {
+        if (COOKIE_AUTH) {
+          // Refresh token rides in the httpOnly cookie — send no body. The
+          // backend rotates + re-issues the cookies on the response.
+          await axios.post(`${API_URL}/api/v1/auth/refresh`, {}, { withCredentials: true });
+          processQueue(null, "cookie");
+          return api(original);
+        }
+
+        const refreshToken = Cookies.get("refresh_token");
+        if (!refreshToken) {
+          isRefreshing = false;
+          clearAuth();
+          window.location.href = "/login";
+          return Promise.reject(error);
+        }
         const { data } = await axios.post(`${API_URL}/api/v1/auth/refresh`, {
           refresh_token: refreshToken,
         });
@@ -104,8 +132,13 @@ api.interceptors.response.use(
 );
 
 export function setAuth(accessToken: string, refreshToken: string, orgSlug?: string) {
-  Cookies.set("access_token", accessToken, { expires: 1, secure: true, sameSite: "strict" });
-  Cookies.set("refresh_token", refreshToken, { expires: 7, secure: true, sameSite: "strict" });
+  // Cookie mode: the backend sets httpOnly access/refresh cookies — never
+  // persist tokens in JS-readable storage. Only the (non-secret) org slug is
+  // kept client-side for the X-Org-Slug header.
+  if (!COOKIE_AUTH) {
+    Cookies.set("access_token", accessToken, { expires: 1, secure: true, sameSite: "strict" });
+    Cookies.set("refresh_token", refreshToken, { expires: 7, secure: true, sameSite: "strict" });
+  }
   if (orgSlug) Cookies.set("org_slug", orgSlug, { expires: 30 });
 }
 
@@ -129,13 +162,22 @@ export const authApi = {
   }) => api.post("/auth/register", data).then((r) => r.data),
 
   me: () => api.get("/auth/me").then((r) => r.data),
-  logout: () => clearAuth(),
+  logout: async () => {
+    // Cookie mode: hit the server so it can clear the httpOnly cookies (JS
+    // can't). Best-effort — local state is cleared regardless.
+    if (COOKIE_AUTH) {
+      try { await api.post("/auth/logout"); } catch { /* ignore */ }
+    }
+    clearAuth();
+  },
 };
 
 export const usersApi = {
   list: (params?: { page?: number; page_size?: number; search?: string; status?: string }) =>
     api.get("/users", { params }).then((r) => r.data),
   get: (id: string) => api.get(`/users/${id}`).then((r) => r.data),
+  // All non-teaching staff + admins (no 100-row cap; server-side filtered).
+  staff: (params?: { search?: string }) => api.get("/users/staff", { params }).then((r) => r.data),
   listRoles: () => api.get("/users/roles/available").then((r) => r.data),
   create: (data: object) => api.post("/users", data).then((r) => r.data),
   update: (id: string, data: object) => api.patch(`/users/${id}`, data).then((r) => r.data),
@@ -563,6 +605,13 @@ export const messengerApi = {
     create: (data: { kind?: "direct" | "group"; peer_id?: string; title?: string; member_ids?: string[] }) =>
       api.post("/messenger/conversations", data).then((r) => r.data),
   },
+  // Messageable users for the DM/group picker. Auth-only (no users:read) and
+  // returns a plain array — purpose-built for Messenger, unlike /users which is
+  // admin-gated and paginated.
+  contacts: {
+    list: (params?: { search?: string; limit?: number; offset?: number }) =>
+      api.get("/messenger/contacts", { params }).then((r) => r.data),
+  },
   messages: {
     list: (conversation_id: string, params?: { limit?: number; before?: string }) =>
       api.get(`/messenger/messages/${conversation_id}`, { params }).then((r) => r.data),
@@ -577,9 +626,464 @@ export const messengerApi = {
       .then((r) => r.data);
   },
   wsUrl: () => {
-    const token = Cookies.get("access_token") || "";
     const base = API_URL.replace(/^http/, "ws");
+    // Cookie mode: the httpOnly cookie rides on the same-origin WS handshake —
+    // no token in the URL (avoids logging the token in proxy/access logs).
+    if (COOKIE_AUTH) return `${base}/api/v1/messenger/ws`;
+    const token = Cookies.get("access_token") || "";
     return `${base}/api/v1/messenger/ws?token=${encodeURIComponent(token)}`;
+  },
+};
+
+// ── People & HR API (Batch 1) ─────────────────────────────────────────────────
+
+// Parents Directory — staff-side view over guardian↔student links.
+export const parentsApi = {
+  list: (p?: { search?: string; page?: number; page_size?: number }) =>
+    api.get("/school/parents", { params: p }).then((r) => r.data),
+  create: (data: { user_id: string; student_id: string; relationship_type?: string; is_primary?: boolean }) =>
+    api.post("/school/parents", data).then((r) => r.data),
+  update: (id: string, data: { relationship_type?: string; is_primary?: boolean }) =>
+    api.patch(`/school/parents/${id}`, data).then((r) => r.data),
+  remove: (id: string) => api.delete(`/school/parents/${id}`),
+};
+
+// HR Development — Staff Assessment + Talent Pool (hr:write admin surfaces).
+export const hrDevApi = {
+  assessments: {
+    list: (p?: { staff_user_id?: string; status?: string; page?: number; page_size?: number }) =>
+      api.get("/hr/assessments", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/hr/assessments", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/hr/assessments/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/hr/assessments/${id}`),
+  },
+  talent: {
+    list: (p?: { stage?: string; search?: string; page?: number; page_size?: number }) =>
+      api.get("/hr/talent", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/hr/talent", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/hr/talent/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/hr/talent/${id}`),
+  },
+};
+
+// ── Admissions & Enrollment API (Batch 2) ─────────────────────────────────────
+
+export const enrollmentApi = {
+  applications: {
+    list: (p?: { status?: string; search?: string; page?: number; page_size?: number }) =>
+      api.get("/enrollment/applications", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/enrollment/applications", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/enrollment/applications/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/enrollment/applications/${id}`),
+    admit: (id: string, data?: object) => api.post(`/enrollment/applications/${id}/admit`, data ?? {}).then((r) => r.data),
+  },
+  entranceExams: {
+    list: (p?: { status?: string; page?: number; page_size?: number }) =>
+      api.get("/enrollment/entrance-exams", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/enrollment/entrance-exams", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/enrollment/entrance-exams/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/enrollment/entrance-exams/${id}`),
+    results: {
+      list: (examId: string) => api.get(`/enrollment/entrance-exams/${examId}/results`).then((r) => r.data),
+      add: (examId: string, data: object) => api.post(`/enrollment/entrance-exams/${examId}/results`, data).then((r) => r.data),
+      update: (resultId: string, data: object) => api.patch(`/enrollment/exam-results/${resultId}`, data).then((r) => r.data),
+      remove: (resultId: string) => api.delete(`/enrollment/exam-results/${resultId}`),
+    },
+  },
+  promotions: {
+    list: (p?: { student_id?: string; page?: number; page_size?: number }) =>
+      api.get("/enrollment/promotions", { params: p }).then((r) => r.data),
+    preview: (data: { student_ids: string[]; to_class_id?: string; from_class_id?: string; academic_year?: string; outcome?: string }) =>
+      api.post("/enrollment/promotions/preview", data).then((r) => r.data),
+    create: (data: { student_ids: string[]; to_class_id?: string; from_class_id?: string; academic_year?: string; outcome?: string }) =>
+      api.post("/enrollment/promotions", data).then((r) => r.data),
+    revert: (batchId: string) => api.post(`/enrollment/promotions/${batchId}/revert`).then((r) => r.data),
+  },
+  transfers: {
+    list: (p?: { status?: string; page?: number; page_size?: number }) =>
+      api.get("/enrollment/transfers", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/enrollment/transfers", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/enrollment/transfers/${id}`, data).then((r) => r.data),
+  },
+};
+
+// ── Academic Records & Recognition API (Batch 3) ──────────────────────────────
+
+export const academicsApi = {
+  subjectSelections: {
+    list: (p?: { student_id?: string; subject_id?: string; status?: string; page?: number; page_size?: number }) =>
+      api.get("/academics/subject-selections", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/academics/subject-selections", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/academics/subject-selections/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/academics/subject-selections/${id}`),
+  },
+  transcripts: {
+    list: (p?: { student_id?: string; page?: number; page_size?: number }) =>
+      api.get("/academics/transcripts", { params: p }).then((r) => r.data),
+    get: (id: string) => api.get(`/academics/transcripts/${id}`).then((r) => r.data),
+    create: (data: object) => api.post("/academics/transcripts", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/academics/transcripts/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/academics/transcripts/${id}`),
+    addEntry: (id: string, data: object) => api.post(`/academics/transcripts/${id}/entries`, data).then((r) => r.data),
+    removeEntry: (id: string, entryId: string) => api.delete(`/academics/transcripts/${id}/entries/${entryId}`).then((r) => r.data),
+  },
+  reportWorkflow: {
+    list: (p?: { stage?: string; page?: number; page_size?: number }) =>
+      api.get("/academics/report-workflow", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/academics/report-workflow", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/academics/report-workflow/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/academics/report-workflow/${id}`),
+  },
+  recognitions: {
+    list: (p?: { type?: string; student_id?: string; house?: string; term?: string; page?: number; page_size?: number }) =>
+      api.get("/academics/recognitions", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/academics/recognitions", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/academics/recognitions/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/academics/recognitions/${id}`),
+    leaderboard: (p?: { term?: string }) => api.get("/academics/recognitions/leaderboard", { params: p }).then((r) => r.data),
+  },
+};
+
+// ── Pastoral, Boarding & Health API (Batch 4) ─────────────────────────────────
+
+export const pastoralApi = {
+  hostels: {
+    list: (p?: { page?: number; page_size?: number }) => api.get("/pastoral/hostels", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/pastoral/hostels", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/pastoral/hostels/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/hostels/${id}`),
+    allocations: (id: string) => api.get(`/pastoral/hostels/${id}/allocations`).then((r) => r.data),
+  },
+  allocations: {
+    create: (data: object) => api.post("/pastoral/allocations", data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/allocations/${id}`),
+  },
+  exeats: {
+    list: (p?: { status?: string; page?: number; page_size?: number }) => api.get("/pastoral/exeats", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/pastoral/exeats", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/pastoral/exeats/${id}`, data).then((r) => r.data),
+    approve: (id: string, data?: object) => api.post(`/pastoral/exeats/${id}/approve`, data ?? {}).then((r) => r.data),
+    reject: (id: string, data?: object) => api.post(`/pastoral/exeats/${id}/reject`, data ?? {}).then((r) => r.data),
+    markReturned: (id: string) => api.post(`/pastoral/exeats/${id}/return`).then((r) => r.data),
+  },
+  mentorReports: {
+    list: (p?: { student_id?: string; mentor_id?: string; page?: number; page_size?: number }) =>
+      api.get("/pastoral/mentor-reports", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/pastoral/mentor-reports", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/pastoral/mentor-reports/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/mentor-reports/${id}`),
+  },
+};
+
+// CONFIDENTIAL — only org_admin + nurse hold `medical:*`.
+export const medicalApi = {
+  list: (p?: { student_id?: string; record_type?: string; page?: number; page_size?: number }) =>
+    api.get("/medical/records", { params: p }).then((r) => r.data),
+  create: (data: object) => api.post("/medical/records", data).then((r) => r.data),
+  update: (id: string, data: object) => api.patch(`/medical/records/${id}`, data).then((r) => r.data),
+  remove: (id: string) => api.delete(`/medical/records/${id}`),
+};
+
+// ── Support ────────────────────────────────────────────────────────────────────
+
+export const supportApi = {
+  send: (data: { subject: string; message: string }) => api.post("/support", data).then((r) => r.data),
+};
+
+// ── HR: Recruitment + Disciplinary (Phase 4) ─────────────────────────────────────
+
+export const hrExtApi = {
+  jobs: {
+    list: (status?: string) => api.get("/hr/recruitment/jobs", { params: { status } }).then((r) => r.data),
+    create: (d: object) => api.post("/hr/recruitment/jobs", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/hr/recruitment/jobs/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/hr/recruitment/jobs/${id}`),
+  },
+  applicants: {
+    list: (job_id?: string) => api.get("/hr/recruitment/applicants", { params: { job_id } }).then((r) => r.data),
+    create: (d: object) => api.post("/hr/recruitment/applicants", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/hr/recruitment/applicants/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/hr/recruitment/applicants/${id}`),
+  },
+  cases: {
+    list: (status?: string) => api.get("/hr/disciplinary/cases", { params: { status } }).then((r) => r.data),
+    create: (d: object) => api.post("/hr/disciplinary/cases", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/hr/disciplinary/cases/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/hr/disciplinary/cases/${id}`),
+  },
+  appointments: {
+    list: (p?: { staff_user_id?: string; status?: string }) => api.get("/hr/appointments", { params: p }).then((r) => r.data),
+    create: (d: object) => api.post("/hr/appointments", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/hr/appointments/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/hr/appointments/${id}`),
+  },
+  stats: () => api.get("/hr/stats").then((r) => r.data),
+};
+
+// ── Remita parent fee payments ───────────────────────────────────────────────────
+
+export const remitaApi = {
+  invoices: () => api.get("/payments/remita/invoices").then((r) => r.data),
+  initiate: (invoice_id: string) => api.post("/payments/remita/initiate", { invoice_id }).then((r) => r.data),
+  verify: (rrr: string) => api.get(`/payments/remita/verify/${rrr}`).then((r) => r.data),
+};
+
+// ── Finance & Accounting API (Batch 5) ────────────────────────────────────────
+
+export const financeApi = {
+  accounts: {
+    list: (p?: { type?: string; active_only?: boolean }) => api.get("/finance/accounts", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/finance/accounts", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/finance/accounts/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/finance/accounts/${id}`),
+  },
+  periods: {
+    list: () => api.get("/finance/periods").then((r) => r.data),
+    create: (data: object) => api.post("/finance/periods", data).then((r) => r.data),
+    lock: (id: string) => api.post(`/finance/periods/${id}/lock`).then((r) => r.data),
+    unlock: (id: string) => api.post(`/finance/periods/${id}/unlock`).then((r) => r.data),
+  },
+  journal: {
+    list: (p?: { page?: number; page_size?: number }) => api.get("/finance/journal", { params: p }).then((r) => r.data),
+    post: (data: object) => api.post("/finance/journal", data).then((r) => r.data),
+    reverse: (id: string) => api.post(`/finance/journal/${id}/reverse`).then((r) => r.data),
+  },
+  statements: (p?: { as_of?: string }) => api.get("/finance/statements", { params: p }).then((r) => r.data),
+  invoices: {
+    list: (p?: { status?: string; page?: number; page_size?: number }) => api.get("/finance/invoices", { params: p }).then((r) => r.data),
+    get: (id: string) => api.get(`/finance/invoices/${id}`).then((r) => r.data),
+    create: (data: object) => api.post("/finance/invoices", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/finance/invoices/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/finance/invoices/${id}`),
+    post: (id: string) => api.post(`/finance/invoices/${id}/post`).then((r) => r.data),
+    pay: (id: string, data: object) => api.post(`/finance/invoices/${id}/pay`, data).then((r) => r.data),
+    void: (id: string) => api.post(`/finance/invoices/${id}/void`).then((r) => r.data),
+  },
+  payroll: {
+    list: (p?: { status?: string; page?: number; page_size?: number }) => api.get("/finance/payroll", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/finance/payroll", data).then((r) => r.data),
+    approve: (id: string) => api.post(`/finance/payroll/${id}/approve`).then((r) => r.data),
+    void: (id: string) => api.post(`/finance/payroll/${id}/void`).then((r) => r.data),
+    remove: (id: string) => api.delete(`/finance/payroll/${id}`),
+  },
+  salaryAdvances: {
+    list: (p?: { status?: string; staff_user_id?: string }) => api.get("/finance/salary-advances", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/finance/salary-advances", data).then((r) => r.data),
+    approve: (id: string, data?: object) => api.post(`/finance/salary-advances/${id}/approve`, data ?? {}).then((r) => r.data),
+    reject: (id: string) => api.post(`/finance/salary-advances/${id}/reject`).then((r) => r.data),
+    repay: (id: string, data: object) => api.post(`/finance/salary-advances/${id}/repay`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/finance/salary-advances/${id}`),
+  },
+  payAdjustments: {
+    list: (p?: { kind?: string; status?: string }) => api.get("/finance/pay-adjustments", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/finance/pay-adjustments", data).then((r) => r.data),
+    approve: (id: string) => api.post(`/finance/pay-adjustments/${id}/approve`).then((r) => r.data),
+    void: (id: string) => api.post(`/finance/pay-adjustments/${id}/void`).then((r) => r.data),
+    remove: (id: string) => api.delete(`/finance/pay-adjustments/${id}`),
+  },
+  requisitions: {
+    list: (p?: { status?: string; department?: string }) => api.get("/finance/requisitions", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/finance/requisitions", data).then((r) => r.data),
+    approve: (id: string) => api.post(`/finance/requisitions/${id}/approve`).then((r) => r.data),
+    reject: (id: string) => api.post(`/finance/requisitions/${id}/reject`).then((r) => r.data),
+    void: (id: string) => api.post(`/finance/requisitions/${id}/void`).then((r) => r.data),
+    remove: (id: string) => api.delete(`/finance/requisitions/${id}`),
+  },
+  reports: {
+    incomeExpense: (p?: { start?: string; end?: string }) => api.get("/finance/reports/income-expense", { params: p }).then((r) => r.data),
+  },
+  discounts: {
+    list: (p?: { status?: string; student_id?: string }) => api.get("/finance/discounts", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/finance/discounts", data).then((r) => r.data),
+    approve: (id: string) => api.post(`/finance/discounts/${id}/approve`).then((r) => r.data),
+    reject: (id: string) => api.post(`/finance/discounts/${id}/reject`).then((r) => r.data),
+    void: (id: string) => api.post(`/finance/discounts/${id}/void`).then((r) => r.data),
+    remove: (id: string) => api.delete(`/finance/discounts/${id}`),
+  },
+  feeRecords: {
+    list: (p?: { student_id?: string; term?: string; session_year?: string }) => api.get("/finance/fee-records", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/finance/fee-records", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/finance/fee-records/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/finance/fee-records/${id}`),
+    assignClass: (data: object) => api.post("/finance/fee-records/assign-class", data).then((r) => r.data),
+  },
+  classes: {
+    list: () => api.get("/finance/classes").then((r) => r.data),
+  },
+  settings: {
+    get: () => api.get("/finance/settings").then((r) => r.data),
+    update: (data: object) => api.put("/finance/settings", data).then((r) => r.data),
+  },
+  bankAccounts: {
+    list: () => api.get("/finance/bank-accounts").then((r) => r.data),
+    primary: () => api.get("/finance/bank-accounts/primary").then((r) => r.data),
+    create: (data: object) => api.post("/finance/bank-accounts", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/finance/bank-accounts/${id}`, data).then((r) => r.data),
+    setPrimary: (id: string) => api.post(`/finance/bank-accounts/${id}/set-primary`).then((r) => r.data),
+    remove: (id: string) => api.delete(`/finance/bank-accounts/${id}`),
+  },
+  gateways: {
+    list: () => api.get("/finance/payment-gateways").then((r) => r.data),
+    create: (data: object) => api.post("/finance/payment-gateways", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/finance/payment-gateways/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/finance/payment-gateways/${id}`),
+  },
+  budgets: {
+    list: () => api.get("/finance/budgets").then((r) => r.data),
+    create: (data: object) => api.post("/finance/budgets", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/finance/budgets/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/finance/budgets/${id}`),
+  },
+  pettyCash: {
+    list: (p?: { page?: number; page_size?: number }) => api.get("/finance/petty-cash", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/finance/petty-cash", data).then((r) => r.data),
+    void: (id: string) => api.post(`/finance/petty-cash/${id}/void`).then((r) => r.data),
+  },
+  cash: {
+    list: (p?: { type?: string; page?: number; page_size?: number }) => api.get("/finance/cash", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/finance/cash", data).then((r) => r.data),
+    void: (id: string) => api.post(`/finance/cash/${id}/void`).then((r) => r.data),
+  },
+  store: {
+    items: (p?: { page?: number; page_size?: number }) => api.get("/finance/store/items", { params: p }).then((r) => r.data),
+    createItem: (data: object) => api.post("/finance/store/items", data).then((r) => r.data),
+    updateItem: (id: string, data: object) => api.patch(`/finance/store/items/${id}`, data).then((r) => r.data),
+    removeItem: (id: string) => api.delete(`/finance/store/items/${id}`),
+    purchase: (id: string, data: object) => api.post(`/finance/store/items/${id}/purchase`, data).then((r) => r.data),
+    adjust: (id: string, data: object) => api.post(`/finance/store/items/${id}/adjust`, data).then((r) => r.data),
+    sales: (p?: { status?: string }) => api.get("/finance/store/sales", { params: p }).then((r) => r.data),
+    getSale: (id: string) => api.get(`/finance/store/sales/${id}`).then((r) => r.data),
+    createSale: (data: object) => api.post("/finance/store/sales", data).then((r) => r.data),
+    voidSale: (id: string) => api.post(`/finance/store/sales/${id}/void`).then((r) => r.data),
+    salesSummary: (p?: { start?: string; end?: string }) => api.get("/finance/store/sales-summary", { params: p }).then((r) => r.data),
+  },
+  warehouse: {
+    list: () => api.get("/finance/warehouses").then((r) => r.data),
+    create: (data: object) => api.post("/finance/warehouses", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/finance/warehouses/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/finance/warehouses/${id}`),
+    stock: (id: string) => api.get(`/finance/warehouses/${id}/stock`).then((r) => r.data),
+    receive: (data: object) => api.post("/finance/warehouse/receive", data).then((r) => r.data),
+    transfer: (data: object) => api.post("/finance/warehouse/transfer", data).then((r) => r.data),
+    issue: (data: object) => api.post("/finance/warehouse/issue", data).then((r) => r.data),
+  },
+  pickup: {
+    points: () => api.get("/finance/pickup-points").then((r) => r.data),
+    createPoint: (data: object) => api.post("/finance/pickup-points", data).then((r) => r.data),
+    updatePoint: (id: string, data: object) => api.patch(`/finance/pickup-points/${id}`, data).then((r) => r.data),
+    removePoint: (id: string) => api.delete(`/finance/pickup-points/${id}`),
+    list: (p?: { status?: string; pickup_point_id?: string }) => api.get("/finance/pickups", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/finance/pickups", data).then((r) => r.data),
+    collect: (id: string) => api.post(`/finance/pickups/${id}/collect`).then((r) => r.data),
+    cancel: (id: string) => api.post(`/finance/pickups/${id}/cancel`).then((r) => r.data),
+    remove: (id: string) => api.delete(`/finance/pickups/${id}`),
+  },
+};
+
+// ── Wallet / PocketMoney + Cooperative API (Batch 6) ──────────────────────────
+
+export const walletApi = {
+  wallets: {
+    list: (p?: { page?: number; page_size?: number }) => api.get("/finance/wallets", { params: p }).then((r) => r.data),
+    get: (id: string) => api.get(`/finance/wallets/${id}`).then((r) => r.data),
+    create: (data: object) => api.post("/finance/wallets", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/finance/wallets/${id}`, data).then((r) => r.data),
+    topup: (id: string, data: object) => api.post(`/finance/wallets/${id}/topup`, data).then((r) => r.data),
+    withdraw: (id: string, data: object) => api.post(`/finance/wallets/${id}/withdraw`, data).then((r) => r.data),
+    spend: (id: string, data: object) => api.post(`/finance/wallets/${id}/spend`, data).then((r) => r.data),
+    reverseEntry: (walletId: string, entryId: string) => api.post(`/finance/wallets/${walletId}/entries/${entryId}/reverse`).then((r) => r.data),
+    reconciliation: () => api.get("/finance/wallets-reconciliation").then((r) => r.data),
+  },
+  cooperative: {
+    members: (p?: { page?: number; page_size?: number }) => api.get("/finance/cooperative/members", { params: p }).then((r) => r.data),
+    getMember: (id: string) => api.get(`/finance/cooperative/members/${id}`).then((r) => r.data),
+    createMember: (data: object) => api.post("/finance/cooperative/members", data).then((r) => r.data),
+    contribute: (id: string, data: object) => api.post(`/finance/cooperative/members/${id}/contribute`, data).then((r) => r.data),
+    payout: (id: string, data: object) => api.post(`/finance/cooperative/members/${id}/payout`, data).then((r) => r.data),
+    reconciliation: () => api.get("/finance/cooperative/reconciliation").then((r) => r.data),
+  },
+};
+
+// ── Operations API (Batch 6, non-financial) ───────────────────────────────────
+
+export const operationsApi = {
+  calendar: {
+    list: (p?: { page?: number; page_size?: number }) => api.get("/operations/calendar", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/operations/calendar", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/operations/calendar/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/operations/calendar/${id}`),
+  },
+  facilities: {
+    list: (p?: { page?: number; page_size?: number }) => api.get("/operations/facilities", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/operations/facilities", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/operations/facilities/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/operations/facilities/${id}`),
+    bookings: (id: string) => api.get(`/operations/facilities/${id}/bookings`).then((r) => r.data),
+    book: (id: string, data: object) => api.post(`/operations/facilities/${id}/bookings`, data).then((r) => r.data),
+    cancelBooking: (bookingId: string) => api.post(`/operations/bookings/${bookingId}/cancel`).then((r) => r.data),
+  },
+  visitors: {
+    list: (p?: { status?: string; page?: number; page_size?: number }) => api.get("/operations/visitors", { params: p }).then((r) => r.data),
+    signIn: (data: object) => api.post("/operations/visitors", data).then((r) => r.data),
+    signOut: (id: string) => api.post(`/operations/visitors/${id}/signout`).then((r) => r.data),
+    remove: (id: string) => api.delete(`/operations/visitors/${id}`),
+  },
+  collections: {
+    list: (p?: { student_id?: string; page?: number; page_size?: number }) => api.get("/operations/collections", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/operations/collections", data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/operations/collections/${id}`),
+  },
+};
+
+// ── Administration & Platform API (Batch 7) ───────────────────────────────────
+
+export const biometricApi = {
+  devices: {
+    list: () => api.get("/biometric/devices").then((r) => r.data),
+    create: (data: object) => api.post("/biometric/devices", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/biometric/devices/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/biometric/devices/${id}`),
+  },
+  enrollments: {
+    list: () => api.get("/biometric/enrollments").then((r) => r.data),
+    create: (data: object) => api.post("/biometric/enrollments", data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/biometric/enrollments/${id}`),
+  },
+  ingest: (data: object) => api.post("/biometric/ingest", data).then((r) => r.data),
+  quarantine: {
+    list: (status = "pending") => api.get("/biometric/quarantine", { params: { status } }).then((r) => r.data),
+    resolve: (id: string, data: object) => api.post(`/biometric/quarantine/${id}/resolve`, data).then((r) => r.data),
+    discard: (id: string) => api.post(`/biometric/quarantine/${id}/discard`),
+  },
+};
+
+export const platformApi = {
+  sessions: { list: () => api.get("/platform/sessions").then((r) => r.data), create: (d: object) => api.post("/platform/sessions", d).then((r) => r.data), remove: (id: string) => api.delete(`/platform/sessions/${id}`) },
+  houses: { list: () => api.get("/platform/houses").then((r) => r.data), create: (d: object) => api.post("/platform/houses", d).then((r) => r.data), remove: (id: string) => api.delete(`/platform/houses/${id}`) },
+  bands: { list: () => api.get("/platform/grading-bands").then((r) => r.data), create: (d: object) => api.post("/platform/grading-bands", d).then((r) => r.data), remove: (id: string) => api.delete(`/platform/grading-bands/${id}`) },
+  customFields: {
+    list: (entity_type?: string) => api.get("/platform/custom-fields", { params: { entity_type } }).then((r) => r.data),
+    create: (d: object) => api.post("/platform/custom-fields", d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/custom-fields/${id}`),
+  },
+  polls: {
+    list: (p?: { status?: string }) => api.get("/platform/polls", { params: p }).then((r) => r.data),
+    create: (d: object) => api.post("/platform/polls", d).then((r) => r.data),
+    close: (id: string) => api.post(`/platform/polls/${id}/close`).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/polls/${id}`),
+    vote: (id: string, d: object) => api.post(`/platform/polls/${id}/vote`, d).then((r) => r.data),
+  },
+  mailbox: {
+    send: (d: object) => api.post("/platform/mailbox/messages", d).then((r) => r.data),
+    sent: () => api.get("/platform/mailbox/sent").then((r) => r.data),
+    inbox: () => api.get("/platform/mailbox/inbox").then((r) => r.data),
+    markRead: (rowId: string) => api.post(`/platform/mailbox/inbox/${rowId}/read`),
+  },
+  mobile: {
+    devices: () => api.get("/platform/mobile/devices").then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/mobile/devices/${id}`),
+    config: () => api.get("/platform/mobile/config").then((r) => r.data),
+    setConfig: (d: object) => api.post("/platform/mobile/config", d).then((r) => r.data),
   },
 };
 
@@ -649,8 +1153,9 @@ export const liveApi = {
   analytics: (session_id: string) =>
     api.get(`/live/${session_id}/analytics`).then((r) => r.data),
   wsUrl: (session_id: string) => {
-    const token = Cookies.get("access_token") || "";
     const base = API_URL.replace(/^http/, "ws");
+    if (COOKIE_AUTH) return `${base}/api/v1/live/ws/${session_id}`;
+    const token = Cookies.get("access_token") || "";
     return `${base}/api/v1/live/ws/${session_id}?token=${encodeURIComponent(token)}`;
   },
 };

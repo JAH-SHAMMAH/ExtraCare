@@ -39,8 +39,8 @@ router = APIRouter(
     dependencies=[Depends(require_role_module("school"))],
 )
 
-_can_read = Depends(PermissionChecker("school:read"))
-_can_write = Depends(PermissionChecker("school:write"))
+_can_read = Depends(PermissionChecker("school:feedback:read"))
+_can_write = Depends(PermissionChecker("school:feedback:write"))
 
 
 @router.post("", status_code=201, dependencies=[_can_read])

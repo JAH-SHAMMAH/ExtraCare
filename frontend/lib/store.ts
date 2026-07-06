@@ -49,8 +49,14 @@ export const useAuthStore = create<AuthState>()(
         if (!permissionAllowedForOrg(org, permission)) return false;
         if (user.permissions.includes("*")) return true;
         if (user.permissions.includes(permission)) return true;
-        const namespace = permission.split(":")[0];
-        return user.permissions.includes(`${namespace}:*`);
+        const parts = permission.split(":");
+        const namespace = parts[0];
+        // Namespace wildcard: "school:*" covers "school:students:read".
+        if (user.permissions.includes(`${namespace}:*`)) return true;
+        // Scope hierarchy (mirrors User.has_permission): a broad two-part grant
+        // such as "school:read" covers its fine-grained child "school:students:read".
+        if (parts.length === 3 && user.permissions.includes(`${namespace}:${parts[2]}`)) return true;
+        return false;
       },
     }),
     {

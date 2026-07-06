@@ -41,8 +41,8 @@ router = APIRouter(
     dependencies=[Depends(require_role_module("school"))],
 )
 
-_can_read = Depends(PermissionChecker("school:read"))
-_can_write = Depends(PermissionChecker("school:write"))
+_can_read = Depends(PermissionChecker("school_admin:read"))
+_can_write = Depends(PermissionChecker("school_admin:write"))
 
 
 # Transport is an operational/admin function: dispatching vehicles, assigning

@@ -50,6 +50,7 @@ from app.config import get_settings
 from app.core.security import decode_token
 from app.database import get_db, AsyncSessionLocal
 from app.deps import get_current_active_user
+from app.core.ratelimit import rate_limit_auth
 from app.models.user import User, UserStatus
 from app.models.messenger import (
     Conversation, ConversationMember, Message,
@@ -314,7 +315,7 @@ async def list_conversations(
     return out
 
 
-@router.post("/conversations", response_model=ConversationResponse, status_code=201)
+@router.post("/conversations", response_model=ConversationResponse, status_code=201, dependencies=[Depends(rate_limit_auth("messenger_new"))])
 async def create_conversation(
     data: ConversationCreate,
     db: AsyncSession = Depends(get_db),
@@ -403,6 +404,46 @@ async def create_conversation(
     return await _to_conv_response(db, conv)
 
 
+# ── REST: Contacts (messageable users) ──────────────────────────────────────
+
+@router.get("/contacts", response_model=list[MemberSummary])
+async def list_contacts(
+    search: Optional[str] = Query(default=None, description="Case-insensitive filter on name or email."),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Active, messageable users in the caller's org for the DM/group picker.
+
+    Auth-only (no ``users:read``) — mirrors every other Messenger endpoint.
+    Returns exactly the peers ``create_conversation`` would accept (active,
+    non-deleted, in-org, excluding self), so messaging behaviour is unchanged.
+    Column-projected; supports search + pagination for large rosters.
+    """
+    q = (
+        select(User.id, User.full_name, User.email, User.avatar_url)
+        .where(
+            User.org_id == current_user.org_id,
+            User.is_deleted == False,  # noqa: E712
+            User.status == UserStatus.ACTIVE,
+            User.id != current_user.id,
+        )
+    )
+    if search and search.strip():
+        term = f"%{search.strip().lower()}%"
+        q = q.where(or_(
+            func.lower(User.full_name).like(term),
+            func.lower(User.email).like(term),
+        ))
+    q = q.order_by(User.full_name).limit(limit).offset(offset)
+    rows = (await db.execute(q)).all()
+    return [
+        MemberSummary(id=r.id, full_name=r.full_name, email=r.email, avatar_url=r.avatar_url)
+        for r in rows
+    ]
+
+
 # ── REST: Messages ──────────────────────────────────────────────────────────
 
 @router.get("/messages/{conversation_id}", response_model=list[MessageResponse])
@@ -427,7 +468,7 @@ async def list_messages(
     return [_to_msg_response(m) for m in reversed(rows)]
 
 
-@router.post("/messages", response_model=MessageResponse, status_code=201)
+@router.post("/messages", response_model=MessageResponse, status_code=201, dependencies=[Depends(rate_limit_auth("messenger_send"))])
 async def create_message(
     data: MessageCreate,
     db: AsyncSession = Depends(get_db),
@@ -471,7 +512,7 @@ ALLOWED_IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 ALLOWED_VIDEO_MIMES = {"video/mp4", "video/webm", "video/quicktime"}
 
 
-@router.post("/upload", response_model=UploadResponse, status_code=201)
+@router.post("/upload", response_model=UploadResponse, status_code=201, dependencies=[Depends(rate_limit_auth("upload"))])
 async def upload_media(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -554,7 +595,7 @@ async def _auth_ws(token: str) -> Optional[User]:
 @router.websocket("/ws")
 async def messenger_ws(
     ws: WebSocket,
-    token: str = Query(..., description="JWT access token (same as REST)."),
+    token: str | None = Query(default=None, description="JWT access token (Bearer clients); cookie clients omit it."),
 ):
     """Real-time channel for the caller's org.
 
@@ -563,7 +604,9 @@ async def messenger_ws(
     it's alive. Clients may also send ``MessageCreate``-shaped JSON frames
     to post a message without a REST round-trip.
     """
-    user = await _auth_ws(token)
+    # Cookie-auth clients send no query token — the httpOnly access cookie rides
+    # on the same-origin WS handshake; fall back to it.
+    user = await _auth_ws(token or ws.cookies.get("access_token"))
     if not user:
         await ws.close(code=4401)
         return

@@ -71,6 +71,32 @@ class UserResponse(BaseModel):
             roles=[{"id": r.id, "name": r.name, "slug": r.slug, "color": r.color} for r in roles],
         )
 
+    @classmethod
+    def minimal_from(cls, user) -> "UserResponse":
+        """Reduced directory projection for non-admin callers (users:read but
+        NOT users:write) — e.g. the Messenger contact picker. Keeps only what a
+        chat list needs (id, name, email, avatar) and strips HR / security
+        fields (phone, department, job title, login history + IP, MFA posture,
+        role assignments) so a teacher's users:read can't enumerate the staff
+        directory. Touches no SQLAlchemy lazy attributes."""
+        return cls(
+            id=user.id,
+            email=user.email,
+            full_name=user.full_name,
+            phone=None,
+            department=None,
+            job_title=None,
+            avatar_url=user.avatar_url,
+            status=user.status,
+            email_verified=user.email_verified,
+            mfa_enabled=False,
+            last_login_at=None,
+            last_login_ip=None,
+            created_at=user.created_at,
+            org_id=user.org_id,
+            roles=[],
+        )
+
 
 class UserListResponse(BaseModel):
     items: list[UserResponse]

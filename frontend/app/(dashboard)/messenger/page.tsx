@@ -6,11 +6,10 @@ import {
   Users2, Globe, Loader2, Plus,
 } from "lucide-react";
 import {
-  useConversations, useCreateConversation, useMessages, useSendMessage,
+  useConversations, useContacts, useCreateConversation, useMessages, useSendMessage,
   useUploadMedia, useMessengerSocket,
 } from "@/hooks/useMessenger";
 import { useAuthStore } from "@/lib/store";
-import { useUsers } from "@/hooks/useUsers";
 import { resolveMediaUrl } from "@/lib/utils";
 import type { ChatMessage, Conversation, MessageType } from "@/types";
 
@@ -166,15 +165,18 @@ function ConversationRow({
 }
 
 function NewDMForm({ onClose, currentUserId }: { onClose: (id: string | null) => void; currentUserId?: string }) {
-  // Reuses the existing users list — avoids baking a messenger-specific
-  // directory endpoint when /users already answers this.
-  const { data: users = [], isLoading } = useUsers();
+  // Auth-only Messenger contacts endpoint: every role can list messageable
+  // peers (it already excludes self + inactive + cross-org users), unlike
+  // /users which is admin-gated and returns a paginated envelope.
+  const { data: contacts = [], isLoading } = useContacts();
   const create = useCreateConversation();
   const [peer, setPeer] = useState("");
 
+  // The endpoint already excludes the caller; the guard is belt-and-braces in
+  // case a stale cache from elsewhere ever includes self.
   const options = useMemo(
-    () => (users as any[]).filter((u) => u.id !== currentUserId),
-    [users, currentUserId],
+    () => contacts.filter((u) => u.id !== currentUserId),
+    [contacts, currentUserId],
   );
 
   const submit = () => {

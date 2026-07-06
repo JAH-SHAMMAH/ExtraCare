@@ -11,7 +11,7 @@ RBAC:
 """
 
 from datetime import date as date_type, datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,8 @@ from app.models.modules.school import BehaviourRecord, Student
 from app.schemas.school_experience import BehaviourCreate, BehaviourResponse
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
+from app.services.audit_service import log_action
+from app.models.audit import AuditAction
 
 router = APIRouter(
     prefix="/behaviour",
@@ -29,8 +31,8 @@ router = APIRouter(
     dependencies=[Depends(require_role_module("school"))],
 )
 
-_can_read = Depends(PermissionChecker("school:read"))
-_can_write = Depends(PermissionChecker("school:write"))
+_can_read = Depends(PermissionChecker("school:behaviour:read"))
+_can_write = Depends(PermissionChecker("school:behaviour:write"))
 
 
 @router.get("/records", dependencies=[_can_read])
@@ -63,6 +65,7 @@ async def list_records(
 @router.post("/records", status_code=201, dependencies=[_can_write])
 async def create_record(
     payload: BehaviourCreate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -83,12 +86,20 @@ async def create_record(
     )
     db.add(record)
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="BehaviourRecord", resource_id=record.id,
+        resource_label=f"behaviour record for student {record.student_id}",
+        metadata={"student_id": record.student_id, "type": record.type, "points": record.points},
+        request=request,
+    )
     return BehaviourResponse.model_validate(record).model_dump()
 
 
 @router.delete("/records/{record_id}", status_code=204, dependencies=[_can_write])
 async def delete_record(
     record_id: str,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -101,7 +112,14 @@ async def delete_record(
     record = result.scalar_one_or_none()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found.")
+    rec_ref, rec_student = record.id, record.student_id
     await db.delete(record)
+    await log_action(
+        db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
+        resource_type="BehaviourRecord", resource_id=rec_ref,
+        resource_label=f"behaviour record for student {rec_student}",
+        severity="warning", request=request,
+    )
 
 
 @router.get("/summary", dependencies=[_can_read])

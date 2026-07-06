@@ -32,6 +32,10 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    # Non-admin callers (users:read for the Messenger contact picker, but no
+    # users:write) get a minimal directory projection — name/email/avatar only,
+    # no HR or security fields. Admins managing users see the full record.
+    minimal = not current_user.has_permission("users:write")
     return await get_users_paginated(
         db=db,
         org_id=current_user.org_id,
@@ -39,6 +43,7 @@ async def list_users(
         page_size=page_size,
         search=search,
         status=status,
+        minimal=minimal,
     )
 
 
@@ -64,10 +69,54 @@ async def list_available_roles(
                 "color": role.color,
                 "description": role.description,
                 "is_system": role.is_system,
+                # ENHANCED (Phase 4 Access Control): expose each role's permission
+                # set so the access-control UI can show what a role can do.
+                "permissions": role.permissions or [],
             }
             for role in roles
         ]
     }
+
+
+# ┌─ FUTURE: custom-role CRUD (Access Control) ─────────────────────────────────────┐
+# │ The Access Control UI is ASSIGN-ONLY today: it lists roles (+ permissions) and  │
+# │ assigns existing roles to users (PATCH /{user_id}/roles below). To let admins    │
+# │ CREATE / EDIT / DELETE custom roles, add the endpoints here, gated `roles:write`: │
+# │   POST   /users/roles            — create a custom role (name, permissions[])     │
+# │   PATCH  /users/roles/{role_id}  — rename / change permissions (block is_system)  │
+# │   DELETE /users/roles/{role_id}  — soft-delete a custom role (block is_system)    │
+# │ The Role model already supports custom roles + granular permissions; only these   │
+# │ routes + matching frontend (role editor) are missing. Intentionally deferred.     │
+# └───────────────────────────────────────────────────────────────────────────────────┘
+
+
+@router.get("/staff", response_model=list[UserResponse], dependencies=[_can_read])
+async def list_staff(
+    search: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """NEW: non-teaching staff + admin directory — ALL of them (no 100-row cap).
+    Excludes teachers (``job_title == "Teacher"``, who have their own page) and
+    students/parents (by role). Returned unpaginated; school staff counts are
+    bounded. Filtering is server-side so directories over 100 accounts show fully."""
+    q = (
+        select(User)
+        .options(selectinload(User.roles))
+        .where(User.org_id == current_user.org_id, User.is_deleted == False)  # noqa: E712
+    )
+    if search:
+        term = f"%{search.strip()}%"
+        q = q.where((User.full_name.ilike(term)) | (User.email.ilike(term)))
+    users = (await db.execute(q.order_by(User.full_name))).scalars().all()
+
+    EXCLUDE = {"student", "parent"}
+    staff = [
+        u for u in users
+        if (u.job_title or "").strip().lower() != "teacher"
+        and not any((r.slug or "").lower() in EXCLUDE for r in (u.roles or []))
+    ]
+    return [UserResponse.from_orm_with_roles(u, u.roles) for u in staff]
 
 
 @router.post("", response_model=UserResponse, status_code=201, dependencies=[_can_write])
@@ -136,6 +185,9 @@ async def get_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
+    # Same minimal projection as the list endpoint for non-admin callers.
+    if not current_user.has_permission("users:write"):
+        return UserResponse.minimal_from(user)
     return UserResponse.from_orm_with_roles(user, loaded_roles=list(user.roles))
 
 

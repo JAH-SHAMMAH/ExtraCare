@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useStudents, useReportCard } from "@/hooks/useSchool";
 import { cn, getInitials } from "@/lib/utils";
 import { FileText, Search, Printer, Loader2 } from "lucide-react";
+import { PrintLetterhead } from "@/components/branding/Brand";
 import type { Student } from "@/types";
 
 export default function ReportCardsPage() {
@@ -18,7 +19,7 @@ export default function ReportCardsPage() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="mb-8">
+      <div className="mb-8 no-print">
         <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Education</span><span>/</span><span className="text-brand-600 font-semibold">Report Cards</span></nav>
         <h1 className="text-2xl font-black text-slate-900 tracking-tight">Report Cards</h1>
         <p className="text-slate-500 text-sm mt-0.5">View and print student report cards.</p>
@@ -26,7 +27,7 @@ export default function ReportCardsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Student list */}
-        <div>
+        <div className="no-print">
           <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4">
             <div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search students..." className="input pl-9" /></div>
           </div>
@@ -44,12 +45,12 @@ export default function ReportCardsPage() {
 
         {/* Report card */}
         <div className="lg:col-span-2">
-          <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex items-center justify-between">
+          <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex items-center justify-between no-print">
             <select value={term} onChange={(e) => setTerm(e.target.value)} className="input w-40"><option>1st Term</option><option>2nd Term</option><option>3rd Term</option></select>
             {reportCard && (<button onClick={() => window.print()} className="btn-secondary gap-2"><Printer size={14} />Print</button>)}
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <div className="bg-white rounded-xl border border-slate-200 p-6 print:border-0 print:p-0">
             {!selectedStudent ? (
               <div className="py-16 text-center text-slate-400"><FileText size={40} className="mx-auto mb-3 opacity-40" /><p className="font-semibold">Select a student</p><p className="text-sm mt-1">Choose a student from the list to view their report card.</p></div>
             ) : rcLoading ? (
@@ -58,6 +59,7 @@ export default function ReportCardsPage() {
               <div className="py-16 text-center text-slate-400"><p className="font-semibold">No report card available</p><p className="text-sm mt-1">No grades have been submitted for this term.</p></div>
             ) : (
               <div>
+                <PrintLetterhead title="Report Card" subtitle={`${reportCard.term} — ${reportCard.academic_year}`} />
                 <div className="text-center mb-6 pb-4 border-b border-slate-100">
                   <h2 className="text-lg font-bold text-slate-900">{reportCard.student?.first_name} {reportCard.student?.last_name}</h2>
                   <p className="text-sm text-slate-500">{reportCard.term} — {reportCard.academic_year}</p>

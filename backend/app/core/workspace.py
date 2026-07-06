@@ -38,6 +38,15 @@ PRIMARY_WORKSPACE_MODULE: dict[WorkspaceType, str] = {
 # namespaces such as users/settings/audit/analytics stay outside this map.
 WORKSPACE_PERMISSION_SCOPES: dict[str, WorkspaceType] = {
     "school": WorkspaceType.SCHOOL,
+    "school_admin": WorkspaceType.SCHOOL,  # school back-office (sms/transport/tuckshop)
+    # Confidential student health data. DELIBERATELY its own namespace (like
+    # school_admin) so the broad `school:read` hierarchy does NOT reach it —
+    # only roles explicitly granted `medical:*` (org_admin, nurse) can see it.
+    "medical": WorkspaceType.SCHOOL,
+    # Dedicated, self-limiting capability: `wallet:spend` lets till staff draw a
+    # student's OWN wallet down to income (no-overdraw, period-locked) and nothing
+    # else — it cannot move cash, post invoices, or create arbitrary entries.
+    "wallet": WorkspaceType.SCHOOL,
     "hospital": WorkspaceType.HOSPITAL,
     "business": WorkspaceType.BUSINESS,
     "payroll": WorkspaceType.BUSINESS,

@@ -92,3 +92,17 @@
 ::-webkit-scrollbar-track { @apply bg-transparent; }
 ::-webkit-scrollbar-thumb { @apply bg-slate-300 rounded-full; }
 ::-webkit-scrollbar-thumb:hover { @apply bg-slate-400; }
+
+/* ── Print: official documents (report cards, invoices) carry the crest, app
+   chrome is hidden. `.no-print` removes sidebar/topbar/controls; `.print-only`
+   reveals the crest letterhead that is hidden on screen. ── */
+.print-only { display: none; }
+
+@media print {
+  .no-print,
+  .no-print * { display: none !important; }
+  .print-only { display: block !important; }
+  main { margin: 0 !important; margin-top: 0 !important; min-height: 0 !important; }
+  body { background: #fff !important; }
+  @page { margin: 16mm; }
+}

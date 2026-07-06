@@ -55,8 +55,8 @@ router = APIRouter(
     dependencies=[Depends(require_role_module("school"))],
 )
 
-_can_read = Depends(PermissionChecker("school:read"))
-_can_write = Depends(PermissionChecker("school:write"))
+_can_read = Depends(PermissionChecker("school:attendance:read"))
+_can_write = Depends(PermissionChecker("school:attendance:write"))
 
 
 async def _load_org(db: AsyncSession, current_user: User) -> Organization:
@@ -174,6 +174,10 @@ async def daily_summary(
     """Present/late/absent breakdown for one day, with per-student rows and
     first check-in / last check-out times."""
     org = await _load_org(db, current_user)
+    # This view exposes EVERY student's name + status for the day, so it is
+    # staff-only. Guardians/students use /student/{id}/history for their own.
+    if not current_user.has_permission("school:students:read"):
+        raise HTTPException(status_code=403, detail="School-wide attendance is staff-only.")
     target = date or _today_local(getattr(org, "timezone", None))
 
     student_q = select(Student).where(
@@ -292,6 +296,13 @@ async def monthly_summary(
     org = await _load_org(db, current_user)
     if student_id:
         await _assert_can_view_student(db, current_user, org, student_id)
+    elif not current_user.has_permission("school:students:read"):
+        # No student filter → school-wide totals, which is staff-only. A
+        # guardian must scope the query to a child they're linked to.
+        raise HTTPException(
+            status_code=403,
+            detail="Provide a student_id; school-wide attendance is staff-only.",
+        )
 
     start = date_type(year, month, 1)
     end = date_type(year + 1, 1, 1) if month == 12 else date_type(year, month + 1, 1)

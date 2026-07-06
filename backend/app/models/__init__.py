@@ -4,7 +4,7 @@ from app.models.role import Role
 from app.models.audit import AuditLog
 from app.models.usage import UsageEvent
 from app.models.notification import Notification
-from app.models.hrm import HRProfile, Event
+from app.models.hrm import HRProfile, Event, StaffAssessment, TalentCandidate
 from app.models.leave import LeaveApplication, LeaveType, LeaveStatus
 from app.models.messenger import (
     Conversation, ConversationMember, Message,
@@ -18,7 +18,7 @@ from app.models.sms import (
 
 __all__ = [
     "Organization", "User", "Role", "AuditLog", "UsageEvent", "Notification",
-    "HRProfile", "Event",
+    "HRProfile", "Event", "StaffAssessment", "TalentCandidate",
     "LeaveApplication", "LeaveType", "LeaveStatus",
     "Conversation", "ConversationMember", "Message",
     "ConversationKind", "MessageType",

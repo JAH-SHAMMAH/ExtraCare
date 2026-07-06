@@ -20,6 +20,7 @@ from app.models.modules.hospital import Patient
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
 from app.core.permissions import PermissionChecker
+from app.core.ratelimit import rate_limit_auth
 
 router = APIRouter(
     prefix="/imports",
@@ -78,7 +79,7 @@ MAX_IN_CLAUSE_SIZE = 500
 
 # ── Create (called by frontend after import completes) ───────────────────────
 
-@router.post("", status_code=201, dependencies=[_can_write])
+@router.post("", status_code=201, dependencies=[_can_write, Depends(rate_limit_auth("imports"))])
 async def create_import_job(
     data: dict,
     db: AsyncSession = Depends(get_db),
@@ -187,7 +188,7 @@ async def get_import_job(
 
 # ── Rollback / Undo ─────────────────────────────────────────────────────────
 
-@router.post("/{job_id}/rollback", status_code=200, dependencies=[_can_rollback])
+@router.post("/{job_id}/rollback", status_code=200, dependencies=[_can_rollback, Depends(rate_limit_auth("imports"))])
 async def rollback_import(
     job_id: str,
     db: AsyncSession = Depends(get_db),
@@ -264,7 +265,7 @@ async def rollback_import(
 
 # ── Duplicate check ──────────────────────────────────────────────────────────
 
-@router.post("/check-duplicates", dependencies=[_can_write])
+@router.post("/check-duplicates", dependencies=[_can_write, Depends(rate_limit_auth("imports"))])
 async def check_duplicates(
     data: dict,
     db: AsyncSession = Depends(get_db),
@@ -392,7 +393,7 @@ async def _process_background_import(job_id: str, org_id: str, entity: str, rows
             await session.commit()
 
 
-@router.post("/background", status_code=202, dependencies=[_can_write])
+@router.post("/background", status_code=202, dependencies=[_can_write, Depends(rate_limit_auth("imports"))])
 async def start_background_import(
     data: dict,
     background_tasks: BackgroundTasks,

@@ -43,7 +43,8 @@ from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
 from app.services.audit_service import log_action
 from app.services.payment_webhook import PaystackWebhookVerifier, process_paystack_webhook, PaymentAuditLogger
-from app.services.payment_resolver import get_payment_resolver
+from app.services.payment_resolver import get_payment_resolver, PaymentConfigError
+from app.services import crypto
 from app.models.payment import TenantPaymentSettings, PaymentProvider as PaymentProviderEnum
 from app.config import get_settings
 from app.services.paystack import PaystackProvider
@@ -364,6 +365,12 @@ async def initiate_parent_payment(
     resolver = get_payment_resolver()
     try:
         provider = await resolver.resolve_for_org(current_user.org_id, db)
+    except PaymentConfigError as exc:
+        # A per-org secret exists but can't be decrypted. FAIL LOUD — never fall back
+        # to the platform account (that would silently route this school's fees to the
+        # wrong Paystack account). See ENCRYPTION_SERVICE_SPEC.md / backlog.
+        _logger.error("payment_resolver.config_error org=%s error=%s", current_user.org_id, str(exc))
+        raise HTTPException(status_code=503, detail="Payment gateway secret is misconfigured. Contact your administrator.")
     except NotImplementedError:
         # Tenant-specific config not yet implemented; use platform paystack if available
         provider = resolver.platform_paystack
@@ -472,6 +479,11 @@ async def verify_parent_payment(
     resolver = get_payment_resolver()
     try:
         provider = await resolver.resolve_for_org(current_user.org_id, db)
+    except PaymentConfigError as exc:
+        # A per-org secret exists but can't be decrypted. FAIL LOUD — never fall back
+        # to the platform account (see the initiate handler above / backlog).
+        _logger.error("payment_resolver.config_error org=%s error=%s", current_user.org_id, str(exc))
+        raise HTTPException(status_code=503, detail="Payment gateway secret is misconfigured. Contact your administrator.")
     except NotImplementedError:
         from app.services import billing as _billing
         provider = resolver.platform_paystack or getattr(_billing, 'get_billing_provider')()
@@ -843,8 +855,25 @@ async def paystack_webhook_handler(
         )
         tenant_row = tenant_row.scalar_one_or_none()
         if tenant_row and tenant_row.encrypted_webhook_secret:
-            # NOTE: encrypted_webhook_secret currently stored raw for MVP; replace with decryption later
-            tenant_secret = tenant_row.encrypted_webhook_secret
+            stored = tenant_row.encrypted_webhook_secret
+            # The gateway CRUD now stores this ENCRYPTED (crypto.encrypt). Decrypt if
+            # it's a crypto token; tolerate LEGACY raw values ("stored raw for MVP")
+            # by using them as-is. A token that won't decrypt (key missing/rotated)
+            # falls through to the platform env secret rather than verifying against
+            # ciphertext (which would reject every webhook).
+            if crypto.looks_like_token(stored):
+                try:
+                    tenant_secret = crypto.decrypt(stored)
+                except Exception:
+                    _logger.error("webhook.paystack.tenant_secret_decrypt_failed org=%s", org_id)
+                    tenant_secret = None
+            else:
+                # LEGACY raw (pre-encryption) webhook secret. Emit a metric-able
+                # warning so we can SEE when this shim stops being hit and is safe to
+                # remove. Removal plan tracked in POST_LAUNCH_BACKLOG.md — re-saving
+                # the gateway in the UI re-encrypts it and silences this.
+                _logger.warning("webhook.paystack.legacy_raw_webhook_secret org=%s (re-save gateway to encrypt)", org_id)
+                tenant_secret = stored
     except Exception:
         tenant_secret = None
 

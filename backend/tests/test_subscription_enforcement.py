@@ -96,11 +96,17 @@ async def _set_tier(client: AsyncClient, org_slug: str, tier: SubscriptionTier, 
 
 @pytest.mark.asyncio
 async def test_free_plan_blocks_module_beyond_cap(client: AsyncClient):
-    """Free plan allows 1 module. A school org that somehow has 4 modules
-    enabled should be blocked with 402 when hitting a module route."""
+    """Free plan allows 1 module. A school org with two IN-WORKSPACE modules
+    enabled should be blocked with 402 when hitting a module route.
+
+    NB: the cap counts *effective* (workspace-filtered) modules. Both modules
+    must belong to the school workspace, otherwise the cross-vertical one is
+    stripped before the cap check and the count never exceeds 1 (see
+    test_cross_vertical_module_is_filtered_and_does_not_count_toward_cap)."""
     res = await _register(client, "free-school", "school")
-    # Free plan allows 1 module. Force-enable extra modules to exceed the cap.
-    await _set_tier(client, "free-school", SubscriptionTier.FREE, modules=["school", "hospital"])
+    # Free plan allows 1 module. Enable a second school-workspace module
+    # (attendance) so the EFFECTIVE module count (2) exceeds the cap.
+    await _set_tier(client, "free-school", SubscriptionTier.FREE, modules=["school", "attendance"])
 
     r = await client.get("/api/v1/behaviour/summary", headers=_auth(res["access_token"]))
     assert r.status_code == 402, r.text
@@ -110,6 +116,25 @@ async def test_free_plan_blocks_module_beyond_cap(client: AsyncClient):
     assert detail["current_plan"] == "free"
     assert detail["required_plan"] == "pro"
     assert "upgrade_url" in detail
+
+
+@pytest.mark.asyncio
+async def test_cross_vertical_module_is_filtered_and_does_not_count_toward_cap(client: AsyncClient):
+    """Regression (documents the billing semantic): plan caps count *effective*
+    modules, i.e. those valid for the org's workspace. A school org carrying a
+    stray cross-vertical entry ("hospital") has it stripped by the workspace
+    boundary BEFORE the cap check, so it does NOT count. Free plan (cap 1) +
+    ["school", "hospital"] → effective ["school"] = 1 → allowed (200), not 402.
+
+    This guards against someone "fixing" the filtering away and re-counting
+    stray modules toward billing. Pair with
+    test_free_plan_blocks_module_beyond_cap, which uses two in-workspace
+    modules to legitimately trip the cap."""
+    res = await _register(client, "filtered-school", "school")
+    await _set_tier(client, "filtered-school", SubscriptionTier.FREE, modules=["school", "hospital"])
+
+    r = await client.get("/api/v1/behaviour/summary", headers=_auth(res["access_token"]))
+    assert r.status_code == 200, r.text
 
 
 @pytest.mark.asyncio

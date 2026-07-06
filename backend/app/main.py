@@ -12,10 +12,13 @@ import logging
 from app.config import get_settings
 from app.core.logging import configure_logging
 from app.database import init_db
-from app.routers import auth, users, analytics, imports, me, organizations, admin, usage as usage_router, notifications, ai, payments, hr, leave as leave_router, messenger as messenger_router, feed as feed_router, live as live_router, dashboard as dashboard_router, branding
+from app.routers import auth, users, analytics, imports, me, organizations, admin, usage as usage_router, notifications, ai, payments, hr, hr_development, leave as leave_router, messenger as messenger_router, feed as feed_router, live as live_router, dashboard as dashboard_router, branding
 from app.services.usage import start_flusher, stop_flusher, track, module_from_path
 from app.routers.modules import school, hospital, business
 from app.routers import school_payments
+from app.routers import support as support_router
+from app.routers import remita as remita_router
+from app.routers import hr_extended as hr_extended_router
 from app.routers.modules import (
     classroom,
     cbt,
@@ -28,6 +31,17 @@ from app.routers.modules import (
     sms as sms_router,
     transport as transport_router,
     attendance as attendance_router,
+    parents as parents_router,
+    admissions as admissions_router,
+    academics as academics_router,
+    pastoral as pastoral_router,
+    medical as medical_router,
+    finance as finance_router,
+    finance_ops as finance_ops_router,
+    wallet as wallet_router,
+    operations as operations_router,
+    biometric as biometric_router,
+    platform as platform_router,
 )
 
 settings = get_settings()
@@ -128,6 +142,34 @@ def _db_time_after(conn, cursor, statement, params, context, executemany):
         _db_time_ms_ctx.set(_db_time_ms_ctx.get() + dur_ms)
     except LookupError:
         pass
+
+
+@app.middleware("http")
+async def csrf_protect_middleware(request: Request, call_next):
+    """Double-submit CSRF guard for COOKIE-authenticated mutations only.
+
+    Active only when cookie-auth is enabled. Bearer/API clients (Authorization
+    header) are exempt — an attacker page cannot set that header, so they are
+    not CSRF-vulnerable. The auth-bootstrap routes are exempt (no cookie yet /
+    they mint it). For a cookie-authenticated mutating request we require the
+    X-CSRF-Token header to equal the readable csrf_token cookie.
+    """
+    if settings.COOKIE_AUTH_ENABLED and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        path = request.url.path
+        has_bearer = request.headers.get("Authorization", "").lower().startswith("bearer ")
+        has_cookie = "access_token" in request.cookies
+        exempt = any(path.endswith(p) for p in (
+            "/auth/login", "/auth/register", "/auth/refresh", "/auth/logout",
+        ))
+        if has_cookie and not has_bearer and not exempt:
+            sent = request.headers.get("X-CSRF-Token")
+            expected = request.cookies.get("csrf_token")
+            if not sent or not expected or sent != expected:
+                return JSONResponse(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    content={"detail": "CSRF token missing or invalid."},
+                )
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -270,6 +312,7 @@ app.include_router(notifications.router, prefix=API_V1)
 app.include_router(ai.router, prefix=API_V1)
 app.include_router(payments.router, prefix=API_V1)
 app.include_router(hr.router, prefix=API_V1)
+app.include_router(hr_development.router, prefix=API_V1)
 app.include_router(leave_router.router, prefix=API_V1)
 app.include_router(messenger_router.router, prefix=API_V1)
 app.include_router(feed_router.router, prefix=API_V1)
@@ -299,7 +342,21 @@ app.include_router(library.router, prefix=API_V1)
 app.include_router(sms_router.router, prefix=API_V1)
 app.include_router(transport_router.router, prefix=API_V1)
 app.include_router(attendance_router.router, prefix=API_V1)
+app.include_router(parents_router.router, prefix=API_V1)
+app.include_router(admissions_router.router, prefix=API_V1)
+app.include_router(academics_router.router, prefix=API_V1)
+app.include_router(pastoral_router.router, prefix=API_V1)
+app.include_router(medical_router.router, prefix=API_V1)
+app.include_router(finance_router.router, prefix=API_V1)
+app.include_router(finance_ops_router.router, prefix=API_V1)
+app.include_router(wallet_router.router, prefix=API_V1)
+app.include_router(operations_router.router, prefix=API_V1)
+app.include_router(biometric_router.router, prefix=API_V1)
+app.include_router(platform_router.router, prefix=API_V1)
 app.include_router(dashboard_router.router, prefix=API_V1)
+app.include_router(support_router.router, prefix=API_V1)
+app.include_router(remita_router.router, prefix=API_V1)
+app.include_router(hr_extended_router.router, prefix=API_V1)
 
 
 # ── Health Check ──────────────────────────────────────────────────────────────

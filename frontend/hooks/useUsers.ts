@@ -25,6 +25,21 @@ export function useUser(id: string) {
   });
 }
 
+// Non-teaching staff + admins — all of them (server-side filtered, no 100 cap).
+export function useStaff(params?: { search?: string }) {
+  return useQuery({ queryKey: ["staff", params], queryFn: () => usersApi.staff(params) });
+}
+
+// Access Control: set a user's roles (reuses PATCH /users/{id}/roles).
+export function useAssignRoles() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, role_ids }: { id: string; role_ids: string[] }) => usersApi.assignRoles(id, role_ids),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["staff"] }); qc.invalidateQueries({ queryKey: ["users"] }); toast.success("Roles updated."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update roles."),
+  });
+}
+
 export function useAvailableRoles() {
   return useQuery({
     queryKey: ["users", "roles"],
