@@ -6,7 +6,7 @@ import {
 } from "@/hooks/useFinance";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
-import { KeyRound, Plus, X, Loader2, Trash2, ShieldCheck, CheckCircle2, CircleDashed, Lock } from "lucide-react";
+import { KeyRound, Plus, X, Loader2, Trash2, ShieldCheck, CheckCircle2, CircleDashed, Lock, AlertTriangle } from "lucide-react";
 import type { PaymentGateway, GatewayProvider } from "@/types";
 
 const PROVIDERS: { value: GatewayProvider; label: string }[] = [
@@ -15,6 +15,10 @@ const PROVIDERS: { value: GatewayProvider; label: string }[] = [
   { value: "flutterwave", label: "Flutterwave" },
 ];
 const providerLabel = (p: string) => PROVIDERS.find((x) => x.value === p)?.label ?? p;
+// Providers whose credentials can be STORED but are not yet wired for live payments.
+// Mirrors the backend: Paystack (resolver factory) + Remita (own router) are consumed;
+// Flutterwave has no adapter yet, so configuring it fails loud (503) at payment time.
+const INACTIVE_PROVIDERS = new Set<GatewayProvider>(["flutterwave"]);
 
 type FormState = {
   provider: GatewayProvider;
@@ -116,6 +120,7 @@ export default function PaymentGatewaysPage() {
                     <span className="text-sm font-bold text-slate-900">{providerLabel(g.provider)}</span>
                     <span className={cn("badge capitalize", g.mode === "live" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200")}>{g.mode}</span>
                     {!g.is_active && <span className="badge bg-slate-100 text-slate-500 border-slate-200">inactive</span>}
+                    {INACTIVE_PROVIDERS.has(g.provider) && <span className="badge bg-orange-50 text-orange-700 border-orange-200">not yet live</span>}
                   </div>
                   {g.label && <p className="text-[12px] text-slate-500 mt-0.5">{g.label}</p>}
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12px]">
@@ -155,11 +160,17 @@ export default function PaymentGatewaysPage() {
               <button onClick={close} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
             </div>
             <div className="space-y-3">
+              {INACTIVE_PROVIDERS.has(form.provider) && (
+                <div className="flex items-start gap-2 rounded-lg bg-orange-50 border border-orange-200 px-3 py-2.5 text-[12px] text-orange-800">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  <p><b>{providerLabel(form.provider)} isn&apos;t live yet.</b> You can store its credentials here, but fee payments won&apos;t use it until support ships — they&apos;ll use a configured live gateway (e.g. Paystack/Remita) or return an error. Safe to pre-stage.</p>
+                </div>
+              )}
               {!editing && (
                 <div>
                   <label className="label">Provider *</label>
                   <select value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value as GatewayProvider })} className="input">
-                    {PROVIDERS.map((p) => <option key={p.value} value={p.value} disabled={configured.has(p.value)}>{p.label}{configured.has(p.value) ? " (configured)" : ""}</option>)}
+                    {PROVIDERS.map((p) => <option key={p.value} value={p.value} disabled={configured.has(p.value)}>{p.label}{configured.has(p.value) ? " (configured)" : INACTIVE_PROVIDERS.has(p.value) ? " — not yet live" : ""}</option>)}
                   </select>
                 </div>
               )}
