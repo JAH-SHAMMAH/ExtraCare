@@ -155,6 +155,18 @@ class Settings(BaseSettings):
     # the platform-level fallback (like Paystack). API base is the live host —
     # Flutterwave's TEST vs LIVE is selected by the KEY prefix (FLWSECK_TEST- vs
     # FLWSECK-), not a separate host.
+    #
+    # ┌─ FLUTTERWAVE GO-LIVE CHECKLIST ──────────────────────────────────────────┐
+    # │ 1. Swap keys TEST → LIVE: FLWSECK_TEST-… → FLWSECK-… (per-org in the       │
+    # │    Payment Gateways UI, or FLUTTERWAVE_SECRET_KEY env for the fallback).   │
+    # │ 2. REGISTER THE WEBHOOK on the Flutterwave dashboard (Settings → Webhooks):│
+    # │    URL = https://<host>/api/v1/school/payments/webhook/flutterwave         │
+    # │    Secret Hash = the same value stored per-org (encrypted_webhook_secret)  │
+    # │    or FLUTTERWAVE_WEBHOOK_SECRET_HASH. Until registered, the async webhook  │
+    # │    confirmation never fires — the parent VERIFY-on-redirect path is the    │
+    # │    only confirmation. The handler already verifies verif-hash + rejects    │
+    # │    mismatches (401); it has NOT been exercised by a real delivery.         │
+    # └─────────────────────────────────────────────────────────────────────────────┘
     FLUTTERWAVE_BASE_URL: str = "https://api.flutterwave.com"
     FLUTTERWAVE_SECRET_KEY: str = ""
     # verif-hash webhook secret (Flutterwave echoes this value in the header).
