@@ -57,7 +57,7 @@ async def _tx(db, org, inv, rrr) -> RemitaTransaction:
 
 
 def _mock_status(monkeypatch, payload):
-    async def fake(rrr):
+    async def fake(rrr, *, creds=None):
         return payload
     monkeypatch.setattr(remita_router.remita_svc, "query_status", fake)
 
@@ -143,3 +143,60 @@ async def test_pending_status_records_nothing(db, org, monkeypatch):
     assert await _entries(db, org) == before
     inv2 = (await db.execute(select(Invoice).where(Invoice.id == inv.id))).scalar_one()
     assert inv2.status == "posted"   # untouched
+
+
+# ── Per-org credential resolution (the wiring: config over env, fail-loud) ────────
+
+import base64, os
+from app.config import get_settings
+from app.services import crypto
+from app.services import remita as remita_svc
+from app.services.payment_resolver import PaymentConfigError
+from app.models.payment import TenantPaymentSettings, PaymentProvider
+
+
+@pytest.fixture
+def enc_key(monkeypatch):
+    monkeypatch.setattr(get_settings(), "ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
+    monkeypatch.setattr(get_settings(), "ENCRYPTION_KEY_VERSION", 1)
+    monkeypatch.setattr(get_settings(), "ENCRYPTION_KEYS_OLD", "")
+    crypto.reset_keys()
+    yield
+    crypto.reset_keys()
+
+
+async def _remita_config(db, org, api_key="rk_live_PERORG", merchant="M-ORG", service="S-ORG"):
+    row = TenantPaymentSettings(
+        org_id=org.id, provider=PaymentProvider.REMITA, is_active=True,
+        encrypted_secret_key=crypto.encrypt(api_key),
+        metadata_={"merchant_id": merchant, "service_type_id": service},
+    )
+    db.add(row)
+    await db.commit()
+    return row
+
+
+async def test_resolve_uses_env_when_no_config(db, org):
+    creds = await remita_svc.resolve_credentials(db, org.id)
+    s = get_settings()
+    assert creds.merchant_id == s.REMITA_MERCHANT_ID
+    assert creds.api_key == s.REMITA_API_KEY
+    assert creds.service_type_id == s.REMITA_SERVICE_TYPE_ID
+
+
+async def test_resolve_uses_per_org_config(db, org, enc_key):
+    await _remita_config(db, org, api_key="rk_live_PERORG", merchant="M-ORG", service="S-ORG")
+    creds = await remita_svc.resolve_credentials(db, org.id)
+    assert creds.api_key == "rk_live_PERORG"      # decrypted per-org key, not env
+    assert creds.merchant_id == "M-ORG"
+    assert creds.service_type_id == "S-ORG"
+
+
+async def test_resolve_hard_fails_on_undecryptable_key(db, org, enc_key, monkeypatch):
+    await _remita_config(db, org, api_key="rk_live_x")
+    # Rotate the key out → stored ciphertext can't be decrypted.
+    monkeypatch.setattr(get_settings(), "ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
+    crypto.reset_keys()
+    with pytest.raises(PaymentConfigError):
+        await remita_svc.resolve_credentials(db, org.id)
+    crypto.reset_keys()

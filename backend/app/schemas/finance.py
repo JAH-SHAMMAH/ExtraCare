@@ -625,8 +625,11 @@ class PaymentGatewayCreate(BaseModel):
     label: Optional[str] = Field(default=None, max_length=120)
     mode: str = "test"                              # test | live
     public_key: Optional[str] = Field(default=None, max_length=255)
-    secret_key: Optional[str] = None               # write-only; stored encrypted
+    secret_key: Optional[str] = None               # write-only; stored encrypted (Remita: the API key)
     webhook_secret: Optional[str] = None           # write-only; stored encrypted
+    # Remita-only, non-secret identifiers (stored in metadata, shown in the UI).
+    merchant_id: Optional[str] = Field(default=None, max_length=120)
+    service_type_id: Optional[str] = Field(default=None, max_length=120)
     is_active: bool = True
 
 
@@ -638,6 +641,8 @@ class PaymentGatewayUpdate(BaseModel):
     # an empty string CLEARS it. Secrets are never echoed back.
     secret_key: Optional[str] = None
     webhook_secret: Optional[str] = None
+    merchant_id: Optional[str] = None
+    service_type_id: Optional[str] = None
     is_active: Optional[bool] = None
 
 
@@ -653,6 +658,8 @@ class PaymentGatewayResponse(BaseModel):
     public_key: Optional[str]
     secret_key_set: bool
     webhook_secret_set: bool
+    merchant_id: Optional[str] = None        # Remita (non-secret)
+    service_type_id: Optional[str] = None    # Remita (non-secret)
     is_active: bool
     created_at: datetime
     org_id: str

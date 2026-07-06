@@ -1650,6 +1650,8 @@ export interface PaymentGateway {
   public_key: string | null;
   secret_key_set: boolean;       // never the plaintext — only whether it's set
   webhook_secret_set: boolean;
+  merchant_id: string | null;        // Remita (non-secret)
+  service_type_id: string | null;    // Remita (non-secret)
   is_active: boolean;
   created_at: string;
   org_id: string;

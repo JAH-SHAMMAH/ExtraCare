@@ -23,10 +23,13 @@ type FormState = {
   public_key: string;
   secret_key: string;
   webhook_secret: string;
+  merchant_id: string;
+  service_type_id: string;
   is_active: boolean;
 };
 const emptyForm = (provider: GatewayProvider): FormState => ({
-  provider, label: "", mode: "test", public_key: "", secret_key: "", webhook_secret: "", is_active: true,
+  provider, label: "", mode: "test", public_key: "", secret_key: "", webhook_secret: "",
+  merchant_id: "", service_type_id: "", is_active: true,
 });
 
 export default function PaymentGatewaysPage() {
@@ -45,12 +48,14 @@ export default function PaymentGatewaysPage() {
   const openEdit = (g: PaymentGateway) => {
     setEditing(g);
     setForm({ provider: g.provider, label: g.label ?? "", mode: g.mode, public_key: g.public_key ?? "",
-              secret_key: "", webhook_secret: "", is_active: g.is_active });
+              secret_key: "", webhook_secret: "", merchant_id: g.merchant_id ?? "", service_type_id: g.service_type_id ?? "",
+              is_active: g.is_active });
   };
   const close = () => { setForm(null); setEditing(null); };
 
   const submit = () => {
     if (!form) return;
+    const isRemita = form.provider === "remita";
     if (editing) {
       // Only send secret fields if the admin actually typed a new value.
       const data: Record<string, unknown> = {
@@ -58,12 +63,14 @@ export default function PaymentGatewaysPage() {
       };
       if (form.secret_key) data.secret_key = form.secret_key;
       if (form.webhook_secret) data.webhook_secret = form.webhook_secret;
+      if (isRemita) { data.merchant_id = form.merchant_id || null; data.service_type_id = form.service_type_id || null; }
       update.mutate({ id: editing.id, data }, { onSuccess: close });
     } else {
       create.mutate({
         provider: form.provider, label: form.label || null, mode: form.mode,
         public_key: form.public_key || null, secret_key: form.secret_key || null,
         webhook_secret: form.webhook_secret || null, is_active: form.is_active,
+        ...(isRemita ? { merchant_id: form.merchant_id || null, service_type_id: form.service_type_id || null } : {}),
       }, { onSuccess: close });
     }
   };
@@ -112,9 +119,19 @@ export default function PaymentGatewaysPage() {
                   </div>
                   {g.label && <p className="text-[12px] text-slate-500 mt-0.5">{g.label}</p>}
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12px]">
-                    <SecretState label="Public key" set={!!g.public_key} value={g.public_key} />
-                    <SecretState label="Secret key" set={g.secret_key_set} />
-                    <SecretState label="Webhook secret" set={g.webhook_secret_set} />
+                    {g.provider === "remita" ? (
+                      <>
+                        <SecretState label="Merchant ID" set={!!g.merchant_id} value={g.merchant_id} />
+                        <SecretState label="Service Type" set={!!g.service_type_id} value={g.service_type_id} />
+                        <SecretState label="API key" set={g.secret_key_set} />
+                      </>
+                    ) : (
+                      <>
+                        <SecretState label="Public key" set={!!g.public_key} value={g.public_key} />
+                        <SecretState label="Secret key" set={g.secret_key_set} />
+                        <SecretState label="Webhook secret" set={g.webhook_secret_set} />
+                      </>
+                    )}
                   </div>
                 </div>
                 {canWrite && (
@@ -156,15 +173,31 @@ export default function PaymentGatewaysPage() {
                   </select>
                 </div>
               </div>
-              <div><label className="label">Public key</label><input value={form.public_key} onChange={(e) => setForm({ ...form, public_key: e.target.value })} className="input" placeholder="pk_..." /></div>
-              <div>
-                <label className="label">Secret key {editing && <span className="text-[10px] text-slate-400 font-normal">(leave blank to keep current)</span>}</label>
-                <input type="password" autoComplete="new-password" value={form.secret_key} onChange={(e) => setForm({ ...form, secret_key: e.target.value })} className="input" placeholder={editing && editing.secret_key_set ? "•••••••• (set)" : "sk_..."} />
-              </div>
-              <div>
-                <label className="label">Webhook secret {editing && <span className="text-[10px] text-slate-400 font-normal">(leave blank to keep current)</span>}</label>
-                <input type="password" autoComplete="new-password" value={form.webhook_secret} onChange={(e) => setForm({ ...form, webhook_secret: e.target.value })} className="input" placeholder={editing && editing.webhook_secret_set ? "•••••••• (set)" : "optional"} />
-              </div>
+              {form.provider === "remita" ? (
+                <>
+                  {/* Remita uses a 3-part credential: merchant id + service-type id (non-secret) + API key (secret). */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="label">Merchant ID</label><input value={form.merchant_id} onChange={(e) => setForm({ ...form, merchant_id: e.target.value })} className="input" placeholder="e.g. 2547916" /></div>
+                    <div><label className="label">Service Type ID</label><input value={form.service_type_id} onChange={(e) => setForm({ ...form, service_type_id: e.target.value })} className="input" placeholder="e.g. 4430731" /></div>
+                  </div>
+                  <div>
+                    <label className="label">API key {editing && <span className="text-[10px] text-slate-400 font-normal">(leave blank to keep current)</span>}</label>
+                    <input type="password" autoComplete="new-password" value={form.secret_key} onChange={(e) => setForm({ ...form, secret_key: e.target.value })} className="input" placeholder={editing && editing.secret_key_set ? "•••••••• (set)" : "Remita API key"} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div><label className="label">Public key</label><input value={form.public_key} onChange={(e) => setForm({ ...form, public_key: e.target.value })} className="input" placeholder="pk_..." /></div>
+                  <div>
+                    <label className="label">Secret key {editing && <span className="text-[10px] text-slate-400 font-normal">(leave blank to keep current)</span>}</label>
+                    <input type="password" autoComplete="new-password" value={form.secret_key} onChange={(e) => setForm({ ...form, secret_key: e.target.value })} className="input" placeholder={editing && editing.secret_key_set ? "•••••••• (set)" : "sk_..."} />
+                  </div>
+                  <div>
+                    <label className="label">Webhook secret {editing && <span className="text-[10px] text-slate-400 font-normal">(leave blank to keep current)</span>}</label>
+                    <input type="password" autoComplete="new-password" value={form.webhook_secret} onChange={(e) => setForm({ ...form, webhook_secret: e.target.value })} className="input" placeholder={editing && editing.webhook_secret_set ? "•••••••• (set)" : "optional"} />
+                  </div>
+                </>
+              )}
               <label className="flex items-center gap-2 text-sm text-slate-600 pt-1">
                 <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} className="rounded border-slate-300" />
                 Active

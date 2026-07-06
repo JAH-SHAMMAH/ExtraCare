@@ -84,6 +84,22 @@ async def test_secret_encrypted_at_rest_and_not_leaked(db, org, teacher, enc_key
     assert crypto.decrypt(raw) == "sk_test_SUPERSECRET"   # round-trips under the key
 
 
+async def test_remita_three_part_creds(db, org, teacher, enc_key):
+    # Remita stores merchant_id + service_type_id (non-secret, metadata) + API key
+    # (encrypted). Response exposes the identifiers, only set-ness of the key.
+    resp = await create_payment_gateway(
+        PaymentGatewayCreate(provider="remita", merchant_id="2547916", service_type_id="4430731",
+                             secret_key="rk_live_APIKEY"),
+        request=None, db=db, current_user=teacher,
+    )
+    assert resp.merchant_id == "2547916" and resp.service_type_id == "4430731"
+    assert resp.secret_key_set is True
+    dumped = str(resp.model_dump())
+    assert "rk_live_APIKEY" not in dumped              # api key never echoed
+    raw = await _raw_secret(db, resp.id)
+    assert crypto.looks_like_token(raw) and crypto.decrypt(raw) == "rk_live_APIKEY"
+
+
 async def test_public_key_stored_plaintext(db, org, teacher, enc_key):
     resp = await create_payment_gateway(
         PaymentGatewayCreate(provider="remita", public_key="pk_public_ok"),

@@ -26,7 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import get_current_active_user
 from app.core.permissions import PermissionChecker
-from app.config import get_settings
 from app.models.user import User
 from app.models.modules.finance import Invoice, LedgerAccount
 from app.models.modules.school import Student, ParentGuardian
@@ -34,6 +33,7 @@ from app.models.modules.remita import RemitaTransaction
 from app.services import ledger
 from app.services.ledger import money
 from app.services import remita as remita_svc
+from app.services.payment_resolver import PaymentConfigError
 
 router = APIRouter(prefix="/payments/remita", tags=["Remita Payments"])
 
@@ -172,10 +172,18 @@ async def initiate(payload: InitiateRequest, db: AsyncSession = Depends(get_db),
     if inv.status != "posted":
         raise HTTPException(status_code=409, detail="This invoice is not awaiting payment.")
 
+    # Resolve THIS org's Remita credentials (own config or env fallback). Fail loud
+    # if a config exists but the API key can't be decrypted — never pay to the wrong
+    # merchant.
+    try:
+        creds = await remita_svc.resolve_credentials(db, current_user.org_id)
+    except PaymentConfigError:
+        raise HTTPException(status_code=503, detail="Remita gateway secret is misconfigured. Contact your administrator.")
+
     order_id = f"{inv.id[:8]}-{uuid.uuid4().hex[:10]}"
     amount = float(money(inv.total))
     resp = await remita_svc.generate_rrr(
-        order_id=order_id, amount=amount,
+        creds=creds, order_id=order_id, amount=amount,
         payer_name=current_user.full_name, payer_email=current_user.email,
         description=f"School fees — invoice {inv.number}",
     )
@@ -190,7 +198,6 @@ async def initiate(payload: InitiateRequest, db: AsyncSession = Depends(get_db),
     await db.commit()
     await db.refresh(tx)
 
-    s = get_settings()
     # ┌─ GO-LIVE CHECKLIST (1 of 2) ───────────────────────────────────────────┐
     # │ CONFIRM the hosted-redirect URL format against YOUR Remita account docs │
     # │ the moment live credentials are available. This `/remita/onepage/...`   │
@@ -199,7 +206,8 @@ async def initiate(payload: InitiateRequest, db: AsyncSession = Depends(get_db),
     # │ or a finalize.reg form POST). The RRR is also payable on any Remita     │
     # │ channel, so a wrong URL never loses the payment — but fix this for UX.  │
     # └─────────────────────────────────────────────────────────────────────────┘
-    payment_url = f"{s.REMITA_BASE_URL}/remita/onepage/{s.REMITA_MERCHANT_ID}/{rrr}/payment.spa" if rrr else None
+    # Redirect to the SAME merchant/host the RRR was generated against (per-org).
+    payment_url = f"{creds.base_url}/remita/onepage/{creds.merchant_id}/{rrr}/payment.spa" if rrr else None
     return InitiateResponse(
         transaction_id=tx.id, order_id=order_id, rrr=rrr, amount=amount, status=tx.status,
         payment_url=payment_url,
@@ -212,7 +220,11 @@ async def verify(rrr: str, request: Request, db: AsyncSession = Depends(get_db),
     tx = (await db.execute(select(RemitaTransaction).where(RemitaTransaction.rrr == rrr, RemitaTransaction.org_id == current_user.org_id))).scalar_one_or_none()
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found.")
-    status_resp = await remita_svc.query_status(rrr)
+    try:
+        creds = await remita_svc.resolve_credentials(db, current_user.org_id)
+    except PaymentConfigError:
+        raise HTTPException(status_code=503, detail="Remita gateway secret is misconfigured. Contact your administrator.")
+    status_resp = await remita_svc.query_status(rrr, creds=creds)
     tx.raw_status = status_resp
     if remita_svc.is_paid(status_resp):
         await _record_payment(db, current_user.org_id, tx, actor=current_user, request=request)
@@ -231,7 +243,13 @@ async def webhook(request: Request, payload: dict = Body(default={}), db: AsyncS
     tx = (await db.execute(select(RemitaTransaction).where(RemitaTransaction.rrr == rrr))).scalar_one_or_none()
     if not tx:
         return {"received": True, "note": "unknown rrr"}
-    status_resp = await remita_svc.query_status(rrr)
+    # No user context on a webhook — resolve by the transaction's org. A misconfig
+    # here must not 503 (Remita would just retry); log and skip recording.
+    try:
+        creds = await remita_svc.resolve_credentials(db, tx.org_id)
+    except PaymentConfigError:
+        return {"received": True, "note": "gateway secret misconfigured"}
+    status_resp = await remita_svc.query_status(rrr, creds=creds)
     tx.raw_status = status_resp
     if remita_svc.is_paid(status_resp):
         actor = (await db.execute(select(User).where(User.id == tx.initiated_by))).scalar_one_or_none() if tx.initiated_by else None

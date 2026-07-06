@@ -253,24 +253,25 @@ deliberate boundary does not silently become a forgotten one. None is a bug.
   misconfig. Proven by `test_initiate_hard_fails_when_per_org_secret_undecryptable`
   (HTTP 503) + `test_resolver_hard_fails_on_undecryptable_secret` (unit).
 
-### TICKET — Wire Remita to per-org credentials (currently STORABLE VIA UI, NOT CONSUMED)
-  **Status:** storable via UI, **not consumed** — do not assume parity with Paystack.
-  Today Remita fee payments go through a SEPARATE router (`/payments/remita`) whose
-  service (`app/services/remita.py`) reads GLOBAL env creds
-  (`REMITA_MERCHANT_ID` / `REMITA_SERVICE_TYPE_ID` / `REMITA_API_KEY` / `REMITA_BASE_URL`)
-  as module-level `get_settings()` calls in free functions (`generate_rrr`,
-  `query_status`). A per-org Remita config saved in the Payment Gateways UI is
-  persisted to `TenantPaymentSettings` but is **never read** by the Remita flow.
-  **Scope of the work:**
-    - Remita needs a 3-part credential shape (merchant id + service-type id + api
-      key), unlike the single secret Paystack uses. Store merchant/service-type in
-      `TenantPaymentSettings.metadata`, api-key in `encrypted_secret_key`.
-    - Change `remita.generate_rrr` / `query_status` to accept credentials as args
-      (don't read globals); add a resolver/helper that loads + decrypts the org's
-      Remita config (mirror `resolve_for_org`), fall back to env when unconfigured.
-    - Thread org credentials through the `/payments/remita` router (initiate/verify/
-      webhook) call sites.
-    - Tests: per-org Remita creds used (not env); decrypt-failure → hard error.
+### TICKET — Wire Remita to per-org credentials — ✅ RESOLVED (2026-07-05)
+  Remita now consumes the school's OWN credentials configured in the Payment
+  Gateways UI (falling back to env when unconfigured). Done:
+    - `RemitaCredentials` (merchant id + service-type id + API key + base url) +
+      `remita.resolve_credentials(db, org_id)`: loads the active `TenantPaymentSettings`
+      REMITA row, decrypts the API key (`encrypted_secret_key`), reads merchant/
+      service-type from `metadata`; **fails loud (`PaymentConfigError` → 503)** if a
+      config exists but the key can't be decrypted; env fallback when unconfigured.
+    - `generate_rrr` / `query_status` take `creds` (no globals); threaded through the
+      `/payments/remita` router (initiate/verify/webhook + the redirect `payment_url`
+      now points at the resolved merchant/host). Webhook logs + skips on misconfig
+      (no 503 — Remita retries).
+    - Gateway CRUD + UI capture Remita's `merchant_id` + `service_type_id` (metadata,
+      non-secret) and relabel the secret field to "API key"; the api key is encrypted.
+    - Tests: per-org creds used (not env), env fallback, decrypt-failure → hard error,
+      CRUD stores/exposes the 3-part cred. (`test_remita.py`, `test_payment_gateways.py`.)
+  **Note:** the hosted-redirect URL format (`/remita/onepage/...`) is still a
+  best-reconstruction (GO-LIVE CHECKLIST in `remita.py`) — confirm against a real
+  Remita account. That's a separate go-live verification, not blocking this wiring.
 
 ### TICKET — Add a Flutterwave provider adapter (currently STORABLE VIA UI, NOT CONSUMED)
   **Status:** storable via UI, **not consumed** — do not assume parity with Paystack.

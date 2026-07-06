@@ -2392,6 +2392,7 @@ def _gateway_response(g: TenantPaymentSettings) -> PaymentGatewayResponse:
         label=md.get("label"), mode=md.get("mode", "test"), public_key=md.get("public_key"),
         # set-ness only — never decrypt a secret to render a page.
         secret_key_set=bool(g.encrypted_secret_key), webhook_secret_set=bool(g.encrypted_webhook_secret),
+        merchant_id=md.get("merchant_id"), service_type_id=md.get("service_type_id"),
         is_active=bool(g.is_active), created_at=g.created_at, org_id=g.org_id,
     )
 
@@ -2408,7 +2409,8 @@ def _require_crypto_for(*secrets: str | None) -> None:
 
 
 def _apply_gateway_fields(g: TenantPaymentSettings, *, label=..., mode=..., public_key=...,
-                          secret_key=..., webhook_secret=..., is_active=...) -> bool:
+                          secret_key=..., webhook_secret=..., merchant_id=..., service_type_id=...,
+                          is_active=...) -> bool:
     """Apply provided fields onto a TenantPaymentSettings row. Sentinels (...) mean
     'not supplied → leave unchanged'. Secrets are encrypted; non-secret display
     fields go into metadata. Returns True if a secret was (re)written."""
@@ -2419,6 +2421,10 @@ def _apply_gateway_fields(g: TenantPaymentSettings, *, label=..., mode=..., publ
         md["mode"] = mode
     if public_key is not ...:
         md["public_key"] = public_key
+    if merchant_id is not ...:                  # Remita (non-secret) — plaintext metadata
+        md["merchant_id"] = merchant_id
+    if service_type_id is not ...:
+        md["service_type_id"] = service_type_id
     md.pop("platform_fallback", None)          # a real config is no longer a fallback
     g.metadata_ = md                           # reassign so the JSON column is marked dirty
     if is_active is not ...:
@@ -2474,6 +2480,7 @@ async def create_payment_gateway(
     _apply_gateway_fields(
         g, label=payload.label, mode=payload.mode, public_key=payload.public_key,
         secret_key=payload.secret_key or None, webhook_secret=payload.webhook_secret or None,
+        merchant_id=payload.merchant_id, service_type_id=payload.service_type_id,
         is_active=payload.is_active,
     )
     if existing is None:
@@ -2512,6 +2519,8 @@ async def update_payment_gateway(
         public_key=data["public_key"] if "public_key" in data else ...,
         secret_key=(data["secret_key"] or None) if "secret_key" in data else ...,
         webhook_secret=(data["webhook_secret"] or None) if "webhook_secret" in data else ...,
+        merchant_id=data["merchant_id"] if "merchant_id" in data else ...,
+        service_type_id=data["service_type_id"] if "service_type_id" in data else ...,
         is_active=data["is_active"] if "is_active" in data else ...,
     )
     await db.flush()
