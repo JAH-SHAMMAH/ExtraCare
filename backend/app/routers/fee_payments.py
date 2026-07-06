@@ -15,6 +15,8 @@ only — it drives providers the resolver factory can build.
 """
 from __future__ import annotations
 
+import json
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -32,9 +34,12 @@ from app.models.modules.school import Student, ParentGuardian
 from app.models.payment import (
     TenantPaymentSettings, PaymentProvider, PaymentTransaction, PaymentStatus, PaymentType,
 )
-from app.services import ledger
+from app.services import ledger, crypto
 from app.services.ledger import money
 from app.services.payment_resolver import get_payment_resolver, PaymentConfigError
+from app.services.flutterwave import FlutterwaveProvider
+
+_logger = logging.getLogger("extracare.fee_payments")
 
 router = APIRouter(prefix="/payments/fees", tags=["Fee Payments"])
 
@@ -254,3 +259,126 @@ async def verify(reference: str, request: Request, db: AsyncSession = Depends(ge
         reference=reference, provider=tx.provider.value, status=tx.status.value,
         invoice_id=tx.related_id, amount_ngn=float(money(tx.amount_ngn)),
     )
+
+
+# ── Webhooks (async confirmation for the card providers) ─────────────────────────
+# Provider → server callbacks. Both verify the provider signature and REJECT a
+# mismatch, then RE-VERIFY with the provider (never trust the payload) before
+# settling the invoice. The verify-on-redirect path above is the primary
+# confirmation; these are the async backup. Idempotent (settling a paid invoice is a
+# no-op). No public endpoint is registered yet — see the go-live checklist.
+
+async def _confirm_and_settle(db, org_id, tx, provider_obj, reference, request) -> str:
+    """Re-verify with the provider; on success settle the invoice + mark the tx paid."""
+    verification = await provider_obj.verify_transaction(reference)
+    status = str(verification.get("status") or "").lower()
+    if status == "success":
+        inv = (await db.execute(select(Invoice).where(Invoice.id == tx.related_id, Invoice.org_id == org_id))).scalar_one_or_none()
+        if inv:
+            await _settle_invoice(db, org_id, inv, tx.amount_ngn, tx.provider, reference, None, request)
+        tx.status = PaymentStatus.SUCCESSFUL
+        tx.verified_at = datetime.now(timezone.utc)
+        tx.provider_reference = verification.get("id") or tx.provider_reference
+        tx.provider_response = verification.get("_raw") or tx.provider_response
+    await db.commit()
+    return status
+
+
+async def _org_from_meta_or_tx(db, org_id, reference) -> str | None:
+    if org_id:
+        return org_id
+    if reference:
+        t = (await db.execute(select(PaymentTransaction).where(PaymentTransaction.reference == reference))).scalar_one_or_none()
+        return t.org_id if t else None
+    return None
+
+
+async def _flutterwave_secret_hash(db, org_id: str) -> str | None:
+    row = (await db.execute(
+        select(TenantPaymentSettings).where(
+            TenantPaymentSettings.org_id == org_id, TenantPaymentSettings.provider == PaymentProvider.FLUTTERWAVE,
+            TenantPaymentSettings.is_active == True, TenantPaymentSettings.is_deleted == False)  # noqa: E712
+        .order_by(TenantPaymentSettings.created_at.desc())
+    )).scalars().first()
+    if row and row.encrypted_webhook_secret:
+        stored = row.encrypted_webhook_secret
+        if crypto.looks_like_token(stored):
+            try:
+                return crypto.decrypt(stored)
+            except Exception:
+                _logger.error("webhook.flutterwave.secret_hash_decrypt_failed org=%s", org_id)
+                return None
+        return stored  # legacy raw
+    return get_settings().FLUTTERWAVE_WEBHOOK_SECRET_HASH or None
+
+
+@router.post("/webhook/paystack", include_in_schema=False)
+async def paystack_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    raw = await request.body()
+    signature = request.headers.get("x-paystack-signature")
+    try:
+        payload = json.loads(raw or b"{}")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    data = payload.get("data") or {}
+    reference = data.get("reference")
+    org_id = await _org_from_meta_or_tx(db, (data.get("metadata") or {}).get("org_id"), reference)
+    if not org_id:
+        raise HTTPException(status_code=400, detail="Missing org context")
+
+    resolver = get_payment_resolver()
+    try:
+        provider_obj = await resolver.resolve_for_org(org_id, db, provider_type=PaymentProvider.PAYSTACK)
+    except Exception:
+        _logger.error("webhook.paystack.provider_unavailable org=%s", org_id)
+        return {"received": True, "note": "provider unavailable"}
+    # Paystack signs the raw body with HMAC-SHA512 of the SECRET KEY.
+    if not provider_obj.webhook_signature_valid(raw, signature):
+        _logger.warning("webhook.paystack.signature_invalid org=%s", org_id)
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    if not reference:
+        return {"received": True, "note": "no reference"}
+    tx = (await db.execute(select(PaymentTransaction).where(
+        PaymentTransaction.reference == reference, PaymentTransaction.org_id == org_id))).scalar_one_or_none()
+    if not tx:
+        return {"received": True, "note": "unknown reference"}
+    status = await _confirm_and_settle(db, org_id, tx, provider_obj, reference, request)
+    return {"received": True, "status": status}
+
+
+@router.post("/webhook/flutterwave")
+async def flutterwave_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    raw = await request.body()
+    verif_hash = request.headers.get("verif-hash") or request.headers.get("Verif-Hash")
+    try:
+        payload = json.loads(raw or b"{}")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    data = payload.get("data") or {}
+    tx_ref = data.get("tx_ref") or data.get("txRef")
+    org_id = await _org_from_meta_or_tx(db, (data.get("meta") or {}).get("org_id"), tx_ref)
+    if not org_id:
+        raise HTTPException(status_code=400, detail="Missing org context")
+
+    secret_hash = await _flutterwave_secret_hash(db, org_id)
+    if not secret_hash:
+        raise HTTPException(status_code=500, detail="Webhook secret hash not configured")
+    # Flutterwave sends the secret hash verbatim in the verif-hash header.
+    if not FlutterwaveProvider.webhook_signature_valid(verif_hash, secret_hash):
+        _logger.warning("webhook.flutterwave.signature_invalid org=%s", org_id)
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    if not tx_ref:
+        return {"received": True, "note": "no tx_ref"}
+    tx = (await db.execute(select(PaymentTransaction).where(
+        PaymentTransaction.reference == tx_ref, PaymentTransaction.org_id == org_id))).scalar_one_or_none()
+    if not tx:
+        return {"received": True, "note": "unknown tx_ref"}
+    resolver = get_payment_resolver()
+    try:
+        provider_obj = await resolver.resolve_for_org(org_id, db, provider_type=PaymentProvider.FLUTTERWAVE)
+    except Exception:
+        return {"received": True, "note": "provider unavailable"}
+    status = await _confirm_and_settle(db, org_id, tx, provider_obj, tx_ref, request)
+    return {"received": True, "status": status}

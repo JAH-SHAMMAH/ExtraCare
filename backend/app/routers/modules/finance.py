@@ -2465,7 +2465,7 @@ async def create_payment_gateway(
 
     # At most one active config per provider per org. If a row already exists it's
     # either a real admin config (409 — edit it) or a platform-fallback placeholder
-    # that school_payments auto-created for FK integrity (adopt it in place).
+    # that the fee-payment flow auto-created for FK integrity (adopt it in place).
     existing = (await db.execute(
         select(TenantPaymentSettings).where(
             TenantPaymentSettings.org_id == current_user.org_id, TenantPaymentSettings.provider == provider,

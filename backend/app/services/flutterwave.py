@@ -119,7 +119,7 @@ class FlutterwaveProvider:
         if not link:
             raise FlutterwaveError("Flutterwave did not return a checkout link.", status_code=502)
         _logger.info("flutterwave.init org=%s tx_ref=%s", org_id, tx_ref)
-        # Normalise to the shape school_payments reads (authorization_url + reference).
+        # Normalise to the shape the fee-payment flow reads (authorization_url + reference).
         return {"authorization_url": link, "reference": tx_ref, "data": {"authorization_url": link, "reference": tx_ref}, "_raw": body}
 
     async def verify_transaction(self, reference: str) -> dict[str, Any]:

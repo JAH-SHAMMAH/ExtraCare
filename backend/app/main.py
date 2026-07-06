@@ -15,7 +15,6 @@ from app.database import init_db
 from app.routers import auth, users, analytics, imports, me, organizations, admin, usage as usage_router, notifications, ai, payments, hr, hr_development, leave as leave_router, messenger as messenger_router, feed as feed_router, live as live_router, dashboard as dashboard_router, branding
 from app.services.usage import start_flusher, stop_flusher, track, module_from_path
 from app.routers.modules import school, hospital, business
-from app.routers import school_payments
 from app.routers import support as support_router
 from app.routers import remita as remita_router
 from app.routers import fee_payments as fee_payments_router
@@ -318,8 +317,6 @@ app.include_router(leave_router.router, prefix=API_V1)
 app.include_router(messenger_router.router, prefix=API_V1)
 app.include_router(feed_router.router, prefix=API_V1)
 app.include_router(live_router.router, prefix=API_V1)
-app.include_router(school_payments.webhook_router, prefix=API_V1)
-app.include_router(school_payments.router, prefix=API_V1)
 
 # Static file mount for uploaded media (/uploads/<org_id>/<file>). Path is
 # configurable via UPLOAD_DIR. We ensure the dir exists so the mount doesn't

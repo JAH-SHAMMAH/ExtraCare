@@ -194,11 +194,16 @@ user hits doesn't actually consume it.
   per-org Flutterwave gateway + a posted invoice for a real parent's child, drove the
   actual parent HTTP flow, and got a **real Flutterwave checkout link** for that
   invoice; `/providers` correctly returned `["flutterwave"]`.
-  **Leftover to clean up:** the older AMOUNT-based Paystack flow `/school/payments/parent/*`
-  (`school_payments.py`) is now doubly-unused (parent UI uses `/payments/fees` +
-  `/payments/remita`) — safe to remove, along with its dead `outstanding-fees`
-  (paid_amount=0) / `student_name=None` TODOs. Left in place for now (has tests +
-  the Flutterwave webhook lives there); removal is a separate cleanup unit.
+  **Cleanup — ✅ DONE (2026-07-06):** the entire dead `school_payments.py` module
+  (amount-based parent flow, accountant transactions/reconcile/receipt, the
+  `outstanding-fees` paid_amount=0 / `student_name=None` TODOs) and its only dependency
+  `payment_webhook.py` were **deleted** and unmounted — nothing in the frontend called
+  any of it. The card webhooks were **moved into `fee_payments`**:
+  `POST /payments/fees/webhook/{paystack,flutterwave}` (each verifies the provider
+  signature, re-verifies, and settles the invoice via `_settle_invoice`). ⚠️ The
+  Flutterwave webhook URL PATH therefore CHANGED (`/school/payments/webhook/flutterwave`
+  → `/payments/fees/webhook/flutterwave`) — nothing was deployed against the old path,
+  but the go-live checklist (config.py) now points at the new one.
 
 ### TICKET — Wire a real SMS provider (currently mock-only; UI now says so)
   **Status:** ⚠️ mock-only — the Bulk SMS page now shows a "Mock mode — messages are

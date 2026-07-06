@@ -160,7 +160,9 @@ class Settings(BaseSettings):
     # │ 1. Swap keys TEST → LIVE: FLWSECK_TEST-… → FLWSECK-… (per-org in the       │
     # │    Payment Gateways UI, or FLUTTERWAVE_SECRET_KEY env for the fallback).   │
     # │ 2. REGISTER THE WEBHOOK on the Flutterwave dashboard (Settings → Webhooks):│
-    # │    URL = https://<host>/api/v1/school/payments/webhook/flutterwave         │
+    # │    URL = https://<host>/api/v1/payments/fees/webhook/flutterwave           │
+    # │    (moved from /school/payments/webhook/* when that dead flow was removed — │
+    # │     register the NEW path; nothing was deployed against the old one.)       │
     # │    Secret Hash = the same value stored per-org (encrypted_webhook_secret)  │
     # │    or FLUTTERWAVE_WEBHOOK_SECRET_HASH. Until registered, the async webhook  │
     # │    confirmation never fires — the parent VERIFY-on-redirect path is the    │

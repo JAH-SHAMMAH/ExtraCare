@@ -90,6 +90,31 @@ async def test_initiate_rejects_unposted_invoice(db, org, teacher, student):
     assert exc.value.status_code == 409
 
 
+async def test_initiate_fails_loud_on_undecryptable_secret(db, org, teacher, student):
+    # A configured gateway whose secret can't be decrypted must 503, NOT silently fall
+    # back to a platform account. (No encryption key in-test → the token won't decrypt.)
+    db.add(ParentGuardian(id=str(uuid.uuid4()), user_id=teacher.id, student_id=student.id, org_id=org.id))
+    recv = await _receivable(db, org)
+    inv = await _invoice(db, org, recv, status="posted", student_id=student.id)
+    db.add(TenantPaymentSettings(org_id=org.id, provider=PaymentProvider.FLUTTERWAVE, is_active=True,
+                                 encrypted_secret_key="v1:AAAAAAAAAAAAAAAA:BBBBBBBBBBBBBBBBBBBB"))
+    await db.commit()
+    with pytest.raises(HTTPException) as exc:
+        await initiate(InitiateFeePayment(invoice_id=inv.id, provider="flutterwave"), db=db, current_user=teacher)
+    assert exc.value.status_code == 503
+
+
+def test_paystack_webhook_signature_hmac():
+    import hmac, hashlib
+    from app.services.paystack import PaystackProvider
+    p = PaystackProvider(secret_key="sk_test_x")
+    body = b'{"event":"charge.success"}'
+    sig = hmac.new(b"sk_test_x", body, hashlib.sha512).hexdigest()
+    assert p.webhook_signature_valid(body, sig) is True
+    assert p.webhook_signature_valid(body, "wrong") is False
+    assert p.webhook_signature_valid(body, "") is False
+
+
 # ── invoice settlement (the record path) ────────────────────────────────────────
 
 async def _entries(db, org) -> int:
