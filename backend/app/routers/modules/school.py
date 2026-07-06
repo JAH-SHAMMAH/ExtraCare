@@ -18,6 +18,7 @@ from app.services.audit_service import log_action
 from app.models.audit import AuditAction
 from app.schemas.student import StudentCreate, StudentUpdate
 from app.schemas.teacher import TeacherCreate, TeacherUpdate
+from app.schemas.school_class import ClassCreate, ClassUpdate
 
 logger = logging.getLogger("extracare.school")
 
@@ -250,6 +251,185 @@ async def delete_student(
         db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
         resource_type="Student", resource_id=student.id,
         resource_label=f"{student.first_name} {student.last_name}",
+        severity="warning", request=request,
+    )
+
+
+# ── Classes ───────────────────────────────────────────────────────────────────
+# The general class-list endpoint the frontend (`schoolApi.classes` / `useClasses`)
+# has always expected. Its absence made class dropdowns render empty app-wide
+# (enrollment, class pickers). Maps the ORM columns to the frontend `SchoolClass`
+# shape: level->grade_level, max_capacity->capacity, teacher_id->class_teacher_id,
+# with a resolved class_teacher_name + computed student_count.
+
+async def _class_student_counts(db: AsyncSession, org_id: str, class_ids: list[str] | None = None) -> dict[str, int]:
+    q = (
+        select(Student.class_id, func.count(Student.id))
+        .where(Student.org_id == org_id, Student.is_deleted == False)  # noqa: E712
+        .group_by(Student.class_id)
+    )
+    if class_ids is not None:
+        q = q.where(Student.class_id.in_(class_ids))
+    return {cid: int(n) for cid, n in (await db.execute(q)).all() if cid}
+
+
+async def _teacher_names(db: AsyncSession, org_id: str, teacher_ids: set[str]) -> dict[str, str]:
+    ids = {t for t in teacher_ids if t}
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(User.id, User.full_name).where(User.org_id == org_id, User.id.in_(ids))
+    )).all()
+    return {uid: name for uid, name in rows}
+
+
+def _class_dict(c: SchoolClass, student_count: int, teacher_name: str | None) -> dict:
+    return {
+        "id": c.id,
+        "name": c.name,
+        "grade_level": c.level,
+        "section": c.section,
+        "class_teacher_id": c.teacher_id,
+        "class_teacher_name": teacher_name,
+        "capacity": int(c.max_capacity or 0),
+        "student_count": student_count,
+        "academic_year": c.academic_year or "",
+        "is_active": True,   # SchoolClass has no soft-delete/active flag; always active
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+    }
+
+
+async def _load_class(db: AsyncSession, class_id: str, org_id: str) -> SchoolClass:
+    c = (await db.execute(
+        select(SchoolClass).where(SchoolClass.id == class_id, SchoolClass.org_id == org_id)
+    )).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail=f"Class not found for id: {class_id}")
+    return c
+
+
+async def _validate_teacher(db: AsyncSession, org_id: str, teacher_id: str | None) -> None:
+    if not teacher_id:
+        return
+    ok = (await db.execute(
+        select(User.id).where(User.id == teacher_id, User.org_id == org_id)
+    )).scalar_one_or_none()
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Teacher not found for id: {teacher_id}")
+
+
+@router.get("/classes", dependencies=[_can_read])
+async def list_classes(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=200),
+    search: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    query = select(SchoolClass).where(SchoolClass.org_id == current_user.org_id)
+    if search:
+        term = f"%{search}%"
+        query = query.where(
+            SchoolClass.name.ilike(term) | SchoolClass.level.ilike(term) | SchoolClass.section.ilike(term)
+        )
+    query = query.order_by(SchoolClass.name)
+    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar()
+    classes = (await db.execute(query.offset((page - 1) * page_size).limit(page_size))).scalars().all()
+
+    counts = await _class_student_counts(db, current_user.org_id, [c.id for c in classes])
+    names = await _teacher_names(db, current_user.org_id, {c.teacher_id for c in classes})
+    return {
+        "items": [_class_dict(c, counts.get(c.id, 0), names.get(c.teacher_id)) for c in classes],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.get("/classes/{class_id}", dependencies=[_can_read])
+async def get_class(class_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = await _load_class(db, class_id, current_user.org_id)
+    counts = await _class_student_counts(db, current_user.org_id, [c.id])
+    names = await _teacher_names(db, current_user.org_id, {c.teacher_id})
+    return _class_dict(c, counts.get(c.id, 0), names.get(c.teacher_id))
+
+
+@router.post("/classes", status_code=201, dependencies=[_can_write])
+async def create_class(
+    data: ClassCreate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    await _validate_teacher(db, org_id, data.class_teacher_id)
+    c = SchoolClass(
+        name=data.name, level=data.grade_level, section=data.section,
+        academic_year=data.academic_year, teacher_id=data.class_teacher_id or None,
+        room=data.room, max_capacity=data.capacity if data.capacity is not None else 40,
+        org_id=org_id,
+    )
+    db.add(c)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+        resource_type="SchoolClass", resource_id=c.id, resource_label=c.name,
+        new_values={"name": c.name, "level": c.level, "section": c.section}, request=request,
+    )
+    names = await _teacher_names(db, org_id, {c.teacher_id})
+    return _class_dict(c, 0, names.get(c.teacher_id))
+
+
+@router.patch("/classes/{class_id}", dependencies=[_can_write])
+async def update_class(
+    class_id: str,
+    data: ClassUpdate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    c = await _load_class(db, class_id, org_id)
+    updates = data.model_dump(exclude_unset=True)
+    if "class_teacher_id" in updates:
+        await _validate_teacher(db, org_id, updates["class_teacher_id"])
+    # Map frontend field names onto the ORM columns.
+    field_map = {"grade_level": "level", "capacity": "max_capacity", "class_teacher_id": "teacher_id"}
+    for field, value in updates.items():
+        setattr(c, field_map.get(field, field), value)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="SchoolClass", resource_id=c.id, resource_label=c.name,
+        new_values={k: v for k, v in updates.items()}, request=request,
+    )
+    counts = await _class_student_counts(db, org_id, [c.id])
+    names = await _teacher_names(db, org_id, {c.teacher_id})
+    return _class_dict(c, counts.get(c.id, 0), names.get(c.teacher_id))
+
+
+@router.delete("/classes/{class_id}", status_code=204, dependencies=[_can_write])
+async def delete_class(
+    class_id: str,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    c = await _load_class(db, class_id, org_id)
+    # SchoolClass is hard-deleted (no soft-delete). Guard against orphaning students.
+    enrolled = (await db.execute(
+        select(func.count(Student.id)).where(
+            Student.class_id == class_id, Student.org_id == org_id, Student.is_deleted == False)  # noqa: E712
+    )).scalar() or 0
+    if enrolled > 0:
+        raise HTTPException(status_code=409, detail=f"Class still has {enrolled} student(s) — reassign them first.")
+    label = c.name
+    await db.delete(c)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_DELETED, org_id, actor=current_user,
+        resource_type="SchoolClass", resource_id=class_id, resource_label=label,
         severity="warning", request=request,
     )
 

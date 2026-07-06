@@ -91,7 +91,8 @@ class SchoolClass(Base, UUIDMixin, TimestampMixin, TenantMixin):
     __tablename__ = "school_classes"
 
     name = Column(String(100), nullable=False)  # e.g. "Grade 10A"
-    level = Column(String(50), nullable=True)   # e.g. "Secondary", "Primary"
+    level = Column(String(50), nullable=True)   # e.g. "Secondary", "Primary" (UI: grade_level)
+    section = Column(String(50), nullable=True)  # e.g. "A" (UI: section)
     academic_year = Column(String(20), nullable=True)  # e.g. "2024/2025"
     teacher_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
     room = Column(String(50), nullable=True)

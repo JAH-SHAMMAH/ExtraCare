@@ -11,7 +11,20 @@ Items are written to build on the existing, deliberate extension points.
 
 ## ⚠️ PRE-LAUNCH — HIGH PRIORITY (functional bug, not cosmetic)
 
-### `GET /school/classes` does not exist → class lists render empty app-wide
+### `GET /school/classes` — ✅ RESOLVED (2026-07-05)
+Implemented the full class CRUD in `backend/app/routers/modules/school.py`:
+`GET /school/classes` (list, paginated + search, `school:read`), `GET /school/classes/{id}`,
+`POST`/`PATCH`/`DELETE` (`school:write`). Responses map ORM columns to the frontend
+`SchoolClass` shape (`level→grade_level`, `max_capacity→capacity`,
+`teacher_id→class_teacher_id` + resolved `class_teacher_name`, computed
+`student_count`, `is_active=true`). Added the missing `section` column
+(migration `032_add_class_section`) so the UI's section field persists instead of
+silently no-op'ing. Delete is guarded (409) while students are enrolled. Proven
+live: `GET /school/classes` returns all 14 Fairview classes with real counts/teacher.
+Tests in `backend/tests/test_school_classes.py`. Original report kept below.
+
+<details><summary>Original bug report</summary>
+
 **Symptom:** any screen that lists classes shows an empty list (empty dropdowns,
 "no classes"), even though classes exist.
 
@@ -45,6 +58,8 @@ Fee Assignment rather than gating on `school:read`.
 
 **Priority:** HIGH — fix before go-live; empty class pickers block enrollment and
 any class-scoped workflow.
+
+</details>
 
 ---
 
