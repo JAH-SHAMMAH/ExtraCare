@@ -160,20 +160,21 @@ AI-assisted learning and analytics.
   with the new page. Fix (if desired): have the petty-cash warning look up the
   account's budget and reuse its window. Left untouched to avoid changing the
   tested petty-cash path.
-- **Accounts Setup defaults — not yet consumed by every create form.** The
-  `OrgFinanceSettings` defaults (cash / fees-income / receivable / expense) are
-  pre-filled via `useFinanceSettings` on the **Requisitions Request Form** and the
-  **Bonus/Reduction Pack** form. The remaining finance create forms still make you
-  pick accounts manually and should adopt the same one-line `useFinanceSettings`
-  pre-fill (frontend-only, low risk):
-  • Payroll (`expense_account_id`, `net_account_id`, `deductions_account_id`)
-  • Invoices (`receivable_account_id` + per-line `income_account_id`)
-  • Petty Cash (`expense_account_id`, `cash_account_id`)
-  • Cash Transactions (`cash_account_id`, `counter_account_id`)
-  • Manual Journal (per-line accounts)
-  (Salary Advance's approve step already auto-picks a cash account server-side, so
-  it's lower priority.) Not a bug — the defaults are correct and optional
-  everywhere; this is consistency of the convenience pre-fill.
+- **Accounts Setup defaults — ✅ pre-fill extended (2026-07-06).** The
+  `OrgFinanceSettings` defaults (cash / fees-income / receivable / expense) now
+  pre-fill via `useFinanceSettings` on **Payroll** (expense → net/cash), **Invoices**
+  (receivable + each line's income, incl. new lines), **Petty Cash** (expense + cash),
+  and **Cash Transactions** (cash + a direction-aware counter: receipt→income,
+  payment→expense) — in addition to the existing Requisitions + Bonus/Reduction forms.
+  Fills only empty fields (never overrides a manual pick) and re-seeds on reset so the
+  next entry is pre-filled too. Payroll's optional **Deductions Payable** is left blank
+  (a liability with no default).
+  **Deliberately SKIPPED — Manual Journal (`direct-posts`) + Direct Transfer.** These
+  are freeform double-entry: each line's account is intentionally chosen by the
+  poster, so there is no meaningful single default to pre-fill — auto-filling a blank
+  journal line with "the cash account" would be actively misleading, not helpful.
+  (Salary Advance's approve step already auto-picks a cash account server-side.)
+  Not a bug anywhere — this was consistency of the convenience pre-fill.
 
 ### Known integration gaps — DELIBERATE deferrals (feature ships; integration pending)
 

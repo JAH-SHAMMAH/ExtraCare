@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  usePayrollRuns, useCreatePayroll, useApprovePayroll, useVoidPayroll, useDeletePayroll, useAccounts,
+  usePayrollRuns, useCreatePayroll, useApprovePayroll, useVoidPayroll, useDeletePayroll, useAccounts, useFinanceSettings,
 } from "@/hooks/useFinance";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
@@ -35,14 +35,25 @@ export default function PayrollPage() {
   const expenseAccts = useMemo(() => (accounts ?? []).filter((a) => a.type === "expense"), [accounts]);
   const settleAccts = useMemo(() => (accounts ?? []).filter((a) => a.type === "asset" || a.type === "liability"), [accounts]);
 
+  const { data: defaults } = useFinanceSettings();
   const [form, setForm] = useState({ period_label: "", run_date: "", expense_account_id: "", net_account_id: "", deductions_account_id: "" });
   const [slips, setSlips] = useState<SlipDraft[]>([{ staff_user_id: "", staff_name: "", gross: "", deductions: "0" }]);
 
   const reset = () => {
-    setForm({ period_label: "", run_date: "", expense_account_id: "", net_account_id: "", deductions_account_id: "" });
+    setForm({ period_label: "", run_date: "", expense_account_id: defaults?.default_expense_account_id || "", net_account_id: defaults?.default_cash_account_id || "", deductions_account_id: "" });
     setSlips([{ staff_user_id: "", staff_name: "", gross: "", deductions: "0" }]);
     setShow(false);
   };
+  // Pre-fill Accounts Setup defaults on load where empty (deductions payable has no
+  // default — it's a liability the user picks); reset() re-seeds for the next run.
+  useEffect(() => {
+    if (!defaults) return;
+    setForm((f) => ({
+      ...f,
+      expense_account_id: f.expense_account_id || defaults.default_expense_account_id || "",
+      net_account_id: f.net_account_id || defaults.default_cash_account_id || "",
+    }));
+  }, [defaults]);
   const submit = () => {
     const cleaned = slips.filter((s) => (s.staff_name.trim() || s.staff_user_id) && Number(s.gross) > 0).map((s) => ({
       staff_user_id: s.staff_user_id || null, staff_name: s.staff_name || null,

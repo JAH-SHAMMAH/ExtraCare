@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   usePettyCash, useRecordPettyCash, useVoidPettyCash,
-  useBudgets, useCreateBudget, useDeleteBudget, useAccounts,
+  useBudgets, useCreateBudget, useDeleteBudget, useAccounts, useFinanceSettings,
 } from "@/hooks/useFinance";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn, formatDate } from "@/lib/utils";
@@ -24,9 +24,23 @@ export default function PettyCashPage() {
   const expenseAccts = useMemo(() => (accounts ?? []).filter((a) => a.type === "expense"), [accounts]);
   const cashAccts = useMemo(() => (accounts ?? []).filter((a) => a.type === "asset"), [accounts]);
 
+  const { data: defaults } = useFinanceSettings();
   const [show, setShow] = useState(false);
   const [form, setForm] = useState({ amount: "", expense_account_id: "", cash_account_id: "", description: "", category: "", txn_date: "" });
-  const reset = () => { setForm({ amount: "", expense_account_id: "", cash_account_id: "", description: "", category: "", txn_date: "" }); setShow(false); };
+  const reset = () => {
+    setForm({ amount: "", expense_account_id: defaults?.default_expense_account_id || "", cash_account_id: defaults?.default_cash_account_id || "", description: "", category: "", txn_date: "" });
+    setShow(false);
+  };
+  // Pre-fill the Accounts Setup defaults on first load, only where the field is still
+  // empty (never override a manual pick); reset() re-seeds them for the next entry.
+  useEffect(() => {
+    if (!defaults) return;
+    setForm((f) => ({
+      ...f,
+      expense_account_id: f.expense_account_id || defaults.default_expense_account_id || "",
+      cash_account_id: f.cash_account_id || defaults.default_cash_account_id || "",
+    }));
+  }, [defaults]);
   const submit = () => record.mutate({
     amount: Number(form.amount), expense_account_id: form.expense_account_id, cash_account_id: form.cash_account_id,
     description: form.description || null, category: form.category || null, txn_date: form.txn_date || null,

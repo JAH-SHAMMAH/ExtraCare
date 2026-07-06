@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   useInvoices, useCreateInvoice, useDeleteInvoice, usePostInvoice, usePayInvoice, useVoidInvoice,
-  useAccounts,
+  useAccounts, useFinanceSettings,
 } from "@/hooks/useFinance";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
@@ -38,14 +38,22 @@ export default function InvoicesPage() {
   const assetAccounts = useMemo(() => (accounts ?? []).filter((a) => a.type === "asset"), [accounts]);
   const incomeAccounts = useMemo(() => (accounts ?? []).filter((a) => a.type === "income"), [accounts]);
 
+  const { data: defaults } = useFinanceSettings();
   const [form, setForm] = useState({ customer_name: "", student_id: "", invoice_date: "", due_date: "", receivable_account_id: "", memo: "" });
   const [lines, setLines] = useState<LineDraft[]>([{ description: "", quantity: "1", unit_price: "", income_account_id: "" }]);
 
   const reset = () => {
-    setForm({ customer_name: "", student_id: "", invoice_date: "", due_date: "", receivable_account_id: "", memo: "" });
-    setLines([{ description: "", quantity: "1", unit_price: "", income_account_id: "" }]);
+    setForm({ customer_name: "", student_id: "", invoice_date: "", due_date: "", receivable_account_id: defaults?.default_receivable_account_id || "", memo: "" });
+    setLines([{ description: "", quantity: "1", unit_price: "", income_account_id: defaults?.default_income_account_id || "" }]);
     setShow(false);
   };
+  // Pre-fill Accounts Setup defaults on load where empty (receivable + each line's
+  // income account); reset() and new lines re-seed. Never override a manual pick.
+  useEffect(() => {
+    if (!defaults) return;
+    setForm((f) => ({ ...f, receivable_account_id: f.receivable_account_id || defaults.default_receivable_account_id || "" }));
+    setLines((ls) => ls.map((l) => ({ ...l, income_account_id: l.income_account_id || defaults.default_income_account_id || "" })));
+  }, [defaults]);
   const submit = () => {
     const cleaned = lines.filter((l) => l.description.trim() && l.income_account_id).map((l) => ({
       description: l.description.trim(), quantity: Number(l.quantity) || 1, unit_price: Number(l.unit_price) || 0, income_account_id: l.income_account_id,
@@ -116,7 +124,7 @@ export default function InvoicesPage() {
               </div>
             ))}
           </div>
-          <button onClick={() => setLines([...lines, { description: "", quantity: "1", unit_price: "", income_account_id: "" }])} className="text-xs font-semibold text-brand-600 hover:text-brand-700 mb-4">+ Add line</button>
+          <button onClick={() => setLines([...lines, { description: "", quantity: "1", unit_price: "", income_account_id: defaults?.default_income_account_id || "" }])} className="text-xs font-semibold text-brand-600 hover:text-brand-700 mb-4">+ Add line</button>
           <div className="flex justify-end gap-3"><button onClick={reset} className="btn-secondary">Cancel</button><button onClick={submit} disabled={!form.customer_name.trim() || !form.receivable_account_id || create.isPending} className="btn-primary gap-2">{create.isPending && <Loader2 size={15} className="animate-spin" />}Save draft</button></div>
         </div>
       )}

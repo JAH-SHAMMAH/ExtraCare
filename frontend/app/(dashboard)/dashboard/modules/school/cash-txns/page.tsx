@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useCashTxns, useRecordCash, useVoidCash, useAccounts } from "@/hooks/useFinance";
+import { useEffect, useMemo, useState } from "react";
+import { useCashTxns, useRecordCash, useVoidCash, useAccounts, useFinanceSettings } from "@/hooks/useFinance";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn, formatDate } from "@/lib/utils";
 import { DollarSign, Plus, X, Loader2, AlertTriangle, Ban, ArrowDownLeft, ArrowUpRight } from "lucide-react";
@@ -19,8 +19,24 @@ export default function CashTransactionsPage() {
   const cashAccts = useMemo(() => (accounts ?? []).filter((a) => a.type === "asset"), [accounts]);
   const counterAccts = useMemo(() => (accounts ?? []).filter((a) => a.type !== "asset"), [accounts]);
 
+  const { data: defaults } = useFinanceSettings();
+  // The counter account depends on direction: a receipt lands income, a payment hits expense.
+  const counterDefault = (type: string) => (type === "receipt" ? defaults?.default_income_account_id : defaults?.default_expense_account_id) || "";
   const [form, setForm] = useState({ type: "receipt", amount: "", cash_account_id: "", counter_account_id: "", counterparty: "", description: "", txn_date: "" });
-  const reset = () => { setForm({ type: "receipt", amount: "", cash_account_id: "", counter_account_id: "", counterparty: "", description: "", txn_date: "" }); setShow(false); };
+  const reset = () => {
+    setForm({ type: "receipt", amount: "", cash_account_id: defaults?.default_cash_account_id || "", counter_account_id: counterDefault("receipt"), counterparty: "", description: "", txn_date: "" });
+    setShow(false);
+  };
+  // Pre-fill Accounts Setup defaults on load where empty (the direction toggle
+  // re-derives the counter default on change). Never override a manual pick.
+  useEffect(() => {
+    if (!defaults) return;
+    setForm((f) => ({
+      ...f,
+      cash_account_id: f.cash_account_id || defaults.default_cash_account_id || "",
+      counter_account_id: f.counter_account_id || counterDefault(f.type),
+    }));
+  }, [defaults]);   // eslint-disable-line react-hooks/exhaustive-deps
   const submit = () => record.mutate({
     type: form.type, amount: Number(form.amount), cash_account_id: form.cash_account_id, counter_account_id: form.counter_account_id,
     counterparty: form.counterparty || null, description: form.description || null, txn_date: form.txn_date || null,
@@ -47,7 +63,7 @@ export default function CashTransactionsPage() {
         <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6">
           <div className="flex items-center justify-between mb-4"><h2 className="text-sm font-bold text-slate-800">New Cash Transaction</h2><button onClick={reset} className="text-slate-400 hover:text-slate-600"><X size={16} /></button></div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div><label className="label">Type *</label><select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="input"><option value="receipt">Receipt (money in)</option><option value="payment">Payment (money out)</option></select></div>
+            <div><label className="label">Type *</label><select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value, counter_account_id: counterDefault(e.target.value) })} className="input"><option value="receipt">Receipt (money in)</option><option value="payment">Payment (money out)</option></select></div>
             <div><label className="label">Amount *</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="input" /></div>
             <div><label className="label">Cash Account *</label><select value={form.cash_account_id} onChange={(e) => setForm({ ...form, cash_account_id: e.target.value })} className="input"><option value="">Select…</option>{cashAccts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}</select></div>
             <div><label className="label">{form.type === "receipt" ? "Income / source" : "Expense / payee"} account *</label><select value={form.counter_account_id} onChange={(e) => setForm({ ...form, counter_account_id: e.target.value })} className="input"><option value="">Select…</option>{counterAccts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name} ({a.type})</option>)}</select></div>
