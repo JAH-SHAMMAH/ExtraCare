@@ -150,6 +150,18 @@ class Settings(BaseSettings):
     # the `reference` query param and calls our verify endpoint.
     PAYSTACK_CALLBACK_URL: str = "http://localhost:3000/billing/callback"
 
+    # ── Flutterwave (parent fee payments, Standard Checkout / v3 /payments) ───
+    # Per-school creds live encrypted in TenantPaymentSettings; these env vars are
+    # the platform-level fallback (like Paystack). API base is the live host —
+    # Flutterwave's TEST vs LIVE is selected by the KEY prefix (FLWSECK_TEST- vs
+    # FLWSECK-), not a separate host.
+    FLUTTERWAVE_BASE_URL: str = "https://api.flutterwave.com"
+    FLUTTERWAVE_SECRET_KEY: str = ""
+    # verif-hash webhook secret (Flutterwave echoes this value in the header).
+    FLUTTERWAVE_WEBHOOK_SECRET_HASH: str = ""
+    # Where Flutterwave redirects the payer after checkout (reads ?tx_ref/status).
+    FLUTTERWAVE_CALLBACK_URL: str = "http://localhost:3000/dashboard/my-children/payments/callback"
+
     # ── Encryption-at-rest (stored secrets: gateway API keys) ─────────────────
     # SEPARATE from SECRET_KEY (JWT signing) on purpose: rotating one must never
     # disturb the other, and a leaked JWT key must not expose stored secrets.

@@ -253,3 +253,39 @@ async def test_webhook_processing_and_idempotency(client: AsyncClient):
     )
     assert second.status_code == 200
 
+
+
+@pytest.mark.asyncio
+async def test_flutterwave_webhook_rejects_bad_signature(client: AsyncClient):
+    """Security: the Flutterwave webhook must REJECT (401) a request whose verif-hash
+    header doesn't match the org's configured secret hash, and accept a matching one."""
+    res = await _register(client, "school-flw")
+    Session = client.session_factory  # type: ignore[attr-defined]
+    async with Session() as db:
+        org = (await db.execute(select(_org.Organization).where(_org.Organization.slug == "school-flw"))).scalar_one()
+        db.add(PaymentTransaction(
+            org_id=org.id, payment_settings_id="ps_flw", reference="ec_flw_1",
+            provider=PaymentProviderEnum.FLUTTERWAVE, payment_type="school_fees",
+            status=PaymentStatus.PENDING, amount_ngn=3000,
+        ))
+        # Configured verif-hash (raw legacy value so no encryption key is needed in-test).
+        db.add(TenantPaymentSettings(
+            org_id=org.id, provider=PaymentProviderEnum.FLUTTERWAVE, is_active=True,
+            encrypted_webhook_secret="flw-hash-xyz",
+        ))
+        await db.commit()
+
+    body = json.dumps({"event": "charge.completed", "data": {"tx_ref": "ec_flw_1", "status": "successful", "meta": {"org_id": org.id}}})
+
+    bad = await client.post(
+        "/api/v1/school/payments/webhook/flutterwave",
+        content=body, headers={"verif-hash": "WRONG", "Content-Type": "application/json"},
+    )
+    assert bad.status_code == 401, bad.text
+
+    good = await client.post(
+        "/api/v1/school/payments/webhook/flutterwave",
+        content=body, headers={"verif-hash": "flw-hash-xyz", "Content-Type": "application/json"},
+    )
+    # Signature passed → not 401 (re-verify may no-op without a live key, but the gate opened).
+    assert good.status_code == 200, good.text

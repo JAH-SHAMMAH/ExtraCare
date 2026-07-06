@@ -16,9 +16,9 @@ const PROVIDERS: { value: GatewayProvider; label: string }[] = [
 ];
 const providerLabel = (p: string) => PROVIDERS.find((x) => x.value === p)?.label ?? p;
 // Providers whose credentials can be STORED but are not yet wired for live payments.
-// Mirrors the backend: Paystack (resolver factory) + Remita (own router) are consumed;
-// Flutterwave has no adapter yet, so configuring it fails loud (503) at payment time.
-const INACTIVE_PROVIDERS = new Set<GatewayProvider>(["flutterwave"]);
+// All three (Paystack, Remita, Flutterwave) are now consumed — this stays as the hook
+// for any FUTURE provider added to the UI ahead of its adapter.
+const INACTIVE_PROVIDERS = new Set<GatewayProvider>([]);
 
 type FormState = {
   provider: GatewayProvider;
@@ -194,6 +194,18 @@ export default function PaymentGatewaysPage() {
                   <div>
                     <label className="label">API key {editing && <span className="text-[10px] text-slate-400 font-normal">(leave blank to keep current)</span>}</label>
                     <input type="password" autoComplete="new-password" value={form.secret_key} onChange={(e) => setForm({ ...form, secret_key: e.target.value })} className="input" placeholder={editing && editing.secret_key_set ? "•••••••• (set)" : "Remita API key"} />
+                  </div>
+                </>
+              ) : form.provider === "flutterwave" ? (
+                <>
+                  {/* Flutterwave: API secret key (FLWSECK_...) + the verif-hash Secret Hash for webhooks. */}
+                  <div>
+                    <label className="label">Secret key (API key) {editing && <span className="text-[10px] text-slate-400 font-normal">(leave blank to keep current)</span>}</label>
+                    <input type="password" autoComplete="new-password" value={form.secret_key} onChange={(e) => setForm({ ...form, secret_key: e.target.value })} className="input" placeholder={editing && editing.secret_key_set ? "•••••••• (set)" : "FLWSECK_TEST-… / FLWSECK-…"} />
+                  </div>
+                  <div>
+                    <label className="label">Secret hash (webhooks) {editing && <span className="text-[10px] text-slate-400 font-normal">(leave blank to keep current)</span>}</label>
+                    <input type="password" autoComplete="new-password" value={form.webhook_secret} onChange={(e) => setForm({ ...form, webhook_secret: e.target.value })} className="input" placeholder={editing && editing.webhook_secret_set ? "•••••••• (set)" : "the verif-hash you set in the FLW dashboard"} />
                   </div>
                 </>
               ) : (

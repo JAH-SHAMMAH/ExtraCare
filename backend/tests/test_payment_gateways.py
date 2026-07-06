@@ -227,22 +227,26 @@ async def test_resolver_hard_fails_on_undecryptable_secret(db, org, teacher, enc
     crypto.reset_keys()
 
 
-async def test_build_provider_paystack_and_unsupported():
+async def test_build_provider_supported_and_unsupported():
     s = get_settings()
-    prov = build_provider(PaymentProvider.PAYSTACK, secret_key="sk_x", public_key="pk_x", settings=s)
-    assert prov._secret_key == "sk_x" and prov.public_key == "pk_x"
-    # A provider with no adapter yet (Flutterwave) must NOT be silently built.
-    assert PaymentProvider.FLUTTERWAVE not in SUPPORTED_PROVIDERS
+    paystack = build_provider(PaymentProvider.PAYSTACK, secret_key="sk_x", public_key="pk_x", settings=s)
+    assert paystack._secret_key == "sk_x" and paystack.public_key == "pk_x"
+    # Flutterwave now HAS a factory adapter.
+    assert PaymentProvider.FLUTTERWAVE in SUPPORTED_PROVIDERS
+    flw = build_provider(PaymentProvider.FLUTTERWAVE, secret_key="fl_x", public_key=None, settings=s)
+    assert flw._secret_key == "fl_x" and flw.name == "flutterwave"
+    # Remita has its OWN flow/router (not built through this factory) → not supported here.
+    assert PaymentProvider.REMITA not in SUPPORTED_PROVIDERS
     with pytest.raises(PaymentConfigError):
-        build_provider(PaymentProvider.FLUTTERWAVE, secret_key="fl_x", public_key=None, settings=s)
+        build_provider(PaymentProvider.REMITA, secret_key="rk_x", public_key=None, settings=s)
 
 
 async def test_resolver_fails_loud_on_unsupported_configured_provider(db, org, teacher, enc_key):
-    """The safety win: an org that configures ONLY Flutterwave (no adapter yet) must
-    get a hard error at resolve time — NOT a silent fall-through to the platform
-    Paystack account (which would settle their fees to the wrong gateway)."""
+    """The safety win: an org that configures ONLY a provider this factory can't build
+    (Remita — it has its own /payments/remita flow) must get a hard error at resolve
+    time — NOT a silent fall-through to the platform Paystack account."""
     await create_payment_gateway(
-        PaymentGatewayCreate(provider="flutterwave", secret_key="fl_live_x"),
+        PaymentGatewayCreate(provider="remita", secret_key="rk_live_x"),
         request=None, db=db, current_user=teacher,
     )
     resolver = PaymentProviderResolver(get_settings())
@@ -251,12 +255,26 @@ async def test_resolver_fails_loud_on_unsupported_configured_provider(db, org, t
 
 
 async def test_resolver_prefers_supported_when_multiple_configured(db, org, teacher, enc_key):
-    # Org has BOTH Flutterwave (unsupported) and Paystack (supported) → uses Paystack.
-    await create_payment_gateway(PaymentGatewayCreate(provider="flutterwave", secret_key="fl_x"), request=None, db=db, current_user=teacher)
+    # Org has BOTH Remita (own flow, not built by this factory) and Paystack (supported)
+    # → the factory uses the one it can build (Paystack), never errors.
+    await create_payment_gateway(PaymentGatewayCreate(provider="remita", secret_key="rk_x"), request=None, db=db, current_user=teacher)
     await create_payment_gateway(PaymentGatewayCreate(provider="paystack", secret_key="sk_PAYSTACK"), request=None, db=db, current_user=teacher)
     resolver = PaymentProviderResolver(get_settings())
     provider = await resolver.resolve_for_org(org.id, db)
     assert provider._secret_key == "sk_PAYSTACK"
+
+
+async def test_resolver_builds_flutterwave_for_flutterwave_config(db, org, teacher, enc_key):
+    # A per-org Flutterwave config → resolver decrypts + builds a FlutterwaveProvider.
+    from app.services.flutterwave import FlutterwaveProvider
+    await create_payment_gateway(
+        PaymentGatewayCreate(provider="flutterwave", secret_key="FLWSECK_TEST-abc"),
+        request=None, db=db, current_user=teacher,
+    )
+    resolver = PaymentProviderResolver(get_settings())
+    provider = await resolver.resolve_for_org(org.id, db)
+    assert isinstance(provider, FlutterwaveProvider)
+    assert provider._secret_key == "FLWSECK_TEST-abc"
 
 
 async def test_resolver_falls_back_when_no_per_org_secret(db, org, teacher, enc_key, monkeypatch):

@@ -48,6 +48,7 @@ from app.services import crypto
 from app.models.payment import TenantPaymentSettings, PaymentProvider as PaymentProviderEnum
 from app.config import get_settings
 from app.services.paystack import PaystackProvider
+from app.services.flutterwave import FlutterwaveProvider
 from app.models.audit import AuditAction
 
 _logger = logging.getLogger("extracare.school_payments")
@@ -383,23 +384,31 @@ async def initiate_parent_payment(
     if provider is None:
         raise HTTPException(status_code=503, detail="Payment provider not configured")
 
-    # Ensure tenant has a TenantPaymentSettings row for referential integrity.
-    # Use an existing active Paystack config if present, otherwise create a platform-fallback record.
+    # Which provider did the resolver actually build? Paystack and Flutterwave both
+    # flow through this generic initialize/verify path; the transaction + FK row must
+    # reflect the real provider (default Paystack for the billing/noop test fallback).
+    try:
+        resolved_provider = PaymentProviderEnum(getattr(provider, "name", "paystack"))
+    except ValueError:
+        resolved_provider = PaymentProviderEnum.PAYSTACK
+
+    # Ensure tenant has a TenantPaymentSettings row for referential integrity — for the
+    # RESOLVED provider (so a Flutterwave org uses its own config row, not a Paystack one).
     settings_row = await db.execute(
         select(TenantPaymentSettings).where(
             TenantPaymentSettings.org_id == current_user.org_id,
-            TenantPaymentSettings.provider == PaymentProviderEnum.PAYSTACK,
+            TenantPaymentSettings.provider == resolved_provider,
             TenantPaymentSettings.is_active == True,
             TenantPaymentSettings.is_deleted == False,
-        )
+        ).order_by(TenantPaymentSettings.created_at.desc())
     )
-    settings_row = settings_row.scalar_one_or_none()
+    settings_row = settings_row.scalars().first()
 
     if not settings_row:
         # Create a non-secret platform-fallback row so FK is satisfied. Do not store secrets.
         new_settings = TenantPaymentSettings(
             org_id=current_user.org_id,
-            provider=PaymentProviderEnum.PAYSTACK,
+            provider=resolved_provider,
             is_active=True,
             metadata={"platform_fallback": True},
         )
@@ -420,13 +429,14 @@ async def initiate_parent_payment(
             "initiated_by_user_id": current_user.id,
         }
 
-        # Call provider's generic initialize_payment API
+        # Call provider's generic initialize_payment API. Omit callback_url so each
+        # provider uses its OWN configured redirect (Paystack vs Flutterwave), rather
+        # than forcing the Paystack one onto a Flutterwave payment.
         init = await provider.initialize_payment(
             email=email,
             amount_ngn=amount_ngn,
             org_id=current_user.org_id,
             metadata=metadata,
-            callback_url=get_settings().PAYSTACK_CALLBACK_URL,
         )
     except Exception as exc:
         _logger.error("payment_init.failed org=%s actor=%s error=%s", current_user.org_id, current_user.id, str(exc))
@@ -442,7 +452,7 @@ async def initiate_parent_payment(
         provider_reference=None,
         payment_type=request.payment_type,
         status=PaymentStatus.PENDING,
-        provider=PaymentProviderEnum.PAYSTACK,
+        provider=resolved_provider,
         amount_ngn=amount_ngn,
         currency=(await db.execute(select(Organization.currency).where(Organization.id == current_user.org_id))).scalar_one_or_none() or "NGN",
         student_id=student.id,
@@ -931,4 +941,87 @@ async def paystack_webhook_handler(
             exc_info=True
         )
         raise HTTPException(status_code=500, detail="Webhook processing failed")
+
+
+async def _flutterwave_secret_hash(db: AsyncSession, org_id: str) -> str | None:
+    """The org's Flutterwave verif-hash secret (decrypted from encrypted_webhook_secret,
+    tolerating a legacy raw value), falling back to the platform env value."""
+    row = (await db.execute(
+        select(TenantPaymentSettings).where(
+            TenantPaymentSettings.org_id == org_id,
+            TenantPaymentSettings.provider == PaymentProviderEnum.FLUTTERWAVE,
+            TenantPaymentSettings.is_active == True,   # noqa: E712
+            TenantPaymentSettings.is_deleted == False,  # noqa: E712
+        ).order_by(TenantPaymentSettings.created_at.desc())
+    )).scalars().first()
+    if row and row.encrypted_webhook_secret:
+        stored = row.encrypted_webhook_secret
+        if crypto.looks_like_token(stored):
+            try:
+                return crypto.decrypt(stored)
+            except Exception:
+                _logger.error("webhook.flutterwave.secret_hash_decrypt_failed org=%s", org_id)
+                return None
+        return stored  # legacy raw
+    return get_settings().FLUTTERWAVE_WEBHOOK_SECRET_HASH or None
+
+
+@router.post("/webhook/flutterwave")
+async def flutterwave_webhook_handler(request: Request, db: AsyncSession = Depends(get_db)):
+    """Flutterwave server-to-server notification. Verifies the `verif-hash` header
+    against the org's configured secret hash and REJECTS a mismatch (401), then
+    RE-VERIFIES the transaction with Flutterwave (never trusts the payload) before
+    marking it paid. Idempotent: re-processing a successful tx is a no-op."""
+    raw_body = await request.body()
+    verif_hash = request.headers.get("verif-hash") or request.headers.get("Verif-Hash")
+    try:
+        payload = json.loads(raw_body or b"{}")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    data = payload.get("data") or {}
+    tx_ref = data.get("tx_ref") or data.get("txRef")
+    org_id = (data.get("meta") or {}).get("org_id")
+    if not org_id and tx_ref:
+        t0 = (await db.execute(select(PaymentTransaction).where(PaymentTransaction.reference == tx_ref))).scalar_one_or_none()
+        org_id = t0.org_id if t0 else None
+    if not org_id:
+        raise HTTPException(status_code=400, detail="Missing org context")
+
+    secret_hash = await _flutterwave_secret_hash(db, org_id)
+    if not secret_hash:
+        _logger.error("webhook.flutterwave.secret_hash_not_configured org=%s", org_id)
+        raise HTTPException(status_code=500, detail="Webhook secret hash not configured")
+
+    # SECURITY: reject anything whose verif-hash doesn't match the configured secret.
+    if not FlutterwaveProvider.webhook_signature_valid(verif_hash, secret_hash):
+        _logger.warning("webhook.flutterwave.signature_invalid org=%s", org_id)
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    if not tx_ref:
+        return {"received": True, "note": "no tx_ref"}
+    tx = (await db.execute(select(PaymentTransaction).where(
+        PaymentTransaction.reference == tx_ref, PaymentTransaction.org_id == org_id))).scalar_one_or_none()
+    if not tx:
+        return {"received": True, "note": "unknown tx_ref"}
+
+    # Never trust the webhook body's status — re-verify with Flutterwave directly.
+    resolver = get_payment_resolver()
+    try:
+        provider = await resolver.resolve_for_org(org_id, db, provider_type=PaymentProviderEnum.FLUTTERWAVE)
+        verification = await provider.verify_transaction(tx_ref)
+    except Exception as exc:  # noqa: BLE001
+        _logger.error("webhook.flutterwave.verify_failed org=%s ref=%s err=%s", org_id, tx_ref, exc)
+        return {"received": True, "note": "verification failed"}
+
+    if str(verification.get("status") or "").lower() == "success":
+        await db.execute(
+            update(PaymentTransaction).where(PaymentTransaction.id == tx.id).values(
+                status=PaymentStatus.SUCCESSFUL, verified_at=datetime.utcnow(),
+                provider_reference=verification.get("id") or tx.provider_reference,
+                provider_response=verification,
+            )
+        )
+        await db.commit()
+    return {"received": True, "status": verification.get("status")}
 

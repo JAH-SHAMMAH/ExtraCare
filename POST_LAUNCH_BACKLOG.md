@@ -282,27 +282,35 @@ deliberate boundary does not silently become a forgotten one. None is a bug.
   payment page in a browser — that's a click-through/UX check (GO-LIVE CHECKLIST in
   `remita.py`), separate from the API round-trip which is now proven.
 
-### TICKET — Add a Flutterwave provider adapter (HTTP adapter DEFERRED — needs test creds)
-  **Status:** provider-FACTORY infra ✅ done; the Flutterwave **HTTP adapter is
-  deferred** because Flutterwave has NO public sandbox (test keys are per-merchant),
-  so it can't be live-verified the way Remita was — and shipping a blind payment
-  adapter is exactly the risk the Remita live round-trip caught (a moved host).
-  **Done now (the verifiable part):**
-    - `payment_resolver.build_provider(provider, ...)` factory + `SUPPORTED_PROVIDERS`
-      registry (currently `{PAYSTACK}`). `resolve_for_org` builds via the factory.
-    - **Safety win:** an org that configures ONLY an unsupported provider (Flutterwave)
-      now **fails loud** (`PaymentConfigError` → 503) at resolve time instead of
-      silently settling to the platform Paystack account. If both a supported and an
-      unsupported provider are configured, the supported one is used.
-    - Tests: factory builds Paystack + raises for Flutterwave; resolver fails loud on
-      unsupported-only config; prefers supported when both present.
-  **Remaining (needs a Flutterwave TEST secret key + Secret Hash from the dashboard):**
-    - Build `FlutterwaveProvider` (v3 `/payments` create-link, verify-by-id/tx_ref,
-      `verif-hash` webhook) with the same `initialize_payment`/`verify_transaction`
-      interface, then add `FLUTTERWAVE` to `SUPPORTED_PROVIDERS` + a branch in
-      `build_provider`. LIVE round-trip verify against sandbox before trusting it.
-    - Consider a UI hint that Flutterwave is "configured but not yet active" so admins
-      aren't surprised by the 503 (today it's an honest hard error, but silent in UI).
+### TICKET — Flutterwave provider adapter — ✅ BUILT + LIVE-VERIFIED (2026-07-06)
+  `FlutterwaveProvider` (`app/services/flutterwave.py`, Standard Checkout / v3
+  `/payments`) is registered in the factory (`SUPPORTED_PROVIDERS` now
+  `{PAYSTACK, FLUTTERWAVE}`), resolves per-org creds from `TenantPaymentSettings`
+  (API key encrypted in `encrypted_secret_key`, verif-hash in `encrypted_webhook_secret`),
+  decrypts + fails loud (`PaymentConfigError` → 503) on decrypt failure — same as
+  Paystack/Remita. Wired into the school-payments fee path (initiate/verify are now
+  provider-aware: `tx.provider` + the FK config row reflect the resolved provider,
+  each provider uses its OWN redirect URL). Webhook handler
+  `POST /api/v1/school/payments/webhook/flutterwave` verifies the `verif-hash` header
+  against the org's secret hash and REJECTS a mismatch (401), then re-verifies with
+  Flutterwave before recording.
+  **PROVEN LIVE** (real HTTP vs Flutterwave TEST API): `initialize_payment` returns a
+  real hosted checkout link; the full per-org path (encrypted store → factory decrypt
+  → build → live init) works; `verify_transaction` endpoint is reachable + authed.
+  **NOT verifiable without a public server / a human paying:** actual webhook DELIVERY,
+  and the `verify_transaction` HAPPY path against a genuinely *successful* payment
+  (an unpaid link returns "no transaction" — correct). Signature logic + response
+  normalisation are unit-tested (`test_flutterwave.py`, `test_school_payments.py`).
+
+### GO-LIVE — register the Flutterwave webhook URL (deferred; no public server yet)
+  The webhook handler is built + signature-verifying, but the URL is NOT registered on
+  the Flutterwave dashboard (no public endpoint yet). On deploy: Flutterwave dashboard
+  → Settings → Webhooks → set the URL to `https://<host>/api/v1/school/payments/webhook/flutterwave`
+  and set the **Secret Hash** to the same value stored per-org (or the platform env
+  `FLUTTERWAVE_WEBHOOK_SECRET_HASH`). Also switch keys TEST → LIVE (FLWSECK_TEST- →
+  FLWSECK-). Same class of go-live item as the Remita checklist. Until registered, the
+  parent VERIFY endpoint (on redirect return) is the payment-confirmation path; the
+  webhook is the async backup.
 
 ### TICKET — Remove the legacy raw webhook-secret compatibility shim
   **Status:** shim live, needs an expiry trigger (don't let it live forever silently).

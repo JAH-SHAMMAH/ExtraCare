@@ -22,6 +22,7 @@ from sqlalchemy import select
 from app.models.organization import Organization
 from app.models.payment import TenantPaymentSettings, PaymentProvider
 from app.services.paystack import PaystackProvider
+from app.services.flutterwave import FlutterwaveProvider
 from app.services import crypto
 from app.config import get_settings
 
@@ -40,20 +41,26 @@ class PaymentConfigError(RuntimeError):
 # provider NOT in this set is treated as "configured but unsupported": the fee flow
 # fails loud rather than silently settling to the platform account / wrong gateway.
 # (Remita has its OWN flow/router + resolver, so it's not built through this factory.)
-SUPPORTED_PROVIDERS = {PaymentProvider.PAYSTACK}
+SUPPORTED_PROVIDERS = {PaymentProvider.PAYSTACK, PaymentProvider.FLUTTERWAVE}
 
 
 def build_provider(provider: PaymentProvider, *, secret_key: str, public_key: str | None, settings):
     """Factory: construct the payment adapter for ``provider`` from ALREADY-DECRYPTED
     credentials. This is the single extension point for new providers — add a branch
     here and register the enum in ``SUPPORTED_PROVIDERS``. Raises ``PaymentConfigError``
-    for a provider with no adapter yet (e.g. Flutterwave — pending its own unit)."""
+    for a provider with no adapter yet."""
     if provider == PaymentProvider.PAYSTACK:
         return PaystackProvider(
             secret_key=secret_key,
             public_key=public_key or settings.PAYSTACK_PUBLIC_KEY,
             api_url=settings.PAYSTACK_API_URL,
             callback_url=settings.PAYSTACK_CALLBACK_URL,
+        )
+    if provider == PaymentProvider.FLUTTERWAVE:
+        return FlutterwaveProvider(
+            secret_key=secret_key,
+            base_url=settings.FLUTTERWAVE_BASE_URL,
+            callback_url=settings.FLUTTERWAVE_CALLBACK_URL,
         )
     raise PaymentConfigError(
         f"Payment provider '{provider.value}' is configured for this school but is not yet "
