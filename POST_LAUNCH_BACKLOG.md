@@ -176,6 +176,44 @@ AI-assisted learning and analytics.
   (Salary Advance's approve step already auto-picks a cash account server-side.)
   Not a bug anywhere — this was consistency of the convenience pre-fill.
 
+### ⚠️ AUDIT FINDINGS (2026-07-06) — built/storable but NOT consumed by the live UI flow
+
+Found during a full "storable-but-not-consumed" audit. Unlike the deliberate
+deferrals below, these are places where a feature looks usable but the live path a
+user hits doesn't actually consume it.
+
+- **Paystack + Flutterwave parent fee flow is UI-ORPHANED — parents can only pay via
+  Remita.** The parent payments page (`frontend/app/(dashboard)/dashboard/my-children/payments/page.tsx`)
+  calls the **Remita** router (`remitaApi` → `/payments/remita/*`) exclusively ("Pay
+  with Remita"). The Paystack flow `/school/payments/parent/*` (`school_payments.py`,
+  mounted in `main.py`) — and the **Flutterwave adapter wired into it this session** —
+  have backend tests + (Flutterwave) a live-verified round-trip, but **no frontend
+  code calls them** (`grep '/school/payments' frontend` = 0 hits). So configuring a
+  Paystack/Flutterwave gateway in the Payment Gateways UI has **no parent-facing
+  effect** today; only Remita actually collects from parents.
+  **Fix:** add a provider selector to the parent payments UI (route Remita →
+  `/payments/remita/*`, Paystack/Flutterwave → `/school/payments/parent/*` per the
+  org's configured gateway), or consolidate the two parent flows behind one endpoint.
+  NB: this session removed the Flutterwave "not yet live" UI hint on the *config*
+  page — accurate for backend consumption, but at the PARENT level Paystack/Flutterwave
+  are still not reachable until this is wired.
+
+- **SMS never sends a real message — the only provider is the mock.**
+  `app/services/sms.py` registers `{"mock": MockSmsProvider()}` and `get_provider`
+  defaults to `mock` (env `SMS_PROVIDER`). Admins compose + "send" campaigns, spend
+  units, and see delivered/DLR status, but nothing reaches a phone — no real provider
+  (Termii / Twilio / Africa's Talking / etc.) is implemented, and the DLR webhook is a
+  stub (`sms.py`). The UI presents SMS as a working feature. **Fix:** implement one
+  real `SmsProvider` (the interface + registry are ready — "one line in settings plus
+  the adapter") before relying on SMS for fee reminders / announcements.
+
+- **Dead endpoint: `GET /school/payments/parent/outstanding-fees/{id}`** returns a
+  per-category fee breakdown with `paid_amount` hardcoded to `0` (TODO) — but it's
+  part of the UI-orphaned Paystack flow above, so it's **not a live display bug**,
+  just dead code to remove or finish if that flow is ever wired to the UI. Same for
+  the `student_name=None` TODO in the transactions list and the now-dead
+  `except NotImplementedError` branches (the resolver no longer raises it).
+
 ### Known integration gaps — DELIBERATE deferrals (feature ships; integration pending)
 
 These are working features that were intentionally built **decoupled** from a
