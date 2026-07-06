@@ -182,30 +182,36 @@ Found during a full "storable-but-not-consumed" audit. Unlike the deliberate
 deferrals below, these are places where a feature looks usable but the live path a
 user hits doesn't actually consume it.
 
-- **Paystack + Flutterwave parent fee flow is UI-ORPHANED — parents can only pay via
-  Remita.** The parent payments page (`frontend/app/(dashboard)/dashboard/my-children/payments/page.tsx`)
-  calls the **Remita** router (`remitaApi` → `/payments/remita/*`) exclusively ("Pay
-  with Remita"). The Paystack flow `/school/payments/parent/*` (`school_payments.py`,
-  mounted in `main.py`) — and the **Flutterwave adapter wired into it this session** —
-  have backend tests + (Flutterwave) a live-verified round-trip, but **no frontend
-  code calls them** (`grep '/school/payments' frontend` = 0 hits). So configuring a
-  Paystack/Flutterwave gateway in the Payment Gateways UI has **no parent-facing
-  effect** today; only Remita actually collects from parents.
-  **Fix:** add a provider selector to the parent payments UI (route Remita →
-  `/payments/remita/*`, Paystack/Flutterwave → `/school/payments/parent/*` per the
-  org's configured gateway), or consolidate the two parent flows behind one endpoint.
-  NB: this session removed the Flutterwave "not yet live" UI hint on the *config*
-  page — accurate for backend consumption, but at the PARENT level Paystack/Flutterwave
-  are still not reachable until this is wired.
+- **Paystack + Flutterwave parent fee flow was UI-ORPHANED — ✅ RESOLVED (2026-07-06).**
+  A new unified **invoice-based** parent router `app/routers/fee_payments.py`
+  (`/payments/fees`) exposes `GET /providers` (returns whichever gateways the school
+  actually configured — per-org `TenantPaymentSettings`, else platform-env fallback),
+  `POST /initiate` and `GET /verify` for the card providers (Paystack/Flutterwave) via
+  the resolver factory, settling the invoice on success (Dr `<provider> / Bank` / Cr
+  Receivable). The parent payments page now shows a **provider selector** built from
+  `/providers` (only configured gateways, no fixed list) and routes Remita →
+  `/payments/remita/*`, card → `/payments/fees/*`. **LIVE-VERIFIED**: configured a
+  per-org Flutterwave gateway + a posted invoice for a real parent's child, drove the
+  actual parent HTTP flow, and got a **real Flutterwave checkout link** for that
+  invoice; `/providers` correctly returned `["flutterwave"]`.
+  **Leftover to clean up:** the older AMOUNT-based Paystack flow `/school/payments/parent/*`
+  (`school_payments.py`) is now doubly-unused (parent UI uses `/payments/fees` +
+  `/payments/remita`) — safe to remove, along with its dead `outstanding-fees`
+  (paid_amount=0) / `student_name=None` TODOs. Left in place for now (has tests +
+  the Flutterwave webhook lives there); removal is a separate cleanup unit.
 
-- **SMS never sends a real message — the only provider is the mock.**
+### TICKET — Wire a real SMS provider (currently mock-only; UI now says so)
+  **Status:** ⚠️ mock-only — the Bulk SMS page now shows a "Mock mode — messages are
+  NOT delivered to real phones" banner (honest, mirrors the Flutterwave treatment).
   `app/services/sms.py` registers `{"mock": MockSmsProvider()}` and `get_provider`
   defaults to `mock` (env `SMS_PROVIDER`). Admins compose + "send" campaigns, spend
-  units, and see delivered/DLR status, but nothing reaches a phone — no real provider
-  (Termii / Twilio / Africa's Talking / etc.) is implemented, and the DLR webhook is a
-  stub (`sms.py`). The UI presents SMS as a working feature. **Fix:** implement one
-  real `SmsProvider` (the interface + registry are ready — "one line in settings plus
-  the adapter") before relying on SMS for fee reminders / announcements.
+  units, and see delivered/DLR status, but nothing reaches a phone; the DLR webhook is
+  a stub. **BLOCKED ON A BUSINESS DECISION:** pick a provider (Termii vs Twilio vs
+  Africa's Talking vs Termii — regional pricing/deliverability). Once chosen:
+    - implement one real `SmsProvider` (the `Protocol` + registry are ready — "one line
+      in settings plus the adapter"), add its creds to config, set `SMS_PROVIDER`;
+    - implement the DLR webhook (`sms.py`) for real delivery receipts;
+    - remove the mock-mode banner (or gate it on `SMS_PROVIDER == "mock"`).
 
 - **Dead endpoint: `GET /school/payments/parent/outstanding-fees/{id}`** returns a
   per-category fee breakdown with `paid_amount` hardcoded to `0` (TODO) — but it's

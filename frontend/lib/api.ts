@@ -828,6 +828,14 @@ export const remitaApi = {
   verify: (rrr: string) => api.get(`/payments/remita/verify/${rrr}`).then((r) => r.data),
 };
 
+// ── Unified parent fee payments: which gateways the school configured, + the
+// invoice-based hosted-checkout flow for the card providers (Paystack/Flutterwave).
+export const feesApi = {
+  providers: (): Promise<{ providers: string[] }> => api.get("/payments/fees/providers").then((r) => r.data),
+  initiate: (invoice_id: string, provider: string) => api.post("/payments/fees/initiate", { invoice_id, provider }).then((r) => r.data),
+  verify: (reference: string) => api.get(`/payments/fees/verify/${reference}`).then((r) => r.data),
+};
+
 // ── Finance & Accounting API (Batch 5) ────────────────────────────────────────
 
 export const financeApi = {

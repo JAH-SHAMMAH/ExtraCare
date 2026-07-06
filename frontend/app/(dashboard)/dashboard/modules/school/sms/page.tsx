@@ -40,6 +40,12 @@ export default function SmsPage() {
         </div>
       </div>
 
+      {/* Honest status: no live SMS provider is wired yet. */}
+      <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-6 text-[12px] text-amber-800">
+        <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+        <p><b>Mock mode — messages are NOT delivered to real phones.</b> Campaigns are recorded and unit costs estimated so you can try the flow, but a live SMS provider hasn&apos;t been connected yet. Don&apos;t rely on this for real notifications until a provider is configured.</p>
+      </div>
+
       <div className="bg-white rounded-xl border border-slate-200 p-1 inline-flex mb-5">
         {[
           { id: "compose" as Tab, label: "Compose", icon: Send },
