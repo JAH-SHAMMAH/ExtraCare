@@ -296,11 +296,15 @@ deliberate boundary does not silently become a forgotten one. None is a bug.
   Flutterwave before recording.
   **PROVEN LIVE** (real HTTP vs Flutterwave TEST API): `initialize_payment` returns a
   real hosted checkout link; the full per-org path (encrypted store → factory decrypt
-  → build → live init) works; `verify_transaction` endpoint is reachable + authed.
-  **NOT verifiable without a public server / a human paying:** actual webhook DELIVERY,
-  and the `verify_transaction` HAPPY path against a genuinely *successful* payment
-  (an unpaid link returns "no transaction" — correct). Signature logic + response
-  normalisation are unit-tested (`test_flutterwave.py`, `test_school_payments.py`).
+  → build → live init) works; and — after paying a test checkout link with a test card
+  (2026-07-06) — `verify_transaction` against the **real completed transaction**
+  returned normalised `status="success"` with the real id/amount and `metadata.org_id`
+  intact (Flutterwave raw "successful" → "success"). So the exact shape the record path
+  keys on is confirmed live.
+  **STILL NOT verifiable without a public server:** actual webhook DELIVERY from
+  Flutterwave (URL unregistered, no public endpoint). The verif-hash signature check is
+  unit-tested (401 on mismatch / 200 on match) but has never been hit by a real
+  delivery — see the go-live item below.
 
 ### GO-LIVE — register the Flutterwave webhook URL (deferred; no public server yet)
   The webhook handler is built + signature-verifying, but the URL is NOT registered on
