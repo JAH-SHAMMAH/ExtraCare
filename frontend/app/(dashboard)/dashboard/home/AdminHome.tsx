@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { SchoolWidgets } from "@/components/dashboard/widgets/SchoolWidgets";
+import { ClassDistributionChart } from "@/components/dashboard/ClassDistributionChart";
 import { PeoplePulse } from "@/components/dashboard/PeoplePulse";
 import { useAuthStore } from "@/lib/store";
 import { useExecutiveOverview, useWorkspaceOverview, type ExecutiveOverview, type WorkspaceOverview } from "@/hooks/useDashboard";
@@ -84,6 +85,11 @@ export function AdminHome() {
 
       {/* Secondary insights row — Transport + SMS */}
           <SecondaryRow data={data} loading={showSkeleton} />
+
+      {/* School class distribution (students per class · current session / all sessions) */}
+          <div className="mt-4">
+            <ClassDistributionChart />
+          </div>
 
       {/* Module-specific widgets (school) */}
           <div className="mt-8">
