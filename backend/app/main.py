@@ -19,6 +19,8 @@ from app.routers import support as support_router
 from app.routers import remita as remita_router
 from app.routers import fee_payments as fee_payments_router
 from app.routers import hr_extended as hr_extended_router
+from app.routers import search as search_router
+from app.routers import upload as upload_router
 from app.routers.modules import (
     classroom,
     cbt,
@@ -317,6 +319,8 @@ app.include_router(leave_router.router, prefix=API_V1)
 app.include_router(messenger_router.router, prefix=API_V1)
 app.include_router(feed_router.router, prefix=API_V1)
 app.include_router(live_router.router, prefix=API_V1)
+app.include_router(search_router.router, prefix=API_V1)
+app.include_router(upload_router.router, prefix=API_V1)
 
 # Static file mount for uploaded media (/uploads/<org_id>/<file>). Path is
 # configurable via UPLOAD_DIR. We ensure the dir exists so the mount doesn't

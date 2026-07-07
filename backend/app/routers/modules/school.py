@@ -178,6 +178,24 @@ async def create_student(
     return _student_dict(student)
 
 
+@router.get("/students/{id}", dependencies=[_can_read])
+async def get_student(
+    id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Single student by id — completes the students CRUD (list/create/update/
+    delete already existed; this GET-by-id was the only gap)."""
+    s = (await db.execute(
+        select(Student).where(
+            Student.id == id, Student.org_id == current_user.org_id,
+            Student.is_deleted == False)  # noqa: E712
+    )).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail=f"Student not found for id: {id}")
+    return _student_dict(s)
+
+
 @router.patch("/students/{id}", dependencies=[_can_write])
 async def update_student(
     id: str,
