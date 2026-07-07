@@ -601,6 +601,38 @@ async def mark_attendance(
     return {"marked": len(created), "date": target_date.isoformat()}
 
 
+@router.get("/attendance", dependencies=[_can_read])
+async def list_attendance(
+    class_id: str | None = None,
+    attendance_date: date | None = Query(default=None, alias="date"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Existing attendance records for a class + date. The marking grid reads this
+    so already-saved marks pre-populate (the frontend merges them onto the roster);
+    without it the grid always looked blank even after saving."""
+    query = select(AttendanceRecord).where(AttendanceRecord.org_id == current_user.org_id)
+    if class_id:
+        query = query.where(AttendanceRecord.class_id == class_id)
+    if attendance_date:
+        query = query.where(AttendanceRecord.date == attendance_date)
+    query = query.order_by(AttendanceRecord.date.desc())
+    rows = (await db.execute(query)).scalars().all()
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "student_id": r.student_id,
+                "class_id": r.class_id,
+                "date": r.date.isoformat() if r.date else None,
+                "status": getattr(r.status, "value", r.status),
+                "notes": r.notes,
+            }
+            for r in rows
+        ]
+    }
+
+
 @router.get("/attendance/summary", dependencies=[_can_read])
 async def attendance_summary(
     class_id: str,
