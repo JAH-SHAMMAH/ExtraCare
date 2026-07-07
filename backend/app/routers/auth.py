@@ -13,11 +13,13 @@ from app.core.single_school import get_school_org
 from app.core.security import (
     verify_password, hash_password, create_access_token,
     create_refresh_token, decode_token, generate_secure_token,
+    validate_password_strength,
 )
 from app.core.cookies import set_auth_cookies, clear_auth_cookies, issue_csrf_token
 from app.schemas.auth import (
     LoginRequest, TokenResponse, RefreshRequest,
     RegisterOrgRequest, PasswordResetRequest, PasswordResetConfirm, UserMeResponse,
+    ChangePasswordRequest,
 )
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
@@ -288,6 +290,35 @@ async def get_me(
         from app.services.onboarding import evaluate as evaluate_onboarding
         await evaluate_onboarding(db, org)
     return UserMeResponse.from_user(current_user, org)
+
+
+@router.post("/change-password", summary="Change your own password")
+async def change_password(
+    data: ChangePasswordRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Self-service password change. Verifies the current password, enforces
+    strength on the new one, and clears force_password_change — this is what a user
+    does to satisfy an admin-initiated reset."""
+    user = (await db.execute(select(User).where(User.id == current_user.id))).scalar_one_or_none()
+    if not user or not user.hashed_password or not verify_password(data.current_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    violations = validate_password_strength(data.new_password)
+    if violations:
+        raise HTTPException(status_code=422, detail=" ".join(violations))
+    if verify_password(data.new_password, user.hashed_password):
+        raise HTTPException(status_code=422, detail="New password must differ from the current one.")
+    user.hashed_password = hash_password(data.new_password)
+    user.force_password_change = False
+    await db.flush()
+    await log_action(
+        db, AuditAction.PASSWORD_RESET, user.org_id, actor=user,
+        resource_type="User", resource_id=user.id, resource_label=user.full_name,
+        request=request,
+    )
+    return {"changed": True}
 
 
 def _identity_claims(user, org: Organization) -> dict:

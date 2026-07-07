@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useUsers, useUpdateUserStatus, useDeleteUser, useAvailableRoles } from "@/hooks/useUsers";
+import { useUsers, useUpdateUserStatus, useDeleteUser, useAvailableRoles, useResetPassword } from "@/hooks/useUsers";
 import { UserCreateModal } from "@/components/users/UserCreateModal";
 import { cn, timeAgo, STATUS_COLORS, getInitials } from "@/lib/utils";
-import { Search, Download, UserPlus, MoreVertical, Shield, Ban, Trash2, Edit } from "lucide-react";
+import { Search, Download, UserPlus, MoreVertical, Shield, Ban, Trash2, Edit, KeyRound, Copy, X, Check } from "lucide-react";
 import type { User, UserStatus } from "@/types";
 import { useAuthStore } from "@/lib/store";
 
@@ -19,6 +19,11 @@ export default function UsersPage() {
   const { data: rolesData } = useAvailableRoles();
   const { mutate: updateStatus } = useUpdateUserStatus();
   const { mutate: deleteUser } = useDeleteUser();
+  const resetPassword = useResetPassword();
+  const [resetResult, setResetResult] = useState<{ name: string; temp: string } | null>(null);
+
+  const handleReset = (u: User) =>
+    resetPassword.mutate(u.id, { onSuccess: (r: any) => setResetResult({ name: u.full_name, temp: r.temporary_password }) });
 
   const canWrite = hasPermission("users:write");
   const canDelete = hasPermission("users:delete");
@@ -114,6 +119,7 @@ export default function UsersPage() {
                     onSuspend={() => updateStatus({ id: user.id, status: "suspended" })}
                     onActivate={() => updateStatus({ id: user.id, status: "active" })}
                     onDelete={() => deleteUser(user.id)}
+                    onResetPassword={() => handleReset(user)}
                   />
                 ))}
             </tbody>
@@ -165,17 +171,51 @@ export default function UsersPage() {
         availableRoles={rolesData?.items || []}
         onSuccess={() => setPage(1)}
       />
+
+      {resetResult && <TempPasswordDialog name={resetResult.name} temp={resetResult.temp} onClose={() => setResetResult(null)} />}
     </div>
   );
 }
 
-function UserRow({ user, canWrite, canDelete, onSuspend, onActivate, onDelete }: {
+function TempPasswordDialog({ name, temp, onClose }: { name: string; temp: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard?.writeText(temp).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
+  };
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center"><KeyRound size={16} /></div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Password reset</h2>
+              <p className="text-[11px] text-slate-400">{name}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+        </div>
+        <p className="text-xs text-slate-500 mb-3">Share this one-time password with the user. They&apos;ll be required to change it on their next sign-in.</p>
+        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
+          <code className="flex-1 text-sm font-mono font-bold text-slate-900 break-all">{temp}</code>
+          <button onClick={copy} className="text-slate-400 hover:text-brand-600 shrink-0" title="Copy">
+            {copied ? <Check size={15} className="text-emerald-600" /> : <Copy size={15} />}
+          </button>
+        </div>
+        <button onClick={onClose} className="btn-secondary w-full justify-center mt-4">Done</button>
+      </div>
+    </div>
+  );
+}
+
+function UserRow({ user, canWrite, canDelete, onSuspend, onActivate, onDelete, onResetPassword }: {
   user: User;
   canWrite: boolean;
   canDelete: boolean;
   onSuspend: () => void;
   onActivate: () => void;
   onDelete: () => void;
+  onResetPassword: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const primaryRole = user.roles?.[0];
@@ -228,6 +268,7 @@ function UserRow({ user, canWrite, canDelete, onSuspend, onActivate, onDelete }:
               <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl border border-slate-200 shadow-lg z-50 py-1">
                 <MenuItem icon={Edit} label="Edit user" onClick={() => setMenuOpen(false)} />
                 <MenuItem icon={Shield} label="Change role" onClick={() => setMenuOpen(false)} />
+                <MenuItem icon={KeyRound} label="Reset password" onClick={() => { onResetPassword(); setMenuOpen(false); }} />
                 {user.status === "active"
                   ? <MenuItem icon={Ban} label="Suspend" onClick={() => { onSuspend(); setMenuOpen(false); }} className="text-orange-600" />
                   : <MenuItem icon={Shield} label="Activate" onClick={() => { onActivate(); setMenuOpen(false); }} className="text-emerald-600" />

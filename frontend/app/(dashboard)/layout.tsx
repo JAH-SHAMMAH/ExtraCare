@@ -15,7 +15,7 @@ import { doneProgress } from "@/lib/progress";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -36,6 +36,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       router.replace("/login");
     }
   }, [mounted, isAuthenticated, router]);
+
+  // Force-change enforcement: if an admin reset this account, block the app until
+  // the user sets a new password. The change-password page itself stays reachable.
+  useEffect(() => {
+    if (mounted && isAuthenticated && user?.force_password_change && pathname !== "/dashboard/change-password") {
+      router.replace("/dashboard/change-password");
+    }
+  }, [mounted, isAuthenticated, user?.force_password_change, pathname, router]);
 
   // Close the nav-timing bracket opened by Sidebar's markNavClick. Fires
   // after the route's children commit, so the measurement reflects "click

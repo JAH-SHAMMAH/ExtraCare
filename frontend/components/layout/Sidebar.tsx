@@ -257,7 +257,8 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/deactivated-users", label: "Manage Deactivated Users", icon: UserCog },
       { href: "/dashboard/modules/school/week-entries", label: "Manage Week Entries", icon: CalendarClock },
       { href: "/dashboard/modules/school/result-publish", label: "Result Publish Helper", icon: ClipboardList },
-      { href: "/dashboard/modules/school/user-roles", label: "Manage User Roles & Password", icon: UserCheck },
+      // Role management lives on the Users page (the one source of truth); the old
+      // "Manage User Roles & Password" surface was a duplicate and now redirects there.
       { href: "/dashboard/modules/school/biometric", label: "Manage Biometric", icon: Activity },
       { href: "/dashboard/modules/school/custom-fields", label: "Manage Custom Field", icon: FolderOpen },
     ],

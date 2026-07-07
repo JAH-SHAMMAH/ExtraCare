@@ -10,6 +10,7 @@ export interface AuthUser {
   primary_role: string;
   permissions: string[];
   mfa_enabled: boolean;
+  force_password_change?: boolean;
   org?: Organization | null;
 }
 

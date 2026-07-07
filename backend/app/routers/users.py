@@ -3,9 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from sqlalchemy.orm import selectinload
+import secrets
+
 from app.database import get_db
 from app.deps import get_current_user, get_current_active_user
 from app.core.permissions import PermissionChecker
+from app.core.security import hash_password
 from app.models.user import User, UserStatus
 from app.models.role import Role
 from app.schemas.user import (
@@ -278,6 +281,37 @@ async def assign_roles(
         severity="warning", request=request,
     )
     return UserResponse.from_orm_with_roles(user, loaded_roles=list(user.roles))
+
+
+@router.post("/{user_id}/reset-password", dependencies=[_can_write])
+async def reset_user_password(
+    user_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Admin-initiated reset: set a one-time temp password the user MUST change
+    before the account is usable again. Returns the temp password so the admin can
+    hand it over out-of-band. Audited."""
+    user = (await db.execute(
+        select(User).where(User.id == user_id, User.org_id == current_user.org_id, User.is_deleted == False)
+    )).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Use change-password for your own account.")
+    temp = secrets.token_urlsafe(9)
+    user.hashed_password = hash_password(temp)
+    user.force_password_change = True
+    user.password_reset_token = None
+    user.password_reset_expires = None
+    await db.flush()
+    await log_action(
+        db, AuditAction.PASSWORD_RESET, current_user.org_id, actor=current_user,
+        resource_type="User", resource_id=user.id, resource_label=user.full_name,
+        severity="warning", request=request,
+    )
+    return {"temporary_password": temp, "force_password_change": True}
 
 
 @router.delete("/{user_id}", status_code=204, dependencies=[_can_delete])

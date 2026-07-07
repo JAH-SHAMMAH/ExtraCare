@@ -162,6 +162,8 @@ export const authApi = {
   }) => api.post("/auth/register", data).then((r) => r.data),
 
   me: () => api.get("/auth/me").then((r) => r.data),
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    api.post("/auth/change-password", data).then((r) => r.data),
   logout: async () => {
     // Cookie mode: hit the server so it can clear the httpOnly cookies (JS
     // can't). Best-effort — local state is cleared regardless.
@@ -184,6 +186,7 @@ export const usersApi = {
   updateStatus: (id: string, status: string) => api.patch(`/users/${id}/status`, { status }).then((r) => r.data),
   assignRoles: (id: string, role_ids: string[]) => api.patch(`/users/${id}/roles`, role_ids).then((r) => r.data),
   invite: (data: object) => api.post("/users/invite", data).then((r) => r.data),
+  resetPassword: (id: string) => api.post(`/users/${id}/reset-password`).then((r) => r.data),
   delete: (id: string) => api.delete(`/users/${id}`),
 };
 

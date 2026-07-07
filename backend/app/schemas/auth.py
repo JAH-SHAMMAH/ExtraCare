@@ -1,5 +1,5 @@
 from typing import Literal
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from app.core.security import validate_password_strength
 
 
@@ -82,6 +82,7 @@ class UserMeResponse(BaseModel):
     primary_role: str
     permissions: list[str]
     mfa_enabled: bool
+    force_password_change: bool = False
     org: OrganizationSummary | None = None
 
     model_config = {"from_attributes": True}
@@ -98,8 +99,14 @@ class UserMeResponse(BaseModel):
             primary_role=user.primary_role,
             permissions=list(user.permissions),
             mfa_enabled=user.mfa_enabled,
+            force_password_change=bool(getattr(user, "force_password_change", False)),
             org=OrganizationSummary.from_org(org) if org is not None else None,
         )
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class LoginRequest(BaseModel):

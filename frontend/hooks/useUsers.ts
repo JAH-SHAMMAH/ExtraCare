@@ -94,3 +94,11 @@ export function useInviteUser() {
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to send invitation."),
   });
 }
+
+/** Admin resets a user's password → returns { temporary_password } to hand over. */
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: (id: string) => usersApi.resetPassword(id),
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to reset password."),
+  });
+}

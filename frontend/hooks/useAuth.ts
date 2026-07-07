@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Cookies from "js-cookie";
@@ -107,4 +107,19 @@ export function useLogout() {
     router.push("/login");
     toast.info("Logged out successfully.");
   };
+}
+
+/** Self-service password change. Refetches /me on success so the force-change
+ *  flag clears and the enforcement redirect releases. */
+export function useChangePassword() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { current_password: string; new_password: string }) =>
+      authApi.changePassword(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["me"] });
+      toast.success("Password changed.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to change password."),
+  });
 }

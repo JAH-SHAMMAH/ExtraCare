@@ -39,6 +39,9 @@ class User(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     # Password reset
     password_reset_token = Column(String(255), nullable=True)
     password_reset_expires = Column(DateTime(timezone=True), nullable=True)
+    # Set when an admin resets the password to a temp one — the user must change it
+    # before using the app. Cleared on a successful self-service change.
+    force_password_change = Column(Boolean, default=False, nullable=False)
 
     # Invite flow
     invite_token = Column(String(255), nullable=True)
