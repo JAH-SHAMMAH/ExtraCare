@@ -242,12 +242,7 @@ export const schoolApi = {
     results: (exam_id: string) => api.get(`/school/exams/${exam_id}/results`).then((r) => r.data),
     submitResults: (exam_id: string, results: object[]) => api.post(`/school/exams/${exam_id}/results`, results).then((r) => r.data),
   },
-  fees: {
-    list: (p?: object) => api.get("/school/fees", { params: p }).then((r) => r.data),
-    create: (data: object) => api.post("/school/fees", data).then((r) => r.data),
-    recordPayment: (id: string, data: object) => api.post(`/school/fees/${id}/pay`, data).then((r) => r.data),
-    summary: (p?: object) => api.get("/school/fees/summary", { params: p }).then((r) => r.data),
-  },
+  // Fees moved to financeApi.feeRecords (/finance/fee-records) — /school/fees was never built.
   attendance: {
     list: (p?: object) => api.get("/school/attendance", { params: p }).then((r) => r.data),
     mark: (records: object[], date?: string) => api.post("/school/attendance", records, { params: { attendance_date: date } }).then((r) => r.data),

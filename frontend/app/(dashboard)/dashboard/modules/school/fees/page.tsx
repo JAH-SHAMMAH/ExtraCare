@@ -1,48 +1,80 @@
 "use client";
 
 import { useState } from "react";
-import { useFees, useCreateFee, useRecordFeePayment } from "@/hooks/useSchool";
-import { usePrimaryBankAccount } from "@/hooks/useFinance";
+import Link from "next/link";
+import { useFeeRecords, usePrimaryBankAccount } from "@/hooks/useFinance";
 import { cn, formatDate, formatCurrency } from "@/lib/utils";
-import { Wallet, Plus, X, Loader2, Search, DollarSign, Landmark } from "lucide-react";
+import { Wallet, Search, Landmark, ArrowUpRight, AlertTriangle } from "lucide-react";
 import type { FeeRecord } from "@/types";
 
-const STATUS_MAP: Record<string, string> = { paid: "bg-emerald-50 text-emerald-700 border-emerald-200", partial: "bg-amber-50 text-amber-700 border-amber-200", unpaid: "bg-red-50 text-red-700 border-red-200", overdue: "bg-red-100 text-red-800 border-red-300" };
+/**
+ * Fee Management — collections overview. A read-focused window onto the real
+ * StudentFeeRecord data (GET /finance/fee-records): what every student has been
+ * billed, paid, discounted, and still owes. Assigning/editing fees lives in Fee
+ * Assignment (the single write path); recording a payment against a record has no
+ * backend yet, so this surface intentionally does neither — it reports, it doesn't
+ * mutate.
+ */
+
+const STATUS_STYLE: Record<string, string> = {
+  paid: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  partial: "bg-amber-50 text-amber-700 border-amber-200",
+  unpaid: "bg-red-50 text-red-700 border-red-200",
+};
+
+type StatusTab = "all" | "unpaid" | "partial" | "paid";
+
+function isOverdue(f: FeeRecord): boolean {
+  return !!f.due_date && f.outstanding_balance > 0 && new Date(f.due_date) < new Date();
+}
 
 export default function FeesPage() {
-  const [tab, setTab] = useState<"all" | "paid" | "unpaid" | "overdue">("all");
-  const [showForm, setShowForm] = useState(false);
-  const [payingId, setPayingId] = useState<string | null>(null);
-  const [payAmount, setPayAmount] = useState("");
+  const [tab, setTab] = useState<StatusTab>("all");
+  const [search, setSearch] = useState("");
 
-  const { data, isLoading } = useFees({ status: tab === "all" ? undefined : tab });
+  const { data, isLoading } = useFeeRecords();
   const { data: payTo } = usePrimaryBankAccount();
-  const createFee = useCreateFee();
-  const recordPayment = useRecordFeePayment();
 
-  const [form, setForm] = useState({ student_id: "", fee_type: "tuition", amount: "", due_date: "", term: "1st Term", academic_year: new Date().getFullYear().toString() });
-  const resetForm = () => { setForm({ student_id: "", fee_type: "tuition", amount: "", due_date: "", term: "1st Term", academic_year: new Date().getFullYear().toString() }); setShowForm(false); };
-  const handleSubmit = () => { createFee.mutate({ ...form, amount: parseFloat(form.amount) }, { onSuccess: resetForm }); };
-  const handlePay = (id: string) => { recordPayment.mutate({ id, data: { amount: parseFloat(payAmount) } }, { onSuccess: () => { setPayingId(null); setPayAmount(""); } }); };
+  const items: FeeRecord[] = data ?? [];
 
-  const items = data?.items || (Array.isArray(data) ? data : []);
-  const totalCollected = items.reduce((s: number, f: FeeRecord) => s + (f.paid_amount || 0), 0);
-  const totalOutstanding = items.reduce((s: number, f: FeeRecord) => s + (f.balance || 0), 0);
+  // Summary reflects the whole roster, not the active filter.
+  const totalBilled = items.reduce((s, f) => s + (f.total_fee || 0), 0);
+  const totalCollected = items.reduce((s, f) => s + (f.paid_amount || 0), 0);
+  const totalOutstanding = items.reduce((s, f) => s + (f.outstanding_balance || 0), 0);
+  const collectionRate = totalBilled > 0 ? Math.round((totalCollected / totalBilled) * 100) : 0;
+
+  const filtered = items.filter((f) => {
+    const matchStatus = tab === "all" || f.payment_status === tab;
+    const matchSearch = !search || (f.student_name || f.student_id || "").toLowerCase().includes(search.toLowerCase());
+    return matchStatus && matchSearch;
+  });
+
+  const summary = [
+    { label: "Total Billed", value: formatCurrency(totalBilled) },
+    { label: "Collected", value: formatCurrency(totalCollected) },
+    { label: "Outstanding", value: formatCurrency(totalOutstanding) },
+    { label: "Collection Rate", value: `${collectionRate}%` },
+  ];
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
         <div>
-          <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Education</span><span>/</span><span className="text-brand-600 font-semibold">Fees</span></nav>
+          <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Education</span><span>/</span><span className="text-brand-600 font-semibold">Fee Management</span></nav>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Fee Management</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Track fees, payments, and outstanding balances.</p>
+          <p className="text-slate-500 text-sm mt-0.5">Collections overview — what every student has been billed and still owes.</p>
         </div>
-        <button onClick={() => { resetForm(); setShowForm(true); }} className="btn-primary gap-2"><Plus size={15} /> Create Fee</button>
+        <Link href="/dashboard/modules/school/fee-assignment" className="btn-secondary gap-2">
+          <ArrowUpRight size={15} /> Assign / edit fees
+        </Link>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        {[{ label: "Total Records", value: items.length || "—" }, { label: "Collected", value: formatCurrency(totalCollected) }, { label: "Outstanding", value: formatCurrency(totalOutstanding) }, { label: "Overdue", value: items.filter((f: FeeRecord) => f.status === "overdue").length || "0" }].map(({ label, value }) => (
-          <div key={label} className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">{label}</p><p className="text-xl font-black text-slate-900">{value}</p></div>
+        {summary.map(({ label, value }) => (
+          <div key={label} className="bg-white rounded-xl border border-slate-200 p-4">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">{label}</p>
+            <p className="text-xl font-black text-slate-900 tabular-nums">{value}</p>
+          </div>
         ))}
       </div>
 
@@ -57,53 +89,43 @@ export default function FeesPage() {
         </div>
       )}
 
-      {showForm && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6">
-          <div className="flex items-center justify-between mb-4"><h2 className="text-sm font-bold text-slate-800">Create Fee Record</h2><button onClick={resetForm} className="text-slate-400 hover:text-slate-600"><X size={16} /></button></div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div><label className="label">Student ID *</label><input value={form.student_id} onChange={(e) => setForm({ ...form, student_id: e.target.value })} className="input" /></div>
-            <div><label className="label">Fee Type</label><select value={form.fee_type} onChange={(e) => setForm({ ...form, fee_type: e.target.value })} className="input"><option value="tuition">Tuition</option><option value="admission">Admission</option><option value="exam">Exam</option><option value="transport">Transport</option><option value="hostel">Hostel</option><option value="other">Other</option></select></div>
-            <div><label className="label">Amount *</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="input" /></div>
-            <div><label className="label">Due Date *</label><input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} className="input" /></div>
-            <div><label className="label">Term</label><input value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input" /></div>
-            <div><label className="label">Academic Year</label><input value={form.academic_year} onChange={(e) => setForm({ ...form, academic_year: e.target.value })} className="input" /></div>
-          </div>
-          <div className="flex justify-end gap-3 mt-4"><button onClick={resetForm} className="btn-secondary">Cancel</button><button onClick={handleSubmit} disabled={createFee.isPending} className="btn-primary gap-2">{createFee.isPending && <Loader2 size={15} className="animate-spin" />}Create</button></div>
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <div className="flex gap-2 flex-wrap">
+          {(["all", "unpaid", "partial", "paid"] as const).map((t) => (
+            <button key={t} onClick={() => setTab(t)} className={cn("px-4 py-2 rounded-lg text-sm font-medium transition-colors capitalize", tab === t ? "bg-brand-600 text-white" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50")}>{t}</button>
+          ))}
         </div>
-      )}
-
-      <div className="flex gap-2 mb-4">
-        {(["all", "paid", "unpaid", "overdue"] as const).map((t) => (<button key={t} onClick={() => setTab(t)} className={cn("px-4 py-2 rounded-lg text-sm font-medium transition-colors capitalize", tab === t ? "bg-brand-600 text-white" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50")}>{t}</button>))}
+        <div className="relative sm:ml-auto sm:w-64">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search student…" className="input pl-9 w-full" />
+        </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
         <table className="w-full text-left">
-          <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Student", "Type", "Amount", "Paid", "Balance", "Due Date", "Status", ""].map((h) => (<th key={h} className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>))}</tr></thead>
+          <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Student", "Term / Session", "Billed", "Discount", "Paid", "Outstanding", "Status", "Due Date"].map((h) => (<th key={h} className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-widest text-slate-500 whitespace-nowrap">{h}</th>))}</tr></thead>
           <tbody className="divide-y divide-slate-50">
             {isLoading ? Array.from({ length: 5 }).map((_, i) => (<tr key={i}><td colSpan={8} className="px-5 py-4"><div className="h-4 bg-slate-100 rounded animate-pulse w-48" /></td></tr>))
-            : items.length === 0 ? (<tr><td colSpan={8} className="px-5 py-16 text-center text-slate-400 text-sm"><Wallet size={32} className="mx-auto mb-2 opacity-50" />No fee records found.</td></tr>)
-            : items.map((f: FeeRecord) => (
-              <tr key={f.id} className="hover:bg-slate-50/70 transition-colors">
-                <td className="px-5 py-3.5 text-sm font-bold text-slate-900">{f.student_name || f.student_id}</td>
-                <td className="px-5 py-3.5"><span className="badge bg-slate-50 text-slate-600 border-slate-200 capitalize">{f.fee_type}</span></td>
-                <td className="px-5 py-3.5 text-sm font-medium text-slate-800">{formatCurrency(f.amount)}</td>
-                <td className="px-5 py-3.5 text-sm text-emerald-600">{formatCurrency(f.paid_amount)}</td>
-                <td className="px-5 py-3.5 text-sm text-red-600 font-medium">{formatCurrency(f.balance)}</td>
-                <td className="px-5 py-3.5 text-xs text-slate-500">{formatDate(f.due_date)}</td>
-                <td className="px-5 py-3.5"><span className={cn("badge capitalize", STATUS_MAP[f.status] || "")}>{f.status}</span></td>
-                <td className="px-5 py-3.5">
-                  {f.balance > 0 && (payingId === f.id ? (
-                    <div className="flex items-center gap-2">
-                      <input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="Amount" className="input w-24 text-xs" />
-                      <button onClick={() => handlePay(f.id)} disabled={recordPayment.isPending} className="text-xs text-brand-600 font-semibold">Pay</button>
-                      <button onClick={() => setPayingId(null)} className="text-xs text-slate-400">Cancel</button>
-                    </div>
-                  ) : (
-                    <button onClick={() => { setPayingId(f.id); setPayAmount(""); }} className="text-xs text-brand-600 font-semibold hover:underline flex items-center gap-1"><DollarSign size={12} />Record Payment</button>
-                  ))}
-                </td>
-              </tr>
-            ))}
+            : filtered.length === 0 ? (<tr><td colSpan={8} className="px-5 py-16 text-center text-slate-400 text-sm"><Wallet size={32} className="mx-auto mb-2 opacity-50" />No fee records found. Assign fees in <Link href="/dashboard/modules/school/fee-assignment" className="text-brand-600 font-semibold hover:underline">Fee Assignment</Link>.</td></tr>)
+            : filtered.map((f) => {
+              const overdue = isOverdue(f);
+              return (
+                <tr key={f.id} className="hover:bg-slate-50/70 transition-colors">
+                  <td className="px-5 py-3.5 text-sm font-bold text-slate-900 whitespace-nowrap">{f.student_name || f.student_id}</td>
+                  <td className="px-5 py-3.5 text-xs text-slate-500 whitespace-nowrap">{f.term}<span className="text-slate-300"> · </span>{f.session_year}</td>
+                  <td className="px-5 py-3.5 text-sm font-medium text-slate-800 tabular-nums">{formatCurrency(f.total_fee)}</td>
+                  <td className="px-5 py-3.5 text-sm text-slate-500 tabular-nums">{f.discount_amount ? formatCurrency(f.discount_amount) : "—"}</td>
+                  <td className="px-5 py-3.5 text-sm text-emerald-600 tabular-nums">{formatCurrency(f.paid_amount)}</td>
+                  <td className="px-5 py-3.5 text-sm text-red-600 font-medium tabular-nums">{formatCurrency(f.outstanding_balance)}</td>
+                  <td className="px-5 py-3.5"><span className={cn("badge capitalize", STATUS_STYLE[f.payment_status] || "bg-slate-50 text-slate-600 border-slate-200")}>{f.payment_status}</span></td>
+                  <td className={cn("px-5 py-3.5 text-xs whitespace-nowrap", overdue ? "text-red-600 font-semibold" : "text-slate-500")}>
+                    {f.due_date ? (
+                      <span className="inline-flex items-center gap-1">{overdue && <AlertTriangle size={12} />}{formatDate(f.due_date)}</span>
+                    ) : "—"}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

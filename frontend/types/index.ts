@@ -196,22 +196,9 @@ export interface ExamResult {
   remarks: string | null;
 }
 
-export interface FeeRecord {
-  id: string;
-  student_id: string;
-  student_name: string | null;
-  fee_type: "tuition" | "admission" | "exam" | "transport" | "hostel" | "other";
-  amount: number;
-  paid_amount: number;
-  balance: number;
-  due_date: string;
-  status: "paid" | "partial" | "unpaid" | "overdue";
-  payment_date: string | null;
-  payment_method: string | null;
-  term: string;
-  academic_year: string;
-  created_at: string;
-}
+// FeeRecord is defined once, below, matching the real StudentFeeRecord backend shape
+// (/finance/fee-records). An earlier phantom shape (amount/balance/fee_type for a
+// never-built /school/fees API) was removed here to end the duplicate declaration.
 
 export interface AttendanceRecord {
   id: string;

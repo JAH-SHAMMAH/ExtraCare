@@ -232,45 +232,9 @@ export function useSubmitExamResults() {
 }
 
 // ── Fees ─────────────────────────────────────────────────────────────────────
-
-export function useFees(params?: { page?: number; page_size?: number; status?: string; student_id?: string }) {
-  return useQuery({
-    queryKey: ["fees", params],
-    queryFn: () => schoolApi.fees.list(params),
-  });
-}
-
-export function useCreateFee() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: object) => schoolApi.fees.create(data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["fees"] });
-      toast.success("Fee record created.");
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to create fee record."),
-  });
-}
-
-export function useRecordFeePayment() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: object }) => schoolApi.fees.recordPayment(id, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["fees"] });
-      toast.success("Payment recorded.");
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to record payment."),
-  });
-}
-
-export function useFeeSummary(params?: { term?: string; academic_year?: string }) {
-  return useQuery({
-    queryKey: ["fee-summary", params],
-    queryFn: () => schoolApi.fees.summary(params),
-    staleTime: 60_000,
-  });
-}
+// Fee records live under /finance/fee-records — see useFeeRecords in useFinance.ts.
+// The old /school/fees hooks were removed: that endpoint was never built, and the
+// Fee Management page now reads the real StudentFeeRecord data (collections view).
 
 // ── Attendance ───────────────────────────────────────────────────────────────
 
