@@ -16,6 +16,15 @@ class GradeStatus(str, enum.Enum):
     PUBLISHED = "published"
 
 
+class ExamSittingStatus(str, enum.Enum):
+    """Status of a manual Exam sitting. Named distinctly from the CBT `ExamStatus`
+    (draft/published/active/closed) defined below — different lifecycle."""
+    SCHEDULED = "scheduled"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
 class Student(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     __tablename__ = "students"
 
@@ -207,6 +216,8 @@ class Grade(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     student_id = Column(String(36), ForeignKey("students.id"), nullable=False, index=True)
     subject_id = Column(String(36), ForeignKey("subjects.id"), nullable=False, index=True)
+    # Set when the grade was entered against an Exam sitting (else a standalone grade).
+    exam_id = Column(String(36), ForeignKey("exams.id"), nullable=True, index=True)
     term = Column(String(50), nullable=True)  # e.g. "Term 1", "Semester 2"
     score = Column(Float, nullable=True)
     max_score = Column(Float, default=100.0)
@@ -217,6 +228,28 @@ class Grade(Base, UUIDMixin, TimestampMixin, TenantMixin):
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
     student = relationship("Student", back_populates="grades")
+
+
+class Exam(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A manual exam sitting for a class + subject — teachers enter marks against
+    it, which land as Grade rows tagged with exam_id (so results flow into the
+    existing report-card). Distinct from CBTExam, which is online/auto-scored."""
+    __tablename__ = "exams"
+
+    name = Column(String(150), nullable=False)
+    exam_type = Column(String(30), default="midterm", nullable=False)  # midterm/final/quiz/assignment/practical
+    subject_id = Column(String(36), ForeignKey("subjects.id"), nullable=True, index=True)
+    class_id = Column(String(36), ForeignKey("school_classes.id"), nullable=True, index=True)
+    term = Column(String(50), nullable=True)
+    session_year = Column(String(20), nullable=True)
+    exam_date = Column(Date, nullable=True)
+    start_time = Column(String(10), nullable=True)
+    end_time = Column(String(10), nullable=True)
+    total_marks = Column(Float, default=100.0, nullable=False)
+    pass_marks = Column(Float, default=40.0, nullable=False)
+    status = Column(Enum(ExamSittingStatus), default=ExamSittingStatus.SCHEDULED, nullable=False)
+    created_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 
 class Timetable(Base, UUIDMixin, TimestampMixin, TenantMixin):

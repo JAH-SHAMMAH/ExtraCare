@@ -10,7 +10,7 @@ from app.deps import get_current_active_user
 from app.models.user import User, UserStatus
 from app.models.modules.school import (
     Student, SchoolClass, AttendanceRecord, Grade, Subject, Timetable,
-    LessonPlan, LessonPlanStatus, ParentGuardian,
+    LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus,
 )
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
@@ -20,6 +20,7 @@ from app.schemas.student import StudentCreate, StudentUpdate
 from app.schemas.teacher import TeacherCreate, TeacherUpdate
 from app.schemas.school_class import ClassCreate, ClassUpdate
 from app.schemas.subject import SubjectCreate, SubjectUpdate
+from app.schemas.exam import ExamCreate, ExamUpdate, ExamResultRow, EXAM_TYPES, EXAM_STATUSES
 
 logger = logging.getLogger("extracare.school")
 
@@ -700,6 +701,308 @@ def _student_dict(s: Student) -> dict:
         "is_active": s.is_active,
         "created_at": s.created_at.isoformat() if s.created_at else None,
     }
+
+
+# ── Exams (manual gradebook) ────────────────────────────────────────────────────
+# A teacher schedules an Exam for a class + subject, then enters marks against it.
+# Marks land as Grade rows tagged with exam_id, so they flow into the existing
+# report-card. Distinct from CBT (online/auto-scored). WAEC-style default scale;
+# edit GRADING_SCALE to change the boundaries school-wide.
+
+GRADING_SCALE = [(70, "A"), (60, "B"), (50, "C"), (45, "D"), (40, "E")]  # else "F"
+
+
+def _grade_letter(score: float | None, total: float | None) -> str | None:
+    if score is None or not total or total <= 0:
+        return None
+    pct = (float(score) / float(total)) * 100
+    for threshold, letter in GRADING_SCALE:
+        if pct >= threshold:
+            return letter
+    return "F"
+
+
+async def _load_exam(db: AsyncSession, exam_id: str, org_id: str) -> Exam:
+    e = (await db.execute(
+        select(Exam).where(Exam.id == exam_id, Exam.org_id == org_id)
+    )).scalar_one_or_none()
+    if not e:
+        raise HTTPException(status_code=404, detail=f"Exam not found for id: {exam_id}")
+    return e
+
+
+async def _subject_names(db: AsyncSession, org_id: str, ids: set[str]) -> dict[str, str]:
+    ids = {i for i in ids if i}
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(Subject.id, Subject.name).where(Subject.org_id == org_id, Subject.id.in_(ids))
+    )).all()
+    return {r.id: r.name for r in rows}
+
+
+async def _class_names(db: AsyncSession, org_id: str, ids: set[str]) -> dict[str, str]:
+    ids = {i for i in ids if i}
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(SchoolClass.id, SchoolClass.name).where(SchoolClass.org_id == org_id, SchoolClass.id.in_(ids))
+    )).all()
+    return {r.id: r.name for r in rows}
+
+
+def _exam_dict(e: Exam, subject_name: str | None, class_name: str | None,
+               entered: int | None = None, total_students: int | None = None) -> dict:
+    d = {
+        "id": e.id,
+        "name": e.name,
+        "exam_type": e.exam_type,
+        "subject_id": e.subject_id,
+        "subject_name": subject_name,
+        "class_id": e.class_id,
+        "class_name": class_name,
+        "term": e.term,
+        "session_year": e.session_year,
+        "date": e.exam_date.isoformat() if e.exam_date else None,
+        "start_time": e.start_time,
+        "end_time": e.end_time,
+        "total_marks": float(e.total_marks or 0),
+        "pass_marks": float(e.pass_marks or 0),
+        "status": e.status.value if isinstance(e.status, ExamSittingStatus) else e.status,
+        "created_at": e.created_at.isoformat() if e.created_at else None,
+    }
+    if entered is not None:
+        d["entered_count"] = entered
+        d["total_students"] = total_students or 0
+    return d
+
+
+async def _exam_entered_counts(db: AsyncSession, org_id: str, exam_ids: list[str]) -> dict[str, int]:
+    if not exam_ids:
+        return {}
+    rows = (await db.execute(
+        select(Grade.exam_id, func.count(Grade.id)).where(
+            Grade.org_id == org_id, Grade.exam_id.in_(exam_ids)
+        ).group_by(Grade.exam_id)
+    )).all()
+    return {r[0]: r[1] for r in rows}
+
+
+@router.get("/exams", dependencies=[_can_read])
+async def list_exams(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    status: str | None = None,
+    class_id: str | None = None,
+    term: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    query = select(Exam).where(Exam.org_id == org_id)
+    if status and status in EXAM_STATUSES:
+        query = query.where(Exam.status == ExamSittingStatus(status))
+    if class_id:
+        query = query.where(Exam.class_id == class_id)
+    if term:
+        query = query.where(Exam.term == term)
+    query = query.order_by(Exam.created_at.desc())
+    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar()
+    exams = (await db.execute(query.offset((page - 1) * page_size).limit(page_size))).scalars().all()
+
+    subj = await _subject_names(db, org_id, {e.subject_id for e in exams})
+    cls = await _class_names(db, org_id, {e.class_id for e in exams})
+    entered = await _exam_entered_counts(db, org_id, [e.id for e in exams])
+    totals = await _class_student_counts(db, org_id, [e.class_id for e in exams if e.class_id])
+    return {
+        "items": [
+            _exam_dict(e, subj.get(e.subject_id), cls.get(e.class_id),
+                       entered.get(e.id, 0), totals.get(e.class_id, 0))
+            for e in exams
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.get("/exams/{exam_id}", dependencies=[_can_read])
+async def get_exam(exam_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org_id = current_user.org_id
+    e = await _load_exam(db, exam_id, org_id)
+    subj = await _subject_names(db, org_id, {e.subject_id})
+    cls = await _class_names(db, org_id, {e.class_id})
+    entered = await _exam_entered_counts(db, org_id, [e.id])
+    totals = await _class_student_counts(db, org_id, [e.class_id] if e.class_id else [])
+    return _exam_dict(e, subj.get(e.subject_id), cls.get(e.class_id),
+                      entered.get(e.id, 0), totals.get(e.class_id, 0))
+
+
+@router.post("/exams", status_code=201, dependencies=[_can_write])
+async def create_exam(
+    data: ExamCreate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    if (data.exam_type or "midterm") not in EXAM_TYPES:
+        raise HTTPException(status_code=422, detail=f"Invalid exam_type. One of: {', '.join(sorted(EXAM_TYPES))}.")
+    status = data.status or "scheduled"
+    if status not in EXAM_STATUSES:
+        raise HTTPException(status_code=422, detail=f"Invalid status. One of: {', '.join(sorted(EXAM_STATUSES))}.")
+    if data.subject_id:
+        await _load_subject(db, data.subject_id, org_id)   # 404 if not in org
+    if data.class_id:
+        await _load_class(db, data.class_id, org_id)
+    e = Exam(
+        name=data.name, exam_type=data.exam_type or "midterm",
+        subject_id=data.subject_id or None, class_id=data.class_id or None,
+        term=data.term, session_year=data.session_year, exam_date=data.date,
+        start_time=data.start_time, end_time=data.end_time,
+        total_marks=data.total_marks if data.total_marks is not None else 100,
+        pass_marks=data.pass_marks if data.pass_marks is not None else 40,
+        status=ExamSittingStatus(status), created_by=current_user.id, org_id=org_id,
+    )
+    db.add(e)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+        resource_type="Exam", resource_id=e.id, resource_label=e.name,
+        new_values={"name": e.name, "class_id": e.class_id, "subject_id": e.subject_id}, request=request,
+    )
+    subj = await _subject_names(db, org_id, {e.subject_id})
+    cls = await _class_names(db, org_id, {e.class_id})
+    totals = await _class_student_counts(db, org_id, [e.class_id] if e.class_id else [])
+    return _exam_dict(e, subj.get(e.subject_id), cls.get(e.class_id), 0, totals.get(e.class_id, 0))
+
+
+@router.patch("/exams/{exam_id}", dependencies=[_can_write])
+async def update_exam(
+    exam_id: str,
+    data: ExamUpdate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    e = await _load_exam(db, exam_id, org_id)
+    updates = data.model_dump(exclude_unset=True)
+    if updates.get("exam_type") and updates["exam_type"] not in EXAM_TYPES:
+        raise HTTPException(status_code=422, detail="Invalid exam_type.")
+    if "status" in updates:
+        if updates["status"] not in EXAM_STATUSES:
+            raise HTTPException(status_code=422, detail="Invalid status.")
+        updates["status"] = ExamSittingStatus(updates["status"])
+    if updates.get("subject_id"):
+        await _load_subject(db, updates["subject_id"], org_id)
+    if updates.get("class_id"):
+        await _load_class(db, updates["class_id"], org_id)
+    if "date" in updates:            # frontend field name -> ORM column
+        e.exam_date = updates.pop("date")
+    for field, value in updates.items():
+        setattr(e, field, value)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="Exam", resource_id=e.id, resource_label=e.name,
+        new_values={k: (v.value if isinstance(v, ExamSittingStatus) else v) for k, v in updates.items()}, request=request,
+    )
+    subj = await _subject_names(db, org_id, {e.subject_id})
+    cls = await _class_names(db, org_id, {e.class_id})
+    entered = await _exam_entered_counts(db, org_id, [e.id])
+    totals = await _class_student_counts(db, org_id, [e.class_id] if e.class_id else [])
+    return _exam_dict(e, subj.get(e.subject_id), cls.get(e.class_id),
+                      entered.get(e.id, 0), totals.get(e.class_id, 0))
+
+
+async def _exam_roster(db: AsyncSession, org_id: str, class_id: str | None) -> list[Student]:
+    if not class_id:
+        return []
+    return list((await db.execute(
+        select(Student).where(
+            Student.org_id == org_id, Student.class_id == class_id, Student.is_deleted == False)  # noqa: E712
+        .order_by(Student.last_name, Student.first_name)
+    )).scalars().all())
+
+
+@router.get("/exams/{exam_id}/results", dependencies=[_can_read])
+async def get_exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Roster for the exam's class, each row merged with any entered grade — the
+    marks-entry grid reads this so every enrolled student shows up (blank if not
+    yet scored)."""
+    org_id = current_user.org_id
+    e = await _load_exam(db, exam_id, org_id)
+    roster = await _exam_roster(db, org_id, e.class_id)
+    grades = {g.student_id: g for g in (await db.execute(
+        select(Grade).where(Grade.exam_id == e.id, Grade.org_id == org_id)
+    )).scalars().all()}
+    results = []
+    for s in roster:
+        g = grades.get(s.id)
+        name = " ".join(p for p in [s.first_name, s.last_name] if p) or s.student_id or s.id
+        results.append({
+            "student_id": s.id,
+            "student_name": name,
+            "score": g.score if g else None,
+            "max_score": float(e.total_marks or 0),
+            "grade_letter": g.grade_letter if g else None,
+            "remarks": g.remarks if g else None,
+        })
+    subj = await _subject_names(db, org_id, {e.subject_id})
+    cls = await _class_names(db, org_id, {e.class_id})
+    return {
+        "exam": _exam_dict(e, subj.get(e.subject_id), cls.get(e.class_id), len(grades), len(roster)),
+        "results": results,
+    }
+
+
+@router.post("/exams/{exam_id}/results", dependencies=[_can_write])
+async def submit_exam_results(
+    exam_id: str,
+    results: list[ExamResultRow],
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Upsert marks for the exam. Each score becomes/updates a Grade tagged with
+    exam_id (grade_letter computed from GRADING_SCALE); rows with no score are
+    skipped. A subject is required — a grade must belong to a subject."""
+    org_id = current_user.org_id
+    e = await _load_exam(db, exam_id, org_id)
+    if not e.subject_id:
+        raise HTTPException(status_code=422, detail="Set a subject on the exam before entering results.")
+    # Only accept students actually enrolled in the exam's class.
+    roster_ids = {s.id for s in await _exam_roster(db, org_id, e.class_id)}
+    existing = {g.student_id: g for g in (await db.execute(
+        select(Grade).where(Grade.exam_id == e.id, Grade.org_id == org_id)
+    )).scalars().all()}
+    submitted = 0
+    for row in results:
+        if row.score is None or (roster_ids and row.student_id not in roster_ids):
+            continue
+        letter = _grade_letter(row.score, e.total_marks)
+        g = existing.get(row.student_id)
+        if g:
+            g.score = row.score
+            g.max_score = e.total_marks
+            g.remarks = row.remarks
+            g.grade_letter = letter
+            g.graded_by = current_user.id
+        else:
+            db.add(Grade(
+                student_id=row.student_id, subject_id=e.subject_id, exam_id=e.id, term=e.term,
+                score=row.score, max_score=e.total_marks, grade_letter=letter,
+                remarks=row.remarks, graded_by=current_user.id, org_id=org_id,
+            ))
+        submitted += 1
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+        resource_type="Grade", resource_label=f"{submitted} result(s) for exam {e.name}",
+        severity="warning", metadata={"exam_id": e.id, "count": submitted}, request=request,
+    )
+    return {"submitted": submitted}
 
 
 # ── Timetable ─────────────────────────────────────────────────────────────────

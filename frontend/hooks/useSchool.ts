@@ -210,24 +210,37 @@ export function useCreateExam() {
   });
 }
 
-export function useExamResults(exam_id: string) {
+export function useUpdateExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => schoolApi.exams.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["exams"] });
+      toast.success("Exam updated.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update exam."),
+  });
+}
+
+export function useExamResults(examId: string | null) {
   return useQuery({
-    queryKey: ["exam-results", exam_id],
-    queryFn: () => schoolApi.exams.results(exam_id),
-    enabled: !!exam_id,
+    queryKey: ["exam-results", examId],
+    queryFn: () => schoolApi.exams.results(examId as string),
+    enabled: !!examId,
   });
 }
 
 export function useSubmitExamResults() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ exam_id, results }: { exam_id: string; results: object[] }) =>
-      schoolApi.exams.submitResults(exam_id, results),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["exam-results"] });
-      toast.success("Results submitted.");
+    mutationFn: ({ examId, results }: { examId: string; results: object[] }) =>
+      schoolApi.exams.submitResults(examId, results),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["exam-results", vars.examId] });
+      qc.invalidateQueries({ queryKey: ["exams"] });
+      toast.success("Results saved.");
     },
-    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to submit results."),
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save results."),
   });
 }
 
