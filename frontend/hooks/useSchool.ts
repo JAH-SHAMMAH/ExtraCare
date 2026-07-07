@@ -249,6 +249,30 @@ export function useSubmitExamResults() {
 // The old /school/fees hooks were removed: that endpoint was never built, and the
 // Fee Management page now reads the real StudentFeeRecord data (collections view).
 
+// ── Result publishing ────────────────────────────────────────────────────────
+
+export function useGradePublishStatus(params: { term: string; class_id?: string; exam_id?: string; subject_id?: string }) {
+  return useQuery({
+    queryKey: ["grade-publish-status", params],
+    queryFn: () => schoolApi.grades.publishStatus(params),
+    enabled: !!params.term && !!(params.class_id || params.exam_id),
+  });
+}
+
+export function usePublishGrades() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { term: string; status: "published" | "draft"; class_id?: string; exam_id?: string; subject_id?: string }) =>
+      schoolApi.grades.publish(data),
+    onSuccess: (res: any, vars) => {
+      qc.invalidateQueries({ queryKey: ["grade-publish-status"] });
+      const verb = vars.status === "published" ? "Published" : "Unpublished";
+      toast.success(`${verb} ${res?.updated ?? 0} grade${(res?.updated ?? 0) === 1 ? "" : "s"}.`);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update results."),
+  });
+}
+
 // ── Attendance ───────────────────────────────────────────────────────────────
 
 export function useAttendance(params?: { class_id?: string; date?: string }) {

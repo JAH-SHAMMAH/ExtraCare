@@ -265,6 +265,10 @@ export const schoolApi = {
   grades: {
     submit: (grades: object[]) => api.post("/school/grades", grades).then((r) => r.data),
     reportCard: (student_id: string, term?: string) => api.get(`/school/students/${student_id}/report-card`, { params: { term } }).then((r) => r.data),
+    publishStatus: (params: { term: string; class_id?: string; exam_id?: string; subject_id?: string }) =>
+      api.get("/school/grades/publish-status", { params }).then((r) => r.data),
+    publish: (data: { term: string; status: "published" | "draft"; class_id?: string; exam_id?: string; subject_id?: string }) =>
+      api.post("/school/grades/publish", data).then((r) => r.data),
   },
   // Library (Phase 6.5). Routes live under /library/* — separate router.
   library: {

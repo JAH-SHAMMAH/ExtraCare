@@ -11,6 +11,7 @@ from app.models.user import User, UserStatus
 from app.models.modules.school import (
     Student, SchoolClass, AttendanceRecord, Grade, Subject, Timetable,
     LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus, TeacherRating,
+    GradeStatus,
 )
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
@@ -22,6 +23,7 @@ from app.schemas.school_class import ClassCreate, ClassUpdate
 from app.schemas.subject import SubjectCreate, SubjectUpdate
 from app.schemas.exam import ExamCreate, ExamUpdate, ExamResultRow, EXAM_TYPES, EXAM_STATUSES
 from app.schemas.rating import RatingCreate
+from app.schemas.grade import GradePublish
 
 logger = logging.getLogger("extracare.school")
 
@@ -726,6 +728,12 @@ async def get_report_card(
     )
     if term:
         query = query.where(Grade.term == term)
+    # Fail-safe: parents/students see only published/finalised grades. Staff — the
+    # people who enter and publish grades, identified by the broad students-read
+    # scope — see everything, drafts included. Draft grades never leak downstream.
+    see_drafts = current_user.has_permission("school:students:read")
+    if not see_drafts:
+        query = query.where(Grade.status == GradeStatus.PUBLISHED)
 
     result = await db.execute(query)
     grades = result.scalars().all()
@@ -734,7 +742,11 @@ async def get_report_card(
         "student_id": student_id,
         "term": term,
         "grades": [
-            {"subject_id": g.subject_id, "score": g.score, "max_score": g.max_score, "remarks": g.remarks}
+            {
+                "subject_id": g.subject_id, "score": g.score, "max_score": g.max_score,
+                "remarks": g.remarks,
+                "status": g.status.value if hasattr(g.status, "value") else g.status,
+            }
             for g in grades
         ],
         "average": round(sum(g.score for g in grades if g.score) / len(grades), 2) if grades else 0,
@@ -752,6 +764,74 @@ def _student_dict(s: Student) -> dict:
         "is_active": s.is_active,
         "created_at": s.created_at.isoformat() if s.created_at else None,
     }
+
+
+# ── Result publishing ───────────────────────────────────────────────────────────
+# Bulk publish/unpublish grades for a term so parents/students see only finalised
+# results (the report-card above gates on Grade.status). Scope must name a class or
+# exam — never publish a whole term blind.
+
+def _grades_in_scope(org_id: str, term: str, class_id: str | None,
+                     exam_id: str | None, subject_id: str | None):
+    query = select(Grade).where(Grade.org_id == org_id, Grade.term == term)
+    if class_id:
+        query = query.where(Grade.student_id.in_(
+            select(Student.id).where(Student.class_id == class_id, Student.org_id == org_id)
+        ))
+    if exam_id:
+        query = query.where(Grade.exam_id == exam_id)
+    if subject_id:
+        query = query.where(Grade.subject_id == subject_id)
+    return query
+
+
+@router.get("/grades/publish-status", dependencies=[_can_read])
+async def grade_publish_status(
+    term: str,
+    class_id: str | None = None,
+    exam_id: str | None = None,
+    subject_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """How many grades in the scope are published vs still draft — drives the
+    Result Publish page's summary + button state."""
+    rows = (await db.execute(
+        _grades_in_scope(current_user.org_id, term, class_id, exam_id, subject_id)
+    )).scalars().all()
+    published = sum(1 for g in rows if g.status == GradeStatus.PUBLISHED)
+    return {"term": term, "total": len(rows), "published": published, "draft": len(rows) - published}
+
+
+@router.post("/grades/publish", dependencies=[_can_write])
+async def publish_grades(
+    payload: GradePublish,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Bulk set grade status for a scoped set (term + a class and/or exam). Refuses
+    to run without a class or exam — publishing an entire term blind is too broad."""
+    if not (payload.class_id or payload.exam_id):
+        raise HTTPException(status_code=422, detail="Scope too broad — specify a class or an exam.")
+    new_status = GradeStatus(payload.status)
+    rows = (await db.execute(
+        _grades_in_scope(current_user.org_id, payload.term, payload.class_id, payload.exam_id, payload.subject_id)
+    )).scalars().all()
+    changed = 0
+    for g in rows:
+        if g.status != new_status:
+            g.status = new_status
+            changed += 1
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="Grade", resource_label=f"{payload.status} {changed} grade(s) for {payload.term}",
+        severity="warning",
+        metadata={"term": payload.term, "class_id": payload.class_id, "exam_id": payload.exam_id,
+                  "status": payload.status, "changed": changed}, request=request,
+    )
+    return {"updated": changed, "matched": len(rows), "status": payload.status}
 
 
 # ── Exams (manual gradebook) ────────────────────────────────────────────────────
