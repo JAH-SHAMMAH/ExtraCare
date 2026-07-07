@@ -10,7 +10,7 @@ from app.deps import get_current_active_user
 from app.models.user import User, UserStatus
 from app.models.modules.school import (
     Student, SchoolClass, AttendanceRecord, Grade, Subject, Timetable,
-    LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus,
+    LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus, TeacherRating,
 )
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
@@ -21,6 +21,7 @@ from app.schemas.teacher import TeacherCreate, TeacherUpdate
 from app.schemas.school_class import ClassCreate, ClassUpdate
 from app.schemas.subject import SubjectCreate, SubjectUpdate
 from app.schemas.exam import ExamCreate, ExamUpdate, ExamResultRow, EXAM_TYPES, EXAM_STATUSES
+from app.schemas.rating import RatingCreate
 
 logger = logging.getLogger("extracare.school")
 
@@ -1003,6 +1004,126 @@ async def submit_exam_results(
         severity="warning", metadata={"exam_id": e.id, "count": submitted}, request=request,
     )
     return {"submitted": submitted}
+
+
+# ── Teacher Ratings ─────────────────────────────────────────────────────────────
+# Student→teacher 1–5 star feedback. One current rating per (student, teacher):
+# resubmitting updates it. Read = school:read, submit = school:write.
+
+async def _rating_student_names(db: AsyncSession, org_id: str, ids: set[str]) -> dict[str, str]:
+    ids = {i for i in ids if i}
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(Student.id, Student.first_name, Student.last_name).where(
+            Student.org_id == org_id, Student.id.in_(ids))
+    )).all()
+    return {r.id: " ".join(p for p in [r.first_name, r.last_name] if p) or r.id for r in rows}
+
+
+def _rating_dict(r: TeacherRating, student_name: str | None) -> dict:
+    return {
+        "id": r.id,
+        "teacher_id": r.teacher_id,
+        "student_id": r.student_id,
+        "student_name": student_name,
+        "rating": int(r.rating),
+        "comment": r.comment,
+        "subject_id": r.subject_id,
+        "term": r.term,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    }
+
+
+@router.get("/ratings", dependencies=[_can_read])
+async def list_ratings(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    teacher_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    query = select(TeacherRating).where(TeacherRating.org_id == org_id)
+    if teacher_id:
+        query = query.where(TeacherRating.teacher_id == teacher_id)
+    query = query.order_by(TeacherRating.created_at.desc())
+    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar()
+    rows = (await db.execute(query.offset((page - 1) * page_size).limit(page_size))).scalars().all()
+    names = await _rating_student_names(db, org_id, {r.student_id for r in rows})
+    return {
+        "items": [_rating_dict(r, names.get(r.student_id)) for r in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.post("/ratings", status_code=201, dependencies=[_can_write])
+async def submit_rating(
+    data: RatingCreate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    teacher = (await db.execute(
+        select(User).where(User.id == data.teacher_id, User.org_id == org_id)
+    )).scalar_one_or_none()
+    if not teacher:
+        raise HTTPException(status_code=404, detail="Teacher not found in your organisation.")
+    # The UI captures a free-text student id — accept either the uuid or the human code.
+    student = (await db.execute(
+        select(Student).where(
+            Student.org_id == org_id, Student.is_deleted == False,  # noqa: E712
+            or_(Student.id == data.student_id, Student.student_id == data.student_id))
+    )).scalars().first()
+    if not student:
+        raise HTTPException(status_code=404, detail=f"Student not found: {data.student_id}")
+    if data.subject_id:
+        await _load_subject(db, data.subject_id, org_id)
+    # One current rating per (student, teacher) — update if it already exists.
+    r = (await db.execute(
+        select(TeacherRating).where(
+            TeacherRating.teacher_id == data.teacher_id,
+            TeacherRating.student_id == student.id,
+            TeacherRating.org_id == org_id)
+    )).scalar_one_or_none()
+    if r:
+        r.rating = data.rating
+        r.comment = data.comment
+        r.subject_id = data.subject_id
+        r.term = data.term
+    else:
+        r = TeacherRating(
+            teacher_id=data.teacher_id, student_id=student.id, rating=data.rating,
+            comment=data.comment, subject_id=data.subject_id, term=data.term, org_id=org_id,
+        )
+        db.add(r)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+        resource_type="TeacherRating", resource_id=r.id,
+        resource_label=f"{data.rating}★ for {teacher.full_name}", request=request,
+    )
+    name = " ".join(p for p in [student.first_name, student.last_name] if p) or student.student_id
+    return _rating_dict(r, name)
+
+
+@router.get("/ratings/teacher/{teacher_id}", dependencies=[_can_read])
+async def teacher_rating_average(
+    teacher_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    rows = (await db.execute(
+        select(TeacherRating).where(TeacherRating.teacher_id == teacher_id, TeacherRating.org_id == org_id)
+    )).scalars().all()
+    count = len(rows)
+    average = round(sum(r.rating for r in rows) / count, 2) if count else 0
+    distribution = {n: sum(1 for r in rows if r.rating == n) for n in range(1, 6)}
+    return {"teacher_id": teacher_id, "average": average, "count": count, "distribution": distribution}
 
 
 # ── Timetable ─────────────────────────────────────────────────────────────────

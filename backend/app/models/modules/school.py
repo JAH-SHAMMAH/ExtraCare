@@ -506,6 +506,24 @@ class StudentFeedback(Base, UUIDMixin, TimestampMixin, TenantMixin):
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 
+class TeacherRating(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A student's 1–5 star rating (+ optional comment) of a teacher. One current
+    rating per (student, teacher) — resubmitting updates the existing row."""
+    __tablename__ = "teacher_ratings"
+
+    teacher_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    student_id = Column(String(36), ForeignKey("students.id"), nullable=False, index=True)
+    rating = Column(Integer, nullable=False)  # 1–5
+    comment = Column(Text, nullable=True)
+    subject_id = Column(String(36), ForeignKey("subjects.id"), nullable=True)
+    term = Column(String(50), nullable=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        Index("ix_teacher_ratings_teacher_org", "teacher_id", "org_id"),
+    )
+
+
 # ── Clubs & Activities ───────────────────────────────────────────────────────
 
 
