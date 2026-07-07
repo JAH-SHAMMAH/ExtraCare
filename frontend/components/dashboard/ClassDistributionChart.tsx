@@ -17,9 +17,23 @@ import type { SchoolClass } from "@/types";
  * straight from GET /school/classes (each row carries student_count + academic_year),
  * so this is a real, live chart — no separate analytics endpoint.
  *
- * Current view : one bar per class in the latest academic year (X = class name).
- * All sessions : one bar per academic year (X = session, Y = total students).
+ * Current view : one bar per class in the latest academic year (X = class name),
+ *                each class given its own hue so a level stays visually trackable
+ *                even as the roster grows or ordering shifts.
+ * All sessions : one bar per academic year (X = session, Y = total students) — a
+ *                time series, so a single accent rather than the per-class palette.
  */
+
+// Curated 12+ hue palette — distinct-but-cohesive, cycled per class in the current view.
+const PALETTE = [
+  "#38bdf8", "#34d399", "#fbbf24", "#fb7185", "#818cf8", "#2dd4bf",
+  "#fb923c", "#a78bfa", "#60a5fa", "#4ade80", "#f472b6", "#f87171",
+  "#22d3ee", "#facc15", "#c084fc", "#5eead4",
+];
+const SESSION_ACCENT = "#0ea5e9"; // all-sessions view is a time series → single accent
+const SCROLL_THRESHOLD = 12;       // above this many bars, scroll instead of squeezing
+const MIN_BAND = 56;               // px per bar when scrolling, so labels never collide
+
 export function ClassDistributionChart() {
   const [view, setView] = useState<"current" | "all">("current");
   // page_size 100 is the backend max — a school's class count sits well under it.
@@ -73,6 +87,9 @@ export function ClassDistributionChart() {
     [currentData],
   );
 
+  // Past the threshold, force a min width per bar and let the card scroll horizontally.
+  const needsScroll = chartData.length > SCROLL_THRESHOLD;
+
   return (
     <div className="bg-white rounded-xl border border-slate-200/70 p-5 shadow-sm">
       {/* Header + toggle */}
@@ -117,37 +134,50 @@ export function ClassDistributionChart() {
 
       {/* Body */}
       {showSkeleton ? (
-        <div className="flex items-end gap-3 h-[240px] px-2">
-          {Array.from({ length: 7 }).map((_, i) => (
+        <div className="flex items-end gap-3 h-[300px] px-2">
+          {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="flex-1 rounded-t-md" style={{ height: `${30 + ((i * 37) % 60)}%` }} />
           ))}
         </div>
       ) : chartData.length === 0 ? (
         <EmptyState />
       ) : (
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={chartData} margin={{ top: 8, right: 8, left: -12, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-            <XAxis
-              dataKey="label"
-              tick={{ fontSize: 11, fill: "#64748b" }}
-              interval={0}
-              angle={chartData.length > 6 ? -25 : 0}
-              textAnchor={chartData.length > 6 ? "end" : "middle"}
-              height={chartData.length > 6 ? 56 : 24}
-            />
-            <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} allowDecimals={false} width={36} />
-            <Tooltip
-              cursor={{ fill: "#f8fafc" }}
-              content={<DistTooltip view={view} />}
-            />
-            <Bar dataKey="students" radius={[4, 4, 0, 0]} maxBarSize={64}>
-              {chartData.map((_, i) => (
-                <Cell key={i} fill={view === "current" ? "#16a34a" : "#0ea5e9"} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <div className="overflow-x-auto -mx-1 px-1">
+          <div style={{ minWidth: needsScroll ? chartData.length * MIN_BAND : undefined }}>
+            <ResponsiveContainer width="100%" height={340}>
+              <BarChart data={chartData} margin={{ top: 8, right: 12, left: 8, bottom: 0 }} barCategoryGap="22%">
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
+                  tickFormatter={(v: string) => String(v).toUpperCase()}
+                  interval={0}
+                  angle={-35}
+                  textAnchor="end"
+                  height={72}
+                  tickMargin={8}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "#94a3b8" }}
+                  allowDecimals={false}
+                  width={48}
+                  label={{
+                    value: "Number of Students",
+                    angle: -90,
+                    position: "insideLeft",
+                    style: { textAnchor: "middle", fontSize: 11, fontWeight: 600, fill: "#64748b" },
+                  }}
+                />
+                <Tooltip cursor={{ fill: "#f8fafc" }} content={<DistTooltip view={view} />} />
+                <Bar dataKey="students" radius={[4, 4, 0, 0]} maxBarSize={46}>
+                  {chartData.map((_, i) => (
+                    <Cell key={i} fill={view === "current" ? PALETTE[i % PALETTE.length] : SESSION_ACCENT} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -184,7 +214,7 @@ function DistTooltip({
 
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center h-[240px] text-center">
+    <div className="flex flex-col items-center justify-center h-[300px] text-center">
       <div className="w-11 h-11 rounded-xl bg-slate-50 text-slate-300 flex items-center justify-center mb-3">
         <SchoolIcon size={20} />
       </div>
