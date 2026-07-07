@@ -115,7 +115,12 @@ class Subject(Base, UUIDMixin, TimestampMixin, TenantMixin):
     name = Column(String(100), nullable=False)
     code = Column(String(20), nullable=True)
     description = Column(Text, nullable=True)
+    department = Column(String(100), nullable=True)
+    credit_hours = Column(Integer, default=1, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
     teacher_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
+    # Free-text teacher label — the Subjects UI captures a name, not a linked user.
+    teacher_name = Column(String(120), nullable=True)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
     __table_args__ = (

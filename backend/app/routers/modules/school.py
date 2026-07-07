@@ -19,6 +19,7 @@ from app.models.audit import AuditAction
 from app.schemas.student import StudentCreate, StudentUpdate
 from app.schemas.teacher import TeacherCreate, TeacherUpdate
 from app.schemas.school_class import ClassCreate, ClassUpdate
+from app.schemas.subject import SubjectCreate, SubjectUpdate
 
 logger = logging.getLogger("extracare.school")
 
@@ -430,6 +431,136 @@ async def delete_class(
     await log_action(
         db, AuditAction.RECORD_DELETED, org_id, actor=current_user,
         resource_type="SchoolClass", resource_id=class_id, resource_label=label,
+        severity="warning", request=request,
+    )
+
+
+# ── Subjects (curriculum) ──────────────────────────────────────────────────────
+
+def _subject_dict(s: Subject) -> dict:
+    return {
+        "id": s.id,
+        "name": s.name,
+        "code": s.code or "",
+        "department": s.department,
+        "class_ids": [],   # subject↔class linkage not modelled yet; round-trips empty
+        "teacher_id": s.teacher_id,
+        "teacher_name": s.teacher_name,
+        "credit_hours": int(s.credit_hours or 1),
+        "is_active": bool(s.is_active),
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+    }
+
+
+async def _load_subject(db: AsyncSession, subject_id: str, org_id: str) -> Subject:
+    s = (await db.execute(
+        select(Subject).where(Subject.id == subject_id, Subject.org_id == org_id)
+    )).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail=f"Subject not found for id: {subject_id}")
+    return s
+
+
+@router.get("/subjects", dependencies=[_can_read])
+async def list_subjects(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=200),
+    search: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    query = select(Subject).where(Subject.org_id == current_user.org_id)
+    if search:
+        term = f"%{search}%"
+        query = query.where(
+            Subject.name.ilike(term) | Subject.code.ilike(term) | Subject.department.ilike(term)
+        )
+    query = query.order_by(Subject.name)
+    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar()
+    subjects = (await db.execute(query.offset((page - 1) * page_size).limit(page_size))).scalars().all()
+    return {
+        "items": [_subject_dict(s) for s in subjects],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.get("/subjects/{subject_id}", dependencies=[_can_read])
+async def get_subject(subject_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    return _subject_dict(await _load_subject(db, subject_id, current_user.org_id))
+
+
+@router.post("/subjects", status_code=201, dependencies=[_can_write])
+async def create_subject(
+    data: SubjectCreate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    await _validate_teacher(db, org_id, data.teacher_id)
+    s = Subject(
+        name=data.name, code=data.code, department=data.department,
+        credit_hours=data.credit_hours if data.credit_hours is not None else 1,
+        is_active=data.is_active if data.is_active is not None else True,
+        teacher_id=data.teacher_id or None, teacher_name=data.teacher_name, org_id=org_id,
+    )
+    db.add(s)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+        resource_type="Subject", resource_id=s.id, resource_label=s.name,
+        new_values={"name": s.name, "code": s.code, "department": s.department}, request=request,
+    )
+    return _subject_dict(s)
+
+
+@router.patch("/subjects/{subject_id}", dependencies=[_can_write])
+async def update_subject(
+    subject_id: str,
+    data: SubjectUpdate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    s = await _load_subject(db, subject_id, org_id)
+    updates = data.model_dump(exclude_unset=True)
+    if "teacher_id" in updates:
+        await _validate_teacher(db, org_id, updates["teacher_id"])
+    for field, value in updates.items():
+        setattr(s, field, value)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="Subject", resource_id=s.id, resource_label=s.name,
+        new_values=updates, request=request,
+    )
+    return _subject_dict(s)
+
+
+@router.delete("/subjects/{subject_id}", status_code=204, dependencies=[_can_write])
+async def delete_subject(
+    subject_id: str,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    s = await _load_subject(db, subject_id, org_id)
+    # Guard: subjects carry grades (Grade.subject_id FK). Block hard-delete if any exist.
+    graded = (await db.execute(
+        select(func.count(Grade.id)).where(Grade.subject_id == subject_id, Grade.org_id == org_id)
+    )).scalar() or 0
+    if graded > 0:
+        raise HTTPException(status_code=409, detail=f"Subject has {graded} grade record(s) — cannot delete.")
+    label = s.name
+    await db.delete(s)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_DELETED, org_id, actor=current_user,
+        resource_type="Subject", resource_id=subject_id, resource_label=label,
         severity="warning", request=request,
     )
 
