@@ -171,7 +171,9 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/deactivated-users", permission: "users:write" },
   // Planned stubs (sidebar-complete; backend to follow) — admin-only.
   { prefix: "/dashboard/modules/school/week-entries", permission: "settings:read" },
-  { prefix: "/dashboard/modules/school/result-publish", permission: "settings:read" },
+  // Result Publish is a grade operation — gate on school:write (its publish endpoint
+  // is school:write), so managers + org_admin (school:*) see it, not just settings holders.
+  { prefix: "/dashboard/modules/school/result-publish", permission: "school:write" },
   { prefix: "/dashboard/modules/school/user-roles", permission: "roles:write" },
   // ── Medicals module (confidential — medical:read) ───────────────────────
   { prefix: "/dashboard/modules/school/medical-dashboard", permission: "medical:read" },

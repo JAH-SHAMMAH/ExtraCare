@@ -737,14 +737,16 @@ async def get_report_card(
 
     result = await db.execute(query)
     grades = result.scalars().all()
+    subj_names = await _subject_names(db, current_user.org_id, {g.subject_id for g in grades})
 
     return {
         "student_id": student_id,
         "term": term,
         "grades": [
             {
-                "subject_id": g.subject_id, "score": g.score, "max_score": g.max_score,
-                "remarks": g.remarks,
+                "subject_id": g.subject_id, "subject_name": subj_names.get(g.subject_id),
+                "score": g.score, "max_score": g.max_score, "remarks": g.remarks,
+                "grade_letter": g.grade_letter,
                 "status": g.status.value if hasattr(g.status, "value") else g.status,
             }
             for g in grades

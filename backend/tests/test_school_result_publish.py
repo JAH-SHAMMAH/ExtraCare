@@ -66,6 +66,7 @@ async def test_report_card_owner_sees_published_only(db, org, teacher, school_cl
     card = await get_report_card(student.id, term="Term 1", db=db, current_user=parent)
     assert len(card["grades"]) == 1
     assert card["grades"][0]["score"] == 90 and card["grades"][0]["status"] == "published"
+    assert card["grades"][0]["subject_name"] == "Mathematics"  # readable, not a raw uuid
     assert card["average"] == 90
 
 

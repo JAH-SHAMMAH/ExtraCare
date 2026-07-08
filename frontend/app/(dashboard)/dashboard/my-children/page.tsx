@@ -87,8 +87,8 @@ function ChildRow({ child }: { child: ParentChild }) {
 
       <div className="flex divide-x divide-slate-50">
         <LinkCell href="/dashboard/my-children/attendance" icon={Calendar} label="Attendance history" />
-        <LinkCell href="/dashboard/modules/school/grades" icon={GraduationCap} label="Grades & reports" />
-        <LinkCell href="/dashboard/modules/school/fees" icon={Award} label="Fees & invoices" />
+        <LinkCell href="/dashboard/my-children/report-card" icon={GraduationCap} label="Grades & reports" />
+        <LinkCell href="/dashboard/my-children/payments" icon={Award} label="Fees & invoices" />
       </div>
     </div>
   );
