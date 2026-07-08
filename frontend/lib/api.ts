@@ -385,11 +385,22 @@ export const cbtApi = {
     review: (id: string) => api.get(`/cbt/attempts/${id}/review`).then((r) => r.data),
     remark: (id: string, items: Array<{ answer_id: string; points_awarded: number }>) =>
       api.post(`/cbt/attempts/${id}/remark`, items).then((r) => r.data),
+    reset: (id: string) => api.post(`/cbt/attempts/${id}/reset`).then((r) => r.data),
   },
   results: {
     get: (exam_id: string) => api.get(`/cbt/exams/${exam_id}/results`).then((r) => r.data),
     exportCsv: (exam_id: string) =>
       api.get(`/cbt/exams/${exam_id}/results/export`, { responseType: "blob" }).then((r) => r.data as Blob),
+  },
+  interventions: {
+    list: (p?: { status?: string; student_id?: string; exam_id?: string }) =>
+      api.get("/cbt/interventions", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/cbt/interventions", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/cbt/interventions/${id}`, data).then((r) => r.data),
+  },
+  settings: {
+    get: () => api.get("/cbt/settings").then((r) => r.data),
+    update: (data: object) => api.put("/cbt/settings", data).then((r) => r.data),
   },
 };
 

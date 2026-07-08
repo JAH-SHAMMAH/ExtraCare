@@ -69,6 +69,9 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/cbt/question-bank", permission: "school:read" },
   // Result Manager exposes every student's scores + correct answers — staff-only.
   { prefix: "/dashboard/modules/school/cbt/results", permission: "school:read" },
+  // Interventions surface flagged students' scores; Setup edits org-wide defaults — staff-only.
+  { prefix: "/dashboard/modules/school/cbt/interventions", permission: "school:read" },
+  { prefix: "/dashboard/modules/school/cbt/settings", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt", permission: "school:cbt:read" },
   { prefix: "/dashboard/modules/school/behaviour", permission: "school:behaviour:read" },
   { prefix: "/dashboard/modules/school/feedback", permission: "school:feedback:read" },

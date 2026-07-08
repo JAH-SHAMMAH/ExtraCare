@@ -474,6 +474,40 @@ class QuestionBankItem(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class InterventionStatus(str, enum.Enum):
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    RESOLVED = "resolved"
+
+
+class CBTIntervention(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A post-result flag — a student who underperformed on a CBT exam plus the
+    follow-up the school tracks to resolution (Phase C)."""
+    __tablename__ = "cbt_interventions"
+
+    student_id = Column(String(36), ForeignKey("students.id"), nullable=False, index=True)
+    exam_id = Column(String(36), ForeignKey("cbt_exams.id"), nullable=True, index=True)
+    attempt_id = Column(String(36), ForeignKey("cbt_attempts.id"), nullable=True)
+    reason = Column(Text, nullable=False)
+    note = Column(Text, nullable=True)          # the follow-up plan / actions taken
+    status = Column(Enum(InterventionStatus), default=InterventionStatus.OPEN, nullable=False)
+    created_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    resolved_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+
+class CBTSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Org-level CBT defaults used to prefill new exams (one row per org)."""
+    __tablename__ = "cbt_settings"
+
+    default_duration_minutes = Column(Integer, default=60, nullable=False)
+    default_pass_percentage = Column(Integer, default=50, nullable=False)
+    shuffle_default = Column(Boolean, default=False, nullable=False)
+    instructions = Column(Text, nullable=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
+
+
 # ── Pastoral / Behaviour ─────────────────────────────────────────────────────
 
 

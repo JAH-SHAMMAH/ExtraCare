@@ -32,6 +32,9 @@ from app.models.modules.school import (
     CBTAttempt,
     CBTAnswer,
     QuestionBankItem,
+    CBTIntervention,
+    CBTSettings,
+    InterventionStatus,
     Subject,
     ExamStatus,
     AttemptStatus,
@@ -39,6 +42,7 @@ from app.models.modules.school import (
     Student,
 )
 from app.schemas.question_bank import BankItemCreate, BankItemUpdate, ComposeFromBank
+from app.schemas.cbt_ops import InterventionCreate, InterventionUpdate, CBTSettingsUpdate
 from app.schemas.school_experience import (
     ExamCreate,
     ExamUpdate,
@@ -980,3 +984,186 @@ async def remark_attempt(
         resource_label=f"re-marked {changed} answer(s); score {attempt.score}", request=request,
     )
     return {"score": float(attempt.score or 0), "max_score": float(attempt.max_score or 0), "changed": changed}
+
+
+# ── Reset / Intervention / Settings (Phase C) ─────────────────────────────────
+# Staff-only ops: reset an attempt for a retake, flag a student for follow-up,
+# and set org-level CBT defaults.
+
+@router.post("/attempts/{attempt_id}/reset", dependencies=[_bank_write])
+async def reset_attempt(
+    attempt_id: str,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Delete an attempt + its answers so the student can retake the exam."""
+    org_id = current_user.org_id
+    attempt = await _load_attempt(db, attempt_id, org_id)
+    answers = (await db.execute(
+        select(CBTAnswer).where(CBTAnswer.attempt_id == attempt.id, CBTAnswer.org_id == org_id)
+    )).scalars().all()
+    for a in answers:
+        await db.delete(a)
+    await db.delete(attempt)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_DELETED, org_id, actor=current_user,
+        resource_type="CBTAttempt", resource_id=attempt_id,
+        resource_label=f"reset attempt for retake ({len(answers)} answers cleared)",
+        severity="warning", request=request,
+    )
+    return {"reset": True}
+
+
+def _intervention_dict(iv: CBTIntervention, student_name) -> dict:
+    return {
+        "id": iv.id,
+        "student_id": iv.student_id,
+        "student_name": student_name,
+        "exam_id": iv.exam_id,
+        "attempt_id": iv.attempt_id,
+        "reason": iv.reason,
+        "note": iv.note,
+        "status": iv.status.value if hasattr(iv.status, "value") else iv.status,
+        "created_at": iv.created_at.isoformat() if iv.created_at else None,
+        "resolved_at": iv.resolved_at.isoformat() if iv.resolved_at else None,
+    }
+
+
+async def _load_intervention(db: AsyncSession, iv_id: str, org_id: str) -> CBTIntervention:
+    iv = (await db.execute(
+        select(CBTIntervention).where(CBTIntervention.id == iv_id, CBTIntervention.org_id == org_id)
+    )).scalar_one_or_none()
+    if not iv:
+        raise HTTPException(status_code=404, detail="Intervention not found.")
+    return iv
+
+
+@router.get("/interventions", dependencies=[_bank_read])
+async def list_interventions(
+    status: str | None = None,
+    student_id: str | None = None,
+    exam_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    query = select(CBTIntervention).where(CBTIntervention.org_id == org_id)
+    if status in ("open", "in_progress", "resolved"):
+        query = query.where(CBTIntervention.status == InterventionStatus(status))
+    if student_id:
+        query = query.where(CBTIntervention.student_id == student_id)
+    if exam_id:
+        query = query.where(CBTIntervention.exam_id == exam_id)
+    query = query.order_by(CBTIntervention.created_at.desc())
+    rows = (await db.execute(query)).scalars().all()
+    names = await _cbt_student_names(db, org_id, {iv.student_id for iv in rows})
+    return {"items": [_intervention_dict(iv, names.get(iv.student_id)) for iv in rows]}
+
+
+@router.post("/interventions", status_code=201, dependencies=[_bank_write])
+async def create_intervention(
+    payload: InterventionCreate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Flag a student for follow-up (e.g. from a low score on the Result Manager)."""
+    org_id = current_user.org_id
+    student = (await db.execute(
+        select(Student).where(
+            Student.id == payload.student_id, Student.org_id == org_id, Student.is_deleted == False)  # noqa: E712
+    )).scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found.")
+    iv = CBTIntervention(
+        student_id=payload.student_id, exam_id=payload.exam_id, attempt_id=payload.attempt_id,
+        reason=payload.reason, note=payload.note, status=InterventionStatus.OPEN,
+        created_by=current_user.id, org_id=org_id,
+    )
+    db.add(iv)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+        resource_type="CBTIntervention", resource_id=iv.id,
+        resource_label=f"flagged {student.first_name} {student.last_name}", request=request,
+    )
+    name = " ".join(p for p in [student.first_name, student.last_name] if p) or student.student_id
+    return _intervention_dict(iv, name)
+
+
+@router.patch("/interventions/{iv_id}", dependencies=[_bank_write])
+async def update_intervention(
+    iv_id: str,
+    payload: InterventionUpdate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    iv = await _load_intervention(db, iv_id, org_id)
+    updates = payload.model_dump(exclude_unset=True)
+    if "status" in updates:
+        new_status = InterventionStatus(updates["status"])
+        iv.status = new_status
+        if new_status == InterventionStatus.RESOLVED:
+            iv.resolved_by = current_user.id
+            iv.resolved_at = datetime.now(timezone.utc)
+        else:
+            iv.resolved_by = None
+            iv.resolved_at = None
+    if "note" in updates:
+        iv.note = updates["note"]
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="CBTIntervention", resource_id=iv.id,
+        resource_label=f"intervention -> {iv.status.value if hasattr(iv.status, 'value') else iv.status}", request=request,
+    )
+    names = await _cbt_student_names(db, org_id, {iv.student_id})
+    return _intervention_dict(iv, names.get(iv.student_id))
+
+
+async def _get_or_create_settings(db: AsyncSession, org_id: str) -> CBTSettings:
+    s = (await db.execute(
+        select(CBTSettings).where(CBTSettings.org_id == org_id)
+    )).scalar_one_or_none()
+    if not s:
+        s = CBTSettings(org_id=org_id, default_duration_minutes=60, default_pass_percentage=50, shuffle_default=False)
+        db.add(s)
+        await db.flush()
+    return s
+
+
+def _settings_dict(s: CBTSettings) -> dict:
+    return {
+        "default_duration_minutes": int(s.default_duration_minutes or 60),
+        "default_pass_percentage": int(s.default_pass_percentage or 50),
+        "shuffle_default": bool(s.shuffle_default),
+        "instructions": s.instructions,
+    }
+
+
+@router.get("/settings", dependencies=[_bank_read])
+async def get_cbt_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    return _settings_dict(await _get_or_create_settings(db, current_user.org_id))
+
+
+@router.put("/settings", dependencies=[_bank_write])
+async def update_cbt_settings(
+    payload: CBTSettingsUpdate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    s = await _get_or_create_settings(db, org_id)
+    for k, v in payload.model_dump(exclude_unset=True).items():
+        setattr(s, k, v)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="CBTSettings", resource_id=s.id, resource_label="updated CBT defaults", request=request,
+    )
+    return _settings_dict(s)

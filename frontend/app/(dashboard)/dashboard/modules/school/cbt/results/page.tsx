@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useCBTExams, useExamResults, useAttemptReview, useRemarkAttempt } from "@/hooks/useSchoolExperience";
+import { useCBTExams, useExamResults, useAttemptReview, useRemarkAttempt, useResetAttempt, useCreateIntervention } from "@/hooks/useSchoolExperience";
 import { cbtApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { BarChart3, Download, Loader2, ArrowLeft, ClipboardEdit, X, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { BarChart3, Download, Loader2, ArrowLeft, ClipboardEdit, X, AlertTriangle, CheckCircle2, Flag, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -27,6 +27,8 @@ export default function CBTResultsPage() {
   const { data: examsData } = useCBTExams({ page_size: 100 });
   const exams: any[] = examsData?.items || [];
   const { data, isLoading } = useExamResults(examId || null);
+  const resetAttempt = useResetAttempt();
+  const createIntervention = useCreateIntervention();
 
   useEffect(() => { if (!examId && exams.length) setExamId(exams[0].id); }, [exams, examId]);
 
@@ -112,7 +114,19 @@ export default function CBTResultsPage() {
                       {a.needs_review && <span className="badge bg-amber-50 text-amber-700 border-amber-200 ml-1 inline-flex items-center gap-1"><AlertTriangle size={10} />review</span>}
                     </td>
                     <td className="px-5 py-3">
-                      <button onClick={() => setGradingId(a.id)} className="text-xs text-brand-600 font-semibold hover:underline inline-flex items-center gap-1"><ClipboardEdit size={13} />Grade</button>
+                      <div className="flex items-center gap-3">
+                        <button onClick={() => setGradingId(a.id)} className="text-xs text-brand-600 font-semibold hover:underline inline-flex items-center gap-1"><ClipboardEdit size={13} />Grade</button>
+                        <button
+                          onClick={() => createIntervention.mutate({ student_id: a.student_id, exam_id: examId, attempt_id: a.id, reason: `Scored ${a.percentage}% on ${data?.exam?.title ?? "this exam"}` })}
+                          disabled={createIntervention.isPending}
+                          className="text-xs text-amber-600 font-semibold hover:underline inline-flex items-center gap-1" title="Flag for intervention"
+                        ><Flag size={13} />Flag</button>
+                        <button
+                          onClick={() => { if (confirm(`Reset ${a.student_name || "this student"}'s attempt? Their answers are cleared and they can retake.`)) resetAttempt.mutate(a.id); }}
+                          disabled={resetAttempt.isPending}
+                          className="text-xs text-slate-500 font-semibold hover:underline inline-flex items-center gap-1" title="Reset for a retake"
+                        ><RotateCcw size={13} />Reset</button>
+                      </div>
                     </td>
                   </tr>
                 ))}

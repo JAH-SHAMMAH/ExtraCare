@@ -276,6 +276,55 @@ export function useRemarkAttempt() {
   });
 }
 
+// ── CBT: Reset / Interventions / Settings (Phase C) ──────────────────────────
+
+export function useResetAttempt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (attempt_id: string) => cbtApi.attempts.reset(attempt_id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cbt-results"] }); toast.success("Attempt reset — the student can retake."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to reset attempt."),
+  });
+}
+
+export function useInterventions(params?: { status?: string; student_id?: string; exam_id?: string }) {
+  return useQuery({
+    queryKey: ["cbt-interventions", params],
+    queryFn: () => cbtApi.interventions.list(params),
+  });
+}
+
+export function useCreateIntervention() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => cbtApi.interventions.create(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cbt-interventions"] }); toast.success("Flagged for intervention."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to flag."),
+  });
+}
+
+export function useUpdateIntervention() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => cbtApi.interventions.update(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cbt-interventions"] }); toast.success("Intervention updated."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update."),
+  });
+}
+
+export function useCBTSettings() {
+  return useQuery({ queryKey: ["cbt-settings"], queryFn: () => cbtApi.settings.get() });
+}
+
+export function useUpdateCBTSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => cbtApi.settings.update(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cbt-settings"] }); toast.success("CBT settings saved."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save settings."),
+  });
+}
+
 // ── CBT: Question Bank ───────────────────────────────────────────────────────
 
 export function useBankItems(params?: { subject_id?: string; topic?: string; difficulty?: string; question_type?: string; search?: string; page?: number; page_size?: number }) {

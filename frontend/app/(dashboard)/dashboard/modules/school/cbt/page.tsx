@@ -12,6 +12,7 @@ import {
   useDeleteCBTQuestion,
   useAddFromBank,
   useBankItems,
+  useCBTSettings,
 } from "@/hooks/useSchoolExperience";
 import { useMineFilter } from "@/hooks/useMineFilter";
 import { useHasPermission } from "@/components/guards/PermissionGate";
@@ -47,6 +48,7 @@ export default function CBTPage() {
   const createExam = useCreateCBTExam();
   const updateExam = useUpdateCBTExam();
   const deleteExam = useDeleteCBTExam();
+  const { data: cbtSettings } = useCBTSettings();
 
   const [form, setForm] = useState({
     title: "",
@@ -63,8 +65,10 @@ export default function CBTPage() {
   const resetForm = () => {
     setForm({
       title: "", description: "", class_id: "", subject_id: "",
-      start_time: "", end_time: "", duration_minutes: 60,
-      shuffle_questions: false, status: "draft",
+      start_time: "", end_time: "",
+      duration_minutes: cbtSettings?.default_duration_minutes ?? 60,
+      shuffle_questions: cbtSettings?.shuffle_default ?? false,
+      status: "draft",
     });
     setEditing(null);
     setShowForm(false);
