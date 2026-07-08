@@ -107,6 +107,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/eclassroom", label: "eClassroom", icon: NotebookPen },
       { href: "/dashboard/modules/school/cbt", label: "CBT", icon: MonitorCheck },
       { href: "/dashboard/modules/school/cbt/question-bank", label: "Question Bank", icon: FileQuestion },
+      { href: "/dashboard/modules/school/cbt/results", label: "Result Manager", icon: BarChart3 },
       { href: "/dashboard/modules/school/cbt/live", label: "Live Classes", icon: Radio },
       // Batch 3 (Academic Records) — shipped. subject-selection → school:subjects:read;
       // mark-books → school:grades:read; report-workflow → school:reports:write.

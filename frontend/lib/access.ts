@@ -67,6 +67,8 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // Question Bank holds correct answers — staff-only (school:read), stricter than
   // the cbt scope students hold to sit tests. Longer prefix wins over /cbt above.
   { prefix: "/dashboard/modules/school/cbt/question-bank", permission: "school:read" },
+  // Result Manager exposes every student's scores + correct answers — staff-only.
+  { prefix: "/dashboard/modules/school/cbt/results", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt", permission: "school:cbt:read" },
   { prefix: "/dashboard/modules/school/behaviour", permission: "school:behaviour:read" },
   { prefix: "/dashboard/modules/school/feedback", permission: "school:feedback:read" },

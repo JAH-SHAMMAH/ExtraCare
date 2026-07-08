@@ -48,7 +48,9 @@ from app.schemas.school_experience import (
     QuestionWithAnswer,
     AttemptSubmit,
     AttemptResponse,
+    RemarkItem,
 )
+from fastapi.responses import Response
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
 from app.services.audit_service import log_action
@@ -768,3 +770,213 @@ async def add_questions_from_bank(
         metadata={"exam_id": exam.id, "added": added}, request=request,
     )
     return {"added": added, "total_points": float(exam.total_points or 0)}
+
+
+# ── Results: manager / export / remark ───────────────────────────────────────
+# Staff-only (school:read/write, not cbt:*): these expose every student's scores
+# and correct answers. The auto-grader only scores MCQ/true-false; subjective
+# (short/long) answers land ungraded (points_awarded=None) — Test Remark is how a
+# teacher awards them, which re-totals the attempt.
+
+_PASS_FRACTION = 0.5  # CBTExam has no pass mark; 50% of total is the default line
+
+
+async def _cbt_student_names(db: AsyncSession, org_id: str, ids: set) -> dict:
+    ids = {i for i in ids if i}
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(Student.id, Student.first_name, Student.last_name).where(
+            Student.org_id == org_id, Student.id.in_(ids))
+    )).all()
+    return {r.id: " ".join(p for p in [r.first_name, r.last_name] if p) or r.id for r in rows}
+
+
+async def _load_attempt(db: AsyncSession, attempt_id: str, org_id: str) -> CBTAttempt:
+    a = (await db.execute(
+        select(CBTAttempt).where(CBTAttempt.id == attempt_id, CBTAttempt.org_id == org_id)
+    )).scalar_one_or_none()
+    if not a:
+        raise HTTPException(status_code=404, detail="Attempt not found.")
+    return a
+
+
+async def _ungraded_by_attempt(db: AsyncSession, org_id: str, attempt_ids: list[str]) -> dict[str, int]:
+    """attempt_id -> count of answers still awaiting a manual grade (points None)."""
+    if not attempt_ids:
+        return {}
+    rows = (await db.execute(
+        select(CBTAnswer.attempt_id, func.count(CBTAnswer.id)).where(
+            CBTAnswer.org_id == org_id, CBTAnswer.attempt_id.in_(attempt_ids),
+            CBTAnswer.points_awarded.is_(None))
+        .group_by(CBTAnswer.attempt_id)
+    )).all()
+    return {r[0]: r[1] for r in rows}
+
+
+def _result_rows(attempts, names, ungraded, total_points):
+    rows = []
+    for a in attempts:
+        score = float(a.score or 0)
+        mx = float(a.max_score or total_points or 0)
+        status = a.status.value if hasattr(a.status, "value") else a.status
+        rows.append({
+            "id": a.id, "student_id": a.student_id, "student_name": names.get(a.student_id),
+            "score": score, "max_score": mx,
+            "percentage": round(score / mx * 100, 1) if mx else 0.0,
+            "status": status,
+            "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
+            "needs_review": ungraded.get(a.id, 0) > 0,
+        })
+    return rows
+
+
+@router.get("/exams/{exam_id}/results", dependencies=[_bank_read])
+async def exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Result Manager for one exam: every attempt (student, score, %, review flag)
+    plus summary stats."""
+    org_id = current_user.org_id
+    exam = await _get_exam_or_404(db, exam_id, org_id)
+    attempts = (await db.execute(
+        select(CBTAttempt).where(CBTAttempt.exam_id == exam_id, CBTAttempt.org_id == org_id)
+        .order_by(CBTAttempt.score.desc())
+    )).scalars().all()
+    names = await _cbt_student_names(db, org_id, {a.student_id for a in attempts})
+    ungraded = await _ungraded_by_attempt(db, org_id, [a.id for a in attempts])
+    total_points = float(exam.total_points or 0)
+    rows = _result_rows(attempts, names, ungraded, total_points)
+
+    scored = [r for r in rows if r["status"] != "in_progress"]
+    scores = [r["score"] for r in scored]
+    stats = {
+        "attempts": len(rows),
+        "completed": len(scored),
+        "pending_review": sum(1 for r in rows if r["needs_review"]),
+        "average": round(sum(scores) / len(scores), 1) if scores else 0.0,
+        "highest": max(scores) if scores else 0.0,
+        "lowest": min(scores) if scores else 0.0,
+        "pass_rate": round(sum(1 for r in scored if r["max_score"] and r["score"] >= r["max_score"] * _PASS_FRACTION) / len(scored) * 100) if scored else 0,
+    }
+    return {
+        "exam": {"id": exam.id, "title": exam.title, "total_points": total_points,
+                 "class_id": exam.class_id, "subject_id": exam.subject_id},
+        "attempts": rows,
+        "stats": stats,
+    }
+
+
+@router.get("/exams/{exam_id}/results/export", dependencies=[_bank_read])
+async def export_results(exam_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Download the exam's results as CSV."""
+    org_id = current_user.org_id
+    exam = await _get_exam_or_404(db, exam_id, org_id)
+    attempts = (await db.execute(
+        select(CBTAttempt).where(CBTAttempt.exam_id == exam_id, CBTAttempt.org_id == org_id)
+        .order_by(CBTAttempt.score.desc())
+    )).scalars().all()
+    names = await _cbt_student_names(db, org_id, {a.student_id for a in attempts})
+    total_points = float(exam.total_points or 0)
+
+    def _n(x: float):
+        return int(x) if float(x).is_integer() else round(x, 2)
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Student", "Student ID", "Score", "Max", "Percentage", "Status", "Submitted"])
+    for a in attempts:
+        score = float(a.score or 0)
+        mx = float(a.max_score or total_points or 0)
+        w.writerow([
+            names.get(a.student_id, a.student_id), a.student_id, _n(score), _n(mx),
+            f"{round(score / mx * 100, 1) if mx else 0}%",
+            a.status.value if hasattr(a.status, "value") else a.status,
+            a.submitted_at.isoformat() if a.submitted_at else "",
+        ])
+    safe_title = "".join(c if c.isalnum() else "_" for c in (exam.title or "exam"))[:40]
+    return Response(
+        content=buf.getvalue(), media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="results_{safe_title}.csv"'},
+    )
+
+
+@router.get("/attempts/{attempt_id}/review", dependencies=[_bank_read])
+async def review_attempt(attempt_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Staff review of one attempt — every answer with the question text, the
+    correct answer, and the current award, so subjective answers can be graded.
+    Distinct from GET /attempts/{id} (student self-review), which never leaks the
+    correct answer."""
+    org_id = current_user.org_id
+    attempt = await _load_attempt(db, attempt_id, org_id)
+    answers = (await db.execute(
+        select(CBTAnswer).where(CBTAnswer.attempt_id == attempt.id, CBTAnswer.org_id == org_id)
+    )).scalars().all()
+    questions = {q.id: q for q in (await db.execute(
+        select(CBTQuestion).where(CBTQuestion.exam_id == attempt.exam_id, CBTQuestion.org_id == org_id)
+    )).scalars().all()}
+    names = await _cbt_student_names(db, org_id, {attempt.student_id})
+
+    rows = []
+    for a in answers:
+        q = questions.get(a.question_id)
+        qtype = (q.question_type.value if q and hasattr(q.question_type, "value") else (q.question_type if q else None))
+        rows.append({
+            "answer_id": a.id, "question_id": a.question_id,
+            "question_text": q.question_text if q else None,
+            "question_type": qtype,
+            "max_points": float(q.points) if q else 0.0,
+            "correct_answer": q.correct_answer if q else None,
+            "answer_text": a.answer_text,
+            "is_correct": a.is_correct,
+            "points_awarded": a.points_awarded,
+            "needs_grading": a.points_awarded is None and q is not None
+                             and q.question_type in (QuestionType.SHORT_ANSWER, QuestionType.LONG_ANSWER),
+        })
+    return {
+        "attempt": {
+            **AttemptResponse.model_validate(attempt).model_dump(),
+            "student_name": names.get(attempt.student_id),
+        },
+        "answers": rows,
+    }
+
+
+@router.post("/attempts/{attempt_id}/remark", dependencies=[_bank_write])
+async def remark_attempt(
+    attempt_id: str,
+    payload: list[RemarkItem],
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Apply manual grade overrides to an attempt's answers, then re-total the
+    attempt score from every answer's award (subjective grades now count)."""
+    org_id = current_user.org_id
+    attempt = await _load_attempt(db, attempt_id, org_id)
+    answers = {a.id: a for a in (await db.execute(
+        select(CBTAnswer).where(CBTAnswer.attempt_id == attempt.id, CBTAnswer.org_id == org_id)
+    )).scalars().all()}
+    questions = {q.id: q for q in (await db.execute(
+        select(CBTQuestion).where(CBTQuestion.exam_id == attempt.exam_id, CBTQuestion.org_id == org_id)
+    )).scalars().all()}
+
+    changed = 0
+    for item in payload:
+        a = answers.get(item.answer_id)
+        if not a:
+            continue
+        q = questions.get(a.question_id)
+        cap = float(q.points) if q else item.points_awarded
+        pts = max(0.0, min(float(item.points_awarded), cap))
+        a.points_awarded = pts
+        a.is_correct = pts >= cap if cap else pts > 0
+        changed += 1
+
+    # Re-total from all answers (None counts as 0 — still-ungraded subjective items).
+    attempt.score = sum(float(a.points_awarded or 0) for a in answers.values())
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="CBTAttempt", resource_id=attempt.id,
+        resource_label=f"re-marked {changed} answer(s); score {attempt.score}", request=request,
+    )
+    return {"score": float(attempt.score or 0), "max_score": float(attempt.max_score or 0), "changed": changed}

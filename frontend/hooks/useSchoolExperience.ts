@@ -244,6 +244,38 @@ export function useDeleteCBTQuestion() {
   });
 }
 
+// ── CBT: Results (manager / remark) ──────────────────────────────────────────
+
+export function useExamResults(exam_id: string | null) {
+  return useQuery({
+    queryKey: ["cbt-results", exam_id],
+    queryFn: () => cbtApi.results.get(exam_id as string),
+    enabled: !!exam_id,
+  });
+}
+
+export function useAttemptReview(attempt_id: string | null) {
+  return useQuery({
+    queryKey: ["cbt-review", attempt_id],
+    queryFn: () => cbtApi.attempts.review(attempt_id as string),
+    enabled: !!attempt_id,
+  });
+}
+
+export function useRemarkAttempt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ attempt_id, items }: { attempt_id: string; items: Array<{ answer_id: string; points_awarded: number }> }) =>
+      cbtApi.attempts.remark(attempt_id, items),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["cbt-results"] });
+      qc.invalidateQueries({ queryKey: ["cbt-review", vars.attempt_id] });
+      toast.success("Marks saved.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save marks."),
+  });
+}
+
 // ── CBT: Question Bank ───────────────────────────────────────────────────────
 
 export function useBankItems(params?: { subject_id?: string; topic?: string; difficulty?: string; question_type?: string; search?: string; page?: number; page_size?: number }) {

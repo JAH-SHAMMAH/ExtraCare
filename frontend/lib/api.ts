@@ -382,6 +382,14 @@ export const cbtApi = {
       api.post(`/cbt/exams/${exam_id}/attempts`, null, { params: { student_id } }).then((r) => r.data),
     submit: (attempt_id: string, answers: Array<{ question_id: string; answer_text: string }>) =>
       api.post(`/cbt/attempts/${attempt_id}/submit`, { answers }).then((r) => r.data),
+    review: (id: string) => api.get(`/cbt/attempts/${id}/review`).then((r) => r.data),
+    remark: (id: string, items: Array<{ answer_id: string; points_awarded: number }>) =>
+      api.post(`/cbt/attempts/${id}/remark`, items).then((r) => r.data),
+  },
+  results: {
+    get: (exam_id: string) => api.get(`/cbt/exams/${exam_id}/results`).then((r) => r.data),
+    exportCsv: (exam_id: string) =>
+      api.get(`/cbt/exams/${exam_id}/results/export`, { responseType: "blob" }).then((r) => r.data as Blob),
   },
 };
 

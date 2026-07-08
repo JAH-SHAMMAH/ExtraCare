@@ -187,6 +187,13 @@ class AttemptSubmit(BaseModel):
     answers: list[AttemptAnswerInput]
 
 
+class RemarkItem(BaseModel):
+    """Manual grade override for one answer (Test Remark) — e.g. a subjective
+    short/long-answer the auto-grader left ungraded."""
+    answer_id: str
+    points_awarded: float = Field(ge=0)
+
+
 class AttemptResponse(_OrmBase):
     id: str
     exam_id: str
