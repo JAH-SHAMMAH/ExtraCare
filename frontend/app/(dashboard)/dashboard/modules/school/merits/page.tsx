@@ -7,6 +7,7 @@ import {
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
 import { cn, formatDate } from "@/lib/utils";
+import { TERMS } from "@/lib/terms";
 import {
   Award, Plus, X, Loader2, Trash2, AlertTriangle, Trophy, Medal, TrendingUp, TrendingDown,
 } from "lucide-react";
@@ -89,7 +90,7 @@ function ConductTab({ canWrite }: { canWrite: boolean }) {
             <div><label className="label">Points * (use − to deduct)</label><input type="number" value={form.points} onChange={(e) => setForm({ ...form, points: e.target.value })} className="input" placeholder="e.g. 5 or -2" /></div>
             <div><label className="label">House</label><input value={form.house} onChange={(e) => setForm({ ...form, house: e.target.value })} className="input" placeholder="e.g. Red" /></div>
             <div><label className="label">Category</label><input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="input" placeholder="helpfulness / lateness" /></div>
-            <div><label className="label">Term</label><input value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input" placeholder="Term 1" /></div>
+            <div><label className="label">Term</label><select value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input"><option value="">— Term —</option>{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
             <div className="md:col-span-3"><label className="label">Reason</label><input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} className="input" /></div>
           </div>
           <div className="flex justify-end gap-3 mt-4">
@@ -137,7 +138,7 @@ function AwardsTab({ canWrite }: { canWrite: boolean }) {
                 {AWARD_TYPES.map((a) => <option key={a} value={a}>{a.replace("_", " ")}</option>)}
               </select>
             </div>
-            <div><label className="label">Term</label><input value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input" placeholder="Term 1" /></div>
+            <div><label className="label">Term</label><select value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input"><option value="">— Term —</option>{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
             <div className="md:col-span-2"><label className="label">Description</label><input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} className="input" /></div>
           </div>
           <div className="flex justify-end gap-3 mt-4">

@@ -8,6 +8,7 @@ import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
 import { cn, formatDate } from "@/lib/utils";
 import { BookMarked, Plus, X, Loader2, Trash2, AlertTriangle } from "lucide-react";
+import { TERMS } from "@/lib/terms";
 
 const STATUSES = ["requested", "approved", "rejected"];
 const STATUS_STYLE: Record<string, string> = {
@@ -70,7 +71,7 @@ export default function SubjectSelectionPage() {
               </select>
             </div>
             <div><label className="label">Academic Year</label><input value={form.academic_year} onChange={(e) => setForm({ ...form, academic_year: e.target.value })} className="input" placeholder="2025/2026" /></div>
-            <div><label className="label">Term</label><input value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input" placeholder="Term 1" /></div>
+            <div><label className="label">Term</label><select value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input"><option value="">— Term —</option>{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
           </div>
           <div className="flex justify-end gap-3 mt-4">
             <button onClick={reset} className="btn-secondary">Cancel</button>

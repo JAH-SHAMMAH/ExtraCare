@@ -8,6 +8,7 @@ import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
 import { formatDate } from "@/lib/utils";
 import { Loader2, Plus, X, Edit2, Trash2, AlertTriangle, UserCheck } from "lucide-react";
+import { TERMS } from "@/lib/terms";
 import type { MentorReport } from "@/types";
 
 const EMPTY = { student_id: "", term: "", period: "", summary: "", strengths: "", concerns: "", recommendations: "" };
@@ -52,7 +53,7 @@ export default function MentorPage() {
           <div className="flex items-center justify-between mb-4"><h2 className="text-sm font-bold text-slate-800">{editing ? "Edit Report" : "New Report"}</h2><button onClick={reset} className="text-slate-400 hover:text-slate-600"><X size={16} /></button></div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {!editing && <div><label className="label">Student *</label><EntityPicker type="student" value={form.student_id || null} onChange={(id) => setForm({ ...form, student_id: id || "" })} /></div>}
-            <div><label className="label">Term</label><input value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input" placeholder="Term 1" /></div>
+            <div><label className="label">Term</label><select value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input"><option value="">— Term —</option>{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
             <div><label className="label">Period</label><input value={form.period} onChange={(e) => setForm({ ...form, period: e.target.value })} className="input" placeholder="e.g. Week 1–6" /></div>
             <div className="md:col-span-3"><label className="label">Summary</label><textarea value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} className="input" rows={2} /></div>
             <div className="md:col-span-3"><label className="label">Strengths</label><textarea value={form.strengths} onChange={(e) => setForm({ ...form, strengths: e.target.value })} className="input" rows={2} /></div>

@@ -9,6 +9,7 @@ import {
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
 import { Settings, Loader2, Trash2, Plus } from "lucide-react";
+import { TERMS } from "@/lib/terms";
 
 type Tab = "sessions" | "houses" | "bands";
 
@@ -42,7 +43,7 @@ function Sessions({ canWrite }: { canWrite: boolean }) {
       {canWrite && (
         <div className="bg-white rounded-xl border border-slate-200 p-5 mb-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
           <div><label className="label">Session *</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className="input" placeholder="2025/2026" /></div>
-          <div><label className="label">Term</label><input value={f.term} onChange={(e) => setF({ ...f, term: e.target.value })} className="input" placeholder="Term 1" /></div>
+          <div><label className="label">Term</label><select value={f.term} onChange={(e) => setF({ ...f, term: e.target.value })} className="input"><option value="">— Term —</option>{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
           <div><label className="label">Start</label><input type="date" value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} className="input" /></div>
           <div><label className="label">End</label><input type="date" value={f.end_date} onChange={(e) => setF({ ...f, end_date: e.target.value })} className="input" /></div>
           <button onClick={() => create.mutate({ name: f.name.trim(), term: f.term || null, start_date: f.start_date || null, end_date: f.end_date || null, is_current: f.is_current }, { onSuccess: () => setF({ name: "", term: "", start_date: "", end_date: "", is_current: false }) })} disabled={!f.name.trim() || create.isPending} className="btn-primary justify-center">{create.isPending ? <Loader2 size={14} className="animate-spin" /> : "Add"}</button>

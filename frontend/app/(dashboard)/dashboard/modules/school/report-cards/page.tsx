@@ -5,12 +5,13 @@ import { useStudents, useReportCard } from "@/hooks/useSchool";
 import { cn, getInitials } from "@/lib/utils";
 import { FileText, Search, Printer, Loader2 } from "lucide-react";
 import { PrintLetterhead } from "@/components/branding/Brand";
+import { TERMS, DEFAULT_TERM } from "@/lib/terms";
 import type { Student } from "@/types";
 
 export default function ReportCardsPage() {
   const [search, setSearch] = useState("");
   const [selectedStudent, setSelectedStudent] = useState("");
-  const [term, setTerm] = useState("1st Term");
+  const [term, setTerm] = useState<string>(DEFAULT_TERM);
 
   const { data: students, isLoading: studentsLoading } = useStudents({ search: search || undefined, page_size: 50 });
   const { data: reportCard, isLoading: rcLoading } = useReportCard(selectedStudent, term);
@@ -46,7 +47,7 @@ export default function ReportCardsPage() {
         {/* Report card */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex items-center justify-between no-print">
-            <select value={term} onChange={(e) => setTerm(e.target.value)} className="input w-40"><option>1st Term</option><option>2nd Term</option><option>3rd Term</option></select>
+            <select value={term} onChange={(e) => setTerm(e.target.value)} className="input w-40">{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select>
             {reportCard && (<button onClick={() => window.print()} className="btn-secondary gap-2"><Printer size={14} />Print</button>)}
           </div>
 
