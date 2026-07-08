@@ -445,7 +445,9 @@ function StartModal({ onClose }: { onClose: () => void }) {
     // enforces the roster gate; leaving blank = open to the whole org.
     schoolApi.classes
       .list()
-      .then((rows: ClassOption[]) => setClasses(rows || []))
+      // /school/classes returns { items, total, … }, not a bare array — pull items
+      // (guard for a plain-array shape too) so classes stays an array for .map.
+      .then((data: any) => setClasses(Array.isArray(data) ? data : (data?.items ?? [])))
       .catch(() => setClasses([]));
   }, []);
 
