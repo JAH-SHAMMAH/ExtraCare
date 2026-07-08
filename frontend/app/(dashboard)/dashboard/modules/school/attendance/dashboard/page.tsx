@@ -131,7 +131,7 @@ export default function AdminAttendanceDashboardPage() {
           <div className="px-5 py-3.5 border-b border-slate-100">
             <h2 className="text-sm font-black text-slate-900">Roster · {new Date(date).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</h2>
           </div>
-          <div className="max-h-[30rem] overflow-y-auto">
+          <div className="max-h-[30rem] overflow-y-auto overflow-x-auto">
             <table className="w-full text-left">
               <thead className="sticky top-0">
                 <tr className="bg-slate-50 border-b border-slate-100">

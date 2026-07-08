@@ -115,47 +115,49 @@ export default function ParentAttendancePage() {
                     <CalendarDays size={15} className="text-brand-600" />
                     <h2 className="text-sm font-black text-slate-900">Recent check-ins & check-outs</h2>
                   </div>
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="bg-slate-50/80 border-b border-slate-100">
-                        {["Activity", "Date", "Time"].map((h) => (
-                          <th key={h} className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                      {histLoading ? (
-                        Array.from({ length: 5 }).map((_, i) => (
-                          <tr key={i}><td colSpan={3} className="px-5 py-4"><div className="h-4 w-40 bg-slate-100 rounded animate-pulse" /></td></tr>
-                        ))
-                      ) : history.length === 0 ? (
-                        <tr><td colSpan={3} className="px-5 py-12 text-center text-sm text-slate-400">No attendance activity recorded yet.</td></tr>
-                      ) : (
-                        history.map((e) => {
-                          const isOut = e.event_type === "check_out";
-                          const Icon = isOut ? LogOut : LogIn;
-                          const d = new Date(e.event_time);
-                          return (
-                            <tr key={e.id} className="hover:bg-slate-50/70 transition-colors">
-                              <td className="px-5 py-3.5">
-                                <span className={cn(
-                                  "inline-flex items-center gap-1.5 text-sm font-semibold",
-                                  isOut ? "text-slate-600" : "text-emerald-700",
-                                )}>
-                                  <Icon size={14} />
-                                  {isOut ? "Checked out" : "Checked in"}
-                                </span>
-                              </td>
-                              <td className="px-5 py-3.5 text-sm text-slate-600">
-                                {d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
-                              </td>
-                              <td className="px-5 py-3.5 text-sm font-medium text-slate-900 tabular-nums">{formatClock(e.event_time)}</td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="bg-slate-50/80 border-b border-slate-100">
+                          {["Activity", "Date", "Time"].map((h) => (
+                            <th key={h} className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {histLoading ? (
+                          Array.from({ length: 5 }).map((_, i) => (
+                            <tr key={i}><td colSpan={3} className="px-5 py-4"><div className="h-4 w-40 bg-slate-100 rounded animate-pulse" /></td></tr>
+                          ))
+                        ) : history.length === 0 ? (
+                          <tr><td colSpan={3} className="px-5 py-12 text-center text-sm text-slate-400">No attendance activity recorded yet.</td></tr>
+                        ) : (
+                          history.map((e) => {
+                            const isOut = e.event_type === "check_out";
+                            const Icon = isOut ? LogOut : LogIn;
+                            const d = new Date(e.event_time);
+                            return (
+                              <tr key={e.id} className="hover:bg-slate-50/70 transition-colors">
+                                <td className="px-5 py-3.5">
+                                  <span className={cn(
+                                    "inline-flex items-center gap-1.5 text-sm font-semibold",
+                                    isOut ? "text-slate-600" : "text-emerald-700",
+                                  )}>
+                                    <Icon size={14} />
+                                    {isOut ? "Checked out" : "Checked in"}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3.5 text-sm text-slate-600">
+                                  {d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+                                </td>
+                                <td className="px-5 py-3.5 text-sm font-medium text-slate-900 tabular-nums">{formatClock(e.event_time)}</td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
 

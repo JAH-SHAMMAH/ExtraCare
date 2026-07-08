@@ -122,7 +122,7 @@ function BookingsView({ facility, canWrite, onBack }: { facility: Facility; canW
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
         <table className="w-full text-left">
           <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Title", "Start", "End", "Status", ""].map((h) => <th key={h} className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-50">

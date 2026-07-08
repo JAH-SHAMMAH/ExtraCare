@@ -147,7 +147,7 @@ export default function AdmissionsPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
         <table className="w-full text-left">
           <thead>
             <tr className="bg-slate-50/80 border-b border-slate-100">

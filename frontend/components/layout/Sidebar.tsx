@@ -15,7 +15,7 @@ import {
   User, NotebookPen, MonitorCheck, HeartHandshake, MessageSquare,
   Camera, MessageCircle, Users as UsersIcon, UserCircle, Cake,
   CalendarClock, Gavel, Newspaper, Radio, Library, Bus, ArrowLeftRight,
-  FileQuestion,
+  FileQuestion, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/branding/Brand";
@@ -283,7 +283,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
   // unchanged — those routes are simply no longer mounted or navigated to.)
 ];
 
-export function Sidebar() {
+export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void } = {}) {
   const pathname = usePathname();
   const { user, org, activeRole, hasPermission } = useAuthStore();
   const logout = useLogout();
@@ -328,16 +328,36 @@ export function Sidebar() {
   }, [enabled, org, roleScope, user]);
 
   return (
-    <aside className="no-print fixed left-0 top-0 h-screen w-64 bg-white border-r border-slate-200/70 flex flex-col z-30 shadow-sm">
+    <>
+      {/* Mobile backdrop — tap to dismiss the drawer */}
+      {open && (
+        <div
+          className="no-print lg:hidden fixed inset-0 bg-slate-900/40 z-40"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={cn(
+          "no-print fixed left-0 top-0 h-screen w-64 bg-white border-r border-slate-200/70 flex flex-col z-50 shadow-sm",
+          "transition-transform duration-200 ease-out lg:translate-x-0",
+          open ? "translate-x-0" : "-translate-x-full",
+        )}
+      >
       {/* Brand */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-100">
         <BrandMark className="h-8 shrink-0" priority />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-black text-slate-900 truncate">{org?.name || "Fairview School Portal"}</p>
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate">
             School Portal
           </p>
         </div>
+        {/* Mobile: close the drawer */}
+        <button onClick={onClose} aria-label="Close menu" className="lg:hidden p-1.5 -mr-1.5 rounded-lg text-slate-400 hover:bg-slate-100">
+          <X size={18} />
+        </button>
       </div>
 
       {/* Nav */}
@@ -443,7 +463,8 @@ export function Sidebar() {
           </Link>
         )}
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 

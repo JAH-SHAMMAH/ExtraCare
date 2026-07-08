@@ -124,20 +124,22 @@ export default function WarehousePage() {
               ) : (stock ?? []).length === 0 ? (
                 <div className="py-14 text-center text-slate-400"><p className="text-sm font-semibold">This warehouse is empty</p><p className="text-xs mt-1">Use <b>Receive</b> to bring stock in.</p></div>
               ) : (
-                <table className="w-full text-left">
-                  <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Item", "SKU", "On hand", "Reorder", ""].map((h) => <th key={h} className="px-5 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>)}</tr></thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {(stock ?? []).map((r) => (
-                      <tr key={r.item_id} className="hover:bg-slate-50/70">
-                        <td className="px-5 py-3 text-sm font-medium text-slate-800">{r.item_name}</td>
-                        <td className="px-5 py-3 text-sm text-slate-400">{r.sku || "—"}</td>
-                        <td className="px-5 py-3 text-sm font-semibold text-slate-800 tabular-nums">{r.quantity}</td>
-                        <td className="px-5 py-3 text-sm text-slate-500 tabular-nums">{r.reorder_level || "—"}</td>
-                        <td className="px-5 py-3">{r.low_stock && <span className="badge bg-amber-50 text-amber-700 border-amber-200">Low</span>}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Item", "SKU", "On hand", "Reorder", ""].map((h) => <th key={h} className="px-5 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>)}</tr></thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {(stock ?? []).map((r) => (
+                        <tr key={r.item_id} className="hover:bg-slate-50/70">
+                          <td className="px-5 py-3 text-sm font-medium text-slate-800">{r.item_name}</td>
+                          <td className="px-5 py-3 text-sm text-slate-400">{r.sku || "—"}</td>
+                          <td className="px-5 py-3 text-sm font-semibold text-slate-800 tabular-nums">{r.quantity}</td>
+                          <td className="px-5 py-3 text-sm text-slate-500 tabular-nums">{r.reorder_level || "—"}</td>
+                          <td className="px-5 py-3">{r.low_stock && <span className="badge bg-amber-50 text-amber-700 border-amber-200">Low</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           )}

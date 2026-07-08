@@ -15,6 +15,7 @@ import { doneProgress } from "@/lib/progress";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { isAuthenticated, user } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
@@ -53,7 +54,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     markNavPainted(pathname);
     doneProgress();
+    setSidebarOpen(false);   // close the mobile drawer on navigation
   }, [pathname]);
+
+  // Close the mobile drawer on Escape.
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setSidebarOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sidebarOpen]);
 
   // Before mount, render a branded splash — avoids SSR/client mismatch from
   // the persisted store and gives the user something coherent while the
@@ -65,9 +75,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen bg-slate-50">
       <TopProgress />
-      <Sidebar />
-      <TopBar />
-      <main className="ml-64 mt-16 min-h-[calc(100vh-64px)] animate-fade-in">
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <TopBar onMenu={() => setSidebarOpen(true)} />
+      <main className="ml-0 lg:ml-64 mt-16 min-h-[calc(100vh-64px)] animate-fade-in">
         <ErrorBoundary>
           <RouteGuard>{children}</RouteGuard>
         </ErrorBoundary>

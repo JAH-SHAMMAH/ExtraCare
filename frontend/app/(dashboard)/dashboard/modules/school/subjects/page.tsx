@@ -73,7 +73,7 @@ export default function SubjectsPage() {
         <div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search subjects..." className="input pl-9" /></div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
         <table className="w-full text-left">
           <thead><tr className="bg-slate-50/80 border-b border-slate-100">
             {["Subject", "Code", "Department", "Teacher", "Credits", "Status", ""].map((h) => (<th key={h} className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>))}

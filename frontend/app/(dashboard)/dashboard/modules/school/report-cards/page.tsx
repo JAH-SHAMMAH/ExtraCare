@@ -65,14 +65,16 @@ export default function ReportCardsPage() {
                   <p className="text-sm text-slate-500">{reportCard.term} — {reportCard.academic_year}</p>
                 </div>
 
-                <table className="w-full text-left mb-6">
-                  <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Subject", "Score", "Grade", "Remarks", "Teacher"].map((h) => (<th key={h} className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>))}</tr></thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {reportCard.subjects?.map((s: any, i: number) => (
-                      <tr key={i}><td className="px-4 py-2.5 text-sm font-medium text-slate-800">{s.subject_name}</td><td className="px-4 py-2.5 text-sm text-slate-600">{s.score}</td><td className="px-4 py-2.5"><span className="badge bg-brand-50 text-brand-700 border-brand-200">{s.grade}</span></td><td className="px-4 py-2.5 text-xs text-slate-500">{s.remarks || "—"}</td><td className="px-4 py-2.5 text-xs text-slate-500">{s.teacher_name || "—"}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left mb-6">
+                    <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Subject", "Score", "Grade", "Remarks", "Teacher"].map((h) => (<th key={h} className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>))}</tr></thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {reportCard.subjects?.map((s: any, i: number) => (
+                        <tr key={i}><td className="px-4 py-2.5 text-sm font-medium text-slate-800">{s.subject_name}</td><td className="px-4 py-2.5 text-sm text-slate-600">{s.score}</td><td className="px-4 py-2.5"><span className="badge bg-brand-50 text-brand-700 border-brand-200">{s.grade}</span></td><td className="px-4 py-2.5 text-xs text-slate-500">{s.remarks || "—"}</td><td className="px-4 py-2.5 text-xs text-slate-500">{s.teacher_name || "—"}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-lg">
                   <div><p className="text-[10px] font-bold uppercase text-slate-400">Total</p><p className="text-lg font-bold text-slate-900">{reportCard.total_score}</p></div>

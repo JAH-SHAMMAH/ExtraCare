@@ -87,18 +87,20 @@ export default function ParentReportCardPage() {
               </div>
             ) : (
               <>
-                <table className="w-full text-left">
-                  <thead><tr className="border-b border-slate-100">{["Subject", "Score", "Grade"].map((h) => (<th key={h} className="pb-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>))}</tr></thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {grades.map((g, i) => (
-                      <tr key={i}>
-                        <td className="py-2.5 text-sm font-medium text-slate-800">{g.subject_name || "—"}</td>
-                        <td className="py-2.5 text-sm text-slate-600 tabular-nums">{g.score ?? "—"}{g.max_score ? ` / ${g.max_score}` : ""}</td>
-                        <td className="py-2.5 text-sm font-bold text-slate-700">{g.grade_letter || "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead><tr className="border-b border-slate-100">{["Subject", "Score", "Grade"].map((h) => (<th key={h} className="pb-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>))}</tr></thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {grades.map((g, i) => (
+                        <tr key={i}>
+                          <td className="py-2.5 text-sm font-medium text-slate-800">{g.subject_name || "—"}</td>
+                          <td className="py-2.5 text-sm text-slate-600 tabular-nums">{g.score ?? "—"}{g.max_score ? ` / ${g.max_score}` : ""}</td>
+                          <td className="py-2.5 text-sm font-bold text-slate-700">{g.grade_letter || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
                 <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100">
                   <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-600"><ShieldCheck size={13} /> Published results</span>
                   <div className="text-right">

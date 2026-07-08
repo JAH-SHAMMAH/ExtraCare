@@ -42,21 +42,23 @@ export default function FinancialStatementsPage() {
               <h2 className="text-sm font-bold text-slate-800">Trial Balance</h2>
               <span className={data.balanced ? "inline-flex items-center gap-1 text-xs font-semibold text-emerald-600" : "text-xs font-semibold text-rose-600"}>{data.balanced && <CheckCircle2 size={13} />}{data.balanced ? "Balanced" : "Out of balance"}</span>
             </div>
-            <table className="w-full text-left">
-              <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Code", "Account", "Type", "Debit", "Credit"].map((h) => <th key={h} className="px-5 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>)}</tr></thead>
-              <tbody className="divide-y divide-slate-50">
-                {data.trial_balance.map((r) => (
-                  <tr key={r.account_id} className="hover:bg-slate-50/70">
-                    <td className="px-5 py-2.5 text-sm font-mono text-slate-500">{r.code}</td>
-                    <td className="px-5 py-2.5 text-sm text-slate-800">{r.name}</td>
-                    <td className="px-5 py-2.5"><span className="badge bg-slate-50 text-slate-600 border-slate-200 capitalize">{r.type}</span></td>
-                    <td className="px-5 py-2.5 text-sm text-slate-700">{r.debit ? fmt(r.debit) : "—"}</td>
-                    <td className="px-5 py-2.5 text-sm text-slate-700">{r.credit ? fmt(r.credit) : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot><tr className="border-t-2 border-slate-200 font-bold"><td colSpan={3} className="px-5 py-3 text-sm text-slate-700">Totals</td><td className="px-5 py-3 text-sm">{fmt(data.total_debit)}</td><td className="px-5 py-3 text-sm">{fmt(data.total_credit)}</td></tr></tfoot>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Code", "Account", "Type", "Debit", "Credit"].map((h) => <th key={h} className="px-5 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>)}</tr></thead>
+                <tbody className="divide-y divide-slate-50">
+                  {data.trial_balance.map((r) => (
+                    <tr key={r.account_id} className="hover:bg-slate-50/70">
+                      <td className="px-5 py-2.5 text-sm font-mono text-slate-500">{r.code}</td>
+                      <td className="px-5 py-2.5 text-sm text-slate-800">{r.name}</td>
+                      <td className="px-5 py-2.5"><span className="badge bg-slate-50 text-slate-600 border-slate-200 capitalize">{r.type}</span></td>
+                      <td className="px-5 py-2.5 text-sm text-slate-700">{r.debit ? fmt(r.debit) : "—"}</td>
+                      <td className="px-5 py-2.5 text-sm text-slate-700">{r.credit ? fmt(r.credit) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot><tr className="border-t-2 border-slate-200 font-bold"><td colSpan={3} className="px-5 py-3 text-sm text-slate-700">Totals</td><td className="px-5 py-3 text-sm">{fmt(data.total_debit)}</td><td className="px-5 py-3 text-sm">{fmt(data.total_credit)}</td></tr></tfoot>
+              </table>
+            </div>
           </div>
 
           {/* Income statement + balance sheet */}

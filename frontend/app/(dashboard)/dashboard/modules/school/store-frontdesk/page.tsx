@@ -150,7 +150,7 @@ export default function StoreFrontDeskPage() {
       {/* Recent sales */}
       <div className="mt-8">
         <h2 className="text-sm font-bold text-slate-800 mb-3">Recent sales</h2>
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
           <table className="w-full text-left">
             <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["When", "Customer", "Items", "Total", "Payment", "Status", ""].map((h) => <th key={h} className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-50">

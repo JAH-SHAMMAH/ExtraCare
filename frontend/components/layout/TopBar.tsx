@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { Bell, HelpCircle, Settings, Loader2, MessageSquare } from "lucide-react";
+import { Bell, HelpCircle, Settings, Loader2, MessageSquare, Menu } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { timeAgo } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -14,7 +14,7 @@ const GlobalSearch = dynamic(() => import("./GlobalSearch").then((mod) => mod.Gl
 import { RoleSwitcher } from "@/components/role/RoleSwitcher";
 import type { ActivityLog } from "@/types";
 
-export function TopBar() {
+export function TopBar({ onMenu }: { onMenu?: () => void }) {
   const router = useRouter();
   const { user } = useAuthStore();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -37,7 +37,16 @@ export function TopBar() {
   }, [notifOpen]);
 
   return (
-    <header className="no-print fixed top-0 left-64 right-0 z-40 h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/70 flex items-center px-6 gap-4 shadow-sm shadow-slate-100/50">
+    <header className="no-print fixed top-0 left-0 lg:left-64 right-0 z-30 h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/70 flex items-center px-4 md:px-6 gap-3 md:gap-4 shadow-sm shadow-slate-100/50">
+      {/* Mobile: open the sidebar drawer */}
+      <button
+        onClick={onMenu}
+        aria-label="Open menu"
+        className="lg:hidden -ml-1 p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors shrink-0"
+      >
+        <Menu size={20} />
+      </button>
+
       {/* Global Search */}
       <GlobalSearch />
 
