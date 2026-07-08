@@ -3,12 +3,13 @@
 import { useState } from "react";
 import { useStudents, useSubmitGrades } from "@/hooks/useSchool";
 import { BookOpen, Loader2, Save } from "lucide-react";
+import { TERMS, DEFAULT_TERM } from "@/lib/terms";
 import type { Student } from "@/types";
 
 export default function GradebookPage() {
   const [classId, setClassId] = useState("");
   const [subjectId, setSubjectId] = useState("");
-  const [term, setTerm] = useState("1st Term");
+  const [term, setTerm] = useState<string>(DEFAULT_TERM);
   const [grades, setGrades] = useState<Record<string, { score: string; grade: string; remarks: string }>>({});
 
   const { data: students, isLoading } = useStudents({ class_id: classId || undefined, page_size: 100 });
@@ -37,7 +38,7 @@ export default function GradebookPage() {
       <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6 flex flex-wrap items-end gap-4">
         <div><label className="label">Class ID</label><input value={classId} onChange={(e) => setClassId(e.target.value)} placeholder="Enter class ID" className="input w-48" /></div>
         <div><label className="label">Subject ID</label><input value={subjectId} onChange={(e) => setSubjectId(e.target.value)} placeholder="Enter subject ID" className="input w-48" /></div>
-        <div><label className="label">Term</label><select value={term} onChange={(e) => setTerm(e.target.value)} className="input"><option>1st Term</option><option>2nd Term</option><option>3rd Term</option></select></div>
+        <div><label className="label">Term</label><select value={term} onChange={(e) => setTerm(e.target.value)} className="input">{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
         <button onClick={handleSubmit} disabled={submitGrades.isPending || Object.keys(grades).length === 0} className="btn-primary gap-2">
           {submitGrades.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}Submit Grades
         </button>

@@ -6,8 +6,7 @@ import { useMyContexts, type ParentChild } from "@/hooks/useMyContexts";
 import { useReportCard } from "@/hooks/useSchool";
 import { getInitials } from "@/lib/utils";
 import { GraduationCap, Loader2, ArrowLeft, FileText, ShieldCheck } from "lucide-react";
-
-const TERMS = ["1st Term", "2nd Term", "3rd Term", "Term 1", "Term 2", "Term 3"];
+import { TERMS, DEFAULT_TERM } from "@/lib/terms";
 
 /**
  * Parent report card — the child-scoped view a parent actually uses. Data is
@@ -20,7 +19,7 @@ export default function ParentReportCardPage() {
   const children: ParentChild[] = data?.as_parent?.children ?? [];
 
   const [childId, setChildId] = useState("");
-  const [term, setTerm] = useState("1st Term");
+  const [term, setTerm] = useState<string>(DEFAULT_TERM);
 
   useEffect(() => {
     if (!childId && children.length) setChildId(children[0].id);

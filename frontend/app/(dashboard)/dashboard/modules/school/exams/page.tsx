@@ -6,6 +6,7 @@ import { useSubjects } from "@/hooks/useSchool";
 import { useClasses } from "@/hooks/useSchool";
 import { cn, formatDate } from "@/lib/utils";
 import { Award, Plus, X, Loader2, ClipboardEdit, Users } from "lucide-react";
+import { TERMS, DEFAULT_TERM } from "@/lib/terms";
 import type { Exam, Subject, SchoolClass } from "@/types";
 
 const STATUS_MAP: Record<string, string> = {
@@ -40,8 +41,8 @@ export default function ExamsPage() {
   const subjects: Subject[] = subjectsData?.items || [];
   const classes: SchoolClass[] = classesData?.items || [];
 
-  const [form, setForm] = useState({ name: "", exam_type: "midterm", subject_id: "", class_id: "", term: "", date: "", start_time: "", end_time: "", total_marks: "100", pass_marks: "40" });
-  const resetForm = () => { setForm({ name: "", exam_type: "midterm", subject_id: "", class_id: "", term: "", date: "", start_time: "", end_time: "", total_marks: "100", pass_marks: "40" }); setShowForm(false); };
+  const [form, setForm] = useState({ name: "", exam_type: "midterm", subject_id: "", class_id: "", term: DEFAULT_TERM as string, date: "", start_time: "", end_time: "", total_marks: "100", pass_marks: "40" });
+  const resetForm = () => { setForm({ name: "", exam_type: "midterm", subject_id: "", class_id: "", term: DEFAULT_TERM as string, date: "", start_time: "", end_time: "", total_marks: "100", pass_marks: "40" }); setShowForm(false); };
   const handleSubmit = () => {
     createExam.mutate(
       { ...form, subject_id: form.subject_id || undefined, class_id: form.class_id || undefined, total_marks: parseInt(form.total_marks), pass_marks: parseInt(form.pass_marks) },
@@ -69,7 +70,7 @@ export default function ExamsPage() {
             <div><label className="label">Type</label><select value={form.exam_type} onChange={(e) => setForm({ ...form, exam_type: e.target.value })} className="input"><option value="midterm">Midterm</option><option value="final">Final</option><option value="quiz">Quiz</option><option value="assignment">Assignment</option><option value="practical">Practical</option></select></div>
             <div><label className="label">Subject</label><select value={form.subject_id} onChange={(e) => setForm({ ...form, subject_id: e.target.value })} className="input"><option value="">— Select subject —</option>{subjects.map((s) => (<option key={s.id} value={s.id}>{s.name}{s.code ? ` (${s.code})` : ""}</option>))}</select></div>
             <div><label className="label">Class</label><select value={form.class_id} onChange={(e) => setForm({ ...form, class_id: e.target.value })} className="input"><option value="">— Select class —</option>{classes.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}</select></div>
-            <div><label className="label">Term</label><input value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} placeholder="e.g. Term 1" className="input" /></div>
+            <div><label className="label">Term</label><select value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input">{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
             <div><label className="label">Date *</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="input" /></div>
             <div><label className="label">Start Time</label><input type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} className="input" /></div>
             <div><label className="label">Total Marks</label><input type="number" value={form.total_marks} onChange={(e) => setForm({ ...form, total_marks: e.target.value })} className="input" /></div>
