@@ -451,6 +451,29 @@ class CBTAnswer(Base, UUIDMixin, TimestampMixin, TenantMixin):
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 
+class QuestionBankItem(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A reusable CBT question, independent of any single exam — the Question Bank.
+    Categorised by subject + topic + difficulty. Tests are composed by copying
+    selected items into an exam's CBTQuestion set, so the existing exam→attempt→
+    score flow is untouched; the bank is just the reusable pool feeding it."""
+    __tablename__ = "cbt_question_bank"
+
+    subject_id = Column(String(36), ForeignKey("subjects.id"), nullable=True, index=True)
+    topic = Column(String(150), nullable=True, index=True)
+    difficulty = Column(String(20), default="medium", nullable=False)  # easy / medium / hard
+    question_text = Column(Text, nullable=False)
+    question_type = Column(Enum(QuestionType), default=QuestionType.MCQ, nullable=False)
+    options = Column(JSON, nullable=True)          # [{"key": "a", "text": "..."}, ...]
+    correct_answer = Column(Text, nullable=True)
+    points = Column(Float, default=1.0, nullable=False)
+    created_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        Index("ix_cbt_question_bank_subject_org", "subject_id", "org_id"),
+    )
+
+
 # ── Pastoral / Behaviour ─────────────────────────────────────────────────────
 
 

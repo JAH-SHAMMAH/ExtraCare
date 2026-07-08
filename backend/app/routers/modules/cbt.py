@@ -16,8 +16,10 @@ RBAC:
   - school:write  → teachers creating exams, grading, publishing
 """
 
+import csv
+import io
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,11 +31,14 @@ from app.models.modules.school import (
     CBTQuestion,
     CBTAttempt,
     CBTAnswer,
+    QuestionBankItem,
+    Subject,
     ExamStatus,
     AttemptStatus,
     QuestionType,
     Student,
 )
+from app.schemas.question_bank import BankItemCreate, BankItemUpdate, ComposeFromBank
 from app.schemas.school_experience import (
     ExamCreate,
     ExamUpdate,
@@ -63,6 +68,11 @@ router = APIRouter(
 
 _can_read = Depends(PermissionChecker("school:cbt:read"))
 _can_write = Depends(PermissionChecker("school:cbt:write"))
+# The Question Bank holds correct answers and is a teacher/admin authoring tool.
+# Gate it on the broad school scopes, NOT school:cbt:* — students hold cbt:read/
+# write to SIT tests and must never read the bank's answers.
+_bank_read = Depends(PermissionChecker("school:read"))
+_bank_write = Depends(PermissionChecker("school:write"))
 
 
 # ── Exams ─────────────────────────────────────────────────────────────────────
@@ -500,3 +510,261 @@ async def _get_exam_or_404(db: AsyncSession, exam_id: str, org_id: str) -> CBTEx
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found.")
     return exam
+
+
+# ── Question Bank (reusable questions) ───────────────────────────────────────
+# A pool of questions independent of any exam, categorised by subject/topic/
+# difficulty. Tests are composed by COPYING selected bank items into an exam's
+# CBTQuestion set (from-bank below), so the take/score engine is untouched.
+
+_DIFFICULTY = ("easy", "medium", "hard")
+_QTYPES = ("mcq", "true_false", "short_answer", "long_answer")
+
+
+async def _bank_subject_names(db: AsyncSession, org_id: str, ids: set) -> dict:
+    ids = {i for i in ids if i}
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(Subject.id, Subject.name).where(Subject.org_id == org_id, Subject.id.in_(ids))
+    )).all()
+    return {r.id: r.name for r in rows}
+
+
+def _bank_dict(q: QuestionBankItem, subject_name) -> dict:
+    return {
+        "id": q.id,
+        "subject_id": q.subject_id,
+        "subject_name": subject_name,
+        "topic": q.topic,
+        "difficulty": q.difficulty,
+        "question_text": q.question_text,
+        "question_type": q.question_type.value if hasattr(q.question_type, "value") else q.question_type,
+        "options": q.options,
+        "correct_answer": q.correct_answer,
+        "points": float(q.points or 0),
+        "created_at": q.created_at.isoformat() if q.created_at else None,
+    }
+
+
+async def _load_bank_item(db: AsyncSession, item_id: str, org_id: str) -> QuestionBankItem:
+    q = (await db.execute(
+        select(QuestionBankItem).where(QuestionBankItem.id == item_id, QuestionBankItem.org_id == org_id)
+    )).scalar_one_or_none()
+    if not q:
+        raise HTTPException(status_code=404, detail="Question not found in bank.")
+    return q
+
+
+@router.get("/question-bank", dependencies=[_bank_read])
+async def list_bank(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    subject_id: str | None = None,
+    topic: str | None = None,
+    difficulty: str | None = None,
+    question_type: str | None = None,
+    search: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    query = select(QuestionBankItem).where(QuestionBankItem.org_id == org_id)
+    if subject_id:
+        query = query.where(QuestionBankItem.subject_id == subject_id)
+    if topic:
+        query = query.where(QuestionBankItem.topic == topic)
+    if difficulty in _DIFFICULTY:
+        query = query.where(QuestionBankItem.difficulty == difficulty)
+    if question_type in _QTYPES:
+        query = query.where(QuestionBankItem.question_type == QuestionType(question_type))
+    if search:
+        query = query.where(QuestionBankItem.question_text.ilike(f"%{search}%"))
+    query = query.order_by(QuestionBankItem.created_at.desc())
+    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar()
+    rows = (await db.execute(query.offset((page - 1) * page_size).limit(page_size))).scalars().all()
+    names = await _bank_subject_names(db, org_id, {q.subject_id for q in rows})
+    return {
+        "items": [_bank_dict(q, names.get(q.subject_id)) for q in rows],
+        "total": total, "page": page, "page_size": page_size,
+    }
+
+
+@router.post("/question-bank", status_code=201, dependencies=[_bank_write])
+async def create_bank_item(
+    payload: BankItemCreate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    if payload.difficulty not in _DIFFICULTY:
+        raise HTTPException(status_code=422, detail="difficulty must be easy, medium, or hard.")
+    if payload.question_type not in _QTYPES:
+        raise HTTPException(status_code=422, detail=f"invalid question_type. One of: {', '.join(_QTYPES)}.")
+    if payload.subject_id:
+        ok = (await db.execute(
+            select(Subject.id).where(Subject.id == payload.subject_id, Subject.org_id == org_id)
+        )).scalar_one_or_none()
+        if not ok:
+            raise HTTPException(status_code=404, detail="Subject not found.")
+    data = payload.model_dump()
+    data["question_type"] = QuestionType(data["question_type"])  # "mcq" -> QuestionType.MCQ
+    q = QuestionBankItem(**data, created_by=current_user.id, org_id=org_id)
+    db.add(q)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+        resource_type="QuestionBankItem", resource_id=q.id, resource_label="bank question", request=request,
+    )
+    names = await _bank_subject_names(db, org_id, {q.subject_id})
+    return _bank_dict(q, names.get(q.subject_id))
+
+
+@router.patch("/question-bank/{item_id}", dependencies=[_bank_write])
+async def update_bank_item(
+    item_id: str,
+    payload: BankItemUpdate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    q = await _load_bank_item(db, item_id, org_id)
+    updates = payload.model_dump(exclude_unset=True)
+    if updates.get("difficulty") and updates["difficulty"] not in _DIFFICULTY:
+        raise HTTPException(status_code=422, detail="difficulty must be easy, medium, or hard.")
+    if updates.get("question_type") and updates["question_type"] not in _QTYPES:
+        raise HTTPException(status_code=422, detail="invalid question_type.")
+    if "question_type" in updates:
+        updates["question_type"] = QuestionType(updates["question_type"])
+    for k, v in updates.items():
+        setattr(q, k, v)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="QuestionBankItem", resource_id=q.id, resource_label="bank question", request=request,
+    )
+    names = await _bank_subject_names(db, org_id, {q.subject_id})
+    return _bank_dict(q, names.get(q.subject_id))
+
+
+@router.delete("/question-bank/{item_id}", status_code=204, dependencies=[_bank_write])
+async def delete_bank_item(
+    item_id: str,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org_id = current_user.org_id
+    q = await _load_bank_item(db, item_id, org_id)
+    await db.delete(q)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_DELETED, org_id, actor=current_user,
+        resource_type="QuestionBankItem", resource_id=item_id, resource_label="bank question",
+        severity="warning", request=request,
+    )
+
+
+@router.post("/question-bank/import", dependencies=[_bank_write])
+async def import_bank(
+    file: UploadFile = File(...),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Bulk-import bank questions from a CSV. Columns (case-insensitive):
+    question, type, subject, topic, difficulty, option_a..option_e, correct_answer,
+    points. Unknown subject/type/difficulty fall back to null/mcq/medium."""
+    org_id = current_user.org_id
+    content = await file.read()
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=422, detail="File must be a UTF-8 CSV.")
+    reader = csv.DictReader(io.StringIO(text))
+    subs = (await db.execute(
+        select(Subject.id, Subject.name, Subject.code).where(Subject.org_id == org_id)
+    )).all()
+    lut: dict[str, str] = {}
+    for sid, name, code in subs:
+        if name:
+            lut[name.strip().lower()] = sid
+        if code:
+            lut[code.strip().lower()] = sid
+    imported = 0
+    errors: list[str] = []
+    for i, raw in enumerate(reader, start=2):
+        row = {(k or "").strip().lower(): (v or "") for k, v in raw.items()}
+        qtext = (row.get("question") or row.get("question_text") or "").strip()
+        if not qtext:
+            errors.append(f"row {i}: missing question")
+            continue
+        opts = [{"key": k, "text": row[f"option_{k}"].strip()} for k in "abcde" if row.get(f"option_{k}", "").strip()]
+        qtype = (row.get("type") or row.get("question_type") or "mcq").strip().lower()
+        if qtype not in _QTYPES:
+            qtype = "mcq"
+        diff = (row.get("difficulty") or "medium").strip().lower()
+        if diff not in _DIFFICULTY:
+            diff = "medium"
+        try:
+            pts = float(row.get("points") or 1)
+        except ValueError:
+            pts = 1.0
+        db.add(QuestionBankItem(
+            question_text=qtext, question_type=QuestionType(qtype), options=opts or None,
+            correct_answer=(row.get("correct_answer") or row.get("answer") or "").strip() or None,
+            difficulty=diff, topic=(row.get("topic") or "").strip() or None,
+            subject_id=lut.get((row.get("subject") or "").strip().lower()),
+            points=pts, created_by=current_user.id, org_id=org_id,
+        ))
+        imported += 1
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+        resource_type="QuestionBankItem", resource_label=f"imported {imported} bank question(s)",
+        severity="warning", metadata={"imported": imported, "errors": len(errors)}, request=request,
+    )
+    return {"imported": imported, "errors": errors[:20]}
+
+
+@router.post("/exams/{exam_id}/questions/from-bank", status_code=201, dependencies=[_bank_write])
+async def add_questions_from_bank(
+    exam_id: str,
+    payload: ComposeFromBank,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Compose a test: copy the chosen bank questions onto the exam as CBTQuestions
+    (so editing/deleting them on the exam doesn't touch the bank)."""
+    org_id = current_user.org_id
+    exam = await _get_exam_or_404(db, exam_id, org_id)
+    items = (await db.execute(
+        select(QuestionBankItem).where(
+            QuestionBankItem.id.in_(payload.question_ids), QuestionBankItem.org_id == org_id)
+    )).scalars().all()
+    if not items:
+        raise HTTPException(status_code=404, detail="No matching bank questions found.")
+    max_pos = (await db.execute(
+        select(func.max(CBTQuestion.position)).where(CBTQuestion.exam_id == exam.id)
+    )).scalar() or 0
+    added = 0
+    pts = 0.0
+    for it in items:
+        added += 1
+        db.add(CBTQuestion(
+            exam_id=exam.id, question_text=it.question_text, question_type=it.question_type,
+            options=it.options, correct_answer=it.correct_answer, points=it.points,
+            position=max_pos + added, org_id=org_id,
+        ))
+        pts += float(it.points or 0)
+    exam.total_points = (exam.total_points or 0) + pts
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+        resource_type="CBTQuestion", resource_label=f"added {added} question(s) from bank to exam {exam.id}",
+        metadata={"exam_id": exam.id, "added": added}, request=request,
+    )
+    return {"added": added, "total_points": float(exam.total_points or 0)}

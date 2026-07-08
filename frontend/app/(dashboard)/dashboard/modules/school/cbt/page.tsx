@@ -10,13 +10,15 @@ import {
   useCBTQuestions,
   useAddCBTQuestion,
   useDeleteCBTQuestion,
+  useAddFromBank,
+  useBankItems,
 } from "@/hooks/useSchoolExperience";
 import { useMineFilter } from "@/hooks/useMineFilter";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn, formatDate } from "@/lib/utils";
 import {
   MonitorCheck, Plus, X, Loader2, Edit2, Trash2, ArrowLeft,
-  ListChecks, Clock, Award, FileQuestion, MoreVertical,
+  ListChecks, Clock, Award, FileQuestion, MoreVertical, Search,
 } from "lucide-react";
 import type { CBTExam, CBTExamStatus, CBTQuestion, CBTQuestionType } from "@/types";
 
@@ -309,6 +311,7 @@ function ExamBuilder({ examId, onBack, canWrite }: { examId: string; onBack: () 
   const addQuestion = useAddCBTQuestion();
   const deleteQuestion = useDeleteCBTQuestion();
   const [showForm, setShowForm] = useState(false);
+  const [showBank, setShowBank] = useState(false);
 
   const [qform, setQform] = useState({
     question_text: "",
@@ -377,12 +380,20 @@ function ExamBuilder({ examId, onBack, canWrite }: { examId: string; onBack: () 
           </p>
         </div>
         {canWrite && !showForm && (
-          <button onClick={() => setShowForm(true)} className="btn-primary gap-2">
-            <Plus size={15} />
-            Add Question
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => setShowBank(true)} className="btn-secondary gap-2">
+              <FileQuestion size={15} />
+              Add from bank
+            </button>
+            <button onClick={() => setShowForm(true)} className="btn-primary gap-2">
+              <Plus size={15} />
+              Add Question
+            </button>
+          </div>
         )}
       </div>
+
+      {showBank && <BankPicker examId={examId} onClose={() => setShowBank(false)} />}
 
       {showForm && canWrite && (
         <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6">
@@ -538,6 +549,61 @@ function ExamBuilder({ examId, onBack, canWrite }: { examId: string; onBack: () 
           <p className="text-sm mt-1">Add the first question to this exam.</p>
         </div>
       )}
+    </div>
+  );
+}
+
+interface PickBankItem { id: string; question_text: string; difficulty: string; subject_name: string | null; topic: string | null; points: number; }
+
+function BankPicker({ examId, onClose }: { examId: string; onClose: () => void }) {
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const { data, isLoading } = useBankItems({ search: search || undefined, page_size: 100 });
+  const addFromBank = useAddFromBank();
+  const items: PickBankItem[] = data?.items || [];
+
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const add = () => addFromBank.mutate({ exam_id: examId, question_ids: [...selected] }, { onSuccess: onClose });
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-slate-100">
+          <h2 className="text-base font-bold text-slate-900">Add from Question Bank</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+        </div>
+        <div className="p-4 border-b border-slate-100">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search the bank…" className="input pl-9 w-full" autoFocus />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2">
+          {isLoading ? (
+            <div className="py-12 text-center"><Loader2 size={20} className="animate-spin text-slate-400 mx-auto" /></div>
+          ) : items.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-sm">
+              No bank questions. Build the bank in <a href="/dashboard/modules/school/cbt/question-bank" className="text-brand-600 font-semibold hover:underline">Question Bank</a>.
+            </div>
+          ) : items.map((q) => (
+            <label key={q.id} className="flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+              <input type="checkbox" checked={selected.has(q.id)} onChange={() => toggle(q.id)} className="mt-1" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-slate-800">{q.question_text}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5 capitalize">{q.difficulty}{q.subject_name ? ` · ${q.subject_name}` : ""}{q.topic ? ` · ${q.topic}` : ""} · {q.points} pt{q.points === 1 ? "" : "s"}</p>
+              </div>
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center justify-between p-4 border-t border-slate-100">
+          <span className="text-xs text-slate-500">{selected.size} selected</span>
+          <div className="flex gap-3">
+            <button onClick={onClose} className="btn-secondary">Cancel</button>
+            <button onClick={add} disabled={addFromBank.isPending || selected.size === 0} className="btn-primary gap-2">{addFromBank.isPending && <Loader2 size={15} className="animate-spin" />}Add {selected.size > 0 ? `(${selected.size})` : ""}</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

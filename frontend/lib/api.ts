@@ -355,6 +355,20 @@ export const cbtApi = {
     add: (exam_id: string, data: object) =>
       api.post(`/cbt/exams/${exam_id}/questions`, data).then((r) => r.data),
     delete: (question_id: string) => api.delete(`/cbt/questions/${question_id}`),
+    addFromBank: (exam_id: string, question_ids: string[]) =>
+      api.post(`/cbt/exams/${exam_id}/questions/from-bank`, { question_ids }).then((r) => r.data),
+  },
+  bank: {
+    list: (p?: { subject_id?: string; topic?: string; difficulty?: string; question_type?: string; search?: string; page?: number; page_size?: number }) =>
+      api.get("/cbt/question-bank", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/cbt/question-bank", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/cbt/question-bank/${id}`, data).then((r) => r.data),
+    delete: (id: string) => api.delete(`/cbt/question-bank/${id}`),
+    import: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return api.post("/cbt/question-bank/import", fd, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data);
+    },
   },
   attempts: {
     list: (p?: { exam_id?: string; student_id?: string }) =>

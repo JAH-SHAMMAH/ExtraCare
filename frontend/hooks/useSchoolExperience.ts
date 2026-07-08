@@ -244,6 +244,68 @@ export function useDeleteCBTQuestion() {
   });
 }
 
+// ── CBT: Question Bank ───────────────────────────────────────────────────────
+
+export function useBankItems(params?: { subject_id?: string; topic?: string; difficulty?: string; question_type?: string; search?: string; page?: number; page_size?: number }) {
+  return useQuery({
+    queryKey: ["cbt-bank", params],
+    queryFn: () => cbtApi.bank.list(params),
+  });
+}
+
+export function useCreateBankItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => cbtApi.bank.create(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cbt-bank"] }); toast.success("Question added to bank."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to add question."),
+  });
+}
+
+export function useUpdateBankItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => cbtApi.bank.update(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cbt-bank"] }); toast.success("Question updated."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update question."),
+  });
+}
+
+export function useDeleteBankItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => cbtApi.bank.delete(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cbt-bank"] }); toast.success("Question removed."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to remove question."),
+  });
+}
+
+export function useImportBank() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => cbtApi.bank.import(file),
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ["cbt-bank"] });
+      const errs = res?.errors?.length ? ` (${res.errors.length} row${res.errors.length === 1 ? "" : "s"} skipped)` : "";
+      toast.success(`Imported ${res?.imported ?? 0} question${(res?.imported ?? 0) === 1 ? "" : "s"}${errs}.`);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Import failed."),
+  });
+}
+
+export function useAddFromBank() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ exam_id, question_ids }: { exam_id: string; question_ids: string[] }) => cbtApi.questions.addFromBank(exam_id, question_ids),
+    onSuccess: (res: any, { exam_id }) => {
+      qc.invalidateQueries({ queryKey: ["cbt-questions", exam_id] });
+      qc.invalidateQueries({ queryKey: ["cbt-exams"] });
+      toast.success(`Added ${res?.added ?? 0} question${(res?.added ?? 0) === 1 ? "" : "s"} from the bank.`);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to add from bank."),
+  });
+}
+
 // ── CBT: Attempts ────────────────────────────────────────────────────────────
 
 export function useCBTAttempts(params?: { exam_id?: string; student_id?: string }) {
