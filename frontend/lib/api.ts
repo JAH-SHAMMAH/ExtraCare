@@ -136,8 +136,12 @@ export function setAuth(accessToken: string, refreshToken: string, orgSlug?: str
   // persist tokens in JS-readable storage. Only the (non-secret) org slug is
   // kept client-side for the X-Org-Slug header.
   if (!COOKIE_AUTH) {
-    Cookies.set("access_token", accessToken, { expires: 1, secure: true, sameSite: "strict" });
-    Cookies.set("refresh_token", refreshToken, { expires: 7, secure: true, sameSite: "strict" });
+    // Secure must match the actual protocol: browsers drop `secure` cookies over
+    // plain HTTP on a non-localhost host (e.g. a phone hitting the LAN IP), which
+    // would silently lose the session right after login. HTTPS in prod → secure.
+    const secure = typeof window !== "undefined" && window.location.protocol === "https:";
+    Cookies.set("access_token", accessToken, { expires: 1, secure, sameSite: "strict" });
+    Cookies.set("refresh_token", refreshToken, { expires: 7, secure, sameSite: "strict" });
   }
   if (orgSlug) Cookies.set("org_slug", orgSlug, { expires: 30 });
 }

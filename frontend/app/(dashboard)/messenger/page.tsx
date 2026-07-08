@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MessageSquare, Send, Image as ImageIcon, Film, Paperclip,
-  Users2, Globe, Loader2, Plus,
+  Users2, Globe, Loader2, Plus, ArrowLeft,
 } from "lucide-react";
 import {
   useConversations, useContacts, useCreateConversation, useMessages, useSendMessage,
@@ -19,12 +19,14 @@ export default function MessengerPage() {
   const { data: conversations = [], isLoading: convLoading } = useConversations();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const didInit = useRef(false);
 
-  // Auto-select the global room on first load so the user always sees
-  // something. Picking the most-recently-active conversation instead would
-  // hide the global room from fresh orgs.
+  // Auto-select the global room ONCE on first load so the user always sees
+  // something. Gated by a ref so that clearing selection (mobile "back" to the
+  // conversation list) isn't immediately undone by a re-select.
   useEffect(() => {
-    if (!selectedId && conversations.length > 0) {
+    if (!selectedId && conversations.length > 0 && !didInit.current) {
+      didInit.current = true;
       const global = conversations.find((c) => c.kind === "global");
       setSelectedId(global?.id ?? conversations[0].id);
     }
@@ -41,12 +43,13 @@ export default function MessengerPage() {
         onSelect={setSelectedId}
         currentUserId={user?.id}
       />
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className={`flex-1 flex-col min-w-0 ${selected ? "flex" : "hidden md:flex"}`}>
         {selected ? (
           <ChatPane
             conversation={selected}
             currentUserId={user?.id}
             connected={connected}
+            onBack={() => setSelectedId(null)}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-slate-400">
@@ -75,7 +78,7 @@ function ConversationSidebar({
   const [showNew, setShowNew] = useState(false);
 
   return (
-    <aside className="w-80 border-r border-slate-200 bg-white flex flex-col">
+    <aside className={`w-full md:w-80 border-r border-slate-200 bg-white flex-col ${selectedId ? "hidden md:flex" : "flex"}`}>
       <header className="px-4 py-4 border-b border-slate-100 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-brand-600" />
@@ -222,11 +225,12 @@ function NewDMForm({ onClose, currentUserId }: { onClose: (id: string | null) =>
 // ── Right column: chat pane ───────────────────────────────────────────────
 
 function ChatPane({
-  conversation, currentUserId, connected,
+  conversation, currentUserId, connected, onBack,
 }: {
   conversation: Conversation;
   currentUserId?: string;
   connected: boolean;
+  onBack?: () => void;
 }) {
   const { data: messages = [], isLoading } = useMessages(conversation.id);
   const send = useSendMessage();
@@ -265,12 +269,19 @@ function ChatPane({
 
   return (
     <>
-      <header className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-black text-slate-900">{title}</h2>
-          <p className="text-xs text-slate-500 capitalize">
-            {conversation.kind} · {conversation.members.length} member{conversation.members.length === 1 ? "" : "s"}
-          </p>
+      <header className="px-4 md:px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          {onBack && (
+            <button onClick={onBack} aria-label="Back to conversations" className="md:hidden -ml-1 p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 shrink-0">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          )}
+          <div className="min-w-0">
+            <h2 className="text-sm font-black text-slate-900 truncate">{title}</h2>
+            <p className="text-xs text-slate-500 capitalize truncate">
+              {conversation.kind} · {conversation.members.length} member{conversation.members.length === 1 ? "" : "s"}
+            </p>
+          </div>
         </div>
         <span
           className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${

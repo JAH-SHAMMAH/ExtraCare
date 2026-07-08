@@ -125,6 +125,14 @@ export default function LiveRoomPage() {
           // STUN-only fallback is already set.
         }
         if (isHost) {
+          // Camera/mic capture is only available in a secure context. Over plain
+          // http:// on a non-localhost host (e.g. a phone on the LAN IP),
+          // navigator.mediaDevices is undefined — surface a clear reason instead
+          // of a cryptic "cannot read properties of undefined".
+          if (!navigator.mediaDevices?.getUserMedia) {
+            setStatus("Live video needs a secure (HTTPS) connection. On a phone over http://, open the site via HTTPS (a tunnel like cloudflared/ngrok) or allow this origin in your browser's insecure-origins setting.");
+            return;
+          }
           setStatus("Requesting camera access…");
           const stream = await navigator.mediaDevices.getUserMedia({
             video: true,

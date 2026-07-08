@@ -108,6 +108,9 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
+    # Also allow the dev frontend served from any private-LAN IP on :3000, so the
+    # app can be opened on a phone over Wi-Fi without hardcoding the machine's IP.
+    allow_origin_regex=r"http://(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}):3000",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
