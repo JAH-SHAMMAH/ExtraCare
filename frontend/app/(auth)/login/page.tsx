@@ -3,7 +3,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Eye, EyeOff, Loader2, GraduationCap } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useLogin } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -34,8 +34,8 @@ export default function LoginPage() {
       <div className="relative w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-white/10 rounded-xl mb-4 border border-white/20">
-            <GraduationCap className="w-6 h-6 text-white" />
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl mb-4 shadow-lg shadow-black/20 p-2">
+            <img src="/logo-square.png" alt="Fairview School" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-2xl font-black text-white tracking-tight">Fairview School Portal</h1>
           <p className="text-white/60 text-sm mt-1">Sign in to your school portal</p>
