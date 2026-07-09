@@ -6,7 +6,7 @@ import { useCBTExams, useExamResults, useAttemptReview, useRemarkAttempt, useRes
 import { cbtApi } from "@/lib/api";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
-import { BarChart3, Download, Loader2, ArrowLeft, ClipboardEdit, X, AlertTriangle, CheckCircle2, Flag, RotateCcw } from "lucide-react";
+import { BarChart3, Download, Loader2, ArrowLeft, ClipboardEdit, X, AlertTriangle, CheckCircle2, Flag, RotateCcw, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -17,7 +17,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 interface AttemptRow {
   id: string; student_id: string; student_name: string | null; score: number; max_score: number;
-  percentage: number; status: string; submitted_at: string | null; needs_review: boolean;
+  percentage: number; status: string; submitted_at: string | null; needs_review: boolean; submitted_late: boolean;
 }
 
 export default function CBTResultsPage() {
@@ -114,6 +114,7 @@ export default function CBTResultsPage() {
                     <td className="px-5 py-3">
                       <span className={cn("badge capitalize", STATUS_STYLE[a.status] || "bg-slate-50 text-slate-600 border-slate-200")}>{a.status.replace("_", " ")}</span>
                       {a.needs_review && <span className="badge bg-amber-50 text-amber-700 border-amber-200 ml-1 inline-flex items-center gap-1"><AlertTriangle size={10} />review</span>}
+                      {a.submitted_late && <span className="badge bg-orange-50 text-orange-700 border-orange-200 ml-1 inline-flex items-center gap-1"><Clock size={10} />late</span>}
                     </td>
                     <td className="px-5 py-3">
                       {canWrite ? (

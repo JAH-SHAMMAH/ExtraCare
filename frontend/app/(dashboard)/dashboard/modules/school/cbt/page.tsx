@@ -59,6 +59,7 @@ export default function CBTPage() {
     end_time: "",
     duration_minutes: 60,
     shuffle_questions: false,
+    max_attempts: 1,
     status: "draft" as CBTExamStatus,
   });
 
@@ -68,6 +69,7 @@ export default function CBTPage() {
       start_time: "", end_time: "",
       duration_minutes: cbtSettings?.default_duration_minutes ?? 60,
       shuffle_questions: cbtSettings?.shuffle_default ?? false,
+      max_attempts: 1,
       status: "draft",
     });
     setEditing(null);
@@ -100,6 +102,7 @@ export default function CBTPage() {
       end_time: e.end_time ? e.end_time.substring(0, 16) : "",
       duration_minutes: e.duration_minutes,
       shuffle_questions: e.shuffle_questions,
+      max_attempts: e.max_attempts ?? 1,
       status: e.status,
     });
     setEditing(e);
@@ -185,6 +188,11 @@ export default function CBTPage() {
             <div>
               <label className="label">Duration (minutes)</label>
               <input type="number" value={form.duration_minutes} onChange={(e) => setForm({ ...form, duration_minutes: Number(e.target.value) })} className="input" />
+            </div>
+            <div>
+              <label className="label">Max attempts</label>
+              <input type="number" min="0" value={form.max_attempts} onChange={(e) => setForm({ ...form, max_attempts: Number(e.target.value) })} className="input" />
+              <p className="text-[11px] text-slate-400 mt-1">1 = single sitting · 0 = unlimited</p>
             </div>
             <div>
               <label className="label">Status</label>

@@ -303,6 +303,7 @@ export interface CBTExam {
   duration_minutes: number;
   total_points: number;
   shuffle_questions: boolean;
+  max_attempts: number;
   status: CBTExamStatus;
   created_at: string;
   org_id: string;
