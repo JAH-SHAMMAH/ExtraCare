@@ -165,6 +165,18 @@ other get-or-create helpers. Fix if ever observed: catch IntegrityError and
 re-SELECT (or use an upsert). Not worth a change now — flagged from the CBT Phase C
 review so it isn't lost.
 
+### TICKET — R2 follow-up: extend intervention visibility to subject-taught students
+The R2 scoping (shipped) limits a teacher's intervention visibility to their own
+**homeroom** classes (`SchoolClass.teacher_id == user.id`) + interventions they
+raised. A subject teacher who teaches e.g. Maths across many classes but isn't a
+class-teacher only sees those students' flags via the "created by me" path. A
+legitimate widening — "own students" could reasonably include students on exams
+whose subject the teacher teaches (`resolve_taught_subject_ids`, already used by
+the exams `for_me`). Deferred deliberately: it's a judgement call on how far "own
+students" should reach, and homeroom-only should be lived-in first. When built,
+OR-in a subject-taught condition to the `list_interventions` scope + the
+`_intervention_in_scope` check.
+
 ---
 
 ## 1. Mobile application
