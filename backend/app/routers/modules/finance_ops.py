@@ -13,6 +13,11 @@ from __future__ import annotations
 from datetime import datetime, timezone, date as date_type
 from decimal import Decimal
 
+try:  # stdlib 3.9+; guarded so a missing tzdata never hard-fails the module.
+    from zoneinfo import ZoneInfo
+except Exception:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +27,7 @@ from app.deps import get_current_active_user
 from app.core.tenant import require_module
 from app.core.permissions import PermissionChecker, AnyPermissionChecker
 from app.models.user import User
+from app.models.organization import Organization
 from app.models.modules.school import Student
 from app.models.modules.finance import (
     LedgerAccount, JournalEntry, JournalLine,
@@ -655,12 +661,26 @@ async def void_store_sale(
 # fees — can't see store revenue/cashier activity. Read-only; excludes void sales.
 
 
-def _dt_start(d: date_type | None):
-    return datetime(d.year, d.month, d.day, tzinfo=timezone.utc) if d else None
+def _zone(tz_name: str | None):
+    """The org's tzinfo (default Africa/Lagos), matching the attendance layer.
+    Falls back to UTC if zoneinfo is unavailable or the name is invalid."""
+    if ZoneInfo is None:
+        return timezone.utc
+    try:
+        return ZoneInfo(tz_name or "Africa/Lagos")
+    except Exception:
+        return timezone.utc
 
 
-def _dt_end(d: date_type | None):
-    return datetime(d.year, d.month, d.day, 23, 59, 59, tzinfo=timezone.utc) if d else None
+def _dt_start(d: date_type | None, tz_name: str | None):
+    """Start of the given day IN THE ORG'S LOCAL TIMEZONE, as a UTC instant — so
+    a local calendar date maps to the right window over UTC created_at values."""
+    return datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=_zone(tz_name)).astimezone(timezone.utc) if d else None
+
+
+def _dt_end(d: date_type | None, tz_name: str | None):
+    """End of the given local day (inclusive) as a UTC instant."""
+    return datetime(d.year, d.month, d.day, 23, 59, 59, tzinfo=_zone(tz_name)).astimezone(timezone.utc) if d else None
 
 
 @router.get("/store/sales-summary", response_model=StoreSalesSummary, dependencies=[_fin_write])
@@ -672,7 +692,12 @@ async def store_sales_summary(
 ):
     if start and end and end < start:
         raise HTTPException(status_code=422, detail="Report end date cannot be before its start date.")
-    s_dt, e_dt = _dt_start(start), _dt_end(end)
+    # Interpret the start/end DATES as the org's local calendar days (that's what
+    # "today's sales" means), then window over the UTC created_at timestamps.
+    tz_name = (await db.execute(
+        select(Organization.timezone).where(Organization.id == current_user.org_id)
+    )).scalar_one_or_none()
+    s_dt, e_dt = _dt_start(start, tz_name), _dt_end(end, tz_name)
 
     def _win(q):
         if s_dt is not None:

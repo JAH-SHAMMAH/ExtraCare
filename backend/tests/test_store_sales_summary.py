@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
 
 from app.models.user import User, UserStatus
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
-from app.models.modules.finance import StoreItem
+from app.models.modules.finance import StoreItem, StoreSale
 from app.routers.modules.finance_ops import create_store_sale, void_store_sale, store_sales_summary
 from app.schemas.finance_ops import StoreSaleCreate, StoreSaleLineInput
 
@@ -87,11 +89,33 @@ async def test_void_excluded(db, org, teacher):
 
 async def test_period_scoping(db, org, teacher):
     await _seed(db, org)
-    today = date.today()
+    # "Today" is the org's LOCAL calendar day (what the Sales Monitor sends) — not
+    # the test machine's date, which would make this timezone-dependent/flaky.
+    today = datetime.now(ZoneInfo(org.timezone or "Africa/Lagos")).date()
     inc = await store_sales_summary(start=today, end=today, db=db, current_user=teacher)
     assert inc.total_sales == 3                                # sales are 'now'
     past = await store_sales_summary(start=date(2020, 1, 1), end=date(2020, 12, 31), db=db, current_user=teacher)
     assert past.total_sales == 0 and past.top_items == []      # window excludes them
+
+
+async def test_local_day_window_uses_org_timezone(db, org, teacher):
+    # org tz = Africa/Lagos (UTC+1): local day 2026-07-09 spans, in UTC,
+    # [2026-07-08 23:00:00, 2026-07-09 22:59:59]. Deterministic (fixed created_at).
+    it = await _item(db, org, "Book", qty=100, price=100)
+    ada = await _user(db, org, "Ada")
+    in_sale = await create_store_sale(StoreSaleCreate(payment_method="cash", lines=[StoreSaleLineInput(item_id=it.id, quantity=1)]), request=None, db=db, current_user=ada)   # revenue 100
+    out_sale = await create_store_sale(StoreSaleCreate(payment_method="cash", lines=[StoreSaleLineInput(item_id=it.id, quantity=2)]), request=None, db=db, current_user=ada)  # revenue 200
+    # in-window: 07-08 23:30 UTC = 07-09 00:30 Lagos (local 07-09)
+    # out-of-window: 07-09 23:30 UTC = 07-10 00:30 Lagos (local 07-10)
+    for sid, dt in ((in_sale.id, datetime(2026, 7, 8, 23, 30)), (out_sale.id, datetime(2026, 7, 9, 23, 30))):
+        row = (await db.execute(select(StoreSale).where(StoreSale.id == sid))).scalar_one()
+        row.created_at = dt
+    await db.commit()
+
+    rep = await store_sales_summary(start=date(2026, 7, 9), end=date(2026, 7, 9), db=db, current_user=teacher)
+    # Only the sale whose LOCAL day is 07-09 counts. The pre-fix UTC window would
+    # have excluded in_sale (07-08 UTC) and wrongly included out_sale (07-09 UTC).
+    assert rep.total_sales == 1 and rep.total_revenue == 100.0
 
 
 async def test_end_before_start_rejected(db, org, teacher):

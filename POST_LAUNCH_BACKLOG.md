@@ -63,7 +63,15 @@ any class-scoped workflow.
 
 ---
 
-## 🐛 PRODUCT BUG (not a flaky test) — Sales Monitor "today's sales" under-reports near midnight
+## 🐛 PRODUCT BUG — Sales Monitor "today's sales" under-reports near midnight — ✅ RESOLVED (2026-07-09)
+
+`store_sales_summary` now builds the start/end date window in the **org's local
+timezone** (`org.timezone`, default Africa/Lagos = UTC+1) and converts to UTC
+before comparing `created_at` — so a local calendar date maps to the correct UTC
+window and "today's sales" no longer drops sales near midnight. Reuses the same
+`org.timezone` the attendance layer uses (per-org configurable, not hardcoded).
+Regression `test_period_scoping` is now deterministic (queries the org-local day)
+and a boundary test proves the conversion. Original report kept below.
 
 ### TICKET — Store Sales Monitor: UTC `created_at` vs local `date.today()` date window (filed 2026-07-08)
 
