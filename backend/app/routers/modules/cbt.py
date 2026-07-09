@@ -1050,7 +1050,9 @@ async def list_interventions(
 ):
     org_id = current_user.org_id
     query = select(CBTIntervention).where(CBTIntervention.org_id == org_id)
-    if status in ("open", "in_progress", "resolved"):
+    if status is not None:
+        if status not in ("open", "in_progress", "resolved"):
+            raise HTTPException(status_code=422, detail="Invalid status. Use open, in_progress, or resolved.")
         query = query.where(CBTIntervention.status == InterventionStatus(status))
     if student_id:
         query = query.where(CBTIntervention.student_id == student_id)
@@ -1077,6 +1079,13 @@ async def create_intervention(
     )).scalar_one_or_none()
     if not student:
         raise HTTPException(status_code=404, detail="Student not found.")
+    # Validate optional links belong to this org (reuse the org-scoped loaders,
+    # which 404 on a missing/foreign id) so an intervention can't reference
+    # another org's exam/attempt or a non-existent one.
+    if payload.exam_id:
+        await _get_exam_or_404(db, payload.exam_id, org_id)
+    if payload.attempt_id:
+        await _load_attempt(db, payload.attempt_id, org_id)
     iv = CBTIntervention(
         student_id=payload.student_id, exam_id=payload.exam_id, attempt_id=payload.attempt_id,
         reason=payload.reason, note=payload.note, status=InterventionStatus.OPEN,
