@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useCBTSettings, useUpdateCBTSettings } from "@/hooks/useSchoolExperience";
+import { useHasPermission } from "@/components/guards/PermissionGate";
 import { Settings2, Loader2, ArrowLeft, Save } from "lucide-react";
 
 export default function CBTSetupPage() {
   const { data, isLoading } = useCBTSettings();
   const save = useUpdateCBTSettings();
+  const canWrite = useHasPermission("school:write");
 
   const [duration, setDuration] = useState("60");
   const [passPct, setPassPct] = useState("50");
@@ -49,29 +51,31 @@ export default function CBTSetupPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
               <label className="label">Default duration (minutes)</label>
-              <input type="number" min="1" max="600" value={duration} onChange={(e) => setDuration(e.target.value)} className="input" required />
+              <input type="number" min="1" max="600" value={duration} onChange={(e) => setDuration(e.target.value)} disabled={!canWrite} className="input" required />
             </div>
             <div>
               <label className="label">Default pass mark (%)</label>
-              <input type="number" min="0" max="100" value={passPct} onChange={(e) => setPassPct(e.target.value)} className="input" required />
+              <input type="number" min="0" max="100" value={passPct} onChange={(e) => setPassPct(e.target.value)} disabled={!canWrite} className="input" required />
             </div>
           </div>
 
           <label className="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" checked={shuffle} onChange={(e) => setShuffle(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+            <input type="checkbox" checked={shuffle} onChange={(e) => setShuffle(e.target.checked)} disabled={!canWrite} className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
             <span className="text-sm text-slate-700">Shuffle questions by default</span>
           </label>
 
           <div>
             <label className="label">Default instructions</label>
-            <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={4} className="input resize-none" placeholder="Shown to students before they begin an exam…" />
+            <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={4} readOnly={!canWrite} className="input resize-none" placeholder="Shown to students before they begin an exam…" />
           </div>
 
+          {canWrite && (
           <div className="flex justify-end pt-1">
             <button type="submit" disabled={save.isPending} className="btn-primary gap-2">
               {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save defaults
             </button>
           </div>
+          )}
         </form>
       )}
 

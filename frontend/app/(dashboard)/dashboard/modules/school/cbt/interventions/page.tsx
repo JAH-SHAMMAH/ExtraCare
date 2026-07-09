@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useInterventions, useUpdateIntervention } from "@/hooks/useSchoolExperience";
+import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
 import { LifeBuoy, Loader2, ArrowLeft, CheckCircle2, Clock } from "lucide-react";
 
@@ -21,6 +22,7 @@ interface Intervention {
 export default function InterventionsPage() {
   const [tab, setTab] = useState<(typeof STATUSES)[number]>("open");
   const { data, isLoading } = useInterventions({ status: tab === "all" ? undefined : tab });
+  const canWrite = useHasPermission("school:write");
   const items: Intervention[] = data?.items || [];
 
   return (
@@ -48,14 +50,14 @@ export default function InterventionsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {items.map((iv) => <InterventionCard key={iv.id} iv={iv} />)}
+          {items.map((iv) => <InterventionCard key={iv.id} iv={iv} canWrite={canWrite} />)}
         </div>
       )}
     </div>
   );
 }
 
-function InterventionCard({ iv }: { iv: Intervention }) {
+function InterventionCard({ iv, canWrite }: { iv: Intervention; canWrite: boolean }) {
   const update = useUpdateIntervention();
   const [note, setNote] = useState(iv.note || "");
   const dirty = note !== (iv.note || "");
@@ -73,10 +75,12 @@ function InterventionCard({ iv }: { iv: Intervention }) {
       <textarea
         value={note}
         onChange={(e) => setNote(e.target.value)}
+        readOnly={!canWrite}
         placeholder="Follow-up note — actions taken, plan…"
         className="input min-h-[60px] resize-none text-sm mt-2"
       />
 
+      {canWrite && (
       <div className="flex items-center justify-between mt-3">
         <div className="flex gap-2">
           {iv.status !== "in_progress" && iv.status !== "resolved" && (
@@ -94,6 +98,7 @@ function InterventionCard({ iv }: { iv: Intervention }) {
           </button>
         )}
       </div>
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useCBTExams, useExamResults, useAttemptReview, useRemarkAttempt, useResetAttempt, useCreateIntervention } from "@/hooks/useSchoolExperience";
 import { cbtApi } from "@/lib/api";
+import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
 import { BarChart3, Download, Loader2, ArrowLeft, ClipboardEdit, X, AlertTriangle, CheckCircle2, Flag, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
@@ -29,6 +30,7 @@ export default function CBTResultsPage() {
   const { data, isLoading } = useExamResults(examId || null);
   const resetAttempt = useResetAttempt();
   const createIntervention = useCreateIntervention();
+  const canWrite = useHasPermission("school:write");
 
   useEffect(() => { if (!examId && exams.length) setExamId(exams[0].id); }, [exams, examId]);
 
@@ -114,6 +116,7 @@ export default function CBTResultsPage() {
                       {a.needs_review && <span className="badge bg-amber-50 text-amber-700 border-amber-200 ml-1 inline-flex items-center gap-1"><AlertTriangle size={10} />review</span>}
                     </td>
                     <td className="px-5 py-3">
+                      {canWrite ? (
                       <div className="flex items-center gap-3">
                         <button onClick={() => setGradingId(a.id)} className="text-xs text-brand-600 font-semibold hover:underline inline-flex items-center gap-1"><ClipboardEdit size={13} />Grade</button>
                         <button
@@ -127,6 +130,7 @@ export default function CBTResultsPage() {
                           className="text-xs text-slate-500 font-semibold hover:underline inline-flex items-center gap-1" title="Reset for a retake"
                         ><RotateCcw size={13} />Reset</button>
                       </div>
+                      ) : <span className="text-xs text-slate-300">—</span>}
                     </td>
                   </tr>
                 ))}
