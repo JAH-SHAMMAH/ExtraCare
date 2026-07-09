@@ -4,11 +4,17 @@ from __future__ import annotations
 import uuid
 
 import pytest
+import pytest_asyncio
 from fastapi import HTTPException
+from httpx import AsyncClient, ASGITransport
 from sqlalchemy import select
 
+from app.main import app
+from app.database import get_db
+from app.core.security import create_access_token
 from app.models.user import User, UserStatus
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
+from app.models.organization import Organization, IndustryType, SubscriptionTier
 from app.models.modules.school import (
     CBTExam, CBTAttempt, CBTAnswer, CBTIntervention, CBTSettings,
     ExamStatus, AttemptStatus, InterventionStatus,
@@ -113,3 +119,77 @@ async def test_phase_c_rbac_staff_only(db, org):
         assert u.has_permission("school:read") and u.has_permission("school:write")
     student = await _preset_user(db, org, "student")
     assert not student.has_permission("school:read") and not student.has_permission("school:write")
+
+
+# ── T1: RBAC enforced at the HTTP layer (not just has_permission on presets) ──────
+
+@pytest_asyncio.fixture
+async def http_app(db):
+    """AsyncClient bound to the real app, sharing the test session, so the real
+    auth + PermissionChecker dependency chain runs on each request."""
+    async def _get_db():
+        yield db
+    app.dependency_overrides[get_db] = _get_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac
+    app.dependency_overrides.pop(get_db, None)
+
+
+def _bearer(user) -> dict:
+    return {"Authorization": f"Bearer {create_access_token({'sub': user.id})}"}
+
+
+async def test_rbac_enforced_at_http_layer(db, org, teacher, student, http_app):
+    # Enterprise tier clears the plan/module gate so we fail on the PERMISSION gate.
+    org.subscription_tier = SubscriptionTier.ENTERPRISE
+    db.add(org)
+    await db.commit()
+    readonly = await _preset_user(db, org, "staff")   # school:read, NOT school:write
+    writer = await _preset_user(db, org, "teacher")   # school:read + school:write
+
+    # read-only staff: every Phase C mutation is a real 403 from the endpoint gate
+    ro = _bearer(readonly)
+    assert (await http_app.post("/api/v1/cbt/interventions",
+                                json={"student_id": student.id, "reason": "x"}, headers=ro)).status_code == 403
+    assert (await http_app.post(f"/api/v1/cbt/attempts/{uuid.uuid4()}/reset", headers=ro)).status_code == 403
+    assert (await http_app.put("/api/v1/cbt/settings",
+                               json={"default_duration_minutes": 45}, headers=ro)).status_code == 403
+
+    # writer clears the gate (create succeeds) — proves the 403s were the gate, not a fluke
+    assert (await http_app.post("/api/v1/cbt/interventions",
+                                json={"student_id": student.id, "reason": "x"}, headers=_bearer(writer))).status_code == 201
+
+
+# ── T2: cross-org isolation (org B can't touch org A's Phase C data) ──────────────
+
+async def test_cross_org_isolation(db, org, teacher, student):
+    exam = CBTExam(id=str(uuid.uuid4()), title="A", created_by=teacher.id, org_id=org.id,
+                   status=ExamStatus.PUBLISHED, total_points=1)
+    attempt = CBTAttempt(id=str(uuid.uuid4()), exam_id=exam.id, student_id=student.id,
+                         max_score=1, score=1, status=AttemptStatus.GRADED, org_id=org.id)
+    db.add_all([exam, attempt])
+    await db.commit()
+    iv = await create_intervention(InterventionCreate(student_id=student.id, reason="low"),
+                                   request=None, db=db, current_user=teacher)
+    await get_cbt_settings(db=db, current_user=teacher)  # create org A settings
+
+    org_b = Organization(id=str(uuid.uuid4()), name="Other School",
+                         slug=f"other-{uuid.uuid4().hex[:8]}", industry=IndustryType.SCHOOL,
+                         modules_enabled=["school"])
+    db.add(org_b)
+    await db.commit()
+    user_b = await _preset_user(db, org_b, "manager")
+
+    # org B cannot reach org A's attempt or intervention (404 via the org-scoped loaders)
+    with pytest.raises(HTTPException) as e1:
+        await reset_attempt(attempt.id, request=None, db=db, current_user=user_b)
+    assert e1.value.status_code == 404
+    with pytest.raises(HTTPException) as e2:
+        await update_intervention(iv["id"], InterventionUpdate(status="resolved"),
+                                  request=None, db=db, current_user=user_b)
+    assert e2.value.status_code == 404
+    # org B's list excludes org A's intervention
+    listed = await list_interventions(status=None, student_id=None, exam_id=None, db=db, current_user=user_b)
+    assert all(i["id"] != iv["id"] for i in listed["items"])
+    # org A's attempt survived org B's failed reset
+    assert (await db.execute(select(CBTAttempt).where(CBTAttempt.id == attempt.id))).scalar_one_or_none() is not None
