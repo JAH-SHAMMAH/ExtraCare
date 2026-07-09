@@ -12,6 +12,8 @@ import pytest
 from fastapi import HTTPException
 
 from app.models.organization import Organization, IndustryType
+from app.models.user import User, UserStatus
+from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.modules.school import (
     CBTExam, CBTQuestion, ExamStatus, QuestionType,
 )
@@ -21,6 +23,19 @@ from app.routers.modules.cbt import (
 from app.schemas.school_experience import AttemptSubmit, AttemptAnswerInput
 
 pytestmark = pytest.mark.asyncio
+
+
+async def _staff(db, org) -> User:
+    """A role-loaded staff user (school:read/write) for staff-assisted attempt
+    starts — the bare `teacher` fixture is intentionally permission-less."""
+    u = User(id=str(uuid.uuid4()), email=f"staff-{uuid.uuid4().hex[:6]}@example.com",
+             full_name="Staff", status=UserStatus.ACTIVE, org_id=org.id)
+    role = Role(id=str(uuid.uuid4()), name="teacher", slug=f"t-{uuid.uuid4().hex[:6]}",
+                permissions=list(SCHOOL_PERMISSION_PRESETS["teacher"]), org_id=org.id, is_system=False)
+    u.roles = [role]
+    db.add_all([role, u])
+    await db.flush()
+    return u
 
 
 async def _exam(db, org, teacher, status=ExamStatus.PUBLISHED):
@@ -45,33 +60,36 @@ async def _question(db, org, exam, answer="4"):
 
 
 async def test_attempt_autogrades_correct_answer(db, org, teacher, student):
+    staff = await _staff(db, org)
     exam = await _exam(db, org, teacher)
     q = await _question(db, org, exam, answer="4")
-    started = await start_attempt(exam_id=exam.id, student_id=student.id, db=db, current_user=teacher)
+    started = await start_attempt(exam_id=exam.id, student_id=student.id, db=db, current_user=staff)
     res = await submit_attempt(
         attempt_id=started["id"],
         payload=AttemptSubmit(answers=[AttemptAnswerInput(question_id=q.id, answer_text="4")]),
-        db=db, current_user=teacher,
+        db=db, current_user=staff,
     )
     assert res["score"] == 1.0
 
 
 async def test_attempt_autogrades_wrong_answer_zero(db, org, teacher, student):
+    staff = await _staff(db, org)
     exam = await _exam(db, org, teacher)
     q = await _question(db, org, exam, answer="4")
-    started = await start_attempt(exam_id=exam.id, student_id=student.id, db=db, current_user=teacher)
+    started = await start_attempt(exam_id=exam.id, student_id=student.id, db=db, current_user=staff)
     res = await submit_attempt(
         attempt_id=started["id"],
         payload=AttemptSubmit(answers=[AttemptAnswerInput(question_id=q.id, answer_text="5")]),
-        db=db, current_user=teacher,
+        db=db, current_user=staff,
     )
     assert res["score"] == 0.0
 
 
 async def test_attempt_blocked_when_exam_not_live(db, org, teacher, student):
+    staff = await _staff(db, org)
     exam = await _exam(db, org, teacher, status=ExamStatus.DRAFT)
     with pytest.raises(HTTPException) as ei:
-        await start_attempt(exam_id=exam.id, student_id=student.id, db=db, current_user=teacher)
+        await start_attempt(exam_id=exam.id, student_id=student.id, db=db, current_user=staff)
     assert ei.value.status_code == 400
 
 

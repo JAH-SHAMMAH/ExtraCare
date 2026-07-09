@@ -334,14 +334,42 @@ async def delete_question(
 # ── Attempts ──────────────────────────────────────────────────────────────────
 
 
+async def _attempt_scope(db: AsyncSession, user: User) -> tuple[bool, str | None]:
+    """Attempt access scope. Staff (school:read) reach every attempt in the org;
+    a student (cbt:read/write but NOT school:read) is limited to their own linked
+    Student record. Parents can't reach these endpoints (no cbt:read)."""
+    if user.has_permission("school:read"):
+        return True, None
+    return False, await resolve_linked_student_id(db, user)
+
+
 @router.post("/exams/{exam_id}/attempts", status_code=201, dependencies=[_can_read])
 async def start_attempt(
     exam_id: str,
-    student_id: str,
+    student_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    exam = await _get_exam_or_404(db, exam_id, current_user.org_id)
+    org_id = current_user.org_id
+    exam = await _get_exam_or_404(db, exam_id, org_id)
+    # Ownership: a student can only start their OWN attempt (student_id is derived,
+    # any passed value is ignored); staff may start for any valid in-org student.
+    is_staff, own_student_id = await _attempt_scope(db, current_user)
+    if is_staff:
+        if not student_id:
+            raise HTTPException(status_code=422, detail="student_id is required.")
+        target = (await db.execute(
+            select(Student).where(
+                Student.id == student_id, Student.org_id == org_id,
+                Student.is_deleted == False,  # noqa: E712
+            )
+        )).scalar_one_or_none()
+        if not target:
+            raise HTTPException(status_code=404, detail="Student not found.")
+    else:
+        if not own_student_id:
+            raise HTTPException(status_code=403, detail="No linked student record for this account.")
+        student_id = own_student_id
     now = datetime.now(timezone.utc)
     if not _is_live(exam, now):
         # Categorise rejection so we can spot UX issues (e.g. clocks drifting,
@@ -404,6 +432,9 @@ async def submit_attempt(
     )).scalar_one_or_none()
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found.")
+    is_staff, own_student_id = await _attempt_scope(db, current_user)
+    if not is_staff and attempt.student_id != own_student_id:
+        raise HTTPException(status_code=404, detail="Attempt not found.")  # own attempts only
     if attempt.status != AttemptStatus.IN_PROGRESS:
         raise HTTPException(status_code=400, detail="Attempt already submitted.")
 
@@ -454,10 +485,14 @@ async def list_attempts(
     current_user: User = Depends(get_current_active_user),
 ):
     query = select(CBTAttempt).where(CBTAttempt.org_id == current_user.org_id)
+    is_staff, own_student_id = await _attempt_scope(db, current_user)
+    if not is_staff:
+        # Students see only their own attempts, regardless of any passed student_id.
+        query = query.where(CBTAttempt.student_id == (own_student_id or "__none__"))
+    elif student_id:
+        query = query.where(CBTAttempt.student_id == student_id)
     if exam_id:
         query = query.where(CBTAttempt.exam_id == exam_id)
-    if student_id:
-        query = query.where(CBTAttempt.student_id == student_id)
     query = query.order_by(CBTAttempt.created_at.desc())
     items = (await db.execute(query)).scalars().all()
     return {"items": [AttemptResponse.model_validate(a).model_dump() for a in items]}
@@ -477,6 +512,9 @@ async def get_attempt(
     )).scalar_one_or_none()
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found.")
+    is_staff, own_student_id = await _attempt_scope(db, current_user)
+    if not is_staff and attempt.student_id != own_student_id:
+        raise HTTPException(status_code=404, detail="Attempt not found.")  # own attempts only
 
     # Include answers for review
     answers = (await db.execute(
