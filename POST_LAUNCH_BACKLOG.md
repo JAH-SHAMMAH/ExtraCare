@@ -101,6 +101,53 @@ flags, CBT Reset hard-delete question) — this is its own ticket.
 
 ---
 
+## Reference-match follow-ups (Educare audit, 2026-07-08)
+
+Filed from the Fairview/Educare sidebar audit. The **low-effort** parts were done
+in that pass (Subjects split into Create/Manage/Credit-Units tabs + a Class List
+link; class naming migrated to the British Year scheme). What remains are the
+medium-scope, real-build items — filed as **separate** tickets so they can be
+prioritised independently.
+
+### TICKET — Subjects: Subject Categories (new model)
+Today a subject only has a free-text `department` string. Add a real
+`SubjectCategory` model (name, org-scoped) + CRUD + `Subject.category_id` FK, and
+a "Manage Subject Categories" surface under the Subjects tabs. Migrate existing
+`department` text into categories (or keep both). **Scope:** medium — new model +
+migration + CRUD + UI. Maps to the reference's "Manage Subject Categories" child.
+
+### TICKET — Subjects: Subject Heads (new field/table)
+Assign a head-of-subject (a teacher who owns the scheme of work / oversees other
+teachers of that subject). Add `Subject.head_teacher_id` (or a `subject_heads`
+table if multiple heads per subject are wanted) + an "Assign to Subject Heads"
+surface. **Scope:** small–medium. Maps to the reference's "Assign to Subject
+Heads" child.
+
+### TICKET — Subjects: real Teacher assignment (many-to-many)
+Replace the `Subject.teacher_name` free-text with a proper assignment of
+teacher(s) to a subject **per class** — a `subject_class_teacher` join
+(subject × class × teacher). Enables "who teaches Maths in Year 8" and feeds
+timetabling/gradebook ownership. **Scope:** medium — new join table + migration +
+assignment UI (replacing the free-text field, with a back-compat read). Maps to
+"Assign to Teachers" (and underpins "Assign to Classes").
+
+### TICKET — Subjects: Subjects Enrollment
+A surface to enrol students into subjects (esp. electives at senior level) and
+see per-subject rosters. Overlaps `/subject-selection` (which handles elective
+*requests/approvals*) but is the confirmed-enrollment view. Decide whether to
+extend subject-selection or add a distinct `subject_enrollments` model. **Scope:**
+medium. Maps to the reference's "Subjects Enrollment" child.
+
+### TICKET — Staff Management naming/structure alignment (optional, LOW priority)
+Cosmetic/structural only, no functional gain: rename our **People & HR** section
+to **Staff Management**, and split the single Staff Assessment page into the
+reference's three surfaces (Setup Staff Assessment / Staff Assessment / Manage
+Staff Assessment). Deferred deliberately — it's churn for menu-label parity, not
+capability. Do only if menu-for-menu alignment with Educare becomes a goal.
+(This is parked item #5 alongside the 4 conversational parked items.)
+
+---
+
 ## 1. Mobile application
 A parent/teacher/student mobile app (iOS/Android).
 - **Why:** parents live on mobile; attendance alerts and fee payments suit a phone.
