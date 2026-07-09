@@ -156,6 +156,15 @@ just a cutoff time. Add `AttendanceSettings.absent_after_time` + a derivation
 pass (scheduled or on-read) only once that override story exists. **Parked item
 #6.** Own edge cases; not part of "expose the existing cutoff as config."
 
+### TICKET — CBT Settings: non-atomic get-or-create upsert (C3, from Phase C review)
+Very low probability. `_get_or_create_settings` (`cbt.py`) does SELECT-then-INSERT
+with no lock. Two concurrent first-ever writes for the same org could both INSERT,
+and the `unique(org_id)` constraint would make the second return a **500**
+(IntegrityError) instead of degrading gracefully. Same pattern exists in a few
+other get-or-create helpers. Fix if ever observed: catch IntegrityError and
+re-SELECT (or use an upsert). Not worth a change now — flagged from the CBT Phase C
+review so it isn't lost.
+
 ---
 
 ## 1. Mobile application
