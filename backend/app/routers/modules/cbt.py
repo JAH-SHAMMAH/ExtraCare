@@ -18,6 +18,7 @@ RBAC:
 
 import csv
 import io
+import random
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File
 from sqlalchemy import select, func, or_
@@ -257,7 +258,15 @@ async def list_questions(
             CBTQuestion.org_id == current_user.org_id,
         ).order_by(CBTQuestion.position.asc(), CBTQuestion.created_at.asc())
     )
-    questions = result.scalars().all()
+    questions = list(result.scalars().all())
+
+    # Per-student question shuffle (stable per student): the sitting student gets
+    # a seeded order that's consistent across reloads/resume; staff (authors and
+    # reviewers) always see the canonical position order.
+    if exam.shuffle_questions:
+        is_staff, own_student_id = await _attempt_scope(db, current_user)
+        if not is_staff and own_student_id:
+            random.Random(f"{own_student_id}:{exam.id}").shuffle(questions)
 
     # Only teachers with school:write should see correct_answer. Because this
     # endpoint is behind school:read, include_answers=true is permitted only if
@@ -889,8 +898,6 @@ async def add_questions_from_bank(
 # (short/long) answers land ungraded (points_awarded=None) — Test Remark is how a
 # teacher awards them, which re-totals the attempt.
 
-_PASS_FRACTION = 0.5  # CBTExam has no pass mark; 50% of total is the default line
-
 
 async def _cbt_student_names(db: AsyncSession, org_id: str, ids: set) -> dict:
     ids = {i for i in ids if i}
@@ -925,12 +932,15 @@ async def _ungraded_by_attempt(db: AsyncSession, org_id: str, attempt_ids: list[
     return {r[0]: r[1] for r in rows}
 
 
-def _result_rows(attempts, names, ungraded, total_points):
+def _result_rows(attempts, names, ungraded, total_points, pass_fraction):
     rows = []
     for a in attempts:
         score = float(a.score or 0)
         mx = float(a.max_score or total_points or 0)
         status = a.status.value if hasattr(a.status, "value") else a.status
+        passed = None
+        if status != "in_progress" and mx > 0:
+            passed = score >= mx * pass_fraction
         rows.append({
             "id": a.id, "student_id": a.student_id, "student_name": names.get(a.student_id),
             "score": score, "max_score": mx,
@@ -938,6 +948,7 @@ def _result_rows(attempts, names, ungraded, total_points):
             "status": status,
             "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
             "submitted_late": bool(a.submitted_late),
+            "passed": passed,
             "needs_review": ungraded.get(a.id, 0) > 0,
         })
     return rows
@@ -956,7 +967,15 @@ async def exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current
     names = await _cbt_student_names(db, org_id, {a.student_id for a in attempts})
     ungraded = await _ungraded_by_attempt(db, org_id, [a.id for a in attempts])
     total_points = float(exam.total_points or 0)
-    rows = _result_rows(attempts, names, ungraded, total_points)
+    # Pass mark: per-exam override → org CBT default → 50%. Recomputed each read,
+    # so adjusting the mark re-reflects for all attempts (results aren't published
+    # to students yet, so no frozen pass/fail to preserve).
+    settings_row = (await db.execute(
+        select(CBTSettings).where(CBTSettings.org_id == org_id)
+    )).scalar_one_or_none()
+    org_default = settings_row.default_pass_percentage if settings_row else None
+    pass_pct = exam.pass_percentage if exam.pass_percentage is not None else (org_default if org_default is not None else 50)
+    rows = _result_rows(attempts, names, ungraded, total_points, pass_pct / 100.0)
 
     scored = [r for r in rows if r["status"] != "in_progress"]
     scores = [r["score"] for r in scored]
@@ -967,10 +986,11 @@ async def exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current
         "average": round(sum(scores) / len(scores), 1) if scores else 0.0,
         "highest": max(scores) if scores else 0.0,
         "lowest": min(scores) if scores else 0.0,
-        "pass_rate": round(sum(1 for r in scored if r["max_score"] and r["score"] >= r["max_score"] * _PASS_FRACTION) / len(scored) * 100) if scored else 0,
+        "pass_rate": round(sum(1 for r in scored if r["passed"]) / len(scored) * 100) if scored else 0,
     }
     return {
         "exam": {"id": exam.id, "title": exam.title, "total_points": total_points,
+                 "pass_percentage": pass_pct,
                  "class_id": exam.class_id, "subject_id": exam.subject_id},
         "attempts": rows,
         "stats": stats,

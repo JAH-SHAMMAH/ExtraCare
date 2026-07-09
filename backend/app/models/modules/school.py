@@ -449,6 +449,8 @@ class CBTExam(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     shuffle_questions = Column(Boolean, default=False)
     # Max completed attempts per student. 1 = single sitting (default); 0 = unlimited.
     max_attempts = Column(Integer, default=1, nullable=False)
+    # Pass mark for this exam (%). NULL → fall back to the org CBT default.
+    pass_percentage = Column(Integer, nullable=True)
     status = Column(Enum(ExamStatus), default=ExamStatus.DRAFT, nullable=False)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
