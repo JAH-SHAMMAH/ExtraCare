@@ -97,6 +97,27 @@ async def test_intervention_unknown_student_404(db, org, teacher):
     assert exc.value.status_code == 404
 
 
+async def test_create_intervention_validates_links(db, org, teacher, student):
+    # C1: a foreign/nonexistent exam_id or attempt_id is rejected (404), not stored.
+    with pytest.raises(HTTPException) as exc_exam:
+        await create_intervention(
+            InterventionCreate(student_id=student.id, reason="x", exam_id=str(uuid.uuid4())),
+            request=None, db=db, current_user=teacher)
+    assert exc_exam.value.status_code == 404
+    with pytest.raises(HTTPException) as exc_attempt:
+        await create_intervention(
+            InterventionCreate(student_id=student.id, reason="x", attempt_id=str(uuid.uuid4())),
+            request=None, db=db, current_user=teacher)
+    assert exc_attempt.value.status_code == 404
+
+
+async def test_list_interventions_invalid_status_422(db, org, teacher):
+    # C2: an unrecognised status filter is a 422, not a silent "return everything".
+    with pytest.raises(HTTPException) as exc:
+        await list_interventions(status="banana", student_id=None, exam_id=None, db=db, current_user=teacher)
+    assert exc.value.status_code == 422
+
+
 # ── Settings ────────────────────────────────────────────────────────────────────
 
 async def test_settings_get_creates_default_then_update(db, org, teacher):
