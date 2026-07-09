@@ -97,6 +97,9 @@ async def teacher(db, org) -> User:
         status=UserStatus.ACTIVE,
         org_id=org.id,
     )
+    # Loaded (empty) roles so has_permission() doesn't lazy-load in async direct
+    # calls — mirrors production, where get_current_user selectinloads roles.
+    u.roles = []
     db.add(u)
     await db.commit()
     return u

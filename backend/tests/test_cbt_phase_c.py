@@ -17,7 +17,7 @@ from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.organization import Organization, IndustryType, SubscriptionTier
 from app.models.modules.school import (
     CBTExam, CBTAttempt, CBTAnswer, CBTIntervention, CBTSettings,
-    ExamStatus, AttemptStatus, InterventionStatus,
+    ExamStatus, AttemptStatus, InterventionStatus, Student, SchoolClass,
 )
 from app.routers.modules.cbt import (
     reset_attempt, list_interventions, create_intervention, update_intervention,
@@ -214,3 +214,41 @@ async def test_cross_org_isolation(db, org, teacher, student):
     assert all(i["id"] != iv["id"] for i in listed["items"])
     # org A's attempt survived org B's failed reset
     assert (await db.execute(select(CBTAttempt).where(CBTAttempt.id == attempt.id))).scalar_one_or_none() is not None
+
+
+# ── R2: teacher-tier interventions are scoped to their own students ───────────────
+
+async def test_r2_intervention_visibility_scoping(db, org):
+    admin = await _preset_user(db, org, "manager")      # has school_admin:read -> org-wide
+    teacher_u = await _preset_user(db, org, "teacher")  # no school_admin -> scoped
+
+    class_a = SchoolClass(id=str(uuid.uuid4()), name="A", level="P", teacher_id=teacher_u.id, org_id=org.id)
+    class_b = SchoolClass(id=str(uuid.uuid4()), name="B", level="P", teacher_id=admin.id, org_id=org.id)
+
+    def mk(cid, tag):
+        return Student(id=str(uuid.uuid4()), student_id=f"S-{uuid.uuid4().hex[:6]}",
+                       first_name=tag, last_name="x", class_id=cid, org_id=org.id)
+    stu_a, stu_b, stu_c = mk(class_a.id, "A"), mk(class_b.id, "B"), mk(class_b.id, "C")
+    db.add_all([class_a, class_b, stu_a, stu_b, stu_c])
+    await db.commit()
+
+    iv_a = await create_intervention(InterventionCreate(student_id=stu_a.id, reason="a"), request=None, db=db, current_user=admin)
+    iv_b = await create_intervention(InterventionCreate(student_id=stu_b.id, reason="b"), request=None, db=db, current_user=admin)
+    iv_c = await create_intervention(InterventionCreate(student_id=stu_c.id, reason="c"), request=None, db=db, current_user=teacher_u)  # teacher raised (class B)
+
+    # admin: org-wide — sees all three
+    a_ids = {i["id"] for i in (await list_interventions(status=None, student_id=None, exam_id=None, db=db, current_user=admin))["items"]}
+    assert {iv_a["id"], iv_b["id"], iv_c["id"]} <= a_ids
+
+    # teacher: own homeroom (A) + own-created (C), NOT another class's flag (B)
+    t_ids = {i["id"] for i in (await list_interventions(status=None, student_id=None, exam_id=None, db=db, current_user=teacher_u))["items"]}
+    assert iv_a["id"] in t_ids
+    assert iv_c["id"] in t_ids
+    assert iv_b["id"] not in t_ids
+
+    # teacher can't mutate the out-of-scope one (404); can mutate their own-class one
+    with pytest.raises(HTTPException) as exc:
+        await update_intervention(iv_b["id"], InterventionUpdate(status="resolved"), request=None, db=db, current_user=teacher_u)
+    assert exc.value.status_code == 404
+    ok = await update_intervention(iv_a["id"], InterventionUpdate(status="resolved"), request=None, db=db, current_user=teacher_u)
+    assert ok["status"] == "resolved"

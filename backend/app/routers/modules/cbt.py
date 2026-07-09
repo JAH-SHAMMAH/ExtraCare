@@ -20,7 +20,7 @@ import csv
 import io
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -1040,6 +1040,23 @@ async def _load_intervention(db: AsyncSession, iv_id: str, org_id: str) -> CBTIn
     return iv
 
 
+async def _intervention_in_scope(db: AsyncSession, user: User, iv: CBTIntervention) -> bool:
+    """Teacher-tier visibility (R2): admins (school_admin:read) see every
+    intervention org-wide; everyone else sees only flags for a student in one of
+    their own classes, or ones they raised themselves."""
+    if user.has_permission("school_admin:read"):
+        return True
+    if iv.created_by == user.id:
+        return True
+    taught = await resolve_taught_class_ids(db, user)
+    if not taught:
+        return False
+    student_class = (await db.execute(
+        select(Student.class_id).where(Student.id == iv.student_id)
+    )).scalar_one_or_none()
+    return student_class in taught
+
+
 @router.get("/interventions", dependencies=[_bank_read])
 async def list_interventions(
     status: str | None = None,
@@ -1058,6 +1075,18 @@ async def list_interventions(
         query = query.where(CBTIntervention.student_id == student_id)
     if exam_id:
         query = query.where(CBTIntervention.exam_id == exam_id)
+    # Teacher-tier scoping (R2): admins see org-wide; everyone else only their own
+    # classes' flagged students, or interventions they raised. Least-exposure.
+    if not current_user.has_permission("school_admin:read"):
+        taught = await resolve_taught_class_ids(db, current_user)
+        query = query.join(Student, Student.id == CBTIntervention.student_id)
+        if taught:
+            query = query.where(or_(
+                Student.class_id.in_(taught),
+                CBTIntervention.created_by == current_user.id,
+            ))
+        else:
+            query = query.where(CBTIntervention.created_by == current_user.id)
     query = query.order_by(CBTIntervention.created_at.desc())
     rows = (await db.execute(query)).scalars().all()
     names = await _cbt_student_names(db, org_id, {iv.student_id for iv in rows})
@@ -1112,6 +1141,10 @@ async def update_intervention(
 ):
     org_id = current_user.org_id
     iv = await _load_intervention(db, iv_id, org_id)
+    # Teacher-tier can only mutate interventions they can see (R2) — 404 (not 403)
+    # to avoid leaking that an out-of-scope intervention exists.
+    if not await _intervention_in_scope(db, current_user, iv):
+        raise HTTPException(status_code=404, detail="Intervention not found.")
     updates = payload.model_dump(exclude_unset=True)
     if "status" in updates:
         new_status = InterventionStatus(updates["status"])
