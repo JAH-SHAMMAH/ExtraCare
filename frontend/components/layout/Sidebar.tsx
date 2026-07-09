@@ -349,10 +349,10 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
         )}
       >
       {/* Brand */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-100">
+      <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-slate-100">
         <BrandMark className="h-8 shrink-0" priority />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-black text-slate-900 truncate">{org?.name || "Fairview School Portal"}</p>
+          <p className="text-base font-black text-slate-900 truncate leading-tight">{org?.name || "Fairview School Portal"}</p>
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate">
             School Portal
           </p>
@@ -364,10 +364,10 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+      <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         {/* Core */}
         <div>
-          <p className="px-3 mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Core</p>
+          <p className="px-3 mb-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-400">Core</p>
           <div className="space-y-0.5">
             {visibleCoreNav.map(({ href, label, icon: Icon }) => (
               <Link
@@ -375,7 +375,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
                 href={href}
                 onClick={() => markNavClick(href)}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all",
+                  "flex items-center gap-3 px-3 py-2 rounded-lg text-[15px] font-medium transition-all",
                   isActive(href)
                     ? "bg-brand-600 text-white shadow-sm shadow-brand-600/30"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -407,7 +407,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
         <Link
           href="/dashboard/profile"
           className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all",
+            "flex items-center gap-3 px-3 py-2 rounded-lg text-[15px] font-medium transition-all",
             isActive("/dashboard/profile")
               ? "bg-brand-600 text-white shadow-sm shadow-brand-600/30"
               : "text-slate-600 hover:bg-slate-100"
@@ -420,7 +420,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
           <Link
             href="/dashboard/settings"
             className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all",
+              "flex items-center gap-3 px-3 py-2 rounded-lg text-[15px] font-medium transition-all",
               isActive("/dashboard/settings")
                 ? "bg-brand-600 text-white shadow-sm shadow-brand-600/30"
                 : "text-slate-600 hover:bg-slate-100"
@@ -432,14 +432,14 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
         )}
         <Link
           href="/support"
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-all"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-[15px] font-medium text-slate-600 hover:bg-slate-100 transition-all"
         >
           <HelpCircle size={16} />
           Support
         </Link>
         <button
           onClick={logout}
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 transition-all w-full text-left"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-[15px] font-medium text-red-500 hover:bg-red-50 transition-all w-full text-left"
         >
           <LogOut size={16} />
           Sign out
@@ -508,8 +508,8 @@ const CollapsibleSection = memo(function CollapsibleSection({
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-2 px-3 mb-1 w-full group"
       >
-        <ModuleIcon size={12} className="text-slate-400" />
-        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex-1 text-left">
+        <ModuleIcon size={13} className="text-slate-400" />
+        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 flex-1 text-left">
           {section.label}
         </p>
         <ChevronDown
@@ -528,13 +528,13 @@ const CollapsibleSection = memo(function CollapsibleSection({
               href={href}
               onClick={() => markNavClick(href)}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all",
+                "flex items-center gap-3 px-3 py-2 rounded-lg text-[15px] font-medium transition-all",
                 isActive(href)
                   ? "bg-brand-50 text-brand-700 border border-brand-200"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               )}
             >
-              <Icon size={15} />
+              <Icon size={16} />
               {label}
             </Link>
           ))}
