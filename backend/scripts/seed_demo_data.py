@@ -39,21 +39,26 @@ from app.models.modules.school import (
 
 # ── Config ──────────────────────────────────────────────────────────────────────
 
+# British Year scheme (matches Fairview + migration 042): names AND levels
+# (Early Years / Primary / Secondary), so a fresh seed == the migration result.
+# The third value is an unused display ordinal.
 CLASSES = [
-    ("Nursery 1", "Nursery", 0),
-    ("Nursery 2", "Nursery", 1),
-    ("Primary 1", "Primary", 1),
-    ("Primary 2", "Primary", 2),
-    ("Primary 3", "Primary", 3),
-    ("Primary 4", "Primary", 4),
-    ("Primary 5", "Primary", 5),
-    ("Primary 6", "Primary", 6),
-    ("JSS 1", "Junior Secondary", 7),
-    ("JSS 2", "Junior Secondary", 8),
-    ("JSS 3", "Junior Secondary", 9),
-    ("SS 1", "Senior Secondary", 10),
-    ("SS 2", "Senior Secondary", 11),
-    ("SS 3", "Senior Secondary", 12),
+    ("Play Group", "Early Years", 0),
+    ("Pre-Nursery", "Early Years", 1),
+    ("Nursery", "Early Years", 2),
+    ("Reception", "Early Years", 3),
+    ("Year 1", "Primary", 4),
+    ("Year 2", "Primary", 5),
+    ("Year 3", "Primary", 6),
+    ("Year 4", "Primary", 7),
+    ("Year 5", "Primary", 8),
+    ("Year 6", "Primary", 9),
+    ("Year 7", "Secondary", 10),
+    ("Year 8", "Secondary", 11),
+    ("Year 9", "Secondary", 12),
+    ("Year 10", "Secondary", 13),
+    ("Year 11", "Secondary", 14),
+    ("Year 12", "Secondary", 15),
 ]
 
 SUBJECTS_BY_LEVEL = {

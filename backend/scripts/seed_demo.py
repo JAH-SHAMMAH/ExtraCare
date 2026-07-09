@@ -1199,12 +1199,12 @@ async def _seed_school_classroom(db, org: Organization, admin: User, roles_by_sl
     school_class = (await db.execute(
         select(SchoolClass).where(
             SchoolClass.org_id == org.id,
-            SchoolClass.name == "Grade 10A",
+            SchoolClass.name == "Year 10A",
         )
     )).scalar_one_or_none()
     if not school_class:
         school_class = SchoolClass(
-            name="Grade 10A",
+            name="Year 10A",
             level="Secondary",
             academic_year="2025/2026",
             teacher_id=teacher.id,

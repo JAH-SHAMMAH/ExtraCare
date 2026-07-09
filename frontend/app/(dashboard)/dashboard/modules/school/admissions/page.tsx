@@ -125,7 +125,7 @@ export default function AdmissionsPage() {
                 {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
-            <div><label className="label">Level (if no class)</label><input value={form.applying_for_level} onChange={(e) => setForm({ ...form, applying_for_level: e.target.value })} className="input" placeholder="e.g. Primary 1" /></div>
+            <div><label className="label">Level (if no class)</label><input value={form.applying_for_level} onChange={(e) => setForm({ ...form, applying_for_level: e.target.value })} className="input" placeholder="e.g. Year 1" /></div>
             <div><label className="label">Guardian Name</label><input value={form.guardian_name} onChange={(e) => setForm({ ...form, guardian_name: e.target.value })} className="input" /></div>
             <div><label className="label">Guardian Phone</label><input value={form.guardian_phone} onChange={(e) => setForm({ ...form, guardian_phone: e.target.value })} className="input" /></div>
             <div><label className="label">Guardian Email</label><input value={form.guardian_email} onChange={(e) => setForm({ ...form, guardian_email: e.target.value })} className="input" /></div>

@@ -48,7 +48,7 @@ async def test_list_returns_existing_classes(db, org, teacher, school_class):
     assert res["total"] == 1
     row = res["items"][0]
     assert row["id"] == school_class.id
-    assert row["name"] == "Grade 10A"
+    assert row["name"] == "Year 10A"
     assert row["grade_level"] == "Secondary"          # level -> grade_level
     assert row["class_teacher_id"] == teacher.id
     assert row["class_teacher_name"] == teacher.full_name   # resolved
@@ -63,7 +63,7 @@ async def test_student_count_computed(db, org, teacher, school_class, student):
 
 
 async def test_search_filters(db, org, teacher, school_class):
-    hit = await list_classes(page=1, page_size=100, search="Grade 10", db=db, current_user=teacher)
+    hit = await list_classes(page=1, page_size=100, search="Year 10", db=db, current_user=teacher)
     assert hit["total"] == 1
     miss = await list_classes(page=1, page_size=100, search="Nursery", db=db, current_user=teacher)
     assert miss["total"] == 0
@@ -73,13 +73,13 @@ async def test_search_filters(db, org, teacher, school_class):
 
 async def test_create_maps_frontend_names(db, org, teacher):
     resp = await create_class(
-        ClassCreate(name="JSS 1A", grade_level="JSS 1", section="A", capacity=35, academic_year="2025/2026"),
+        ClassCreate(name="Year 7A", grade_level="Year 7", section="A", capacity=35, academic_year="2025/2026"),
         request=None, db=db, current_user=teacher,
     )
-    assert resp["grade_level"] == "JSS 1" and resp["section"] == "A" and resp["capacity"] == 35
+    assert resp["grade_level"] == "Year 7" and resp["section"] == "A" and resp["capacity"] == 35
     # ORM columns actually persisted under the mapped names.
     row = (await db.execute(select(SchoolClass).where(SchoolClass.id == resp["id"]))).scalar_one()
-    assert row.level == "JSS 1" and row.section == "A" and row.max_capacity == 35
+    assert row.level == "Year 7" and row.section == "A" and row.max_capacity == 35
 
 
 async def test_update_maps_and_persists(db, org, teacher, school_class):

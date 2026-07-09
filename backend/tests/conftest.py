@@ -134,7 +134,7 @@ async def unlinked_user(db, org) -> User:
 async def school_class(db, org, teacher) -> SchoolClass:
     c = SchoolClass(
         id=str(uuid.uuid4()),
-        name="Grade 10A",
+        name="Year 10A",
         level="Secondary",
         academic_year="2025/2026",
         teacher_id=teacher.id,

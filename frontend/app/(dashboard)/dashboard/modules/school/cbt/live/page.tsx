@@ -345,7 +345,7 @@ function GettingStarted({ onStart }: { onStart: () => void }) {
     {
       icon: <GraduationCap className="w-5 h-5 text-brand-500" />,
       title: "Create a class",
-      body: "Add your first class roster — Grade 10A, JSS 2 Maths, etc. You can bulk-import from CSV.",
+      body: "Add your first class roster — Year 10A, Year 8 Maths, etc. You can bulk-import from CSV.",
       href: "/dashboard/modules/school/classes",
       cta: "Go to classes",
     },
