@@ -123,6 +123,7 @@ class ExamCreate(BaseModel):
     end_time: Optional[datetime] = None
     duration_minutes: int = 60
     shuffle_questions: bool = False
+    max_attempts: int = Field(default=1, ge=0)  # 0 = unlimited
     status: str = "draft"
 
 
@@ -133,6 +134,7 @@ class ExamUpdate(BaseModel):
     end_time: Optional[datetime] = None
     duration_minutes: Optional[int] = None
     shuffle_questions: Optional[bool] = None
+    max_attempts: Optional[int] = Field(default=None, ge=0)
     status: Optional[str] = None
 
 
@@ -148,6 +150,7 @@ class ExamResponse(_OrmBase):
     duration_minutes: int
     total_points: float
     shuffle_questions: bool
+    max_attempts: int
     status: str
     created_at: datetime
     org_id: str
@@ -203,6 +206,11 @@ class AttemptResponse(_OrmBase):
     score: Optional[float]
     max_score: Optional[float]
     status: str
+    submitted_late: bool = False
+    # Absolute UTC instant this attempt must be submitted by (started_at +
+    # duration, capped by the exam window). Computed server-side; None if the
+    # exam has no duration. Clients run their countdown against this.
+    deadline: Optional[datetime] = None
     created_at: datetime
     org_id: str
 

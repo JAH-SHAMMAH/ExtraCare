@@ -18,7 +18,7 @@ RBAC:
 
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -343,6 +343,35 @@ async def _attempt_scope(db: AsyncSession, user: User) -> tuple[bool, str | None
     return False, await resolve_linked_student_id(db, user)
 
 
+def _as_utc(dt: datetime | None) -> datetime | None:
+    """Treat a naive datetime as UTC — SQLite drops tzinfo on round-trip, so a
+    reloaded started_at/end_time can be naive while datetime.now() is aware."""
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _attempt_deadline(exam: CBTExam, attempt: CBTAttempt) -> datetime | None:
+    """Absolute submit-by instant: started_at + duration, capped by the exam
+    window. None when the exam has no duration (no timer to enforce)."""
+    started = _as_utc(attempt.started_at)
+    if not started or not exam.duration_minutes:
+        return None
+    dl = started + timedelta(minutes=exam.duration_minutes)
+    end = _as_utc(exam.end_time)
+    if end and end < dl:
+        dl = end
+    return dl
+
+
+def _attempt_dict(attempt: CBTAttempt, exam: CBTExam | None = None) -> dict:
+    """AttemptResponse dict plus the computed deadline (when the exam is known)."""
+    data = AttemptResponse.model_validate(attempt).model_dump()
+    if exam is not None:
+        data["deadline"] = _attempt_deadline(exam, attempt)
+    return data
+
+
 @router.post("/exams/{exam_id}/attempts", status_code=201, dependencies=[_can_read])
 async def start_attempt(
     exam_id: str,
@@ -402,7 +431,24 @@ async def start_attempt(
         )
     )).scalar_one_or_none()
     if existing:
-        return AttemptResponse.model_validate(existing).model_dump()
+        return _attempt_dict(existing, exam)
+
+    # Attempt cap: 1 = single sitting (default), 0 = unlimited. Count only
+    # completed attempts, so the in-progress resume above isn't double-counted.
+    if exam.max_attempts and exam.max_attempts > 0:
+        completed = (await db.execute(
+            select(func.count()).select_from(CBTAttempt).where(
+                CBTAttempt.exam_id == exam.id,
+                CBTAttempt.student_id == student_id,
+                CBTAttempt.org_id == org_id,
+                CBTAttempt.status.in_([AttemptStatus.SUBMITTED, AttemptStatus.GRADED]),
+            )
+        )).scalar_one()
+        if completed >= exam.max_attempts:
+            raise HTTPException(status_code=409, detail={
+                "code": "attempt_limit_reached",
+                "message": f"You have used all {exam.max_attempts} attempt(s) for this exam.",
+            })
 
     attempt = CBTAttempt(
         exam_id=exam.id,
@@ -414,7 +460,7 @@ async def start_attempt(
     )
     db.add(attempt)
     await db.flush()
-    return AttemptResponse.model_validate(attempt).model_dump()
+    return _attempt_dict(attempt, exam)
 
 
 @router.post("/attempts/{attempt_id}/submit", dependencies=[_can_read])
@@ -437,6 +483,23 @@ async def submit_attempt(
         raise HTTPException(status_code=404, detail="Attempt not found.")  # own attempts only
     if attempt.status != AttemptStatus.IN_PROGRESS:
         raise HTTPException(status_code=400, detail="Attempt already submitted.")
+
+    # Timer: accept-and-flag late submits within the window; reject only ones that
+    # are egregiously late (>2x the exam duration past the deadline), which signal
+    # abandonment / API-replay rather than a late click. 60s grace for drift.
+    exam = (await db.execute(
+        select(CBTExam).where(CBTExam.id == attempt.exam_id, CBTExam.org_id == current_user.org_id)
+    )).scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+    deadline = _attempt_deadline(exam, attempt) if exam else None
+    submitted_late = False
+    if deadline:
+        if now > deadline + timedelta(minutes=2 * (exam.duration_minutes or 0)):
+            raise HTTPException(status_code=409, detail={
+                "code": "attempt_expired",
+                "message": "This attempt expired and can no longer be submitted.",
+            })
+        submitted_late = now > deadline + timedelta(seconds=60)
 
     # Load all questions for this exam into a dict for fast lookup.
     q_result = await db.execute(
@@ -471,10 +534,11 @@ async def submit_attempt(
         ))
 
     attempt.score = total_score
-    attempt.submitted_at = datetime.now(timezone.utc)
+    attempt.submitted_at = now
+    attempt.submitted_late = submitted_late
     attempt.status = AttemptStatus.GRADED  # auto-graded objective exams
     await db.flush()
-    return AttemptResponse.model_validate(attempt).model_dump()
+    return _attempt_dict(attempt, exam)
 
 
 @router.get("/attempts", dependencies=[_can_read])
@@ -524,8 +588,13 @@ async def get_attempt(
         )
     )).scalars().all()
 
+    exam = (await db.execute(
+        select(CBTExam).where(CBTExam.id == attempt.exam_id, CBTExam.org_id == current_user.org_id)
+    )).scalar_one_or_none()
+
     return {
         **AttemptResponse.model_validate(attempt).model_dump(),
+        "deadline": _attempt_deadline(exam, attempt) if exam else None,
         "answers": [
             {
                 "id": a.id,
@@ -868,6 +937,7 @@ def _result_rows(attempts, names, ungraded, total_points):
             "percentage": round(score / mx * 100, 1) if mx else 0.0,
             "status": status,
             "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
+            "submitted_late": bool(a.submitted_late),
             "needs_review": ungraded.get(a.id, 0) > 0,
         })
     return rows

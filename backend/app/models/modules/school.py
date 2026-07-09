@@ -447,6 +447,8 @@ class CBTExam(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     duration_minutes = Column(Integer, default=60)
     total_points = Column(Float, default=0.0)
     shuffle_questions = Column(Boolean, default=False)
+    # Max completed attempts per student. 1 = single sitting (default); 0 = unlimited.
+    max_attempts = Column(Integer, default=1, nullable=False)
     status = Column(Enum(ExamStatus), default=ExamStatus.DRAFT, nullable=False)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
@@ -474,6 +476,8 @@ class CBTAttempt(Base, UUIDMixin, TimestampMixin, TenantMixin):
     score = Column(Float, nullable=True)
     max_score = Column(Float, nullable=True)
     status = Column(Enum(AttemptStatus), default=AttemptStatus.IN_PROGRESS, nullable=False)
+    # True when submitted after the deadline (within the accepted late window).
+    submitted_late = Column(Boolean, default=False, nullable=False)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 
