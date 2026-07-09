@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useStudents, useMarkAttendance, useAttendance } from "@/hooks/useSchool";
+import { useStudents, useMarkAttendance, useAttendance, useAbsenceReasons } from "@/hooks/useSchool";
 import { cn, formatDate } from "@/lib/utils";
 import { ClipboardList, Loader2, Check, X as XIcon, Clock } from "lucide-react";
 import type { Student } from "@/types";
@@ -10,20 +10,26 @@ export default function AttendancePage() {
   const [classId, setClassId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [records, setRecords] = useState<Record<string, string>>({});
+  const [reasons, setReasons] = useState<Record<string, string>>({});
 
   const { data: students, isLoading } = useStudents({ class_id: classId || undefined, page_size: 100 });
   const { data: attendance } = useAttendance({ class_id: classId || undefined, date });
+  const { data: reasonList } = useAbsenceReasons(true);
   const markAttendance = useMarkAttendance();
 
   const items = students?.items || [];
   const existingRecords = attendance?.items || (Array.isArray(attendance) ? attendance : []);
+  const reasonOptions: any[] = reasonList || [];
 
   const handleMark = (studentId: string, status: string) => {
     setRecords((prev) => ({ ...prev, [studentId]: status }));
+    if (status === "present") setReasons((prev) => { const n = { ...prev }; delete n[studentId]; return n; });
   };
 
   const handleSubmit = () => {
-    const payload = Object.entries(records).map(([student_id, status]) => ({ student_id, status, class_id: classId }));
+    const payload = Object.entries(records).map(([student_id, status]) => ({
+      student_id, status, class_id: classId, reason_id: reasons[student_id] || null,
+    }));
     if (payload.length === 0) return;
     markAttendance.mutate({ records: payload, date });
   };
@@ -32,6 +38,12 @@ export default function AttendancePage() {
     if (records[studentId]) return records[studentId];
     const existing = existingRecords.find((r: any) => r.student_id === studentId);
     return existing?.status || "";
+  };
+
+  const getReason = (studentId: string) => {
+    if (reasons[studentId] !== undefined) return reasons[studentId];
+    const existing = existingRecords.find((r: any) => r.student_id === studentId);
+    return existing?.reason_id || "";
   };
 
   const statusBtn = (studentId: string, status: string, icon: any, label: string, color: string) => {
@@ -90,6 +102,12 @@ export default function AttendancePage() {
                     {statusBtn(s.id, "absent", XIcon, "Absent", "bg-red-50 text-red-700 border-red-200")}
                     {statusBtn(s.id, "late", Clock, "Late", "bg-amber-50 text-amber-700 border-amber-200")}
                   </div>
+                  {(getStatus(s.id) === "absent" || getStatus(s.id) === "late") && reasonOptions.length > 0 && (
+                    <select value={getReason(s.id)} onChange={(e) => setReasons((prev) => ({ ...prev, [s.id]: e.target.value }))} className="input mt-2 max-w-[220px] text-xs py-1.5">
+                      <option value="">— Reason (optional) —</option>
+                      {reasonOptions.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                    </select>
+                  )}
                 </td>
               </tr>
             ))}

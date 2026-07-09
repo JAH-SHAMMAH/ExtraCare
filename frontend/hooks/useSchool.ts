@@ -305,6 +305,46 @@ export function useMarkAttendance() {
   });
 }
 
+// ── Attendance Setup (late cutoff + absence reasons) ─────────────────────────
+export function useAttendanceSettings() {
+  return useQuery({ queryKey: ["attendance-settings"], queryFn: () => schoolApi.attendance.settings.get() });
+}
+export function useUpdateAttendanceSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => schoolApi.attendance.settings.update(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance-settings"] }); toast.success("Late cutoff saved."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save."),
+  });
+}
+export function useAbsenceReasons(activeOnly?: boolean) {
+  return useQuery({ queryKey: ["absence-reasons", activeOnly], queryFn: () => schoolApi.attendance.reasons.list(activeOnly) });
+}
+export function useCreateAbsenceReason() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => schoolApi.attendance.reasons.create(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["absence-reasons"] }); toast.success("Reason added."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to add reason."),
+  });
+}
+export function useUpdateAbsenceReason() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => schoolApi.attendance.reasons.update(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["absence-reasons"] }); toast.success("Reason updated."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update."),
+  });
+}
+export function useDeleteAbsenceReason() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => schoolApi.attendance.reasons.remove(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["absence-reasons"] }); toast.success("Reason deleted."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to delete."),
+  });
+}
+
 // ── Timetable ────────────────────────────────────────────────────────────────
 
 export function useTimetable(params?: { class_id?: string }) {

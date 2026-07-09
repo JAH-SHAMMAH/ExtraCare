@@ -143,6 +143,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/behaviour", label: "Pastoral Care", icon: HeartHandshake },
       { href: "/dashboard/modules/school/attendance", label: "Attendance", icon: ClipboardList },
       { href: "/dashboard/modules/school/attendance/dashboard", label: "Attendance Insights", icon: BarChart3 },
+      { href: "/dashboard/modules/school/attendance/setup", label: "Attendance Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/clubs", label: "Clubs & Activities", icon: Users2 },
       { href: "/dashboard/modules/school/journals", label: "Photo Journals", icon: Camera },
       { href: "/dashboard/modules/school/remarks", label: "Weekly Remarks", icon: MessageCircle },

@@ -257,6 +257,16 @@ export const schoolApi = {
       api.get("/school/attendance/summary", { params: { class_id, start_date, end_date } }).then((r) => r.data),
     studentHistory: (student_id: string, start_date?: string, end_date?: string) =>
       api.get(`/school/attendance/student/${student_id}`, { params: { start_date, end_date } }).then((r) => r.data),
+    settings: {
+      get: () => api.get("/school/attendance/settings").then((r) => r.data),
+      update: (data: object) => api.put("/school/attendance/settings", data).then((r) => r.data),
+    },
+    reasons: {
+      list: (activeOnly?: boolean) => api.get("/school/attendance/reasons", { params: { active_only: activeOnly } }).then((r) => r.data),
+      create: (data: object) => api.post("/school/attendance/reasons", data).then((r) => r.data),
+      update: (id: string, data: object) => api.patch(`/school/attendance/reasons/${id}`, data).then((r) => r.data),
+      remove: (id: string) => api.delete(`/school/attendance/reasons/${id}`),
+    },
   },
   timetable: {
     list: (p?: object) => api.get("/school/timetable", { params: p }).then((r) => r.data),

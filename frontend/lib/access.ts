@@ -52,6 +52,8 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/subjects", permission: "school:subjects:read" },
   // Insights dashboard is admin-only; the marking page needs write.
   { prefix: "/dashboard/modules/school/attendance/dashboard", permission: "school_admin:read" },
+  // Attendance Setup edits org-wide config (late cutoff + reason codes) — admin-only.
+  { prefix: "/dashboard/modules/school/attendance/setup", permission: "settings:read" },
   { prefix: "/dashboard/modules/school/attendance", permission: "school:attendance:write" },
   { prefix: "/dashboard/modules/school/exams", permission: "school:exams:read" },
   { prefix: "/dashboard/modules/school/grades", permission: "school:grades:read" },

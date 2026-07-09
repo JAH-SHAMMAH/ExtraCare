@@ -146,6 +146,16 @@ Staff Assessment). Deferred deliberately — it's churn for menu-label parity, n
 capability. Do only if menu-for-menu alignment with Educare becomes a goal.
 (This is parked item #5 alongside the 4 conversational parked items.)
 
+### TICKET — Attendance: `absent_after_time` auto-derivation (deferred from Attendance Setup)
+Deliberately scoped OUT of the Attendance Setup #1+#2 build (which shipped the
+per-org late cutoff + absence reason codes). A "no check-in by time X ⇒ mark
+ABSENT" rule needs its own design first: what happens when a student legitimately
+isn't checked in (excused, half-day, sports fixture, off-site) BEFORE the
+auto-absent mechanism can be overridden — i.e. an override/exception path, not
+just a cutoff time. Add `AttendanceSettings.absent_after_time` + a derivation
+pass (scheduled or on-read) only once that override story exists. **Parked item
+#6.** Own edge cases; not part of "expose the existing cutoff as config."
+
 ---
 
 ## 1. Mobile application

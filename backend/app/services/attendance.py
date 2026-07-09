@@ -42,6 +42,7 @@ from app.models.modules.school import (
     AttendanceEventSource,
     AttendanceEventType,
     AttendanceRecord,
+    AttendanceSettings,
     AttendanceStatus,
     ParentGuardian,
     Student,
@@ -81,6 +82,23 @@ def _parse_hhmm(value: str, default: time) -> time:
         return default
 
 
+def default_late_after() -> time:
+    """Global fallback late cutoff from the ``SCHOOL_LATE_AFTER`` env constant,
+    used when a school hasn't configured its own in Attendance Setup."""
+    return _parse_hhmm(settings.SCHOOL_LATE_AFTER, time(8, 0))
+
+
+async def _late_after_for_org(db: AsyncSession, org) -> time:
+    """Per-org late cutoff (Attendance Setup) with the env value as fallback.
+    Read-only — never creates a settings row from the ingestion path."""
+    row = (
+        await db.execute(
+            select(AttendanceSettings.late_after_time).where(AttendanceSettings.org_id == org.id)
+        )
+    ).scalar_one_or_none()
+    return row if row is not None else default_late_after()
+
+
 # ── Result type ──────────────────────────────────────────────────────────────
 
 @dataclass
@@ -116,7 +134,7 @@ async def ingest(
     of what happened so callers (and adapters) can log/report.
     """
     result = IngestResult()
-    late_after = _parse_hhmm(settings.SCHOOL_LATE_AFTER, time(8, 0))
+    late_after = await _late_after_for_org(db, org)
 
     for idx, ev in enumerate(events):
         try:

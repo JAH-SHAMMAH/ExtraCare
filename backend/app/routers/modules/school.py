@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.exc import IntegrityError
-from datetime import date
+from datetime import date, time
 
 from app.database import get_db
 from app.deps import get_current_active_user
@@ -11,8 +11,13 @@ from app.models.user import User, UserStatus
 from app.models.modules.school import (
     Student, SchoolClass, AttendanceRecord, Grade, Subject, Timetable,
     LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus, TeacherRating,
-    GradeStatus,
+    GradeStatus, AttendanceSettings, AbsenceReason,
 )
+from app.schemas.attendance_config import (
+    AttendanceSettingsResponse, AttendanceSettingsUpdate,
+    AbsenceReasonResponse, AbsenceReasonCreate, AbsenceReasonUpdate,
+)
+from app.services.attendance import default_late_after
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
 from app.services.audit_service import log_action
@@ -42,6 +47,10 @@ _can_write = Depends(PermissionChecker("school:write"))
 _reports_read = Depends(PermissionChecker("school:reports:read"))
 _attendance_read = Depends(PermissionChecker("school:attendance:read"))
 _lessons_read = Depends(PermissionChecker("school:lessons:read"))
+# Attendance Setup (config) is admin-only; reading the reason list is broader so
+# teachers can pick a reason while marking (school:attendance:read, above).
+_settings_read = Depends(PermissionChecker("settings:read"))
+_settings_write = Depends(PermissionChecker("settings:write"))
 
 
 async def _user_owns_student(db: AsyncSession, user: User, student_id: str) -> bool:
@@ -606,6 +615,7 @@ async def mark_attendance(
             class_id=rec["class_id"],
             date=target_date,
             status=rec.get("status", "present"),
+            reason_id=rec.get("reason_id") or None,
             marked_by=current_user.id,
             org_id=current_user.org_id,
         )
@@ -646,6 +656,7 @@ async def list_attendance(
                 "class_id": r.class_id,
                 "date": r.date.isoformat() if r.date else None,
                 "status": getattr(r.status, "value", r.status),
+                "reason_id": r.reason_id,
                 "notes": r.notes,
             }
             for r in rows
@@ -678,6 +689,136 @@ async def attendance_summary(
         "total": total,
         "attendance_rate": round(summary.get("present", 0) / total * 100, 1) if total else 0,
     }
+
+
+# ── Attendance Setup (config: late cutoff + absence reason codes) ─────────────
+
+_DEFAULT_ABSENCE_REASONS = [
+    ("sick", "Sickness", True),
+    ("medical", "Medical appointment", True),
+    ("bereavement", "Bereavement", True),
+    ("family_emergency", "Family emergency", True),
+    ("authorized", "Authorised absence", True),
+    ("unauthorized", "Unauthorised / Truancy", False),
+    ("other", "Other", True),
+]
+
+
+async def _get_or_create_attendance_settings(db: AsyncSession, org_id: str) -> AttendanceSettings:
+    s = (await db.execute(
+        select(AttendanceSettings).where(AttendanceSettings.org_id == org_id)
+    )).scalar_one_or_none()
+    if not s:
+        s = AttendanceSettings(org_id=org_id, late_after_time=default_late_after())
+        db.add(s)
+        await db.flush()
+    return s
+
+
+async def _seed_default_reasons(db: AsyncSession, org_id: str) -> None:
+    existing = (await db.execute(
+        select(func.count()).select_from(AbsenceReason).where(AbsenceReason.org_id == org_id)
+    )).scalar_one()
+    if existing == 0:
+        for code, label, authorized in _DEFAULT_ABSENCE_REASONS:
+            db.add(AbsenceReason(org_id=org_id, code=code, label=label,
+                                 is_authorized=authorized, is_active=True))
+        await db.flush()
+
+
+def _reason_dict(r: AbsenceReason) -> AbsenceReasonResponse:
+    return AbsenceReasonResponse(id=r.id, code=r.code, label=r.label,
+                                 is_authorized=r.is_authorized, is_active=r.is_active)
+
+
+@router.get("/attendance/settings", response_model=AttendanceSettingsResponse, dependencies=[_settings_read])
+async def get_attendance_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = await _get_or_create_attendance_settings(db, current_user.org_id)
+    return AttendanceSettingsResponse(late_after_time=s.late_after_time.strftime("%H:%M"))
+
+
+@router.put("/attendance/settings", response_model=AttendanceSettingsResponse, dependencies=[_settings_write])
+async def update_attendance_settings(
+    payload: AttendanceSettingsUpdate, request: Request = None,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    s = await _get_or_create_attendance_settings(db, current_user.org_id)
+    hh, mm = payload.late_after_time.split(":")
+    s.late_after_time = time(int(hh), int(mm))
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="AttendanceSettings", resource_id=s.id,
+        resource_label=f"late cutoff {payload.late_after_time}", request=request,
+    )
+    return AttendanceSettingsResponse(late_after_time=s.late_after_time.strftime("%H:%M"))
+
+
+@router.get("/attendance/reasons", response_model=list[AbsenceReasonResponse], dependencies=[_attendance_read])
+async def list_absence_reasons(
+    active_only: bool = Query(default=False),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    await _seed_default_reasons(db, current_user.org_id)
+    q = select(AbsenceReason).where(AbsenceReason.org_id == current_user.org_id)
+    if active_only:
+        q = q.where(AbsenceReason.is_active == True)  # noqa: E712
+    rows = (await db.execute(q.order_by(AbsenceReason.label))).scalars().all()
+    return [_reason_dict(r) for r in rows]
+
+
+@router.post("/attendance/reasons", response_model=AbsenceReasonResponse, status_code=201, dependencies=[_settings_write])
+async def create_absence_reason(
+    payload: AbsenceReasonCreate,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    r = AbsenceReason(
+        org_id=current_user.org_id, code=payload.code.strip().lower().replace(" ", "_"),
+        label=payload.label, is_authorized=payload.is_authorized, is_active=True,
+    )
+    db.add(r)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="A reason with that code already exists.")
+    return _reason_dict(r)
+
+
+@router.patch("/attendance/reasons/{reason_id}", response_model=AbsenceReasonResponse, dependencies=[_settings_write])
+async def update_absence_reason(
+    reason_id: str, payload: AbsenceReasonUpdate,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    r = (await db.execute(select(AbsenceReason).where(
+        AbsenceReason.id == reason_id, AbsenceReason.org_id == current_user.org_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Reason not found.")
+    for k, v in payload.model_dump(exclude_unset=True).items():
+        setattr(r, k, v)
+    await db.flush()
+    return _reason_dict(r)
+
+
+@router.delete("/attendance/reasons/{reason_id}", status_code=204, dependencies=[_settings_write])
+async def delete_absence_reason(
+    reason_id: str,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    r = (await db.execute(select(AbsenceReason).where(
+        AbsenceReason.id == reason_id, AbsenceReason.org_id == current_user.org_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Reason not found.")
+    # Block hard-delete once referenced — deactivate to preserve historical marks.
+    referenced = (await db.execute(
+        select(func.count()).select_from(AttendanceRecord).where(AttendanceRecord.reason_id == reason_id)
+    )).scalar_one()
+    if referenced:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This reason is used by {referenced} attendance record(s). Deactivate it instead of deleting.",
+        )
+    await db.delete(r)
 
 
 # ── Grades ────────────────────────────────────────────────────────────────────
