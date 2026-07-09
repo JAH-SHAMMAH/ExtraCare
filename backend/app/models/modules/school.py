@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Float, Date, DateTime, Text, Boolean, Enum, ForeignKey, JSON, Index, UniqueConstraint
+from sqlalchemy import Column, String, Integer, Float, Date, DateTime, Time, Text, Boolean, Enum, ForeignKey, JSON, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.models.base import Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin, utc_now
 import enum
@@ -146,9 +146,46 @@ class AttendanceRecord(Base, UUIDMixin, TimestampMixin, TenantMixin):
     status = Column(Enum(AttendanceStatus), nullable=False, default=AttendanceStatus.PRESENT)
     marked_by = Column(String(36), ForeignKey("users.id"), nullable=True)
     notes = Column(Text, nullable=True)
+    # Structured reason for a non-present mark (Attendance Setup). Nullable +
+    # additive: existing rows and present marks carry no reason.
+    reason_id = Column(String(36), ForeignKey("absence_reasons.id"), nullable=True)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
     student = relationship("Student", back_populates="attendance_records")
+
+
+class AttendanceSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Per-org attendance configuration (Attendance Setup). One row per org.
+
+    ``late_after_time`` replaces the global ``SCHOOL_LATE_AFTER`` env constant as
+    the per-org source of truth: a check-in at/after this local time derives a
+    LATE daily record. The env value remains the fallback when a school hasn't
+    configured one, so ingestion keeps working out of the box.
+    """
+    __tablename__ = "attendance_settings"
+
+    late_after_time = Column(Time, nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
+
+
+class AbsenceReason(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A configurable reason code for a non-present attendance mark.
+
+    ``is_authorized`` distinguishes authorised/excused absences from
+    unauthorised ones for reporting. Reasons are deactivated, never hard-deleted,
+    once referenced by an attendance record — historical marks keep their reason.
+    """
+    __tablename__ = "absence_reasons"
+
+    code = Column(String(40), nullable=False)
+    label = Column(String(120), nullable=False)
+    is_authorized = Column(Boolean, default=True, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "code", name="uq_absence_reasons_org_code"),
+    )
 
 
 class AttendanceEventType(str, enum.Enum):
