@@ -63,6 +63,44 @@ any class-scoped workflow.
 
 ---
 
+## 🐛 PRODUCT BUG (not a flaky test) — Sales Monitor "today's sales" under-reports near midnight
+
+### TICKET — Store Sales Monitor: UTC `created_at` vs local `date.today()` date window (filed 2026-07-08)
+
+**Classification:** product bug, **not** a flaky test. It is time-of-day dependent,
+so it will pass on some runs and fail on others — do **not** dismiss it as flakiness
+or silently re-run until green.
+
+**Symptom:** `backend/tests/test_store_sales_summary.py::test_period_scoping` fails
+with `assert 0 == 3`. The test seeds 3 sales "now", then filters
+`start=today, end=today` (via `date.today()`) and expects all 3 back; it gets 0.
+
+**Diagnosis:** `store_sales_summary` (in `backend/app/routers/modules/finance_ops.py`)
+compares the server's **local** `date.today()` window against `StoreSale.created_at`,
+which is stored in **UTC**. When the local date and the UTC date differ (i.e. either
+side of the UTC-offset boundary), a same-day sale falls outside the `[today, today]`
+window and is dropped.
+
+**Real-world impact (why it matters, not just a test):** Fairview runs at **UTC+1**.
+A sale rung up just after local midnight is stored under the **previous** UTC date, so
+the "today's sales" summary can **under-report or show zero around midnight local
+time**. It self-corrects later in the day, which is exactly why it's easy to miss.
+
+**Provenance:** confirmed **pre-existing and independent** of the Week Entries work —
+stashing that change and re-running on the clean tree (`HEAD` = CBT Phase C) reproduced
+the identical failure. It passed earlier in the same session's full run (clock-time
+dependent).
+
+**Fix direction:** make the date window timezone-aware and `end` inclusive-through-
+end-of-day — build the filter from the school's local-day bounds converted to UTC (or
+compare on a consistently-derived date), rather than comparing a UTC timestamp to a
+naive local date. Touch `store_sales_summary` + re-assert `test_period_scoping`.
+
+**Separate from** the 3 other parked items (CBT Phase C review, Phase C RBAC gating
+flags, CBT Reset hard-delete question) — this is its own ticket.
+
+---
+
 ## 1. Mobile application
 A parent/teacher/student mobile app (iOS/Android).
 - **Why:** parents live on mobile; attendance alerts and fee payments suit a phone.
