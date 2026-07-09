@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { biometricApi, platformApi } from "@/lib/api";
 import type {
   BiometricDevice, BiometricEnrollment, UnmappedPunch, IngestSummary,
-  AcademicSession, SchoolHouse, GradingBand, CustomFieldDef, Poll,
+  AcademicSession, AcademicWeek, SchoolHouse, GradingBand, CustomFieldDef, Poll,
   MailboxMessage, MobileDevice, AppConfigItem, Paginated,
 } from "@/types";
 
@@ -44,6 +44,15 @@ export const useCreateHouse = m((d) => platformApi.houses.create(d), ["houses"],
 export const useDeleteHouse = m((id: string) => platformApi.houses.remove(id), ["houses"], "Removed.");
 export const useCreateBand = m((d) => platformApi.bands.create(d), ["bands"], "Band added.");
 export const useDeleteBand = m((id: string) => platformApi.bands.remove(id), ["bands"], "Removed.");
+
+// ── Academic weeks (calendar backbone) ──────────────────────────────────────────
+export function useWeeks(params?: { academic_year?: string; term?: string }) {
+  return useQuery<AcademicWeek[]>({ queryKey: ["weeks", params], queryFn: () => platformApi.weeks.list(params) });
+}
+export const useCreateWeek = m((d) => platformApi.weeks.create(d), ["weeks"], "Week added.");
+export const useGenerateWeeks = m((d) => platformApi.weeks.generate(d), ["weeks"], "Weeks generated.");
+export const useUpdateWeek = m((v: { id: string; data: object }) => platformApi.weeks.update(v.id, v.data), ["weeks"], "Week updated.");
+export const useDeleteWeek = m((id: string) => platformApi.weeks.remove(id), ["weeks"], "Removed.");
 
 // ── Custom fields ──────────────────────────────────────────────────────────────
 export function useCustomFields(entityType?: string) { return useQuery<CustomFieldDef[]>({ queryKey: ["custom-fields", entityType], queryFn: () => platformApi.customFields.list(entityType) }); }

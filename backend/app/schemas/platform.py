@@ -111,6 +111,49 @@ class SessionResponse(BaseModel):
     org_id: str
 
 
+# ── Academic Weeks (calendar backbone) ────────────────────────────────────────
+
+class WeekCreate(BaseModel):
+    academic_year: str = Field(min_length=1, max_length=20)
+    term: str = Field(min_length=1, max_length=40)
+    week_number: int = Field(ge=1, le=60)
+    start_date: date
+    end_date: date
+    label: Optional[str] = Field(default=None, max_length=120)
+    is_holiday: bool = False
+
+
+class WeekUpdate(BaseModel):
+    week_number: Optional[int] = Field(default=None, ge=1, le=60)
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    label: Optional[str] = Field(default=None, max_length=120)
+    is_holiday: Optional[bool] = None
+    is_locked: Optional[bool] = None
+
+
+class WeekGenerate(BaseModel):
+    """Auto-fill sequential 7-day weeks across a term's date range."""
+    academic_year: str = Field(min_length=1, max_length=20)
+    term: str = Field(min_length=1, max_length=40)
+    start_date: date
+    end_date: date
+
+
+class WeekResponse(BaseModel):
+    id: str
+    academic_year: str
+    term: str
+    week_number: int
+    start_date: date
+    end_date: date
+    label: Optional[str]
+    is_holiday: bool
+    is_locked: bool
+    created_at: datetime
+    org_id: str
+
+
 class HouseCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     color: Optional[str] = None

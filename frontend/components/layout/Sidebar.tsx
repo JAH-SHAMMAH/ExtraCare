@@ -251,8 +251,8 @@ const MODULE_SECTIONS: ModuleSection[] = [
   {
     // Educare "Admin Management". Audit Trail surfaces the existing Core Audit Log
     // here (same route, grouped like Educare). Biometric + Custom Field reuse the
-    // platform pages. Still deferred (new backend): Week Entries, Result Publish
-    // Helper, Manage User Roles & Password.
+    // platform pages. Week Entries + Result Publish Helper are now built; the old
+    // "Manage User Roles & Password" surface redirects to the Users page.
     key: "admin-management",
     requiredModule: "school",
     label: "Admin Management",

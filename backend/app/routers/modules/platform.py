@@ -8,7 +8,7 @@ are derived from votes, never a mutable tally.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, update
@@ -21,7 +21,7 @@ from app.core.tenant import require_module
 from app.core.permissions import PermissionChecker
 from app.models.user import User, UserStatus
 from app.models.modules.platform import (
-    AcademicSession, SchoolHouse, GradingBand,
+    AcademicSession, AcademicWeek, SchoolHouse, GradingBand,
     CustomFieldDefinition, CustomFieldValue,
     Poll, PollOption, PollVote,
     MailboxMessage, MailboxRecipient,
@@ -29,6 +29,7 @@ from app.models.modules.platform import (
 )
 from app.schemas.platform import (
     SessionCreate, SessionResponse, HouseCreate, HouseResponse, BandCreate, BandResponse,
+    WeekCreate, WeekUpdate, WeekGenerate, WeekResponse,
     FieldDefCreate, FieldDefResponse, FieldValueSet, FieldValueResponse,
     PollCreate, PollResponse, PollOptionResult, PollListResponse, CastVote,
     MessageCreate, MessageResponse, InboxItemResponse,
@@ -116,6 +117,117 @@ async def delete_band(band_id: str, db: AsyncSession = Depends(get_db), current_
     if not b:
         raise HTTPException(status_code=404, detail="Band not found.")
     await db.delete(b)
+
+
+# ── Academic Weeks (calendar backbone) ────────────────────────────────────────
+
+def _week_dict(w: AcademicWeek) -> WeekResponse:
+    return WeekResponse(
+        id=w.id, academic_year=w.academic_year, term=w.term, week_number=w.week_number,
+        start_date=w.start_date, end_date=w.end_date, label=w.label,
+        is_holiday=w.is_holiday, is_locked=w.is_locked, created_at=w.created_at, org_id=w.org_id,
+    )
+
+
+async def _load_week(db: AsyncSession, week_id: str, org_id: str) -> AcademicWeek:
+    w = (await db.execute(
+        select(AcademicWeek).where(AcademicWeek.id == week_id, AcademicWeek.org_id == org_id)
+    )).scalar_one_or_none()
+    if not w:
+        raise HTTPException(status_code=404, detail="Week not found.")
+    return w
+
+
+@router.get("/weeks", response_model=list[WeekResponse], dependencies=[_read])
+async def list_weeks(
+    academic_year: str | None = Query(default=None),
+    term: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    q = select(AcademicWeek).where(AcademicWeek.org_id == current_user.org_id)
+    if academic_year:
+        q = q.where(AcademicWeek.academic_year == academic_year)
+    if term:
+        q = q.where(AcademicWeek.term == term)
+    q = q.order_by(AcademicWeek.academic_year, AcademicWeek.term, AcademicWeek.week_number)
+    rows = (await db.execute(q)).scalars().all()
+    return [_week_dict(w) for w in rows]
+
+
+@router.post("/weeks", response_model=WeekResponse, status_code=201, dependencies=[_write])
+async def create_week(payload: WeekCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    if payload.end_date < payload.start_date:
+        raise HTTPException(status_code=422, detail="end_date must be on or after start_date.")
+    w = AcademicWeek(**payload.model_dump(), org_id=current_user.org_id)
+    db.add(w)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=f"Week {payload.week_number} already exists for {payload.term} {payload.academic_year}.")
+    return _week_dict(w)
+
+
+@router.post("/weeks/generate", response_model=list[WeekResponse], status_code=201, dependencies=[_write])
+async def generate_weeks(payload: WeekGenerate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Fill sequential 7-day weeks across a term's date range. Refuses if the term
+    already has weeks, so it never clobbers a calendar an admin has adjusted."""
+    if payload.end_date < payload.start_date:
+        raise HTTPException(status_code=422, detail="end_date must be on or after start_date.")
+    existing = (await db.execute(
+        select(func.count()).select_from(AcademicWeek).where(
+            AcademicWeek.org_id == current_user.org_id,
+            AcademicWeek.academic_year == payload.academic_year,
+            AcademicWeek.term == payload.term,
+        )
+    )).scalar_one()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"{payload.term} {payload.academic_year} already has weeks. Delete them first or add weeks manually.")
+
+    created: list[AcademicWeek] = []
+    cursor, n = payload.start_date, 1
+    while cursor <= payload.end_date and n <= 60:
+        w_end = min(cursor + timedelta(days=6), payload.end_date)
+        w = AcademicWeek(
+            academic_year=payload.academic_year, term=payload.term, week_number=n,
+            start_date=cursor, end_date=w_end, org_id=current_user.org_id,
+        )
+        db.add(w)
+        created.append(w)
+        cursor += timedelta(days=7)
+        n += 1
+    await db.flush()
+    return [_week_dict(w) for w in created]
+
+
+@router.patch("/weeks/{week_id}", response_model=WeekResponse, dependencies=[_write])
+async def update_week(week_id: str, payload: WeekUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    w = await _load_week(db, week_id, current_user.org_id)
+    updates = payload.model_dump(exclude_unset=True)
+    # A locked week is frozen except for the act of unlocking it.
+    if w.is_locked and set(updates.keys()) - {"is_locked"}:
+        raise HTTPException(status_code=409, detail="Week is locked. Unlock it before editing.")
+    new_start = updates.get("start_date", w.start_date)
+    new_end = updates.get("end_date", w.end_date)
+    if new_end < new_start:
+        raise HTTPException(status_code=422, detail="end_date must be on or after start_date.")
+    for k, v in updates.items():
+        setattr(w, k, v)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Another week already uses that number for this term.")
+    return _week_dict(w)
+
+
+@router.delete("/weeks/{week_id}", status_code=204, dependencies=[_write])
+async def delete_week(week_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    w = await _load_week(db, week_id, current_user.org_id)
+    if w.is_locked:
+        raise HTTPException(status_code=409, detail="Week is locked. Unlock it before deleting.")
+    await db.delete(w)
 
 
 # ── Custom Fields ────────────────────────────────────────────────────────────────

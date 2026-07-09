@@ -1106,6 +1106,13 @@ export const biometricApi = {
 
 export const platformApi = {
   sessions: { list: () => api.get("/platform/sessions").then((r) => r.data), create: (d: object) => api.post("/platform/sessions", d).then((r) => r.data), remove: (id: string) => api.delete(`/platform/sessions/${id}`) },
+  weeks: {
+    list: (params?: { academic_year?: string; term?: string }) => api.get("/platform/weeks", { params }).then((r) => r.data),
+    create: (d: object) => api.post("/platform/weeks", d).then((r) => r.data),
+    generate: (d: object) => api.post("/platform/weeks/generate", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/platform/weeks/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/weeks/${id}`),
+  },
   houses: { list: () => api.get("/platform/houses").then((r) => r.data), create: (d: object) => api.post("/platform/houses", d).then((r) => r.data), remove: (id: string) => api.delete(`/platform/houses/${id}`) },
   bands: { list: () => api.get("/platform/grading-bands").then((r) => r.data), create: (d: object) => api.post("/platform/grading-bands", d).then((r) => r.data), remove: (id: string) => api.delete(`/platform/grading-bands/${id}`) },
   customFields: {

@@ -2013,6 +2013,11 @@ export interface AcademicSession {
   id: string; name: string; term: string | null; start_date: string | null; end_date: string | null;
   is_current: boolean; created_at: string; org_id: string;
 }
+export interface AcademicWeek {
+  id: string; academic_year: string; term: string; week_number: number;
+  start_date: string; end_date: string; label: string | null;
+  is_holiday: boolean; is_locked: boolean; created_at: string; org_id: string;
+}
 export interface SchoolHouse { id: string; name: string; color: string | null; motto: string | null; created_at: string; org_id: string; }
 export interface GradingBand { id: string; grade: string; min_score: number; max_score: number; remark: string | null; created_at: string; org_id: string; }
 

@@ -93,6 +93,31 @@ class AcademicSession(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class AcademicWeek(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A single academic week within a term — the calendar backbone admins define.
+
+    Standalone registry (nothing FKs into it yet): weekly remarks/reflections still
+    store a raw ``week_start`` date. A locked week is frozen against edits/deletes
+    so the calendar can't shift under features that reference it later.
+    """
+    __tablename__ = "academic_weeks"
+
+    academic_year = Column(String(20), nullable=False)   # e.g. "2025/2026"
+    term = Column(String(40), nullable=False)            # canonical "Term 1/2/3"
+    week_number = Column(Integer, nullable=False)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    label = Column(String(120), nullable=True)           # e.g. "Mid-term break"
+    is_holiday = Column(Boolean, default=False, nullable=False)
+    is_locked = Column(Boolean, default=False, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "academic_year", "term", "week_number",
+                         name="uq_academic_weeks_slot"),
+        Index("ix_academic_weeks_org_term", "org_id", "academic_year", "term"),
+    )
+
+
 class SchoolHouse(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A school house (for the merit/conduct leaderboard etc.)."""
     __tablename__ = "school_houses"
