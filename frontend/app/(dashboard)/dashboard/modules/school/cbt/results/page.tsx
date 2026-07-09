@@ -17,7 +17,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 interface AttemptRow {
   id: string; student_id: string; student_name: string | null; score: number; max_score: number;
-  percentage: number; status: string; submitted_at: string | null; needs_review: boolean; submitted_late: boolean;
+  percentage: number; status: string; submitted_at: string | null; needs_review: boolean; submitted_late: boolean; passed: boolean | null;
 }
 
 export default function CBTResultsPage() {
@@ -88,7 +88,7 @@ export default function CBTResultsPage() {
                 { label: "Attempts", value: stats.attempts },
                 { label: "Average", value: stats.average },
                 { label: "Highest", value: stats.highest },
-                { label: "Pass rate", value: `${stats.pass_rate}%` },
+                { label: `Pass rate (≥${data?.exam?.pass_percentage ?? 50}%)`, value: `${stats.pass_rate}%` },
                 { label: "Need review", value: stats.pending_review, warn: stats.pending_review > 0 },
               ].map((s) => (
                 <div key={s.label} className={cn("bg-white rounded-xl border p-4", s.warn ? "border-amber-200" : "border-slate-200")}>
@@ -113,6 +113,8 @@ export default function CBTResultsPage() {
                     <td className="px-5 py-3 text-sm text-slate-600 tabular-nums">{a.percentage}%</td>
                     <td className="px-5 py-3">
                       <span className={cn("badge capitalize", STATUS_STYLE[a.status] || "bg-slate-50 text-slate-600 border-slate-200")}>{a.status.replace("_", " ")}</span>
+                      {a.passed === true && <span className="badge bg-emerald-50 text-emerald-700 border-emerald-200 ml-1">pass</span>}
+                      {a.passed === false && <span className="badge bg-rose-50 text-rose-700 border-rose-200 ml-1">fail</span>}
                       {a.needs_review && <span className="badge bg-amber-50 text-amber-700 border-amber-200 ml-1 inline-flex items-center gap-1"><AlertTriangle size={10} />review</span>}
                       {a.submitted_late && <span className="badge bg-orange-50 text-orange-700 border-orange-200 ml-1 inline-flex items-center gap-1"><Clock size={10} />late</span>}
                     </td>

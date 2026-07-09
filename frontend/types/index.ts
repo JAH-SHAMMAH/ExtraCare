@@ -304,6 +304,7 @@ export interface CBTExam {
   total_points: number;
   shuffle_questions: boolean;
   max_attempts: number;
+  pass_percentage: number | null;
   status: CBTExamStatus;
   created_at: string;
   org_id: string;

@@ -60,6 +60,7 @@ export default function CBTPage() {
     duration_minutes: 60,
     shuffle_questions: false,
     max_attempts: 1,
+    pass_percentage: "",
     status: "draft" as CBTExamStatus,
   });
 
@@ -70,6 +71,7 @@ export default function CBTPage() {
       duration_minutes: cbtSettings?.default_duration_minutes ?? 60,
       shuffle_questions: cbtSettings?.shuffle_default ?? false,
       max_attempts: 1,
+      pass_percentage: "",
       status: "draft",
     });
     setEditing(null);
@@ -84,6 +86,7 @@ export default function CBTPage() {
       subject_id: form.subject_id || null,
       start_time: form.start_time || null,
       end_time: form.end_time || null,
+      pass_percentage: form.pass_percentage === "" ? null : Number(form.pass_percentage),
     };
     if (editing) {
       updateExam.mutate({ id: editing.id, data: payload }, { onSuccess: resetForm });
@@ -103,6 +106,7 @@ export default function CBTPage() {
       duration_minutes: e.duration_minutes,
       shuffle_questions: e.shuffle_questions,
       max_attempts: e.max_attempts ?? 1,
+      pass_percentage: e.pass_percentage != null ? String(e.pass_percentage) : "",
       status: e.status,
     });
     setEditing(e);
@@ -193,6 +197,11 @@ export default function CBTPage() {
               <label className="label">Max attempts</label>
               <input type="number" min="0" value={form.max_attempts} onChange={(e) => setForm({ ...form, max_attempts: Number(e.target.value) })} className="input" />
               <p className="text-[11px] text-slate-400 mt-1">1 = single sitting · 0 = unlimited</p>
+            </div>
+            <div>
+              <label className="label">Pass mark (%)</label>
+              <input type="number" min="0" max="100" value={form.pass_percentage} onChange={(e) => setForm({ ...form, pass_percentage: e.target.value })} className="input" placeholder="org default" />
+              <p className="text-[11px] text-slate-400 mt-1">Blank = use the org CBT default</p>
             </div>
             <div>
               <label className="label">Status</label>
