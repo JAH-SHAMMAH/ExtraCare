@@ -584,7 +584,11 @@ class BehaviourRecord(Base, UUIDMixin, TimestampMixin, TenantMixin):
     student_id = Column(String(36), ForeignKey("students.id"), nullable=False, index=True)
     recorded_by = Column(String(36), ForeignKey("users.id"), nullable=False)
     type = Column(Enum(BehaviourType), default=BehaviourType.POSITIVE, nullable=False)
-    category = Column(String(100), nullable=True)  # e.g. "Punctuality", "Teamwork"
+    category = Column(String(100), nullable=True)  # e.g. "Punctuality", "Teamwork" (free-text, back-compat)
+    # Optional links into the managed taxonomy (BehaviourCategory / BehaviourSubCategory).
+    # The free-text `category` above is kept so existing records don't break.
+    category_id = Column(String(36), ForeignKey("behaviour_categories.id"), nullable=True, index=True)
+    subcategory_id = Column(String(36), ForeignKey("behaviour_subcategories.id"), nullable=True, index=True)
     description = Column(Text, nullable=False)
     points = Column(Integer, default=0)  # +ve or -ve
     incident_date = Column(Date, nullable=False, index=True)
@@ -594,6 +598,61 @@ class BehaviourRecord(Base, UUIDMixin, TimestampMixin, TenantMixin):
         # Behaviour aggregate widget: filter by org, range-scan by date.
         Index("ix_behaviour_records_org_date", "org_id", "incident_date"),
     )
+
+
+class BehaviourCategory(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Top-level behaviour taxonomy ("Manage behaviourTracker"). A category is
+    positive/negative/neutral, may carry a default point value, and is what a
+    behaviour record is filed under."""
+    __tablename__ = "behaviour_categories"
+
+    name = Column(String(100), nullable=False)
+    type = Column(Enum(BehaviourType), default=BehaviourType.POSITIVE, nullable=False)
+    default_points = Column(Integer, nullable=True)  # suggested points; record may override
+    description = Column(Text, nullable=True)
+    position = Column(Integer, default=0, nullable=False)  # display order
+    is_active = Column(Boolean, default=True, nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+
+class BehaviourSubCategory(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Sub-item under a BehaviourCategory ("Sub-manage behaviourTracker") — e.g.
+    "Late to class" under a "Punctuality" category."""
+    __tablename__ = "behaviour_subcategories"
+
+    category_id = Column(String(36), ForeignKey("behaviour_categories.id"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    default_points = Column(Integer, nullable=True)  # overrides the category default when set
+    position = Column(Integer, default=0, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+
+class BehaviourLevel(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A named conduct band ("Manage behaviour levels"). A student's cumulative
+    conduct points fall into the band whose [min_points, max_points] contains
+    them (max_points NULL = open-ended top). min_points may be negative."""
+    __tablename__ = "behaviour_levels"
+
+    name = Column(String(100), nullable=False)
+    min_points = Column(Integer, nullable=False)          # inclusive lower bound (can be negative)
+    max_points = Column(Integer, nullable=True)           # inclusive upper bound; NULL = no cap
+    colour = Column(String(20), nullable=True)            # optional UI accent, e.g. "emerald"
+    description = Column(Text, nullable=True)
+    position = Column(Integer, default=0, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+
+class BehaviourSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Per-org Behaviour Tracker configuration ("BehaviourTracker settings")."""
+    __tablename__ = "behaviour_settings"
+
+    default_points = Column(Integer, default=1, nullable=False)     # pre-fill for new records
+    visible_to_students = Column(Boolean, default=False, nullable=False)
+    visible_to_parents = Column(Boolean, default=False, nullable=False)
+    auto_derive_levels = Column(Boolean, default=True, nullable=False)  # classify from cumulative points
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
 
 
 # ── Feedback ─────────────────────────────────────────────────────────────────
