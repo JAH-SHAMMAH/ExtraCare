@@ -980,20 +980,11 @@ async def publish_grades(
 # ── Exams (manual gradebook) ────────────────────────────────────────────────────
 # A teacher schedules an Exam for a class + subject, then enters marks against it.
 # Marks land as Grade rows tagged with exam_id, so they flow into the existing
-# report-card. Distinct from CBT (online/auto-scored). WAEC-style default scale;
-# edit GRADING_SCALE to change the boundaries school-wide.
+# report-card. Distinct from CBT (online/auto-scored). The grading scale lives in
+# app.services.grading so the CBT feed derives letters from the same scheme —
+# re-exported here as _grade_letter for existing callers/tests.
 
-GRADING_SCALE = [(70, "A"), (60, "B"), (50, "C"), (45, "D"), (40, "E")]  # else "F"
-
-
-def _grade_letter(score: float | None, total: float | None) -> str | None:
-    if score is None or not total or total <= 0:
-        return None
-    pct = (float(score) / float(total)) * 100
-    for threshold, letter in GRADING_SCALE:
-        if pct >= threshold:
-            return letter
-    return "F"
+from app.services.grading import GRADING_SCALE, grade_letter as _grade_letter
 
 
 async def _load_exam(db: AsyncSession, exam_id: str, org_id: str) -> Exam:

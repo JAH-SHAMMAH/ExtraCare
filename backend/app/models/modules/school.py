@@ -255,6 +255,9 @@ class Grade(Base, UUIDMixin, TimestampMixin, TenantMixin):
     subject_id = Column(String(36), ForeignKey("subjects.id"), nullable=False, index=True)
     # Set when the grade was entered against an Exam sitting (else a standalone grade).
     exam_id = Column(String(36), ForeignKey("exams.id"), nullable=True, index=True)
+    # Set when the grade was fed from a CBT exam (else NULL). Distinct FK from
+    # exam_id, which points at the manual `exams` table.
+    cbt_exam_id = Column(String(36), ForeignKey("cbt_exams.id"), nullable=True, index=True)
     term = Column(String(50), nullable=True)  # e.g. "Term 1", "Semester 2"
     score = Column(Float, nullable=True)
     max_score = Column(Float, default=100.0)
@@ -441,6 +444,9 @@ class CBTExam(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     description = Column(Text, nullable=True)
     class_id = Column(String(36), ForeignKey("school_classes.id"), nullable=True, index=True)
     subject_id = Column(String(36), ForeignKey("subjects.id"), nullable=True)
+    # Term this sitting belongs to (e.g. "Term 1") — tags fed Grade rows so the
+    # gradebook can scope/publish them. Required before results can feed the gradebook.
+    term = Column(String(50), nullable=True)
     created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
     start_time = Column(DateTime(timezone=True), nullable=True)
     end_time = Column(DateTime(timezone=True), nullable=True)
