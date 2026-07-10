@@ -76,6 +76,14 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/cbt/settings", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt", permission: "school:cbt:read" },
   { prefix: "/dashboard/modules/school/behaviour", permission: "school:behaviour:read" },
+  // Feedback section: Form / My Feedback inherit feedback:read (self-service);
+  // Settings / Manager require feedback:write; Daily/Student-Daily/CRM are staff
+  // surfaces on the broad school scopes. Longest-prefix match wins.
+  { prefix: "/dashboard/modules/school/feedback/settings", permission: "school:feedback:write" },
+  { prefix: "/dashboard/modules/school/feedback/manage", permission: "school:feedback:write" },
+  { prefix: "/dashboard/modules/school/feedback/daily-reports", permission: "school:read" },
+  { prefix: "/dashboard/modules/school/feedback/student-daily-reports", permission: "school:read" },
+  { prefix: "/dashboard/modules/school/feedback/crm", permission: "school:write" },
   { prefix: "/dashboard/modules/school/feedback", permission: "school:feedback:read" },
   { prefix: "/dashboard/modules/school/clubs", permission: "school:clubs:read" },
   { prefix: "/dashboard/modules/school/journals", permission: "school:journals:read" },
