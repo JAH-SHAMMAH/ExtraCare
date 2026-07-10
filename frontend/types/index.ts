@@ -425,6 +425,57 @@ export interface FeedbackItem {
   org_id: string;
 }
 
+export interface FeedbackSettings {
+  id: string;
+  allow_anonymous: boolean;
+  notify_on_submit: boolean;
+  acknowledgement_message: string | null;
+  org_id: string;
+}
+
+export interface DailyReport {
+  id: string;
+  author_id: string;
+  author_name: string | null;
+  report_date: string;
+  class_id: string | null;
+  summary: string;
+  highlights: string | null;
+  challenges: string | null;
+  created_at: string;
+  org_id: string;
+}
+
+export interface StudentDailyReport {
+  id: string;
+  student_id: string;
+  student_name: string | null;
+  author_id: string;
+  report_date: string;
+  mood: string | null;
+  academic: string | null;
+  behaviour: string | null;
+  notes: string | null;
+  created_at: string;
+  org_id: string;
+}
+
+export type CRMStage = "new" | "contacted" | "engaged" | "converted" | "lost";
+
+export interface CRMContact {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  contact_type: string;
+  stage: CRMStage | string;
+  source: string | null;
+  assigned_to: string | null;
+  notes: string | null;
+  created_at: string;
+  org_id: string;
+}
+
 export interface Club {
   id: string;
   name: string;
@@ -1063,6 +1114,29 @@ export interface ParentLink {
 
 export type AssessmentStatus = "draft" | "finalized";
 
+export interface AssessmentCriterion {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  weight: number;
+  max_score: number;
+  position: number;
+  is_active: boolean;
+  org_id: string;
+  created_at: string;
+}
+
+export interface AssessmentScore {
+  criterion_id: string;
+  criterion_name: string | null;
+  category: string | null;
+  score: number;
+  max_score: number | null;
+  weight: number | null;
+  comment: string | null;
+}
+
 export interface StaffAssessment {
   id: string;
   staff_user_id: string;
@@ -1076,6 +1150,7 @@ export interface StaffAssessment {
   improvements: string | null;
   goals: string | null;
   status: AssessmentStatus | string;
+  scores: AssessmentScore[];
   created_at: string;
   updated_at: string;
   org_id: string;

@@ -455,6 +455,28 @@ export const feedbackApi = {
   submit: (data: object) => api.post("/feedback", data).then((r) => r.data),
   resolve: (id: string, data: { admin_response: string; is_resolved?: boolean }) =>
     api.patch(`/feedback/${id}/resolve`, data).then((r) => r.data),
+  settings: {
+    get: () => api.get("/feedback/settings").then((r) => r.data),
+    update: (data: object) => api.put("/feedback/settings", data).then((r) => r.data),
+  },
+  dailyReports: {
+    list: (p?: { mine?: boolean; author_id?: string }) => api.get("/feedback/daily-reports", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/feedback/daily-reports", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/feedback/daily-reports/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/feedback/daily-reports/${id}`),
+  },
+  studentDailyReports: {
+    list: (p?: { student_id?: string }) => api.get("/feedback/student-daily-reports", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/feedback/student-daily-reports", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/feedback/student-daily-reports/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/feedback/student-daily-reports/${id}`),
+  },
+  crm: {
+    list: (p?: { stage?: string }) => api.get("/feedback/crm", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/feedback/crm", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/feedback/crm/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/feedback/crm/${id}`),
+  },
 };
 
 export const clubsApi = {
@@ -731,6 +753,12 @@ export const hrDevApi = {
     create: (data: object) => api.post("/hr/assessments", data).then((r) => r.data),
     update: (id: string, data: object) => api.patch(`/hr/assessments/${id}`, data).then((r) => r.data),
     remove: (id: string) => api.delete(`/hr/assessments/${id}`),
+  },
+  criteria: {
+    list: () => api.get("/hr/assessment-criteria").then((r) => r.data),
+    create: (data: object) => api.post("/hr/assessment-criteria", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/hr/assessment-criteria/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/hr/assessment-criteria/${id}`),
   },
   talent: {
     list: (p?: { stage?: string; search?: string; page?: number; page_size?: number }) =>

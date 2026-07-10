@@ -147,7 +147,6 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/clubs", label: "Clubs & Activities", icon: Users2 },
       { href: "/dashboard/modules/school/journals", label: "Photo Journals", icon: Camera },
       { href: "/dashboard/modules/school/remarks", label: "Weekly Remarks", icon: MessageCircle },
-      { href: "/dashboard/modules/school/feedback", label: "Feedback", icon: MessageSquare },
       // Batch 3 — shipped. Merit & Awards (conduct points + academic awards),
       // gated school:behaviour:read (staff-only; students/parents lack it).
       { href: "/dashboard/modules/school/merits", label: "Merit & Awards", icon: Award },
@@ -157,6 +156,24 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/hostel", label: "Hostel / Boarding", icon: BedDouble },
       { href: "/dashboard/modules/school/exeat", label: "Exeat Requests", icon: FileText },
       { href: "/dashboard/modules/school/mentor", label: "Mentor Reports", icon: UserCheck },
+    ],
+  },
+  {
+    // Educare-style Feedback section. Form / My Feedback are self-service (any
+    // school user); Settings / Manager gate school:feedback:write; Daily Report,
+    // Student Daily Report and CRM are staff surfaces on the broad school scopes.
+    key: "feedback",
+    requiredModule: "school",
+    label: "Feedback",
+    icon: MessageSquare,
+    items: [
+      { href: "/dashboard/modules/school/feedback/settings", label: "Feedback Settings", icon: Settings2 },
+      { href: "/dashboard/modules/school/feedback", label: "Feedback Form", icon: MessageSquare },
+      { href: "/dashboard/modules/school/feedback/mine", label: "My Feedback", icon: MessageCircle },
+      { href: "/dashboard/modules/school/feedback/manage", label: "Feedback Manager", icon: FolderOpen },
+      { href: "/dashboard/modules/school/feedback/daily-reports", label: "Daily Report", icon: FileText },
+      { href: "/dashboard/modules/school/feedback/student-daily-reports", label: "Student Daily Report", icon: UserCheck },
+      { href: "/dashboard/modules/school/feedback/crm", label: "CRM", icon: Contact },
     ],
   },
   {
@@ -202,7 +219,9 @@ const MODULE_SECTIONS: ModuleSection[] = [
       // Batch 1 (People & HR) — shipped. Permission resolved from the access map:
       // parents → school:parents:read; the two HR surfaces → hr:write.
       { href: "/dashboard/modules/school/parents", label: "Parents Directory", icon: Contact },
+      { href: "/dashboard/modules/school/staff-assessment/setup", label: "Setup Staff Assessment", icon: Settings2 },
       { href: "/dashboard/modules/school/staff-assessment", label: "Staff Assessment", icon: ClipboardList },
+      { href: "/dashboard/modules/school/staff-assessment/manage", label: "Manage Staff Assessment", icon: FolderOpen },
       { href: "/dashboard/modules/school/talent-pool", label: "Talent Pool", icon: Star },
     ],
   },
