@@ -147,16 +147,14 @@ extend subject-selection or add a distinct `subject_enrollments` model. **Scope:
 medium. Maps to the reference's "Subjects Enrollment" child.
 
 ### TICKET — Staff Management naming/structure alignment (RESOLVED 2026-07-10)
-- **Rename People & HR → Staff Management: DONE** (commit db4785f) — label-only,
-  section key / items / RBAC unchanged.
-- **3-way Staff Assessment split: DECLINED (by decision), not deferred.** The
-  combined Staff Assessment page already creates/edits and lists/finalizes; the
-  only genuinely-new reference surface, "Setup Staff Assessment," would be a
-  speculative criteria/rubric config **model**, not menu parity — and shipping it
-  as an empty stub for a label is worse than the status quo (a dead link). If a
-  real need for configurable assessment rubrics ever surfaces, scope it as its own
-  feature request grounded in an actual gap — do NOT back into it for menu parity.
-(This is parked item #5 alongside the 4 conversational parked items.)
+- **Rename People & HR → Staff Management: DONE** (commit db4785f) — label-only.
+- **3-way Staff Assessment split: BUILT** (commits 4c8dfd2 / ad7c4fb / 788c96b).
+  Decision was reversed by the user: build the full Setup/Assessment/Manage split
+  WITH a real rubric. Shipped a StaffAssessmentCriterion + StaffAssessmentScore
+  model (migration 050); the assessment form scores each active criterion and the
+  overall rating is the weighted average (falls back to a manual rating when no
+  rubric exists). Setup = criteria CRUD; Staff Assessment = scored form;
+  Manage = list/edit/finalize/delete.
 
 ### TICKET — Attendance: `absent_after_time` auto-derivation (deferred from Attendance Setup)
 Deliberately scoped OUT of the Attendance Setup #1+#2 build (which shipped the
