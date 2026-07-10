@@ -160,6 +160,23 @@ const MODULE_SECTIONS: ModuleSection[] = [
     ],
   },
   {
+    // Educare-style Behaviour Tracker admin cluster. Manage/Sub-manage drive the
+    // category→sub-category taxonomy; Awardings reuses the existing Merit & Awards
+    // page; Levels + Settings are new. All ride school:behaviour (staff config).
+    // The daily behaviour LOGGING surface stays as "Pastoral Care" above.
+    key: "behaviour-tracker",
+    requiredModule: "school",
+    label: "Behaviour Tracker",
+    icon: BookMarked,
+    items: [
+      { href: "/dashboard/modules/school/behaviour/categories", label: "Manage Behaviour Tracker", icon: BookOpen },
+      { href: "/dashboard/modules/school/behaviour/subcategories", label: "Sub-manage Behaviour Tracker", icon: FolderOpen },
+      { href: "/dashboard/modules/school/merits", label: "Manage Awardings", icon: Award },
+      { href: "/dashboard/modules/school/behaviour/levels", label: "Manage Behaviour Levels", icon: BarChart },
+      { href: "/dashboard/modules/school/behaviour/settings", label: "Behaviour Tracker Settings", icon: Settings2 },
+    ],
+  },
+  {
     // Educare-style Medicals module. "Manage Medicals" reuses the existing
     // confidential medical records page; Dashboard + Analysis are new reporting
     // surfaces. (Medical Setup is deferred — needs a new config model.)

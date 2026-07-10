@@ -353,10 +353,57 @@ export interface BehaviourRecord {
   recorded_by: string;
   type: BehaviourType;
   category: string | null;
+  category_id: string | null;
+  subcategory_id: string | null;
   description: string;
   points: number;
   incident_date: string;
   created_at: string;
+  org_id: string;
+}
+
+export interface BehaviourCategory {
+  id: string;
+  name: string;
+  type: BehaviourType;
+  default_points: number | null;
+  description: string | null;
+  position: number;
+  is_active: boolean;
+  org_id: string;
+  created_at: string;
+}
+
+export interface BehaviourSubCategory {
+  id: string;
+  category_id: string;
+  name: string;
+  default_points: number | null;
+  position: number;
+  is_active: boolean;
+  org_id: string;
+  created_at: string;
+}
+
+export interface BehaviourLevel {
+  id: string;
+  name: string;
+  min_points: number;
+  max_points: number | null;
+  colour: string | null;
+  description: string | null;
+  position: number;
+  is_active: boolean;
+  org_id: string;
+  created_at: string;
+}
+
+export interface BehaviourSettings {
+  id: string;
+  default_points: number;
+  visible_to_students: boolean;
+  visible_to_parents: boolean;
+  auto_derive_levels: boolean;
   org_id: string;
 }
 

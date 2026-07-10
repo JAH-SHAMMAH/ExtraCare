@@ -425,6 +425,29 @@ export const behaviourApi = {
     api.get(`/behaviour/student/${student_id}/summary`).then((r) => r.data),
   schoolSummary: (days = 30) =>
     api.get("/behaviour/summary", { params: { days } }).then((r) => r.data),
+  // Behaviour Tracker admin: taxonomy, levels, settings
+  categories: {
+    list: () => api.get("/behaviour/categories").then((r) => r.data),
+    create: (data: object) => api.post("/behaviour/categories", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/behaviour/categories/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/behaviour/categories/${id}`),
+  },
+  subcategories: {
+    list: (category_id?: string) => api.get("/behaviour/subcategories", { params: category_id ? { category_id } : {} }).then((r) => r.data),
+    create: (data: object) => api.post("/behaviour/subcategories", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/behaviour/subcategories/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/behaviour/subcategories/${id}`),
+  },
+  levels: {
+    list: () => api.get("/behaviour/levels").then((r) => r.data),
+    create: (data: object) => api.post("/behaviour/levels", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/behaviour/levels/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/behaviour/levels/${id}`),
+  },
+  settings: {
+    get: () => api.get("/behaviour/settings").then((r) => r.data),
+    update: (data: object) => api.put("/behaviour/settings", data).then((r) => r.data),
+  },
 };
 
 export const feedbackApi = {
