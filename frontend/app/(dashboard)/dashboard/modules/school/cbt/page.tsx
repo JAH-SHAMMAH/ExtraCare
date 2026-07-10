@@ -55,6 +55,7 @@ export default function CBTPage() {
     description: "",
     class_id: "",
     subject_id: "",
+    term: "",
     start_time: "",
     end_time: "",
     duration_minutes: 60,
@@ -67,7 +68,7 @@ export default function CBTPage() {
 
   const resetForm = () => {
     setForm({
-      title: "", description: "", class_id: "", subject_id: "",
+      title: "", description: "", class_id: "", subject_id: "", term: "",
       start_time: "", end_time: "",
       duration_minutes: cbtSettings?.default_duration_minutes ?? 60,
       shuffle_questions: cbtSettings?.shuffle_default ?? false,
@@ -86,6 +87,7 @@ export default function CBTPage() {
       description: form.description || null,
       class_id: form.class_id || null,
       subject_id: form.subject_id || null,
+      term: form.term || null,
       start_time: form.start_time || null,
       end_time: form.end_time || null,
       pass_percentage: form.pass_percentage === "" ? null : Number(form.pass_percentage),
@@ -103,6 +105,7 @@ export default function CBTPage() {
       description: e.description || "",
       class_id: e.class_id || "",
       subject_id: e.subject_id || "",
+      term: e.term || "",
       start_time: e.start_time ? e.start_time.substring(0, 16) : "",
       end_time: e.end_time ? e.end_time.substring(0, 16) : "",
       duration_minutes: e.duration_minutes,
@@ -183,6 +186,11 @@ export default function CBTPage() {
             <div>
               <label className="label">Subject ID</label>
               <input value={form.subject_id} onChange={(e) => setForm({ ...form, subject_id: e.target.value })} className="input" />
+            </div>
+            <div>
+              <label className="label">Term</label>
+              <input value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input" placeholder="e.g. Term 1" />
+              <p className="text-[11px] text-slate-400 mt-1">Needed with a subject before results can be sent to the gradebook.</p>
             </div>
             <div>
               <label className="label">Start Time</label>

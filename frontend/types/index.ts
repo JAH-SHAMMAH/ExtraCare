@@ -297,6 +297,7 @@ export interface CBTExam {
   description: string | null;
   class_id: string | null;
   subject_id: string | null;
+  term: string | null;
   created_by: string;
   start_time: string | null;
   end_time: string | null;

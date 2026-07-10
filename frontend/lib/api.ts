@@ -403,6 +403,7 @@ export const cbtApi = {
       api.get(`/cbt/exams/${exam_id}/results/export`, { responseType: "blob" }).then((r) => r.data as Blob),
     publish: (exam_id: string) => api.post(`/cbt/exams/${exam_id}/publish-results`).then((r) => r.data),
     unpublish: (exam_id: string) => api.post(`/cbt/exams/${exam_id}/unpublish-results`).then((r) => r.data),
+    feedGradebook: (exam_id: string) => api.post(`/cbt/exams/${exam_id}/feed-gradebook`).then((r) => r.data),
   },
   interventions: {
     list: (p?: { status?: string; student_id?: string; exam_id?: string }) =>

@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useCBTExams, useExamResults, useAttemptReview, useRemarkAttempt, useResetAttempt, useCreateIntervention, usePublishResults } from "@/hooks/useSchoolExperience";
+import { useCBTExams, useExamResults, useAttemptReview, useRemarkAttempt, useResetAttempt, useCreateIntervention, usePublishResults, useFeedGradebook } from "@/hooks/useSchoolExperience";
 import { cbtApi } from "@/lib/api";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
-import { BarChart3, Download, Loader2, ArrowLeft, ClipboardEdit, X, AlertTriangle, CheckCircle2, Flag, RotateCcw, Clock, EyeOff, Send, Eye } from "lucide-react";
+import { BarChart3, Download, Loader2, ArrowLeft, ClipboardEdit, X, AlertTriangle, CheckCircle2, Flag, RotateCcw, Clock, EyeOff, Send, Eye, BookOpenCheck } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -31,6 +31,7 @@ export default function CBTResultsPage() {
   const resetAttempt = useResetAttempt();
   const createIntervention = useCreateIntervention();
   const publishResults = usePublishResults();
+  const feedGradebook = useFeedGradebook();
   const canWrite = useHasPermission("school:write");
 
   useEffect(() => { if (!examId && exams.length) setExamId(exams[0].id); }, [exams, examId]);
@@ -115,6 +116,43 @@ export default function CBTResultsPage() {
                     >
                       {publishResults.isPending ? <Loader2 size={15} className="animate-spin" /> : published ? <EyeOff size={15} /> : <Send size={15} />}
                       {published ? "Unpublish" : "Publish results"}
+                    </button>
+                  )}
+                </div>
+              );
+            })()
+          )}
+
+          {/* Gradebook feed — send published CBT results into the gradebook as draft grades */}
+          {data?.gradebook && (
+            (() => {
+              const gb = data.gradebook;
+              const blocked: string | null = gb.block_reason;
+              const fedCount: number = gb.fed_count || 0;
+              return (
+                <div className="rounded-xl border border-slate-200 p-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <BookOpenCheck size={18} className="text-brand-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">Gradebook</p>
+                      <p className="text-xs mt-0.5 text-slate-500">
+                        {blocked
+                          ? <span className="text-amber-700">{blocked}</span>
+                          : fedCount > 0
+                            ? <>{fedCount} result{fedCount === 1 ? "" : "s"} sent to the gradebook as draft{fedCount === 1 ? "" : "s"}. <Link href="/dashboard/modules/school/result-publish" className="text-brand-600 font-semibold hover:underline">Publish to parents →</Link></>
+                            : <>Send these results to the gradebook as draft grades{gb.term ? <> for {gb.term}</> : null} (best attempt per student, as a percentage), then publish them to parents.</>}
+                      </p>
+                    </div>
+                  </div>
+                  {canWrite && (
+                    <button
+                      onClick={() => feedGradebook.mutate(examId)}
+                      disabled={feedGradebook.isPending || !!blocked}
+                      className="btn-secondary gap-2 shrink-0"
+                      title={blocked || "Send results to the gradebook"}
+                    >
+                      {feedGradebook.isPending ? <Loader2 size={15} className="animate-spin" /> : <BookOpenCheck size={15} />}
+                      {fedCount > 0 ? "Re-sync gradebook" : "Send to gradebook"}
                     </button>
                   )}
                 </div>

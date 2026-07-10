@@ -292,8 +292,27 @@ export function usePublishResults() {
   return useMutation({
     mutationFn: ({ exam_id, publish }: { exam_id: string; publish: boolean }) =>
       publish ? cbtApi.results.publish(exam_id) : cbtApi.results.unpublish(exam_id),
-    onSuccess: (_d, v) => { qc.invalidateQueries({ queryKey: ["cbt-results"] }); toast.success(v.publish ? "Results published to students." : "Results unpublished."); },
+    onSuccess: (d: any, v) => {
+      qc.invalidateQueries({ queryKey: ["cbt-results"] });
+      if (!v.publish) { toast.success("Results unpublished."); return; }
+      const gb = d?.gradebook;
+      if (gb?.fed > 0) toast.success(`Results published; ${gb.fed} grade(s) sent to the gradebook (draft).`);
+      else if (gb?.blocked) toast.success(`Results published to students. Not sent to the gradebook — ${gb.blocked}`);
+      else toast.success("Results published to students.");
+    },
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update publish state."),
+  });
+}
+
+export function useFeedGradebook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (exam_id: string) => cbtApi.results.feedGradebook(exam_id),
+    onSuccess: (d: any) => {
+      qc.invalidateQueries({ queryKey: ["cbt-results"] });
+      toast.success(`${d?.fed ?? 0} grade(s) sent to the gradebook as drafts. Publish them from the gradebook to release to parents.`);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Couldn't send results to the gradebook."),
   });
 }
 
