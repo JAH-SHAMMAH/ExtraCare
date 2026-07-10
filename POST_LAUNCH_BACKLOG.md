@@ -146,12 +146,16 @@ see per-subject rosters. Overlaps `/subject-selection` (which handles elective
 extend subject-selection or add a distinct `subject_enrollments` model. **Scope:**
 medium. Maps to the reference's "Subjects Enrollment" child.
 
-### TICKET — Staff Management naming/structure alignment (optional, LOW priority)
-Cosmetic/structural only, no functional gain: rename our **People & HR** section
-to **Staff Management**, and split the single Staff Assessment page into the
-reference's three surfaces (Setup Staff Assessment / Staff Assessment / Manage
-Staff Assessment). Deferred deliberately — it's churn for menu-label parity, not
-capability. Do only if menu-for-menu alignment with Educare becomes a goal.
+### TICKET — Staff Management naming/structure alignment (RESOLVED 2026-07-10)
+- **Rename People & HR → Staff Management: DONE** (commit db4785f) — label-only,
+  section key / items / RBAC unchanged.
+- **3-way Staff Assessment split: DECLINED (by decision), not deferred.** The
+  combined Staff Assessment page already creates/edits and lists/finalizes; the
+  only genuinely-new reference surface, "Setup Staff Assessment," would be a
+  speculative criteria/rubric config **model**, not menu parity — and shipping it
+  as an empty stub for a label is worse than the status quo (a dead link). If a
+  real need for configurable assessment rubrics ever surfaces, scope it as its own
+  feature request grounded in an actual gap — do NOT back into it for menu parity.
 (This is parked item #5 alongside the 4 conversational parked items.)
 
 ### TICKET — Attendance: `absent_after_time` auto-derivation (deferred from Attendance Setup)
