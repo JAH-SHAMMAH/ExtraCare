@@ -88,6 +88,15 @@ async def create_record(
     if not student:
         raise HTTPException(status_code=404, detail="Student not found.")
 
+    # Never trust client-supplied taxonomy ids: the category/sub-category must
+    # belong to this tenant, and the sub-category must sit under the chosen category.
+    if payload.category_id:
+        await _load(db, BehaviourCategory, payload.category_id, current_user.org_id, "Category")
+    if payload.subcategory_id:
+        sub = await _load(db, BehaviourSubCategory, payload.subcategory_id, current_user.org_id, "Sub-category")
+        if payload.category_id and sub.category_id != payload.category_id:
+            raise HTTPException(status_code=422, detail="Sub-category doesn't belong to the chosen category.")
+
     record = BehaviourRecord(
         **payload.model_dump(),
         recorded_by=current_user.id,

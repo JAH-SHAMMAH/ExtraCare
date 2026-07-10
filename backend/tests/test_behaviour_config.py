@@ -18,11 +18,12 @@ from app.models.modules.school import (
 from app.schemas.behaviour_config import (
     CategoryCreate, CategoryUpdate, SubCategoryCreate, LevelCreate, LevelUpdate, SettingsUpdate,
 )
+from app.schemas.school_experience import BehaviourCreate
 from app.routers.modules.behaviour import (
     list_categories, create_category, update_category, delete_category,
     list_subcategories, create_subcategory, delete_subcategory,
     list_levels, create_level, update_level,
-    get_settings, update_settings, student_summary,
+    get_settings, update_settings, student_summary, create_record,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -152,6 +153,45 @@ async def test_student_level_classification_from_points(db, org):
     await update_settings(SettingsUpdate(auto_derive_levels=False), request=None, db=db, current_user=staff)
     summary2 = await student_summary(stu.id, db=db, current_user=staff)
     assert summary2["level"] is None
+
+
+# ── Record taxonomy validation (tenant safety) ───────────────────────────────
+
+async def test_record_validates_taxonomy_ownership(db, org):
+    staff = await _staff(db, org)
+    stu = await _student(db, org)
+    cat = await create_category(CategoryCreate(name="Punctuality"), request=None, db=db, current_user=staff)
+    sub = await create_subcategory(SubCategoryCreate(category_id=cat["id"], name="Late"),
+                                   request=None, db=db, current_user=staff)
+
+    # a category id that isn't in this tenant → 404
+    with pytest.raises(Exception) as ei:
+        await create_record(BehaviourCreate(student_id=stu.id, description="x", incident_date=date.today(),
+                                            category_id="nope"), request=None, db=db, current_user=staff)
+    assert getattr(ei.value, "status_code", None) == 404
+
+    # a sub-category that doesn't sit under the chosen category → 422
+    cat2 = await create_category(CategoryCreate(name="Teamwork"), request=None, db=db, current_user=staff)
+    with pytest.raises(Exception) as ei2:
+        await create_record(BehaviourCreate(student_id=stu.id, description="x", incident_date=date.today(),
+                                            category_id=cat2["id"], subcategory_id=sub["id"]),
+                            request=None, db=db, current_user=staff)
+    assert getattr(ei2.value, "status_code", None) == 422
+
+    # a category from another org → 404 (cross-tenant)
+    other = await _second_org(db)
+    other_staff = await _staff(db, other)
+    foreign = await create_category(CategoryCreate(name="Foreign"), request=None, db=db, current_user=other_staff)
+    with pytest.raises(Exception) as ei3:
+        await create_record(BehaviourCreate(student_id=stu.id, description="x", incident_date=date.today(),
+                                            category_id=foreign["id"]), request=None, db=db, current_user=staff)
+    assert getattr(ei3.value, "status_code", None) == 404
+
+    # valid combo → record created with the refs
+    rec = await create_record(BehaviourCreate(student_id=stu.id, description="Helped", incident_date=date.today(),
+                                              category_id=cat["id"], subcategory_id=sub["id"], points=2),
+                              request=None, db=db, current_user=staff)
+    assert rec["category_id"] == cat["id"] and rec["subcategory_id"] == sub["id"]
 
 
 # ── Settings ─────────────────────────────────────────────────────────────────
