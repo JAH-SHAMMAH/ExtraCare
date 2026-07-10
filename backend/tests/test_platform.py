@@ -26,10 +26,12 @@ from app.routers.modules.biometric import (
 )
 from app.routers.modules.platform import (
     create_poll, cast_vote, create_house, send_message, my_inbox, mark_read,
+    create_session, update_session, current_session, list_sessions,
 )
 from app.schemas.platform import (
     DeviceCreate, EnrollmentCreate, IngestPunchesRequest, PunchIn, ResolvePunchRequest,
     PollCreate, CastVote, HouseCreate, MessageCreate,
+    SessionCreate, SessionUpdate,
 )
 
 
@@ -144,6 +146,51 @@ async def test_mailbox_send_and_inbox(db, org, teacher):
     await mark_read(inbox[0].recipient_row_id, db=db, current_user=teacher)
     inbox2 = await my_inbox(db=db, current_user=teacher)
     assert inbox2[0].read_at is not None
+
+
+# ── Academic sessions: current-term resolver + editable single-current ───────────
+
+async def test_current_session_resolver(db, org):
+    admin = await _preset(db, org, "org_admin")
+    # nothing current → all null
+    empty = await current_session(db=db, current_user=admin)
+    assert empty.term is None and empty.name is None and empty.session is None
+
+    await create_session(SessionCreate(name="2025/2026", term="Term 1", is_current=True), db=db, current_user=admin)
+    cur = await current_session(db=db, current_user=admin)
+    assert cur.term == "Term 1" and cur.name == "2025/2026" and cur.session.is_current is True
+
+
+async def test_patch_session_is_single_current(db, org):
+    admin = await _preset(db, org, "org_admin")
+    s1 = await create_session(SessionCreate(name="2025/2026", term="Term 1", is_current=True), db=db, current_user=admin)
+    s2 = await create_session(SessionCreate(name="2025/2026", term="Term 2"), db=db, current_user=admin)
+
+    # promote Term 2 → Term 1 must drop out of "current"
+    updated = await update_session(s2.id, SessionUpdate(is_current=True), db=db, current_user=admin)
+    assert updated.is_current is True
+    rows = {s.id: s for s in await list_sessions(db=db, current_user=admin)}
+    assert rows[s1.id].is_current is False and rows[s2.id].is_current is True
+    assert (await current_session(db=db, current_user=admin)).term == "Term 2"
+
+
+async def test_patch_session_edits_fields(db, org):
+    admin = await _preset(db, org, "org_admin")
+    s = await create_session(SessionCreate(name="2025/2026", term="Term 1"), db=db, current_user=admin)
+    updated = await update_session(s.id, SessionUpdate(term="Term 3", name="2026/2027"), db=db, current_user=admin)
+    assert updated.term == "Term 3" and updated.name == "2026/2027"
+
+    with pytest.raises(HTTPException) as ei:
+        await update_session("missing", SessionUpdate(term="Term 1"), db=db, current_user=admin)
+    assert ei.value.status_code == 404
+
+
+async def test_current_session_read_scope_is_broad(db, org):
+    # The resolver is read by term-consuming forms: teachers hold school:read but
+    # NOT settings:read, so gating it at school:read (not settings:read) is what
+    # lets them default from it while session management stays settings:write.
+    teacher = await _preset(db, org, "teacher")
+    assert teacher.has_permission("school:read") and not teacher.has_permission("settings:read")
 
 
 # ── RBAC: platform config is admin-only (settings:*) ─────────────────────────────

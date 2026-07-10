@@ -100,6 +100,14 @@ class SessionCreate(BaseModel):
     is_current: bool = False
 
 
+class SessionUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    term: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    is_current: Optional[bool] = None
+
+
 class SessionResponse(BaseModel):
     id: str
     name: str
@@ -109,6 +117,14 @@ class SessionResponse(BaseModel):
     is_current: bool
     created_at: datetime
     org_id: str
+
+
+class CurrentSessionResponse(BaseModel):
+    """The org's current session resolved for consumers (readable at school:read).
+    All null when no session is marked current."""
+    session: Optional[SessionResponse] = None
+    term: Optional[str] = None
+    name: Optional[str] = None
 
 
 # ── Academic Weeks (calendar backbone) ────────────────────────────────────────

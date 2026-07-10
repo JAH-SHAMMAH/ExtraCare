@@ -28,7 +28,8 @@ from app.models.modules.platform import (
     MobileDevice, MobileAppConfig,
 )
 from app.schemas.platform import (
-    SessionCreate, SessionResponse, HouseCreate, HouseResponse, BandCreate, BandResponse,
+    SessionCreate, SessionUpdate, SessionResponse, CurrentSessionResponse,
+    HouseCreate, HouseResponse, BandCreate, BandResponse,
     WeekCreate, WeekUpdate, WeekGenerate, WeekResponse,
     FieldDefCreate, FieldDefResponse, FieldValueSet, FieldValueResponse,
     PollCreate, PollResponse, PollOptionResult, PollListResponse, CastVote,
@@ -41,6 +42,9 @@ router = APIRouter(prefix="/platform", tags=["Administration & Platform"], depen
 
 _read = Depends(PermissionChecker("settings:read"))
 _write = Depends(PermissionChecker("settings:write"))
+# The current-session resolver is read by term-consuming features (exam/grade/CBT
+# forms), so it rides the broad school:read rather than the admin settings scope.
+_school_read = Depends(PermissionChecker("school:read"))
 
 
 # ── School Setup ────────────────────────────────────────────────────────────────
@@ -51,6 +55,24 @@ async def list_sessions(db: AsyncSession = Depends(get_db), current_user: User =
     return [SessionResponse(id=s.id, name=s.name, term=s.term, start_date=s.start_date, end_date=s.end_date, is_current=s.is_current, created_at=s.created_at, org_id=s.org_id) for s in rows]
 
 
+def _session_response(s: AcademicSession) -> SessionResponse:
+    return SessionResponse(id=s.id, name=s.name, term=s.term, start_date=s.start_date,
+                           end_date=s.end_date, is_current=s.is_current, created_at=s.created_at, org_id=s.org_id)
+
+
+@router.get("/sessions/current", response_model=CurrentSessionResponse, dependencies=[_school_read])
+async def current_session(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """The org's current session/term, for term-consuming forms to default from.
+    Broadly readable (school:read); null when nothing is marked current."""
+    s = (await db.execute(
+        select(AcademicSession).where(
+            AcademicSession.org_id == current_user.org_id, AcademicSession.is_current == True)
+    )).scalars().first()
+    if not s:
+        return CurrentSessionResponse()
+    return CurrentSessionResponse(session=_session_response(s), term=s.term, name=s.name)
+
+
 @router.post("/sessions", response_model=SessionResponse, status_code=201, dependencies=[_write])
 async def create_session(payload: SessionCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     if payload.is_current:
@@ -58,7 +80,26 @@ async def create_session(payload: SessionCreate, db: AsyncSession = Depends(get_
     s = AcademicSession(**payload.model_dump(), org_id=current_user.org_id)
     db.add(s)
     await db.flush()
-    return SessionResponse(id=s.id, name=s.name, term=s.term, start_date=s.start_date, end_date=s.end_date, is_current=s.is_current, created_at=s.created_at, org_id=s.org_id)
+    return _session_response(s)
+
+
+@router.patch("/sessions/{session_id}", response_model=SessionResponse, dependencies=[_write])
+async def update_session(session_id: str, payload: SessionUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = (await db.execute(
+        select(AcademicSession).where(AcademicSession.id == session_id, AcademicSession.org_id == current_user.org_id)
+    )).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    changes = payload.model_dump(exclude_unset=True)
+    # Marking this one current unsets every other session in the org (single-current).
+    if changes.get("is_current") is True:
+        await db.execute(update(AcademicSession).where(
+            AcademicSession.org_id == current_user.org_id, AcademicSession.id != session_id
+        ).values(is_current=False))
+    for field, value in changes.items():
+        setattr(s, field, value)
+    await db.flush()
+    return _session_response(s)
 
 
 @router.delete("/sessions/{session_id}", status_code=204, dependencies=[_write])
