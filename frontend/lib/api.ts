@@ -401,6 +401,8 @@ export const cbtApi = {
     get: (exam_id: string) => api.get(`/cbt/exams/${exam_id}/results`).then((r) => r.data),
     exportCsv: (exam_id: string) =>
       api.get(`/cbt/exams/${exam_id}/results/export`, { responseType: "blob" }).then((r) => r.data as Blob),
+    publish: (exam_id: string) => api.post(`/cbt/exams/${exam_id}/publish-results`).then((r) => r.data),
+    unpublish: (exam_id: string) => api.post(`/cbt/exams/${exam_id}/unpublish-results`).then((r) => r.data),
   },
   interventions: {
     list: (p?: { status?: string; student_id?: string; exam_id?: string }) =>

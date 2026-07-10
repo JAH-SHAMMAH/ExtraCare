@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useCBTExams, useExamResults, useAttemptReview, useRemarkAttempt, useResetAttempt, useCreateIntervention } from "@/hooks/useSchoolExperience";
+import { useCBTExams, useExamResults, useAttemptReview, useRemarkAttempt, useResetAttempt, useCreateIntervention, usePublishResults } from "@/hooks/useSchoolExperience";
 import { cbtApi } from "@/lib/api";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
-import { BarChart3, Download, Loader2, ArrowLeft, ClipboardEdit, X, AlertTriangle, CheckCircle2, Flag, RotateCcw, Clock } from "lucide-react";
+import { BarChart3, Download, Loader2, ArrowLeft, ClipboardEdit, X, AlertTriangle, CheckCircle2, Flag, RotateCcw, Clock, EyeOff, Send, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -30,6 +30,7 @@ export default function CBTResultsPage() {
   const { data, isLoading } = useExamResults(examId || null);
   const resetAttempt = useResetAttempt();
   const createIntervention = useCreateIntervention();
+  const publishResults = usePublishResults();
   const canWrite = useHasPermission("school:write");
 
   useEffect(() => { if (!examId && exams.length) setExamId(exams[0].id); }, [exams, examId]);
@@ -81,6 +82,46 @@ export default function CBTResultsPage() {
         <div className="py-16 text-center"><Loader2 size={22} className="animate-spin text-slate-400 mx-auto" /></div>
       ) : (
         <>
+          {/* Publish state — only for hold-results exams */}
+          {data?.exam?.hold_results && (
+            (() => {
+              const published = !!data.exam.results_published_at;
+              return (
+                <div className={cn("rounded-xl border p-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3", published ? "border-emerald-200 bg-emerald-50/50" : "border-amber-200 bg-amber-50/50")}>
+                  <div className="flex items-start gap-2.5">
+                    {published ? <Eye size={18} className="text-emerald-600 mt-0.5 shrink-0" /> : <EyeOff size={18} className="text-amber-600 mt-0.5 shrink-0" />}
+                    <div>
+                      <p className={cn("text-sm font-bold", published ? "text-emerald-800" : "text-amber-800")}>
+                        {published ? "Results published" : "Results held from students"}
+                      </p>
+                      <p className={cn("text-xs mt-0.5", published ? "text-emerald-700" : "text-amber-700")}>
+                        {published
+                          ? <>Students can see their scores. Pass mark frozen at ≥{data.exam.published_pass_percentage ?? data.exam.pass_percentage ?? 50}% (published {new Date(data.exam.results_published_at!).toLocaleDateString()}).</>
+                          : <>Students see only that their attempt is submitted — grade any subjective answers first, then publish.</>}
+                      </p>
+                    </div>
+                  </div>
+                  {canWrite && (
+                    <button
+                      onClick={() => {
+                        if (published) {
+                          if (confirm("Unpublish results? Students will stop seeing their scores until you publish again.")) publishResults.mutate({ exam_id: examId, publish: false });
+                        } else {
+                          publishResults.mutate({ exam_id: examId, publish: true });
+                        }
+                      }}
+                      disabled={publishResults.isPending}
+                      className={cn("gap-2 shrink-0", published ? "btn-secondary" : "btn-primary")}
+                    >
+                      {publishResults.isPending ? <Loader2 size={15} className="animate-spin" /> : published ? <EyeOff size={15} /> : <Send size={15} />}
+                      {published ? "Unpublish" : "Publish results"}
+                    </button>
+                  )}
+                </div>
+              );
+            })()
+          )}
+
           {/* Stats */}
           {stats && (
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">

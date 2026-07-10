@@ -287,6 +287,16 @@ export function useResetAttempt() {
   });
 }
 
+export function usePublishResults() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ exam_id, publish }: { exam_id: string; publish: boolean }) =>
+      publish ? cbtApi.results.publish(exam_id) : cbtApi.results.unpublish(exam_id),
+    onSuccess: (_d, v) => { qc.invalidateQueries({ queryKey: ["cbt-results"] }); toast.success(v.publish ? "Results published to students." : "Results unpublished."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update publish state."),
+  });
+}
+
 export function useInterventions(params?: { status?: string; student_id?: string; exam_id?: string }) {
   return useQuery({
     queryKey: ["cbt-interventions", params],

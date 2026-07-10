@@ -61,6 +61,7 @@ export default function CBTPage() {
     shuffle_questions: false,
     max_attempts: 1,
     pass_percentage: "",
+    hold_results: false,
     status: "draft" as CBTExamStatus,
   });
 
@@ -72,6 +73,7 @@ export default function CBTPage() {
       shuffle_questions: cbtSettings?.shuffle_default ?? false,
       max_attempts: 1,
       pass_percentage: "",
+      hold_results: false,
       status: "draft",
     });
     setEditing(null);
@@ -107,6 +109,7 @@ export default function CBTPage() {
       shuffle_questions: e.shuffle_questions,
       max_attempts: e.max_attempts ?? 1,
       pass_percentage: e.pass_percentage != null ? String(e.pass_percentage) : "",
+      hold_results: e.hold_results ?? false,
       status: e.status,
     });
     setEditing(e);
@@ -220,6 +223,15 @@ export default function CBTPage() {
                 onChange={(e) => setForm({ ...form, shuffle_questions: e.target.checked })}
               />
               <label htmlFor="shuffle" className="text-xs font-medium text-slate-700">Shuffle questions for each student</label>
+            </div>
+            <div className="md:col-span-2 flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="hold_results"
+                checked={form.hold_results}
+                onChange={(e) => setForm({ ...form, hold_results: e.target.checked })}
+              />
+              <label htmlFor="hold_results" className="text-xs font-medium text-slate-700">Hold results — students see their score only after you publish (e.g. to grade subjective answers first)</label>
             </div>
             <div className="md:col-span-2">
               <label className="label">Description</label>
