@@ -2,14 +2,15 @@
 
 import { useState } from "react";
 import {
-  useSessions, useCreateSession, useDeleteSession,
+  useSessions, useCreateSession, useUpdateSession, useDeleteSession,
   useHouses, useCreateHouse, useDeleteHouse,
   useBands, useCreateBand, useDeleteBand,
 } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
-import { Settings, Loader2, Trash2, Plus } from "lucide-react";
+import { Settings, Loader2, Trash2, Plus, Pencil } from "lucide-react";
 import { TERMS } from "@/lib/terms";
+import type { AcademicSession } from "@/types";
 
 type Tab = "sessions" | "houses" | "bands";
 
@@ -33,11 +34,28 @@ export default function SchoolSetupPage() {
   );
 }
 
+const BLANK_SESSION = { name: "", term: "", start_date: "", end_date: "", is_current: false };
+
 function Sessions({ canWrite }: { canWrite: boolean }) {
   const { data } = useSessions();
   const create = useCreateSession();
+  const update = useUpdateSession();
   const del = useDeleteSession();
-  const [f, setF] = useState({ name: "", term: "", start_date: "", end_date: "", is_current: false });
+  const [f, setF] = useState(BLANK_SESSION);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const reset = () => { setF(BLANK_SESSION); setEditingId(null); };
+  const submit = () => {
+    const payload = { name: f.name.trim(), term: f.term || null, start_date: f.start_date || null, end_date: f.end_date || null, is_current: f.is_current };
+    if (editingId) update.mutate({ id: editingId, data: payload }, { onSuccess: reset });
+    else create.mutate(payload, { onSuccess: reset });
+  };
+  const startEdit = (s: AcademicSession) => {
+    setEditingId(s.id);
+    setF({ name: s.name, term: s.term || "", start_date: s.start_date || "", end_date: s.end_date || "", is_current: s.is_current });
+  };
+  const busy = create.isPending || update.isPending;
+
   return (
     <>
       {canWrite && (
@@ -46,8 +64,11 @@ function Sessions({ canWrite }: { canWrite: boolean }) {
           <div><label className="label">Term</label><select value={f.term} onChange={(e) => setF({ ...f, term: e.target.value })} className="input"><option value="">— Term —</option>{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
           <div><label className="label">Start</label><input type="date" value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} className="input" /></div>
           <div><label className="label">End</label><input type="date" value={f.end_date} onChange={(e) => setF({ ...f, end_date: e.target.value })} className="input" /></div>
-          <button onClick={() => create.mutate({ name: f.name.trim(), term: f.term || null, start_date: f.start_date || null, end_date: f.end_date || null, is_current: f.is_current }, { onSuccess: () => setF({ name: "", term: "", start_date: "", end_date: "", is_current: false }) })} disabled={!f.name.trim() || create.isPending} className="btn-primary justify-center">{create.isPending ? <Loader2 size={14} className="animate-spin" /> : "Add"}</button>
-          <label className="md:col-span-5 flex items-center gap-2 text-xs"><input type="checkbox" checked={f.is_current} onChange={(e) => setF({ ...f, is_current: e.target.checked })} /> Set as current session</label>
+          <button onClick={submit} disabled={!f.name.trim() || busy} className="btn-primary justify-center">{busy ? <Loader2 size={14} className="animate-spin" /> : editingId ? "Update" : "Add"}</button>
+          <div className="md:col-span-5 flex items-center justify-between">
+            <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={f.is_current} onChange={(e) => setF({ ...f, is_current: e.target.checked })} /> Set as current session</label>
+            {editingId && <button onClick={reset} className="text-xs text-slate-500 hover:underline">Cancel edit</button>}
+          </div>
         </div>
       )}
       <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-50">
@@ -56,7 +77,9 @@ function Sessions({ canWrite }: { canWrite: boolean }) {
             <span className="text-sm font-semibold text-slate-800">{s.name}{s.term ? ` · ${s.term}` : ""}</span>
             {s.is_current && <span className="badge bg-emerald-50 text-emerald-700 border-emerald-200">current</span>}
             <span className="text-xs text-slate-400 ml-auto">{[s.start_date, s.end_date].filter(Boolean).join(" → ")}</span>
-            {canWrite && <button onClick={() => del.mutate(s.id)} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>}
+            {canWrite && !s.is_current && <button onClick={() => update.mutate({ id: s.id, data: { is_current: true } })} disabled={update.isPending} className="text-xs text-brand-600 font-semibold hover:underline">Make current</button>}
+            {canWrite && <button onClick={() => startEdit(s)} className="text-slate-400 hover:text-brand-600 p-1" title="Edit"><Pencil size={13} /></button>}
+            {canWrite && <button onClick={() => del.mutate(s.id)} className="text-slate-400 hover:text-red-600 p-1" title="Delete"><Trash2 size={14} /></button>}
           </div>
         ))}
       </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { biometricApi, platformApi } from "@/lib/api";
 import type {
@@ -36,10 +37,37 @@ export const useDiscardPunch = m((id: string) => biometricApi.quarantine.discard
 
 // ── School setup ──────────────────────────────────────────────────────────────
 export function useSessions() { return useQuery<AcademicSession[]>({ queryKey: ["sessions"], queryFn: () => platformApi.sessions.list() }); }
+// The org's current session/term, for term-consuming forms to default from.
+export function useCurrentSession() {
+  return useQuery<{ session: AcademicSession | null; term: string | null; name: string | null }>({
+    queryKey: ["current-session"],
+    queryFn: () => platformApi.sessions.current(),
+    staleTime: 5 * 60 * 1000,
+    // Resolver is school:read; non-staff consumers (e.g. a student on the CBT page)
+    // get a 403 — fail quietly to a null default rather than retrying.
+    retry: false,
+  });
+}
+// Convenience: the current term ("" when none) for defaulting a term field.
+export function useCurrentTerm(): string {
+  const { data } = useCurrentSession();
+  return data?.term ?? "";
+}
+// A term state seeded from the org's current term: applies it once when it loads,
+// but never overrides a value the user has picked (touched wins). `fallback` is
+// the value used until/unless a current term exists.
+export function useTermState(fallback = ""): [string, (v: string) => void] {
+  const current = useCurrentTerm();
+  const [term, setTermRaw] = useState(fallback);
+  const touched = useRef(false);
+  useEffect(() => { if (!touched.current && current) setTermRaw(current); }, [current]);
+  return [term, (v: string) => { touched.current = true; setTermRaw(v); }];
+}
 export function useHouses() { return useQuery<SchoolHouse[]>({ queryKey: ["houses"], queryFn: () => platformApi.houses.list() }); }
 export function useBands() { return useQuery<GradingBand[]>({ queryKey: ["bands"], queryFn: () => platformApi.bands.list() }); }
-export const useCreateSession = m((d) => platformApi.sessions.create(d), ["sessions"], "Session saved.");
-export const useDeleteSession = m((id: string) => platformApi.sessions.remove(id), ["sessions"], "Removed.");
+export const useCreateSession = m((d) => platformApi.sessions.create(d), ["sessions", "current-session"], "Session saved.");
+export const useUpdateSession = m((v: { id: string; data: object }) => platformApi.sessions.update(v.id, v.data), ["sessions", "current-session"], "Session updated.");
+export const useDeleteSession = m((id: string) => platformApi.sessions.remove(id), ["sessions", "current-session"], "Removed.");
 export const useCreateHouse = m((d) => platformApi.houses.create(d), ["houses"], "House added.");
 export const useDeleteHouse = m((id: string) => platformApi.houses.remove(id), ["houses"], "Removed.");
 export const useCreateBand = m((d) => platformApi.bands.create(d), ["bands"], "Band added.");
