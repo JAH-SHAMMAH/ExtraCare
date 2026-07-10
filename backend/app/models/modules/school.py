@@ -451,6 +451,13 @@ class CBTExam(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     max_attempts = Column(Integer, default=1, nullable=False)
     # Pass mark for this exam (%). NULL → fall back to the org CBT default.
     pass_percentage = Column(Integer, nullable=True)
+    # Results distribution (Phase 1). hold_results gates a student's view of their
+    # score until results are published; publishing snapshots the resolved pass
+    # mark so the released view is frozen even if the live pass mark later changes.
+    hold_results = Column(Boolean, default=False, nullable=False)
+    results_published_at = Column(DateTime(timezone=True), nullable=True)
+    results_published_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    published_pass_percentage = Column(Integer, nullable=True)
     status = Column(Enum(ExamStatus), default=ExamStatus.DRAFT, nullable=False)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 

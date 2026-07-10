@@ -125,6 +125,7 @@ class ExamCreate(BaseModel):
     shuffle_questions: bool = False
     max_attempts: int = Field(default=1, ge=0)  # 0 = unlimited
     pass_percentage: Optional[int] = Field(default=None, ge=0, le=100)  # None = org default
+    hold_results: bool = False  # gate student result visibility until published
     status: str = "draft"
 
 
@@ -137,6 +138,7 @@ class ExamUpdate(BaseModel):
     shuffle_questions: Optional[bool] = None
     max_attempts: Optional[int] = Field(default=None, ge=0)
     pass_percentage: Optional[int] = Field(default=None, ge=0, le=100)
+    hold_results: Optional[bool] = None
     status: Optional[str] = None
 
 
@@ -154,6 +156,9 @@ class ExamResponse(_OrmBase):
     shuffle_questions: bool
     max_attempts: int
     pass_percentage: Optional[int]
+    hold_results: bool
+    results_published_at: Optional[datetime]
+    published_pass_percentage: Optional[int]
     status: str
     created_at: datetime
     org_id: str

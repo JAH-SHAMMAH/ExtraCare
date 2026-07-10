@@ -599,6 +599,20 @@ async def get_attempt(
     if not is_staff and attempt.student_id != own_student_id:
         raise HTTPException(status_code=404, detail="Attempt not found.")  # own attempts only
 
+    exam = (await db.execute(
+        select(CBTExam).where(CBTExam.id == attempt.exam_id, CBTExam.org_id == current_user.org_id)
+    )).scalar_one_or_none()
+
+    # Results gate: a student sees their score/answers only once results are
+    # released (the exam doesn't hold results, or they've been published). Staff
+    # always see them. Held-but-unpublished → a minimal "pending" response.
+    if not is_staff and exam is not None and not _results_released(exam):
+        return {
+            "id": attempt.id, "exam_id": attempt.exam_id, "student_id": attempt.student_id,
+            "status": attempt.status.value if hasattr(attempt.status, "value") else attempt.status,
+            "results_pending": True,
+        }
+
     # Include answers for review
     answers = (await db.execute(
         select(CBTAnswer).where(
@@ -606,10 +620,6 @@ async def get_attempt(
             CBTAnswer.org_id == current_user.org_id,
         )
     )).scalars().all()
-
-    exam = (await db.execute(
-        select(CBTExam).where(CBTExam.id == attempt.exam_id, CBTExam.org_id == current_user.org_id)
-    )).scalar_one_or_none()
 
     return {
         **AttemptResponse.model_validate(attempt).model_dump(),
@@ -965,6 +975,21 @@ def _result_rows(attempts, names, ungraded, total_points, pass_fraction):
     return rows
 
 
+def _resolve_pass_pct(exam: CBTExam, settings_row) -> int:
+    """Effective pass mark: per-exam override → org CBT default → 50%."""
+    if exam.pass_percentage is not None:
+        return exam.pass_percentage
+    if settings_row is not None and settings_row.default_pass_percentage is not None:
+        return settings_row.default_pass_percentage
+    return 50
+
+
+def _results_released(exam: CBTExam) -> bool:
+    """A student may see their score when the exam doesn't hold results, or once
+    results are published. Staff always see them regardless."""
+    return (not exam.hold_results) or (exam.results_published_at is not None)
+
+
 @router.get("/exams/{exam_id}/results", dependencies=[_bank_read])
 async def exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Result Manager for one exam: every attempt (student, score, %, review flag)
@@ -978,14 +1003,13 @@ async def exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current
     names = await _cbt_student_names(db, org_id, {a.student_id for a in attempts})
     ungraded = await _ungraded_by_attempt(db, org_id, [a.id for a in attempts])
     total_points = float(exam.total_points or 0)
-    # Pass mark: per-exam override → org CBT default → 50%. Recomputed each read,
-    # so adjusting the mark re-reflects for all attempts (results aren't published
-    # to students yet, so no frozen pass/fail to preserve).
+    # Staff Result Manager recomputes the pass mark live (per-exam → org default →
+    # 50%). The student/parent-facing view freezes it at publish (published_pass_
+    # percentage) — see the publish endpoint below.
     settings_row = (await db.execute(
         select(CBTSettings).where(CBTSettings.org_id == org_id)
     )).scalar_one_or_none()
-    org_default = settings_row.default_pass_percentage if settings_row else None
-    pass_pct = exam.pass_percentage if exam.pass_percentage is not None else (org_default if org_default is not None else 50)
+    pass_pct = _resolve_pass_pct(exam, settings_row)
     rows = _result_rows(attempts, names, ungraded, total_points, pass_pct / 100.0)
 
     # Superseded (reset) attempts are still SHOWN (badged) but excluded from every
@@ -1005,10 +1029,62 @@ async def exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current
     return {
         "exam": {"id": exam.id, "title": exam.title, "total_points": total_points,
                  "pass_percentage": pass_pct,
+                 "hold_results": bool(exam.hold_results),
+                 "results_published_at": exam.results_published_at.isoformat() if exam.results_published_at else None,
+                 "published_pass_percentage": exam.published_pass_percentage,
                  "class_id": exam.class_id, "subject_id": exam.subject_id},
         "attempts": rows,
         "stats": stats,
     }
+
+
+@router.post("/exams/{exam_id}/publish-results", dependencies=[_bank_write])
+async def publish_exam_results(
+    exam_id: str, request: Request = None,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    """Release results to students. Snapshots the resolved pass mark so the
+    released pass/fail is frozen even if the live pass mark later changes."""
+    org_id = current_user.org_id
+    exam = await _get_exam_or_404(db, exam_id, org_id)
+    settings_row = (await db.execute(
+        select(CBTSettings).where(CBTSettings.org_id == org_id)
+    )).scalar_one_or_none()
+    exam.results_published_at = datetime.now(timezone.utc)
+    exam.results_published_by = current_user.id
+    exam.published_pass_percentage = _resolve_pass_pct(exam, settings_row)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="CBTExam", resource_id=exam.id,
+        resource_label=f"published CBT results (pass ≥ {exam.published_pass_percentage}%)", request=request,
+    )
+    return {
+        "published": True,
+        "results_published_at": exam.results_published_at.isoformat(),
+        "published_pass_percentage": exam.published_pass_percentage,
+    }
+
+
+@router.post("/exams/{exam_id}/unpublish-results", dependencies=[_bank_write])
+async def unpublish_exam_results(
+    exam_id: str, request: Request = None,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    """Retract released results (students stop seeing scores again if the exam
+    holds results)."""
+    org_id = current_user.org_id
+    exam = await _get_exam_or_404(db, exam_id, org_id)
+    exam.results_published_at = None
+    exam.results_published_by = None
+    exam.published_pass_percentage = None
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="CBTExam", resource_id=exam.id,
+        resource_label="unpublished CBT results", severity="warning", request=request,
+    )
+    return {"published": False}
 
 
 @router.get("/exams/{exam_id}/results/export", dependencies=[_bank_read])
