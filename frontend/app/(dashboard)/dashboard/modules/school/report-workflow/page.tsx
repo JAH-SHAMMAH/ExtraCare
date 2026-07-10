@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useReportWorkflow, useCreateReportWorkflow, useUpdateReportWorkflow, useDeleteReportWorkflow,
 } from "@/hooks/useAcademics";
 import { useClassOptions } from "@/hooks/useEnrollment";
+import { useCurrentSession } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn, formatDate } from "@/lib/utils";
 import { FolderOpen, Plus, X, Loader2, Trash2, AlertTriangle } from "lucide-react";
@@ -32,7 +33,10 @@ export default function ReportWorkflowPage() {
   const update = useUpdateReportWorkflow();
   const remove = useDeleteReportWorkflow();
 
-  const reset = () => { setForm({ class_id: "", academic_year: "", term: "", notes: "" }); setShowForm(false); };
+  const { data: cur } = useCurrentSession();
+  useEffect(() => { if (cur?.term || cur?.name) setForm((f) => ({ ...f, term: f.term || cur?.term || "", academic_year: f.academic_year || cur?.name || "" })); }, [cur?.term, cur?.name]);
+
+  const reset = () => { setForm({ class_id: "", academic_year: cur?.name || "", term: cur?.term || "", notes: "" }); setShowForm(false); };
   const submit = () => create.mutate(
     { class_id: form.class_id || null, academic_year: form.academic_year || null, term: form.term || null, notes: form.notes || null },
     { onSuccess: reset },

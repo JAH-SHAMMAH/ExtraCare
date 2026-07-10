@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useRecognitions, useLeaderboard, useCreateRecognition, useDeleteRecognition,
 } from "@/hooks/useAcademics";
+import { useCurrentTerm } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
 import { cn, formatDate } from "@/lib/utils";
@@ -47,10 +48,12 @@ function ConductTab({ canWrite }: { canWrite: boolean }) {
   const { data: board } = useLeaderboard();
   const create = useCreateRecognition();
   const remove = useDeleteRecognition();
+  const currentTerm = useCurrentTerm();
   const [show, setShow] = useState(false);
   const [form, setForm] = useState({ student_id: "", points: "", house: "", category: "", reason: "", term: "" });
+  useEffect(() => { if (currentTerm) setForm((f) => (f.term ? f : { ...f, term: currentTerm })); }, [currentTerm]);
 
-  const reset = () => { setForm({ student_id: "", points: "", house: "", category: "", reason: "", term: "" }); setShow(false); };
+  const reset = () => { setForm({ student_id: "", points: "", house: "", category: "", reason: "", term: currentTerm }); setShow(false); };
   const submit = () => create.mutate(
     { type: "conduct_point", student_id: form.student_id, points: form.points ? Number(form.points) : 0, house: form.house || null, category: form.category || null, reason: form.reason || null, term: form.term || null },
     { onSuccess: reset },
@@ -109,10 +112,12 @@ function AwardsTab({ canWrite }: { canWrite: boolean }) {
   const { data, isLoading, isError, refetch } = useRecognitions({ type: "academic_award" });
   const create = useCreateRecognition();
   const remove = useDeleteRecognition();
+  const currentTerm = useCurrentTerm();
   const [show, setShow] = useState(false);
   const [form, setForm] = useState({ student_id: "", title: "", award_type: "honor_roll", term: "", reason: "" });
+  useEffect(() => { if (currentTerm) setForm((f) => (f.term ? f : { ...f, term: currentTerm })); }, [currentTerm]);
 
-  const reset = () => { setForm({ student_id: "", title: "", award_type: "honor_roll", term: "", reason: "" }); setShow(false); };
+  const reset = () => { setForm({ student_id: "", title: "", award_type: "honor_roll", term: currentTerm, reason: "" }); setShow(false); };
   const submit = () => create.mutate(
     { type: "academic_award", student_id: form.student_id, title: form.title || null, award_type: form.award_type, term: form.term || null, reason: form.reason || null },
     { onSuccess: reset },

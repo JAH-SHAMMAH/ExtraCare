@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useTranscripts, useCreateTranscript, useUpdateTranscript, useDeleteTranscript,
   useAddTranscriptEntry, useDeleteTranscriptEntry,
 } from "@/hooks/useAcademics";
+import { useCurrentSession } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
 import { PrintLetterhead } from "@/components/branding/Brand";
@@ -24,10 +25,13 @@ export default function MarkBooksPage() {
   const [form, setForm] = useState({ student_id: "", academic_year: "", term: "", remark: "" });
   const [entries, setEntries] = useState<EntryDraft[]>([{ subject_name: "", score: "", grade: "" }]);
 
+  const { data: cur } = useCurrentSession();
+  useEffect(() => { if (cur?.term || cur?.name) setForm((f) => ({ ...f, term: f.term || cur?.term || "", academic_year: f.academic_year || cur?.name || "" })); }, [cur?.term, cur?.name]);
+
   const { data, isLoading, isError, refetch } = useTranscripts();
   const create = useCreateTranscript();
 
-  const reset = () => { setForm({ student_id: "", academic_year: "", term: "", remark: "" }); setEntries([{ subject_name: "", score: "", grade: "" }]); setShowForm(false); };
+  const reset = () => { setForm({ student_id: "", academic_year: cur?.name || "", term: cur?.term || "", remark: "" }); setEntries([{ subject_name: "", score: "", grade: "" }]); setShowForm(false); };
   const submit = () => {
     const cleaned = entries.filter((e) => e.subject_name.trim()).map((e) => ({ subject_name: e.subject_name.trim(), score: e.score ? Number(e.score) : null, grade: e.grade || null }));
     create.mutate(

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useCurrentTerm } from "@/hooks/usePlatform";
 import {
   useCBTExams,
   useCBTExam,
@@ -49,6 +50,7 @@ export default function CBTPage() {
   const updateExam = useUpdateCBTExam();
   const deleteExam = useDeleteCBTExam();
   const { data: cbtSettings } = useCBTSettings();
+  const currentTerm = useCurrentTerm();
 
   const [form, setForm] = useState({
     title: "",
@@ -65,10 +67,12 @@ export default function CBTPage() {
     hold_results: false,
     status: "draft" as CBTExamStatus,
   });
+  // Default the term from the org's current session (only while still empty).
+  useEffect(() => { if (currentTerm) setForm((f) => (f.term ? f : { ...f, term: currentTerm })); }, [currentTerm]);
 
   const resetForm = () => {
     setForm({
-      title: "", description: "", class_id: "", subject_id: "", term: "",
+      title: "", description: "", class_id: "", subject_id: "", term: currentTerm,
       start_time: "", end_time: "",
       duration_minutes: cbtSettings?.default_duration_minutes ?? 60,
       shuffle_questions: cbtSettings?.shuffle_default ?? false,

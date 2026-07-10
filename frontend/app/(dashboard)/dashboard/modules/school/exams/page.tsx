@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useExams, useCreateExam, useExamResults, useSubmitExamResults } from "@/hooks/useSchool";
 import { useSubjects } from "@/hooks/useSchool";
 import { useClasses } from "@/hooks/useSchool";
+import { useCurrentTerm } from "@/hooks/usePlatform";
 import { cn, formatDate } from "@/lib/utils";
 import { Award, Plus, X, Loader2, ClipboardEdit, Users } from "lucide-react";
 import { TERMS, DEFAULT_TERM } from "@/lib/terms";
@@ -41,8 +42,9 @@ export default function ExamsPage() {
   const subjects: Subject[] = subjectsData?.items || [];
   const classes: SchoolClass[] = classesData?.items || [];
 
+  const currentTerm = useCurrentTerm();
   const [form, setForm] = useState({ name: "", exam_type: "midterm", subject_id: "", class_id: "", term: DEFAULT_TERM as string, date: "", start_time: "", end_time: "", total_marks: "100", pass_marks: "40" });
-  const resetForm = () => { setForm({ name: "", exam_type: "midterm", subject_id: "", class_id: "", term: DEFAULT_TERM as string, date: "", start_time: "", end_time: "", total_marks: "100", pass_marks: "40" }); setShowForm(false); };
+  const resetForm = () => { setForm({ name: "", exam_type: "midterm", subject_id: "", class_id: "", term: currentTerm || DEFAULT_TERM, date: "", start_time: "", end_time: "", total_marks: "100", pass_marks: "40" }); setShowForm(false); };
   const handleSubmit = () => {
     createExam.mutate(
       { ...form, subject_id: form.subject_id || undefined, class_id: form.class_id || undefined, total_marks: parseInt(form.total_marks), pass_marks: parseInt(form.pass_marks) },

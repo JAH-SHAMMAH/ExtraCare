@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useClasses, useGradePublishStatus, usePublishGrades } from "@/hooks/useSchool";
+import { useTermState } from "@/hooks/usePlatform";
 import { cn } from "@/lib/utils";
 import { CheckCircle2, EyeOff, Loader2, ShieldAlert, Send } from "lucide-react";
 import { TERMS, DEFAULT_TERM } from "@/lib/terms";
@@ -15,7 +16,7 @@ import type { SchoolClass } from "@/types";
  */
 export default function ResultPublishPage() {
   const [classId, setClassId] = useState("");
-  const [term, setTerm] = useState<string>(DEFAULT_TERM);
+  const [term, setTerm] = useTermState(DEFAULT_TERM);
 
   const { data: classesData } = useClasses({ page_size: 100 });
   const classes: SchoolClass[] = classesData?.items || [];

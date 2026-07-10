@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useStudents, useSubmitGrades } from "@/hooks/useSchool";
+import { useTermState } from "@/hooks/usePlatform";
 import { BookOpen, Loader2, Save } from "lucide-react";
 import { TERMS, DEFAULT_TERM } from "@/lib/terms";
 import type { Student } from "@/types";
@@ -9,7 +10,7 @@ import type { Student } from "@/types";
 export default function GradebookPage() {
   const [classId, setClassId] = useState("");
   const [subjectId, setSubjectId] = useState("");
-  const [term, setTerm] = useState<string>(DEFAULT_TERM);
+  const [term, setTerm] = useTermState(DEFAULT_TERM);
   const [grades, setGrades] = useState<Record<string, { score: string; grade: string; remarks: string }>>({});
 
   const { data: students, isLoading } = useStudents({ class_id: classId || undefined, page_size: 100 });

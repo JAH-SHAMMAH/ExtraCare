@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useMentorReports, useCreateMentorReport, useUpdateMentorReport, useDeleteMentorReport,
 } from "@/hooks/usePastoral";
+import { useCurrentTerm } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
 import { formatDate } from "@/lib/utils";
@@ -18,13 +19,15 @@ export default function MentorPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<MentorReport | null>(null);
   const [form, setForm] = useState({ ...EMPTY });
+  const currentTerm = useCurrentTerm();
+  useEffect(() => { if (currentTerm) setForm((f) => (f.term ? f : { ...f, term: currentTerm })); }, [currentTerm]);
 
   const { data, isLoading, isError, refetch } = useMentorReports();
   const create = useCreateMentorReport();
   const update = useUpdateMentorReport();
   const remove = useDeleteMentorReport();
 
-  const reset = () => { setForm({ ...EMPTY }); setEditing(null); setShowForm(false); };
+  const reset = () => { setForm({ ...EMPTY, term: currentTerm }); setEditing(null); setShowForm(false); };
   const openEdit = (m: MentorReport) => {
     setForm({ student_id: m.student_id, term: m.term ?? "", period: m.period ?? "", summary: m.summary ?? "", strengths: m.strengths ?? "", concerns: m.concerns ?? "", recommendations: m.recommendations ?? "" });
     setEditing(m); setShowForm(true);

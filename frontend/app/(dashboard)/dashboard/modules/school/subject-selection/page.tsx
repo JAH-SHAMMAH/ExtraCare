@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useSubjectSelections, useCreateSelection, useUpdateSelection, useDeleteSelection, useSubjectOptions,
 } from "@/hooks/useAcademics";
+import { useCurrentSession } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
 import { cn, formatDate } from "@/lib/utils";
@@ -31,8 +32,10 @@ export default function SubjectSelectionPage() {
   const create = useCreateSelection();
   const update = useUpdateSelection();
   const remove = useDeleteSelection();
+  const { data: cur } = useCurrentSession();
+  useEffect(() => { if (cur?.term || cur?.name) setForm((f) => ({ ...f, term: f.term || cur?.term || "", academic_year: f.academic_year || cur?.name || "" })); }, [cur?.term, cur?.name]);
 
-  const reset = () => { setForm({ ...EMPTY }); setShowForm(false); };
+  const reset = () => { setForm({ ...EMPTY, term: cur?.term || "", academic_year: cur?.name || "" }); setShowForm(false); };
   const submit = () => create.mutate(
     { student_id: form.student_id, subject_id: form.subject_id, academic_year: form.academic_year || null, term: form.term || null, status: form.status },
     { onSuccess: reset },

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useStudents, useReportCard } from "@/hooks/useSchool";
+import { useTermState } from "@/hooks/usePlatform";
 import { cn, getInitials } from "@/lib/utils";
 import { FileText, Search, Printer, Loader2 } from "lucide-react";
 import { PrintLetterhead } from "@/components/branding/Brand";
@@ -11,7 +12,7 @@ import type { Student } from "@/types";
 export default function ReportCardsPage() {
   const [search, setSearch] = useState("");
   const [selectedStudent, setSelectedStudent] = useState("");
-  const [term, setTerm] = useState<string>(DEFAULT_TERM);
+  const [term, setTerm] = useTermState(DEFAULT_TERM);
 
   const { data: students, isLoading: studentsLoading } = useStudents({ search: search || undefined, page_size: 50 });
   const { data: reportCard, isLoading: rcLoading } = useReportCard(selectedStudent, term);
