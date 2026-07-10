@@ -235,6 +235,8 @@ class BehaviourCreate(BaseModel):
     student_id: str
     type: str = "positive"
     category: Optional[str] = None
+    category_id: Optional[str] = None
+    subcategory_id: Optional[str] = None
     description: str
     points: int = 0
     incident_date: date
@@ -246,6 +248,8 @@ class BehaviourResponse(_OrmBase):
     recorded_by: str
     type: str
     category: Optional[str]
+    category_id: Optional[str]
+    subcategory_id: Optional[str]
     description: str
     points: int
     incident_date: date
