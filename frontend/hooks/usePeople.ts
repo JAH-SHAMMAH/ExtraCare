@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { parentsApi, hrDevApi } from "@/lib/api";
-import type { ParentLink, StaffAssessment, TalentCandidate, Paginated } from "@/types";
+import type { ParentLink, StaffAssessment, TalentCandidate, AssessmentCriterion, Paginated } from "@/types";
 
 // ── Parents Directory ────────────────────────────────────────────────────────
 
@@ -94,6 +94,34 @@ export function useDeleteAssessment() {
       toast.success("Assessment removed.");
     },
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to remove assessment."),
+  });
+}
+
+// ── Assessment criteria (Setup Staff Assessment) ─────────────────────────────
+
+export function useAssessmentCriteria() {
+  return useQuery<{ items: AssessmentCriterion[] }>({
+    queryKey: ["assessment-criteria"],
+    queryFn: () => hrDevApi.criteria.list(),
+  });
+}
+
+export function useSaveAssessmentCriterion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id?: string; data: object }) =>
+      id ? hrDevApi.criteria.update(id, data) : hrDevApi.criteria.create(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["assessment-criteria"] }); toast.success("Criterion saved."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save criterion."),
+  });
+}
+
+export function useDeleteAssessmentCriterion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => hrDevApi.criteria.remove(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["assessment-criteria"] }); toast.success("Criterion deleted."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to delete criterion."),
   });
 }
 
