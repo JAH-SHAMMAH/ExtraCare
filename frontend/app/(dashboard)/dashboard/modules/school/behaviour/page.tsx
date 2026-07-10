@@ -6,10 +6,13 @@ import {
   useCreateBehaviourRecord,
   useDeleteBehaviourRecord,
 } from "@/hooks/useSchoolExperience";
+import { useBehaviourCategories, useBehaviourSubcategories, useBehaviourSettings } from "@/hooks/useBehaviourConfig";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn, formatDate } from "@/lib/utils";
 import { Smile, Frown, Meh, Plus, X, Loader2, Trash2 } from "lucide-react";
-import type { BehaviourRecord, BehaviourType } from "@/types";
+import type { BehaviourRecord, BehaviourType, BehaviourCategory, BehaviourSubCategory } from "@/types";
+
+const OTHER = "__other__";
 
 const TYPE_META: Record<BehaviourType, { label: string; icon: typeof Smile; tone: string }> = {
   positive: { label: "Positive", icon: Smile, tone: "bg-emerald-50 text-emerald-700 border-emerald-200" },
@@ -32,27 +35,70 @@ export default function BehaviourPage() {
   const createRecord = useCreateBehaviourRecord();
   const deleteRecord = useDeleteBehaviourRecord();
 
+  const { data: catData } = useBehaviourCategories();
+  const cats: BehaviourCategory[] = catData?.items || [];
+  const { data: settings } = useBehaviourSettings();
+  const settingsDefault = settings?.default_points ?? 1;
+
   const [form, setForm] = useState({
     student_id: "",
     type: "positive" as BehaviourType,
     category: "",
+    category_id: "",
+    subcategory_id: "",
     description: "",
     points: 1,
     incident_date: new Date().toISOString().substring(0, 10),
   });
+  // "" = nothing chosen, OTHER = free-text escape hatch, else a taxonomy category id.
+  const [catChoice, setCatChoice] = useState("");
 
-  const resetForm = () => {
-    setForm({
-      student_id: "", type: "positive", category: "",
-      description: "", points: 1,
-      incident_date: new Date().toISOString().substring(0, 10),
+  // Sub-categories for the chosen category feed the second dropdown.
+  const { data: subData } = useBehaviourSubcategories(form.category_id || undefined);
+  const subs: BehaviourSubCategory[] = subData?.items || [];
+
+  const blank = () => ({
+    student_id: "", type: "positive" as BehaviourType, category: "", category_id: "", subcategory_id: "",
+    description: "", points: settingsDefault,
+    incident_date: new Date().toISOString().substring(0, 10),
+  });
+
+  const openForm = () => { setForm(blank()); setCatChoice(""); setShowForm(true); };
+
+  const resetForm = () => { setForm(blank()); setCatChoice(""); setShowForm(false); };
+
+  const onCategoryChange = (v: string) => {
+    setCatChoice(v);
+    if (v === OTHER) { setForm((f) => ({ ...f, category_id: "", subcategory_id: "", category: "" })); return; }
+    if (v === "") { setForm((f) => ({ ...f, category_id: "", subcategory_id: "", category: "" })); return; }
+    const c = cats.find((x) => x.id === v);
+    setForm((f) => ({
+      ...f,
+      category_id: v,
+      subcategory_id: "",
+      category: c?.name ?? "",           // denormalised for the list's Category column
+      type: (c?.type ?? f.type) as BehaviourType,
+      points: c?.default_points ?? settingsDefault,   // category → settings default
+    }));
+  };
+
+  const onSubcategoryChange = (v: string) => {
+    setForm((f) => {
+      const c = cats.find((x) => x.id === f.category_id);
+      const s = subs.find((x) => x.id === v);
+      const points = v ? (s?.default_points ?? c?.default_points ?? settingsDefault) : f.points;  // sub → category → settings
+      return { ...f, subcategory_id: v, points };
     });
-    setShowForm(false);
   };
 
   const handleSubmit = () => {
     createRecord.mutate(
-      { ...form, category: form.category || null },
+      {
+        ...form,
+        category: form.category || null,
+        category_id: form.category_id || null,
+        subcategory_id: form.subcategory_id || null,
+      },
       { onSuccess: resetForm },
     );
   };
@@ -81,7 +127,7 @@ export default function BehaviourPage() {
           </p>
         </div>
         {canWrite && (
-          <button onClick={() => setShowForm(true)} className="btn-primary gap-2">
+          <button onClick={openForm} className="btn-primary gap-2">
             <Plus size={15} />
             Record Incident
           </button>
@@ -123,8 +169,27 @@ export default function BehaviourPage() {
             </div>
             <div>
               <label className="label">Category</label>
-              <input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="input" placeholder="Punctuality, Teamwork..." />
+              <select value={catChoice} onChange={(e) => onCategoryChange(e.target.value)} className="input">
+                <option value="">— Select category —</option>
+                {cats.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+                <option value={OTHER}>Other (type it in)</option>
+              </select>
+              {cats.length === 0 && <p className="text-[11px] text-slate-400 mt-1">No categories defined yet — set them up under Behaviour Tracker › Manage, or use “Other”.</p>}
             </div>
+            {catChoice === OTHER ? (
+              <div>
+                <label className="label">Category (other)</label>
+                <input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="input" placeholder="Punctuality, Teamwork..." />
+              </div>
+            ) : form.category_id ? (
+              <div>
+                <label className="label">Sub-category</label>
+                <select value={form.subcategory_id} onChange={(e) => onSubcategoryChange(e.target.value)} className="input" disabled={subs.length === 0}>
+                  <option value="">{subs.length === 0 ? "— None defined —" : "— None —"}</option>
+                  {subs.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+                </select>
+              </div>
+            ) : null}
             <div>
               <label className="label">Points</label>
               <input type="number" value={form.points} onChange={(e) => setForm({ ...form, points: Number(e.target.value) })} className="input" />
