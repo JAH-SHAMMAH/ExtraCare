@@ -193,7 +193,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
   {
     key: "people",
     requiredModule: "school",
-    label: "People & HR",
+    label: "Staff Management",
     icon: Briefcase,
     items: [
       { href: "/dashboard/modules/school/teachers", label: "Teachers", icon: UserCheck },
