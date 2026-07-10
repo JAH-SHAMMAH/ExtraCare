@@ -119,6 +119,7 @@ class ExamCreate(BaseModel):
     description: Optional[str] = None
     class_id: Optional[str] = None
     subject_id: Optional[str] = None
+    term: Optional[str] = None  # tags fed Grade rows; required before the gradebook feed
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     duration_minutes: int = 60
@@ -132,6 +133,8 @@ class ExamCreate(BaseModel):
 class ExamUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
+    subject_id: Optional[str] = None
+    term: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     duration_minutes: Optional[int] = None
@@ -148,6 +151,7 @@ class ExamResponse(_OrmBase):
     description: Optional[str]
     class_id: Optional[str]
     subject_id: Optional[str]
+    term: Optional[str]
     created_by: str
     start_time: Optional[datetime]
     end_time: Optional[datetime]

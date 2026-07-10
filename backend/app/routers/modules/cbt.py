@@ -41,7 +41,10 @@ from app.models.modules.school import (
     AttemptStatus,
     QuestionType,
     Student,
+    Grade,
+    GradeStatus,
 )
+from app.services.grading import grade_letter
 from app.schemas.question_bank import BankItemCreate, BankItemUpdate, ComposeFromBank
 from app.schemas.cbt_ops import InterventionCreate, InterventionUpdate, CBTSettingsUpdate
 from app.schemas.school_experience import (
@@ -990,6 +993,75 @@ def _results_released(exam: CBTExam) -> bool:
     return (not exam.hold_results) or (exam.results_published_at is not None)
 
 
+# ── Gradebook feed (Phase 2) ────────────────────────────────────────────────────
+# Published CBT results feed the existing gradebook as DRAFT Grade rows, which
+# staff then release to parents via the school router's publish_grades — so the
+# report card's "never publish a term blind" fail-safe stays authoritative.
+
+def _feed_block_reason(exam: CBTExam) -> str | None:
+    """Why this exam can't feed the gradebook yet, or None if it can.
+    Option I: a held exam whose results aren't published feeds nothing — parents
+    must never see a grade the student hasn't been shown. A fed Grade also needs a
+    subject and a term so the gradebook can scope and publish it downstream."""
+    if exam.hold_results and exam.results_published_at is None:
+        return "Publish results to students before sending them to the gradebook."
+    if not exam.subject_id:
+        return "Set a subject on the exam before sending results to the gradebook."
+    if not exam.term:
+        return "Set a term on the exam before sending results to the gradebook."
+    return None
+
+
+async def _feed_gradebook(db: AsyncSession, exam: CBTExam, org_id: str, actor: User) -> int:
+    """Upsert one DRAFT Grade per student from their best GRADED, non-superseded
+    attempt. Scores are normalised to a percentage out of 100 so CBT marks are
+    comparable with manual exams on the report card. Preconditions (subject, term,
+    results released) are assumed already checked by _feed_block_reason. Idempotent:
+    re-running updates the mark in place and never changes an existing row's publish
+    status. Returns the number of rows written."""
+    attempts = (await db.execute(
+        _active(select(CBTAttempt).where(
+            CBTAttempt.exam_id == exam.id,
+            CBTAttempt.org_id == org_id,
+            CBTAttempt.status == AttemptStatus.GRADED,
+        ))
+    )).scalars().all()
+    # Best (highest percentage) attempt per student — the retake convention.
+    best: dict[str, tuple[CBTAttempt, float]] = {}
+    for a in attempts:
+        mx = float(a.max_score or 0)
+        pct = (float(a.score or 0) / mx * 100) if mx > 0 else 0.0
+        cur = best.get(a.student_id)
+        if cur is None or pct > cur[1]:
+            best[a.student_id] = (a, pct)
+    existing = {g.student_id: g for g in (await db.execute(
+        select(Grade).where(Grade.cbt_exam_id == exam.id, Grade.org_id == org_id)
+    )).scalars().all()}
+    written = 0
+    for student_id, (_attempt, raw_pct) in best.items():
+        pct = round(raw_pct, 2)
+        letter = grade_letter(pct, 100)
+        g = existing.get(student_id)
+        if g:
+            # Update the mark in place; leave status untouched so a re-sync of an
+            # already-published grade keeps parents in sync rather than retracting it.
+            g.score = pct
+            g.max_score = 100
+            g.grade_letter = letter
+            g.subject_id = exam.subject_id
+            g.term = exam.term
+            g.graded_by = actor.id
+        else:
+            db.add(Grade(
+                student_id=student_id, subject_id=exam.subject_id, cbt_exam_id=exam.id,
+                term=exam.term, score=pct, max_score=100, grade_letter=letter,
+                status=GradeStatus.DRAFT, graded_by=actor.id, org_id=org_id,
+            ))
+        written += 1
+    await db.flush()
+    return written
+
+
 @router.get("/exams/{exam_id}/results", dependencies=[_bank_read])
 async def exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Result Manager for one exam: every attempt (student, score, %, review flag)
@@ -1011,6 +1083,9 @@ async def exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current
     )).scalar_one_or_none()
     pass_pct = _resolve_pass_pct(exam, settings_row)
     rows = _result_rows(attempts, names, ungraded, total_points, pass_pct / 100.0)
+    fed_count = (await db.execute(
+        select(func.count(Grade.id)).where(Grade.cbt_exam_id == exam.id, Grade.org_id == org_id)
+    )).scalar() or 0
 
     # Superseded (reset) attempts are still SHOWN (badged) but excluded from every
     # stat — they don't represent the student's current standing.
@@ -1032,9 +1107,15 @@ async def exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current
                  "hold_results": bool(exam.hold_results),
                  "results_published_at": exam.results_published_at.isoformat() if exam.results_published_at else None,
                  "published_pass_percentage": exam.published_pass_percentage,
-                 "class_id": exam.class_id, "subject_id": exam.subject_id},
+                 "class_id": exam.class_id, "subject_id": exam.subject_id, "term": exam.term},
         "attempts": rows,
         "stats": stats,
+        "gradebook": {
+            "block_reason": _feed_block_reason(exam),
+            "fed_count": fed_count,
+            "term": exam.term,
+            "subject_id": exam.subject_id,
+        },
     }
 
 
@@ -1059,10 +1140,23 @@ async def publish_exam_results(
         resource_type="CBTExam", resource_id=exam.id,
         resource_label=f"published CBT results (pass ≥ {exam.published_pass_percentage}%)", request=request,
     )
+    # Auto-feed the gradebook once released, when the exam is fully tagged. If a
+    # subject or term is missing we DON'T block the release to students — we just
+    # skip the feed and report why, so the teacher can fix it and Send to gradebook.
+    reason = _feed_block_reason(exam)
+    fed = 0
+    if reason is None:
+        fed = await _feed_gradebook(db, exam, org_id, current_user)
+        await log_action(
+            db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+            resource_type="Grade", resource_id=exam.id,
+            resource_label=f"fed {fed} CBT grade(s) from {exam.title}", request=request,
+        )
     return {
         "published": True,
         "results_published_at": exam.results_published_at.isoformat(),
         "published_pass_percentage": exam.published_pass_percentage,
+        "gradebook": {"fed": fed, "blocked": reason},
     }
 
 
@@ -1078,13 +1172,48 @@ async def unpublish_exam_results(
     exam.results_published_at = None
     exam.results_published_by = None
     exam.published_pass_percentage = None
+    # Option I: retracting the student's view must also pull any grades this exam
+    # fed back to DRAFT, so parents don't keep seeing a grade the student can no
+    # longer see. Rows are kept (not deleted) — the marks survive a re-publish.
+    fed_grades = (await db.execute(
+        select(Grade).where(Grade.cbt_exam_id == exam.id, Grade.org_id == org_id)
+    )).scalars().all()
+    redrafted = 0
+    for g in fed_grades:
+        if g.status != GradeStatus.DRAFT:
+            g.status = GradeStatus.DRAFT
+            redrafted += 1
     await db.flush()
     await log_action(
         db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
         resource_type="CBTExam", resource_id=exam.id,
-        resource_label="unpublished CBT results", severity="warning", request=request,
+        resource_label=f"unpublished CBT results ({redrafted} grade(s) redrafted)",
+        severity="warning", request=request,
     )
-    return {"published": False}
+    return {"published": False, "grades_redrafted": redrafted}
+
+
+@router.post("/exams/{exam_id}/feed-gradebook", dependencies=[_bank_write])
+async def feed_gradebook(
+    exam_id: str, request: Request = None,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    """Push this exam's results into the gradebook as DRAFT grades (best graded
+    attempt per student, normalised to a percentage). Held exams must have results
+    published first; the exam needs a subject and a term. Staff then release the
+    grades to parents via the gradebook's own publish step."""
+    org_id = current_user.org_id
+    exam = await _get_exam_or_404(db, exam_id, org_id)
+    reason = _feed_block_reason(exam)
+    if reason:
+        raise HTTPException(status_code=422, detail=reason)
+    fed = await _feed_gradebook(db, exam, org_id, current_user)
+    await log_action(
+        db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+        resource_type="Grade", resource_id=exam.id,
+        resource_label=f"fed {fed} CBT grade(s) from {exam.title}", request=request,
+    )
+    return {"fed": fed, "term": exam.term, "subject_id": exam.subject_id}
 
 
 @router.get("/exams/{exam_id}/results/export", dependencies=[_bank_read])
