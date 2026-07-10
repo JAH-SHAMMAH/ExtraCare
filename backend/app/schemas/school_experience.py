@@ -210,6 +210,7 @@ class AttemptResponse(_OrmBase):
     max_score: Optional[float]
     status: str
     submitted_late: bool = False
+    superseded_at: Optional[datetime] = None
     # Absolute UTC instant this attempt must be submitted by (started_at +
     # duration, capped by the exam window). Computed server-side; None if the
     # exam has no duration. Clients run their countdown against this.

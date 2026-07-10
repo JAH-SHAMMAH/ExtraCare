@@ -42,7 +42,7 @@ async def _preset_user(db, org, slug) -> User:
 
 # ── Reset ──────────────────────────────────────────────────────────────────────
 
-async def test_reset_deletes_attempt_and_answers(db, org, teacher, student):
+async def test_reset_supersedes_attempt_keeping_answers(db, org, teacher, student):
     exam = CBTExam(id=str(uuid.uuid4()), title="Q", created_by=teacher.id, org_id=org.id,
                    status=ExamStatus.PUBLISHED, total_points=2)
     attempt = CBTAttempt(id=str(uuid.uuid4()), exam_id=exam.id, student_id=student.id,
@@ -53,9 +53,11 @@ async def test_reset_deletes_attempt_and_answers(db, org, teacher, student):
     await db.commit()
 
     res = await reset_attempt(attempt.id, request=None, db=db, current_user=teacher)
-    assert res["reset"] is True
-    assert (await db.execute(select(CBTAttempt).where(CBTAttempt.id == attempt.id))).scalar_one_or_none() is None
-    assert (await db.execute(select(CBTAnswer).where(CBTAnswer.attempt_id == attempt.id))).scalar_one_or_none() is None
+    assert res["reset"] is True and res["superseded_at"] is not None
+    # soft delete: attempt + answers are KEPT, attempt marked superseded (by whom)
+    row = (await db.execute(select(CBTAttempt).where(CBTAttempt.id == attempt.id))).scalar_one()
+    assert row.superseded_at is not None and row.superseded_by == teacher.id
+    assert (await db.execute(select(CBTAnswer).where(CBTAnswer.attempt_id == attempt.id))).scalar_one_or_none() is not None
 
 
 async def test_reset_404(db, org, teacher):

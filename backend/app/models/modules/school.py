@@ -480,6 +480,11 @@ class CBTAttempt(Base, UUIDMixin, TimestampMixin, TenantMixin):
     status = Column(Enum(AttemptStatus), default=AttemptStatus.IN_PROGRESS, nullable=False)
     # True when submitted after the deadline (within the accepted late window).
     submitted_late = Column(Boolean, default=False, nullable=False)
+    # Reset-for-retake soft-delete: a superseded attempt is kept for the record but
+    # doesn't count toward the attempt limit and is excluded from Result Manager
+    # stats. NULL = active.
+    superseded_at = Column(DateTime(timezone=True), nullable=True)
+    superseded_by = Column(String(36), ForeignKey("users.id"), nullable=True)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 

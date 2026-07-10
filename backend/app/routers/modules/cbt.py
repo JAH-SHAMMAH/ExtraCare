@@ -381,6 +381,16 @@ def _attempt_dict(attempt: CBTAttempt, exam: CBTExam | None = None) -> dict:
     return data
 
 
+def _active(q):
+    """Restrict an attempts query to ACTIVE (non-superseded) attempts. Reset
+    supersedes an attempt for a retake — superseded attempts are kept for the
+    record but don't count toward the limit, aren't resumed, and are left out of
+    a student's own listing. (The Result Manager still SHOWS them, badged, but
+    excludes them from its stats — it filters in Python, not via this helper.)
+    Centralised so no call site forgets the filter."""
+    return q.where(CBTAttempt.superseded_at.is_(None))
+
+
 @router.post("/exams/{exam_id}/attempts", status_code=201, dependencies=[_can_read])
 async def start_attempt(
     exam_id: str,
@@ -430,29 +440,29 @@ async def start_attempt(
         )
         raise HTTPException(status_code=400, detail="Exam is not currently live.")
 
-    # One in-progress attempt per student per exam
-    existing = (await db.execute(
+    # One in-progress attempt per student per exam (a superseded one isn't resumed).
+    existing = (await db.execute(_active(
         select(CBTAttempt).where(
             CBTAttempt.exam_id == exam.id,
             CBTAttempt.student_id == student_id,
             CBTAttempt.org_id == current_user.org_id,
             CBTAttempt.status == AttemptStatus.IN_PROGRESS,
         )
-    )).scalar_one_or_none()
+    ))).scalar_one_or_none()
     if existing:
         return _attempt_dict(existing, exam)
 
-    # Attempt cap: 1 = single sitting (default), 0 = unlimited. Count only
-    # completed attempts, so the in-progress resume above isn't double-counted.
+    # Attempt cap: 1 = single sitting (default), 0 = unlimited. Count only ACTIVE
+    # completed attempts — a reset (superseded) attempt frees the slot for a retake.
     if exam.max_attempts and exam.max_attempts > 0:
-        completed = (await db.execute(
+        completed = (await db.execute(_active(
             select(func.count()).select_from(CBTAttempt).where(
                 CBTAttempt.exam_id == exam.id,
                 CBTAttempt.student_id == student_id,
                 CBTAttempt.org_id == org_id,
                 CBTAttempt.status.in_([AttemptStatus.SUBMITTED, AttemptStatus.GRADED]),
             )
-        )).scalar_one()
+        ))).scalar_one()
         if completed >= exam.max_attempts:
             raise HTTPException(status_code=409, detail={
                 "code": "attempt_limit_reached",
@@ -557,7 +567,7 @@ async def list_attempts(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    query = select(CBTAttempt).where(CBTAttempt.org_id == current_user.org_id)
+    query = _active(select(CBTAttempt).where(CBTAttempt.org_id == current_user.org_id))
     is_staff, own_student_id = await _attempt_scope(db, current_user)
     if not is_staff:
         # Students see only their own attempts, regardless of any passed student_id.
@@ -949,6 +959,7 @@ def _result_rows(attempts, names, ungraded, total_points, pass_fraction):
             "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
             "submitted_late": bool(a.submitted_late),
             "passed": passed,
+            "superseded": a.superseded_at is not None,
             "needs_review": ungraded.get(a.id, 0) > 0,
         })
     return rows
@@ -977,12 +988,15 @@ async def exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current
     pass_pct = exam.pass_percentage if exam.pass_percentage is not None else (org_default if org_default is not None else 50)
     rows = _result_rows(attempts, names, ungraded, total_points, pass_pct / 100.0)
 
-    scored = [r for r in rows if r["status"] != "in_progress"]
+    # Superseded (reset) attempts are still SHOWN (badged) but excluded from every
+    # stat — they don't represent the student's current standing.
+    active = [r for r in rows if not r["superseded"]]
+    scored = [r for r in active if r["status"] != "in_progress"]
     scores = [r["score"] for r in scored]
     stats = {
-        "attempts": len(rows),
+        "attempts": len(active),
         "completed": len(scored),
-        "pending_review": sum(1 for r in rows if r["needs_review"]),
+        "pending_review": sum(1 for r in active if r["needs_review"]),
         "average": round(sum(scores) / len(scores), 1) if scores else 0.0,
         "highest": max(scores) if scores else 0.0,
         "lowest": min(scores) if scores else 0.0,
@@ -1125,23 +1139,22 @@ async def reset_attempt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Delete an attempt + its answers so the student can retake the exam."""
+    """Supersede an attempt (soft delete) so the student can retake. The attempt
+    and its answers are KEPT for the record — it just stops counting toward the
+    attempt limit and drops out of the Result Manager stats (shown, badged)."""
     org_id = current_user.org_id
     attempt = await _load_attempt(db, attempt_id, org_id)
-    answers = (await db.execute(
-        select(CBTAnswer).where(CBTAnswer.attempt_id == attempt.id, CBTAnswer.org_id == org_id)
-    )).scalars().all()
-    for a in answers:
-        await db.delete(a)
-    await db.delete(attempt)
-    await db.flush()
+    if attempt.superseded_at is None:
+        attempt.superseded_at = datetime.now(timezone.utc)
+        attempt.superseded_by = current_user.id
+        await db.flush()
     await log_action(
-        db, AuditAction.RECORD_DELETED, org_id, actor=current_user,
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
         resource_type="CBTAttempt", resource_id=attempt_id,
-        resource_label=f"reset attempt for retake ({len(answers)} answers cleared)",
+        resource_label="reset attempt (superseded for retake)",
         severity="warning", request=request,
     )
-    return {"reset": True}
+    return {"reset": True, "superseded_at": attempt.superseded_at.isoformat() if attempt.superseded_at else None}
 
 
 def _intervention_dict(iv: CBTIntervention, student_name) -> dict:
