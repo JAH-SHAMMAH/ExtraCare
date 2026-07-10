@@ -22,17 +22,18 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import get_current_active_user
 from app.core.permissions import PermissionChecker
 from app.models.user import User
-from app.models.hrm import StaffAssessment, TalentCandidate
+from app.models.hrm import StaffAssessment, TalentCandidate, StaffAssessmentCriterion, StaffAssessmentScore
 from app.schemas.hr_development import (
     StaffAssessmentCreate, StaffAssessmentUpdate, StaffAssessmentResponse, StaffAssessmentListResponse,
     TalentCandidateCreate, TalentCandidateUpdate, TalentCandidateResponse, TalentCandidateListResponse,
+    CriterionCreate, CriterionUpdate, CriterionResponse, CriterionListResponse, ScoreResponse, ScoreInput,
     _ASSESSMENT_STATUSES, _TALENT_STAGES,
 )
 from app.services.audit_service import log_action
@@ -46,9 +47,107 @@ router = APIRouter(prefix="/hr", tags=["HR Development"])
 _can_hr = Depends(PermissionChecker("hr:write"))
 
 
+# ── Assessment criteria / rubric ("Setup Staff Assessment") ──────────────────
+
+async def _load_criterion(db: AsyncSession, cid: str, org_id: str) -> StaffAssessmentCriterion:
+    c = (await db.execute(
+        select(StaffAssessmentCriterion).where(
+            StaffAssessmentCriterion.id == cid, StaffAssessmentCriterion.org_id == org_id)
+    )).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Criterion not found.")
+    return c
+
+
+@router.get("/assessment-criteria", response_model=CriterionListResponse, dependencies=[_can_hr])
+async def list_criteria(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(
+        select(StaffAssessmentCriterion).where(StaffAssessmentCriterion.org_id == current_user.org_id)
+        .order_by(StaffAssessmentCriterion.position, StaffAssessmentCriterion.name)
+    )).scalars().all()
+    return CriterionListResponse(items=[CriterionResponse.model_validate(r) for r in rows])
+
+
+@router.post("/assessment-criteria", response_model=CriterionResponse, status_code=201, dependencies=[_can_hr])
+async def create_criterion(payload: CriterionCreate, request: Request = None,
+                           db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = StaffAssessmentCriterion(**payload.model_dump(), org_id=current_user.org_id)
+    db.add(c)
+    await db.flush()
+    await log_action(db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+                     resource_type="StaffAssessmentCriterion", resource_id=c.id, resource_label=c.name, request=request)
+    return CriterionResponse.model_validate(c)
+
+
+@router.patch("/assessment-criteria/{criterion_id}", response_model=CriterionResponse, dependencies=[_can_hr])
+async def update_criterion(criterion_id: str, payload: CriterionUpdate, request: Request = None,
+                           db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = await _load_criterion(db, criterion_id, current_user.org_id)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(c, field, value)
+    await db.flush()
+    await log_action(db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+                     resource_type="StaffAssessmentCriterion", resource_id=c.id, resource_label=c.name, request=request)
+    return CriterionResponse.model_validate(c)
+
+
+@router.delete("/assessment-criteria/{criterion_id}", status_code=204, dependencies=[_can_hr])
+async def delete_criterion(criterion_id: str, request: Request = None,
+                           db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = await _load_criterion(db, criterion_id, current_user.org_id)
+    used = (await db.execute(select(func.count(StaffAssessmentScore.id)).where(
+        StaffAssessmentScore.criterion_id == criterion_id))).scalar()
+    if used:
+        raise HTTPException(status_code=409, detail="Criterion is in use by assessments. Deactivate it instead.")
+    await db.delete(c)
+    await log_action(db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
+                     resource_type="StaffAssessmentCriterion", resource_id=criterion_id,
+                     resource_label=c.name, severity="warning", request=request)
+
+
 # ── Staff Assessment ─────────────────────────────────────────────────────────
 
-def _assessment_response(a: StaffAssessment) -> StaffAssessmentResponse:
+def _overall_from_scores(scored: list[tuple[StaffAssessmentCriterion, int]]) -> int | None:
+    """Weighted average of per-criterion scores, normalised to the 1–5 scale."""
+    total_w = sum(c.weight for c, _ in scored)
+    if not total_w:
+        return None
+    frac = sum(c.weight * (sc / c.max_score) for c, sc in scored if c.max_score) / total_w
+    return max(1, min(5, round(frac * 5)))
+
+
+async def _apply_scores(db: AsyncSession, assessment: StaffAssessment, score_inputs: list[ScoreInput], org_id: str) -> int | None:
+    """Replace an assessment's scores; returns the derived overall rating (or None
+    when no scores). Each criterion is validated to belong to the org."""
+    await db.execute(delete(StaffAssessmentScore).where(StaffAssessmentScore.assessment_id == assessment.id))
+    scored: list[tuple[StaffAssessmentCriterion, int]] = []
+    for si in score_inputs:
+        crit = await _load_criterion(db, si.criterion_id, org_id)
+        db.add(StaffAssessmentScore(assessment_id=assessment.id, criterion_id=crit.id,
+                                    score=si.score, comment=si.comment, org_id=org_id))
+        scored.append((crit, si.score))
+    await db.flush()
+    return _overall_from_scores(scored) if scored else None
+
+
+async def _scores_by_assessment(db: AsyncSession, assessment_ids: list[str], org_id: str) -> dict[str, list[ScoreResponse]]:
+    if not assessment_ids:
+        return {}
+    rows = (await db.execute(
+        select(StaffAssessmentScore, StaffAssessmentCriterion)
+        .join(StaffAssessmentCriterion, StaffAssessmentScore.criterion_id == StaffAssessmentCriterion.id)
+        .where(StaffAssessmentScore.assessment_id.in_(assessment_ids), StaffAssessmentScore.org_id == org_id)
+        .order_by(StaffAssessmentCriterion.position, StaffAssessmentCriterion.name)
+    )).all()
+    out: dict[str, list[ScoreResponse]] = {}
+    for s, c in rows:
+        out.setdefault(s.assessment_id, []).append(ScoreResponse(
+            criterion_id=s.criterion_id, criterion_name=c.name, category=c.category,
+            score=s.score, max_score=c.max_score, weight=c.weight, comment=s.comment))
+    return out
+
+
+def _assessment_response(a: StaffAssessment, scores: list[ScoreResponse] | None = None) -> StaffAssessmentResponse:
     return StaffAssessmentResponse(
         id=a.id,
         staff_user_id=a.staff_user_id,
@@ -62,10 +161,16 @@ def _assessment_response(a: StaffAssessment) -> StaffAssessmentResponse:
         improvements=a.improvements,
         goals=a.goals,
         status=a.status,
+        scores=scores or [],
         created_at=a.created_at,
         updated_at=a.updated_at,
         org_id=a.org_id,
     )
+
+
+async def _assessment_response_with_scores(db: AsyncSession, a: StaffAssessment, org_id: str) -> StaffAssessmentResponse:
+    scores = (await _scores_by_assessment(db, [a.id], org_id)).get(a.id, [])
+    return _assessment_response(a, scores)
 
 
 async def _load_assessment(db: AsyncSession, aid: str, org_id: str) -> StaffAssessment:
@@ -104,8 +209,9 @@ async def list_assessments(
         base.order_by(StaffAssessment.created_at.desc())
         .offset((page - 1) * page_size).limit(page_size)
     )).scalars().all()
+    scores_map = await _scores_by_assessment(db, [r.id for r in rows], current_user.org_id)
     return StaffAssessmentListResponse(
-        items=[_assessment_response(r) for r in rows],
+        items=[_assessment_response(r, scores_map.get(r.id, [])) for r in rows],
         total=total, page=page, page_size=page_size,
     )
 
@@ -143,13 +249,19 @@ async def create_assessment(
     )
     db.add(a)
     await db.flush()
+    # Per-criterion scores (when supplied) derive the overall rating.
+    if payload.scores is not None:
+        derived = await _apply_scores(db, a, payload.scores, current_user.org_id)
+        if derived is not None:
+            a.overall_rating = derived
+    await db.flush()
     await log_action(
         db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
         resource_type="StaffAssessment", resource_id=a.id,
         resource_label=f"appraisal of {staff.full_name} ({a.period})",
         metadata={"staff_user_id": staff.id, "status": a.status}, request=request,
     )
-    return _assessment_response(await _load_assessment(db, a.id, current_user.org_id))
+    return await _assessment_response_with_scores(db, await _load_assessment(db, a.id, current_user.org_id), current_user.org_id)
 
 
 @router.patch("/assessments/{assessment_id}", response_model=StaffAssessmentResponse, dependencies=[_can_hr])
@@ -164,15 +276,20 @@ async def update_assessment(
     data = payload.model_dump(exclude_unset=True)
     if "status" in data and data["status"] not in _ASSESSMENT_STATUSES:
         raise HTTPException(status_code=422, detail=f"status must be one of {sorted(_ASSESSMENT_STATUSES)}")
+    scores = data.pop("scores", None)  # not a column — handled separately
     for field, value in data.items():
         setattr(a, field, value)
+    if scores is not None:
+        derived = await _apply_scores(db, a, payload.scores, current_user.org_id)
+        if derived is not None:
+            a.overall_rating = derived
     await db.flush()
     await log_action(
         db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
         resource_type="StaffAssessment", resource_id=a.id,
         resource_label=f"appraisal {a.period}", request=request,
     )
-    return _assessment_response(await _load_assessment(db, a.id, current_user.org_id))
+    return await _assessment_response_with_scores(db, await _load_assessment(db, a.id, current_user.org_id), current_user.org_id)
 
 
 @router.delete("/assessments/{assessment_id}", status_code=204, dependencies=[_can_hr])

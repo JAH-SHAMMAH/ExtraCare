@@ -18,7 +18,7 @@ Both models are tenant-scoped (``org_id``) and the HR router pins
 """
 from __future__ import annotations
 
-from sqlalchemy import Column, String, Date, DateTime, Text, Float, Integer, ForeignKey, JSON, Index, UniqueConstraint
+from sqlalchemy import Column, String, Date, DateTime, Text, Float, Integer, Boolean, ForeignKey, JSON, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin
@@ -158,4 +158,35 @@ class TalentCandidate(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMi
     __table_args__ = (
         # Kanban/board view filters by stage within an org.
         Index("ix_talent_candidates_org_stage", "org_id", "stage"),
+    )
+
+
+class StaffAssessmentCriterion(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A configurable rubric line for staff appraisals ("Setup Staff Assessment").
+    The assessment form scores each active criterion; an assessment's overall
+    rating is derived as a weighted average of the per-criterion scores."""
+    __tablename__ = "staff_assessment_criteria"
+
+    name = Column(String(150), nullable=False)
+    description = Column(Text, nullable=True)
+    category = Column(String(80), nullable=True)            # grouping e.g. "Professionalism"
+    weight = Column(Integer, default=1, nullable=False)     # relative weight in the average
+    max_score = Column(Integer, default=5, nullable=False)  # rating scale top (1..max_score)
+    position = Column(Integer, default=0, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+
+class StaffAssessmentScore(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """One reviewer score against a criterion within a StaffAssessment."""
+    __tablename__ = "staff_assessment_scores"
+
+    assessment_id = Column(String(36), ForeignKey("staff_assessments.id", ondelete="CASCADE"), nullable=False, index=True)
+    criterion_id = Column(String(36), ForeignKey("staff_assessment_criteria.id"), nullable=False, index=True)
+    score = Column(Integer, nullable=False)                 # 1..criterion.max_score
+    comment = Column(Text, nullable=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("assessment_id", "criterion_id", name="uq_assessment_criterion_score"),
     )

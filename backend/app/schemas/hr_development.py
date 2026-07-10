@@ -19,6 +19,61 @@ class _OrmBase(BaseModel):
 _ASSESSMENT_STATUSES = {"draft", "finalized"}
 
 
+# ── Assessment criteria / rubric ("Setup Staff Assessment") ──────────────────
+
+class CriterionCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+    description: Optional[str] = None
+    category: Optional[str] = None
+    weight: int = Field(default=1, ge=1)
+    max_score: int = Field(default=5, ge=1, le=100)
+    position: int = 0
+    is_active: bool = True
+
+
+class CriterionUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=150)
+    description: Optional[str] = None
+    category: Optional[str] = None
+    weight: Optional[int] = Field(default=None, ge=1)
+    max_score: Optional[int] = Field(default=None, ge=1, le=100)
+    position: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class CriterionResponse(_OrmBase):
+    id: str
+    name: str
+    description: Optional[str]
+    category: Optional[str]
+    weight: int
+    max_score: int
+    position: int
+    is_active: bool
+    org_id: str
+    created_at: datetime
+
+
+class CriterionListResponse(BaseModel):
+    items: list[CriterionResponse]
+
+
+class ScoreInput(BaseModel):
+    criterion_id: str
+    score: int = Field(ge=0)
+    comment: Optional[str] = None
+
+
+class ScoreResponse(BaseModel):
+    criterion_id: str
+    criterion_name: Optional[str] = None
+    category: Optional[str] = None
+    score: int
+    max_score: Optional[int] = None
+    weight: Optional[int] = None
+    comment: Optional[str] = None
+
+
 class StaffAssessmentCreate(BaseModel):
     staff_user_id: str
     period: str = Field(min_length=1, max_length=60)
@@ -28,6 +83,8 @@ class StaffAssessmentCreate(BaseModel):
     improvements: Optional[str] = None
     goals: Optional[str] = None
     status: str = "draft"
+    # When provided, per-criterion scores drive overall_rating (weighted average).
+    scores: Optional[list[ScoreInput]] = None
 
 
 class StaffAssessmentUpdate(BaseModel):
@@ -38,6 +95,7 @@ class StaffAssessmentUpdate(BaseModel):
     improvements: Optional[str] = None
     goals: Optional[str] = None
     status: Optional[str] = None
+    scores: Optional[list[ScoreInput]] = None
 
 
 class StaffAssessmentResponse(_OrmBase):
@@ -53,6 +111,7 @@ class StaffAssessmentResponse(_OrmBase):
     improvements: Optional[str]
     goals: Optional[str]
     status: str
+    scores: list[ScoreResponse] = []
     created_at: datetime
     updated_at: datetime
     org_id: str
