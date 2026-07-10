@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useStaffAssessments, useCreateAssessment, useUpdateAssessment, useDeleteAssessment,
 } from "@/hooks/usePeople";
+import { useCurrentSession } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
 import { cn, formatDate } from "@/lib/utils";
@@ -33,9 +34,15 @@ export default function StaffAssessmentPage() {
   const updateA = useUpdateAssessment();
   const deleteA = useDeleteAssessment();
 
-  const reset = () => { setForm({ ...EMPTY }); setEditing(null); setShowForm(false); };
+  // Review period tracks the academic session: default to "<year> <term>" (e.g.
+  // "2025/2026 Term 1") from the current session, only while still empty.
+  const { data: cur } = useCurrentSession();
+  const currentPeriod = [cur?.name, cur?.term].filter(Boolean).join(" ");
+  useEffect(() => { if (currentPeriod) setForm((f) => (f.period ? f : { ...f, period: currentPeriod })); }, [currentPeriod]);
 
-  const openNew = () => { setForm({ ...EMPTY }); setEditing(null); setShowForm(true); };
+  const reset = () => { setForm({ ...EMPTY, period: currentPeriod }); setEditing(null); setShowForm(false); };
+
+  const openNew = () => { setForm({ ...EMPTY, period: currentPeriod }); setEditing(null); setShowForm(true); };
   const openEdit = (a: StaffAssessment) => {
     setForm({
       staff_user_id: a.staff_user_id,
