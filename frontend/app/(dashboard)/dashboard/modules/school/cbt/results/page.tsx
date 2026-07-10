@@ -17,7 +17,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 interface AttemptRow {
   id: string; student_id: string; student_name: string | null; score: number; max_score: number;
-  percentage: number; status: string; submitted_at: string | null; needs_review: boolean; submitted_late: boolean; passed: boolean | null;
+  percentage: number; status: string; submitted_at: string | null; needs_review: boolean; submitted_late: boolean; passed: boolean | null; superseded: boolean;
 }
 
 export default function CBTResultsPage() {
@@ -112,14 +112,20 @@ export default function CBTResultsPage() {
                     <td className="px-5 py-3 text-sm text-slate-700 tabular-nums">{a.score} / {a.max_score}</td>
                     <td className="px-5 py-3 text-sm text-slate-600 tabular-nums">{a.percentage}%</td>
                     <td className="px-5 py-3">
-                      <span className={cn("badge capitalize", STATUS_STYLE[a.status] || "bg-slate-50 text-slate-600 border-slate-200")}>{a.status.replace("_", " ")}</span>
-                      {a.passed === true && <span className="badge bg-emerald-50 text-emerald-700 border-emerald-200 ml-1">pass</span>}
-                      {a.passed === false && <span className="badge bg-rose-50 text-rose-700 border-rose-200 ml-1">fail</span>}
-                      {a.needs_review && <span className="badge bg-amber-50 text-amber-700 border-amber-200 ml-1 inline-flex items-center gap-1"><AlertTriangle size={10} />review</span>}
-                      {a.submitted_late && <span className="badge bg-orange-50 text-orange-700 border-orange-200 ml-1 inline-flex items-center gap-1"><Clock size={10} />late</span>}
+                      <span className={cn("badge capitalize", a.superseded ? "bg-slate-50 text-slate-400 border-slate-200 line-through" : (STATUS_STYLE[a.status] || "bg-slate-50 text-slate-600 border-slate-200"))}>{a.status.replace("_", " ")}</span>
+                      {a.superseded ? (
+                        <span className="badge bg-slate-100 text-slate-500 border-slate-200 ml-1 inline-flex items-center gap-1" title="Reset for a retake — kept for the record, excluded from stats"><RotateCcw size={10} />superseded</span>
+                      ) : (
+                        <>
+                          {a.passed === true && <span className="badge bg-emerald-50 text-emerald-700 border-emerald-200 ml-1">pass</span>}
+                          {a.passed === false && <span className="badge bg-rose-50 text-rose-700 border-rose-200 ml-1">fail</span>}
+                          {a.needs_review && <span className="badge bg-amber-50 text-amber-700 border-amber-200 ml-1 inline-flex items-center gap-1"><AlertTriangle size={10} />review</span>}
+                          {a.submitted_late && <span className="badge bg-orange-50 text-orange-700 border-orange-200 ml-1 inline-flex items-center gap-1"><Clock size={10} />late</span>}
+                        </>
+                      )}
                     </td>
                     <td className="px-5 py-3">
-                      {canWrite ? (
+                      {canWrite && !a.superseded ? (
                       <div className="flex items-center gap-3">
                         <button onClick={() => setGradingId(a.id)} className="text-xs text-brand-600 font-semibold hover:underline inline-flex items-center gap-1"><ClipboardEdit size={13} />Grade</button>
                         <button
@@ -128,7 +134,7 @@ export default function CBTResultsPage() {
                           className="text-xs text-amber-600 font-semibold hover:underline inline-flex items-center gap-1" title="Flag for intervention"
                         ><Flag size={13} />Flag</button>
                         <button
-                          onClick={() => { if (confirm(`Reset ${a.student_name || "this student"}'s attempt? Their answers are cleared and they can retake.`)) resetAttempt.mutate(a.id); }}
+                          onClick={() => { if (confirm(`Reset ${a.student_name || "this student"}'s attempt? It's set aside (kept for the record, excluded from stats) and they can retake.`)) resetAttempt.mutate(a.id); }}
                           disabled={resetAttempt.isPending}
                           className="text-xs text-slate-500 font-semibold hover:underline inline-flex items-center gap-1" title="Reset for a retake"
                         ><RotateCcw size={13} />Reset</button>
