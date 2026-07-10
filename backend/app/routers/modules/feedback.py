@@ -17,21 +17,32 @@ RBAC:
 """
 
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import get_current_active_user
 from app.models.user import User
-from app.models.modules.school import StudentFeedback
+from app.models.modules.school import (
+    StudentFeedback, Student,
+    FeedbackSettings, DailyReport, StudentDailyReport, CRMContact,
+)
 from app.schemas.school_experience import (
     FeedbackCreate,
     FeedbackResolve,
     FeedbackResponse,
 )
+from app.schemas.feedback_extras import (
+    FeedbackSettingsUpdate, FeedbackSettingsResponse,
+    DailyReportCreate, DailyReportUpdate, DailyReportResponse,
+    StudentDailyReportCreate, StudentDailyReportUpdate, StudentDailyReportResponse,
+    CRMContactCreate, CRMContactUpdate, CRMContactResponse, _CRM_STAGES,
+)
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
+from app.services.audit_service import log_action
+from app.models.audit import AuditAction
 
 router = APIRouter(
     prefix="/feedback",
@@ -41,6 +52,10 @@ router = APIRouter(
 
 _can_read = Depends(PermissionChecker("school:feedback:read"))
 _can_write = Depends(PermissionChecker("school:feedback:write"))
+# Daily reports / CRM are staff surfaces grouped under Feedback in the reference;
+# they ride the broad school scopes so students/parents (narrow scopes) are excluded.
+_staff_read = Depends(PermissionChecker("school:read"))
+_staff_write = Depends(PermissionChecker("school:write"))
 
 
 @router.post("", status_code=201, dependencies=[_can_read])
@@ -125,3 +140,220 @@ async def resolve_feedback(
     feedback.responded_at = datetime.now(timezone.utc)
     await db.flush()
     return FeedbackResponse.model_validate(feedback).model_dump()
+
+
+# ── Helpers for the extra surfaces ───────────────────────────────────────────
+
+async def _user_names(db: AsyncSession, org_id: str, ids: set[str]) -> dict[str, str]:
+    ids = {i for i in ids if i}
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(User.id, User.full_name).where(User.org_id == org_id, User.id.in_(ids))
+    )).all()
+    return {r[0]: r[1] for r in rows}
+
+
+async def _student_names(db: AsyncSession, org_id: str, ids: set[str]) -> dict[str, str]:
+    ids = {i for i in ids if i}
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(Student.id, Student.first_name, Student.last_name)
+        .where(Student.org_id == org_id, Student.id.in_(ids))
+    )).all()
+    return {r[0]: f"{r[1]} {r[2]}".strip() for r in rows}
+
+
+async def _load(db: AsyncSession, model, obj_id: str, org_id: str, label: str):
+    obj = (await db.execute(
+        select(model).where(model.id == obj_id, model.org_id == org_id)
+    )).scalar_one_or_none()
+    if not obj:
+        raise HTTPException(status_code=404, detail=f"{label} not found.")
+    return obj
+
+
+# ── Feedback settings ────────────────────────────────────────────────────────
+
+async def _get_settings(db: AsyncSession, org_id: str) -> FeedbackSettings:
+    s = (await db.execute(select(FeedbackSettings).where(FeedbackSettings.org_id == org_id))).scalar_one_or_none()
+    if s is None:
+        s = FeedbackSettings(org_id=org_id)
+        db.add(s)
+        await db.flush()
+    return s
+
+
+@router.get("/settings", dependencies=[_can_read])
+async def get_feedback_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    return FeedbackSettingsResponse.model_validate(await _get_settings(db, current_user.org_id)).model_dump()
+
+
+@router.put("/settings", dependencies=[_can_write])
+async def update_feedback_settings(payload: FeedbackSettingsUpdate, request: Request = None,
+                                   db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = await _get_settings(db, current_user.org_id)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(s, field, value)
+    await db.flush()
+    await log_action(db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+                     resource_type="FeedbackSettings", resource_id=s.id, resource_label="feedback settings", request=request)
+    return FeedbackSettingsResponse.model_validate(s).model_dump()
+
+
+# ── Daily reports (staff) ────────────────────────────────────────────────────
+
+def _daily_dict(r: DailyReport, author_name: str | None) -> dict:
+    return DailyReportResponse(
+        id=r.id, author_id=r.author_id, author_name=author_name, report_date=r.report_date,
+        class_id=r.class_id, summary=r.summary, highlights=r.highlights, challenges=r.challenges,
+        created_at=r.created_at, org_id=r.org_id,
+    ).model_dump()
+
+
+@router.get("/daily-reports", dependencies=[_staff_read])
+async def list_daily_reports(mine: bool = False, author_id: str | None = None,
+                             db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = select(DailyReport).where(DailyReport.org_id == current_user.org_id)
+    if mine:
+        q = q.where(DailyReport.author_id == current_user.id)
+    elif author_id:
+        q = q.where(DailyReport.author_id == author_id)
+    rows = (await db.execute(q.order_by(DailyReport.report_date.desc()))).scalars().all()
+    names = await _user_names(db, current_user.org_id, {r.author_id for r in rows})
+    return {"items": [_daily_dict(r, names.get(r.author_id)) for r in rows]}
+
+
+@router.post("/daily-reports", status_code=201, dependencies=[_staff_write])
+async def create_daily_report(payload: DailyReportCreate, request: Request = None,
+                              db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    r = DailyReport(**payload.model_dump(), author_id=current_user.id, org_id=current_user.org_id)
+    db.add(r)
+    await db.flush()
+    await log_action(db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+                     resource_type="DailyReport", resource_id=r.id, resource_label=f"daily report {r.report_date}", request=request)
+    return _daily_dict(r, current_user.full_name)
+
+
+@router.patch("/daily-reports/{report_id}", dependencies=[_staff_write])
+async def update_daily_report(report_id: str, payload: DailyReportUpdate, request: Request = None,
+                              db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    r = await _load(db, DailyReport, report_id, current_user.org_id, "Report")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(r, field, value)
+    await db.flush()
+    names = await _user_names(db, current_user.org_id, {r.author_id})
+    return _daily_dict(r, names.get(r.author_id))
+
+
+@router.delete("/daily-reports/{report_id}", status_code=204, dependencies=[_staff_write])
+async def delete_daily_report(report_id: str, request: Request = None,
+                              db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    r = await _load(db, DailyReport, report_id, current_user.org_id, "Report")
+    await db.delete(r)
+    await log_action(db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
+                     resource_type="DailyReport", resource_id=report_id, resource_label="daily report", severity="warning", request=request)
+
+
+# ── Student daily reports ────────────────────────────────────────────────────
+
+def _student_daily_dict(r: StudentDailyReport, student_name: str | None) -> dict:
+    return StudentDailyReportResponse(
+        id=r.id, student_id=r.student_id, student_name=student_name, author_id=r.author_id,
+        report_date=r.report_date, mood=r.mood, academic=r.academic, behaviour=r.behaviour,
+        notes=r.notes, created_at=r.created_at, org_id=r.org_id,
+    ).model_dump()
+
+
+@router.get("/student-daily-reports", dependencies=[_staff_read])
+async def list_student_daily_reports(student_id: str | None = None,
+                                     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = select(StudentDailyReport).where(StudentDailyReport.org_id == current_user.org_id)
+    if student_id:
+        q = q.where(StudentDailyReport.student_id == student_id)
+    rows = (await db.execute(q.order_by(StudentDailyReport.report_date.desc()))).scalars().all()
+    names = await _student_names(db, current_user.org_id, {r.student_id for r in rows})
+    return {"items": [_student_daily_dict(r, names.get(r.student_id)) for r in rows]}
+
+
+@router.post("/student-daily-reports", status_code=201, dependencies=[_staff_write])
+async def create_student_daily_report(payload: StudentDailyReportCreate, request: Request = None,
+                                      db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    await _load(db, Student, payload.student_id, current_user.org_id, "Student")
+    r = StudentDailyReport(**payload.model_dump(), author_id=current_user.id, org_id=current_user.org_id)
+    db.add(r)
+    await db.flush()
+    names = await _student_names(db, current_user.org_id, {r.student_id})
+    await log_action(db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+                     resource_type="StudentDailyReport", resource_id=r.id, resource_label=f"student daily report {r.report_date}", request=request)
+    return _student_daily_dict(r, names.get(r.student_id))
+
+
+@router.patch("/student-daily-reports/{report_id}", dependencies=[_staff_write])
+async def update_student_daily_report(report_id: str, payload: StudentDailyReportUpdate, request: Request = None,
+                                      db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    r = await _load(db, StudentDailyReport, report_id, current_user.org_id, "Report")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(r, field, value)
+    await db.flush()
+    names = await _student_names(db, current_user.org_id, {r.student_id})
+    return _student_daily_dict(r, names.get(r.student_id))
+
+
+@router.delete("/student-daily-reports/{report_id}", status_code=204, dependencies=[_staff_write])
+async def delete_student_daily_report(report_id: str, request: Request = None,
+                                      db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    r = await _load(db, StudentDailyReport, report_id, current_user.org_id, "Report")
+    await db.delete(r)
+    await log_action(db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
+                     resource_type="StudentDailyReport", resource_id=report_id, resource_label="student daily report", severity="warning", request=request)
+
+
+# ── CRM / enquiry pipeline ───────────────────────────────────────────────────
+
+@router.get("/crm", dependencies=[_staff_read])
+async def list_crm(stage: str | None = None,
+                   db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = select(CRMContact).where(CRMContact.org_id == current_user.org_id)
+    if stage:
+        q = q.where(CRMContact.stage == stage)
+    rows = (await db.execute(q.order_by(CRMContact.created_at.desc()))).scalars().all()
+    return {"items": [CRMContactResponse.model_validate(r).model_dump() for r in rows]}
+
+
+@router.post("/crm", status_code=201, dependencies=[_staff_write])
+async def create_crm(payload: CRMContactCreate, request: Request = None,
+                     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    if payload.stage not in _CRM_STAGES:
+        raise HTTPException(status_code=422, detail=f"stage must be one of {sorted(_CRM_STAGES)}")
+    c = CRMContact(**payload.model_dump(), assigned_to=current_user.id, org_id=current_user.org_id)
+    db.add(c)
+    await db.flush()
+    await log_action(db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+                     resource_type="CRMContact", resource_id=c.id, resource_label=c.name, request=request)
+    return CRMContactResponse.model_validate(c).model_dump()
+
+
+@router.patch("/crm/{contact_id}", dependencies=[_staff_write])
+async def update_crm(contact_id: str, payload: CRMContactUpdate, request: Request = None,
+                     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = await _load(db, CRMContact, contact_id, current_user.org_id, "Contact")
+    data = payload.model_dump(exclude_unset=True)
+    if "stage" in data and data["stage"] not in _CRM_STAGES:
+        raise HTTPException(status_code=422, detail=f"stage must be one of {sorted(_CRM_STAGES)}")
+    for field, value in data.items():
+        setattr(c, field, value)
+    await db.flush()
+    await log_action(db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+                     resource_type="CRMContact", resource_id=c.id, resource_label=c.name, request=request)
+    return CRMContactResponse.model_validate(c).model_dump()
+
+
+@router.delete("/crm/{contact_id}", status_code=204, dependencies=[_staff_write])
+async def delete_crm(contact_id: str, request: Request = None,
+                     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = await _load(db, CRMContact, contact_id, current_user.org_id, "Contact")
+    await db.delete(c)
+    await log_action(db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
+                     resource_type="CRMContact", resource_id=contact_id, resource_label=c.name, severity="warning", request=request)

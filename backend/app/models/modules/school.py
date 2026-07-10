@@ -854,3 +854,75 @@ class TuckshopPurchase(Base, UUIDMixin, TimestampMixin, TenantMixin):
         # Tuckshop sales summary: today's revenue is org_id + created_at range.
         Index("ix_tuckshop_purchases_org_created", "org_id", "created_at"),
     )
+
+
+# ── Feedback module extras ───────────────────────────────────────────────────
+# The reference groups several loosely-related surfaces under "Feedback":
+# module settings, staff daily reports, per-student daily reports, and a light
+# CRM/enquiry pipeline. Kept minimal + tenant-scoped.
+
+class FeedbackSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Per-org configuration for the feedback channel ("Feedback Settings")."""
+    __tablename__ = "feedback_settings"
+
+    allow_anonymous = Column(Boolean, default=True, nullable=False)
+    notify_on_submit = Column(Boolean, default=False, nullable=False)
+    acknowledgement_message = Column(Text, nullable=True)   # auto-shown to a submitter
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
+
+
+class DailyReport(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A staff member's daily activity log ("Daily Report")."""
+    __tablename__ = "daily_reports"
+
+    author_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    report_date = Column(Date, nullable=False, index=True)
+    class_id = Column(String(36), ForeignKey("school_classes.id"), nullable=True)
+    summary = Column(Text, nullable=False)
+    highlights = Column(Text, nullable=True)
+    challenges = Column(Text, nullable=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        Index("ix_daily_reports_org_date", "org_id", "report_date"),
+    )
+
+
+class StudentDailyReport(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A per-student daily note ("Student Daily Report") — mood + academic/
+    behaviour observations for a given day, authored by a staff member."""
+    __tablename__ = "student_daily_reports"
+
+    student_id = Column(String(36), ForeignKey("students.id"), nullable=False, index=True)
+    author_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    report_date = Column(Date, nullable=False, index=True)
+    mood = Column(String(20), nullable=True)               # happy | neutral | sad | …
+    academic = Column(Text, nullable=True)
+    behaviour = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        Index("ix_student_daily_reports_student_date", "student_id", "report_date"),
+    )
+
+
+class CRMContact(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A light CRM / enquiry pipeline contact ("CRM") — prospective parents,
+    vendors, partners. Overlaps conceptually with Admissions enquiries but kept
+    as a general relationship tracker per the reference's Feedback grouping."""
+    __tablename__ = "crm_contacts"
+
+    name = Column(String(200), nullable=False)
+    email = Column(String(320), nullable=True, index=True)
+    phone = Column(String(50), nullable=True)
+    contact_type = Column(String(40), default="prospective_parent", nullable=False)  # prospective_parent|vendor|partner|other
+    stage = Column(String(20), default="new", nullable=False)  # new|contacted|engaged|converted|lost
+    source = Column(String(80), nullable=True)
+    assigned_to = Column(String(36), ForeignKey("users.id"), nullable=True)
+    notes = Column(Text, nullable=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        Index("ix_crm_contacts_org_stage", "org_id", "stage"),
+    )
