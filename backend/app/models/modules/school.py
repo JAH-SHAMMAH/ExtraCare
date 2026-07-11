@@ -907,22 +907,8 @@ class StudentDailyReport(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
-class CRMContact(Base, UUIDMixin, TimestampMixin, TenantMixin):
-    """A light CRM / enquiry pipeline contact ("CRM") — prospective parents,
-    vendors, partners. Overlaps conceptually with Admissions enquiries but kept
-    as a general relationship tracker per the reference's Feedback grouping."""
-    __tablename__ = "crm_contacts"
-
-    name = Column(String(200), nullable=False)
-    email = Column(String(320), nullable=True, index=True)
-    phone = Column(String(50), nullable=True)
-    contact_type = Column(String(40), default="prospective_parent", nullable=False)  # prospective_parent|vendor|partner|other
-    stage = Column(String(20), default="new", nullable=False)  # new|contacted|engaged|converted|lost
-    source = Column(String(80), nullable=True)
-    assigned_to = Column(String(36), ForeignKey("users.id"), nullable=True)
-    notes = Column(Text, nullable=True)
-    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
-
-    __table_args__ = (
-        Index("ix_crm_contacts_org_stage", "org_id", "stage"),
-    )
+# NOTE: A standalone CRMContact model was briefly added here, then removed — the
+# "CRM" surface duplicated Admissions & Enquiries (AdmissionApplication already
+# tracks prospective-parent contact + source + a status stage pipeline + notes).
+# The CRM page is now a thin view over admission-application data; there is no
+# parallel CRM table. See migration 052 (drops crm_contacts).

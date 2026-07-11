@@ -91,40 +91,6 @@ class StudentDailyReportResponse(_OrmBase):
     org_id: str
 
 
-# ── CRM contact ──────────────────────────────────────────────────────────────
-
-_CRM_STAGES = {"new", "contacted", "engaged", "converted", "lost"}
-
-
-class CRMContactCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    contact_type: str = "prospective_parent"
-    stage: str = "new"
-    source: Optional[str] = None
-    notes: Optional[str] = None
-
-
-class CRMContactUpdate(BaseModel):
-    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    contact_type: Optional[str] = None
-    stage: Optional[str] = None
-    source: Optional[str] = None
-    notes: Optional[str] = None
-
-
-class CRMContactResponse(_OrmBase):
-    id: str
-    name: str
-    email: Optional[str]
-    phone: Optional[str]
-    contact_type: str
-    stage: str
-    source: Optional[str]
-    assigned_to: Optional[str]
-    notes: Optional[str]
-    created_at: datetime
-    org_id: str
+# CRM: no schemas — the "CRM" surface is a thin view over Admissions & Enquiries
+# (AdmissionApplication). A standalone CRMContact was removed to avoid duplicating
+# the prospective-parent enquiry pipeline that Admissions already owns.

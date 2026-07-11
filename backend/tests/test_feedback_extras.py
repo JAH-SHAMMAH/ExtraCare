@@ -15,13 +15,12 @@ from app.models.organization import Organization, IndustryType
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.modules.school import Student
 from app.schemas.feedback_extras import (
-    FeedbackSettingsUpdate, DailyReportCreate, StudentDailyReportCreate, CRMContactCreate, CRMContactUpdate,
+    FeedbackSettingsUpdate, DailyReportCreate, DailyReportUpdate, StudentDailyReportCreate,
 )
 from app.routers.modules.feedback import (
     get_feedback_settings, update_feedback_settings,
-    list_daily_reports, create_daily_report, delete_daily_report,
-    list_student_daily_reports, create_student_daily_report,
-    list_crm, create_crm, update_crm,
+    list_daily_reports, create_daily_report, update_daily_report, delete_daily_report,
+    list_student_daily_reports, create_student_daily_report, list_student_daily_reports_for_student,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -44,6 +43,20 @@ async def _student(db, org) -> Student:
     db.add(s)
     await db.commit()
     return s
+
+
+async def _linked_student(db, org):
+    """A Student + a student-role User sharing an email, so _user_owns_student links them."""
+    email = f"stu-{uuid.uuid4().hex[:6]}@example.com"
+    stu = Student(id=str(uuid.uuid4()), student_id=f"S-{uuid.uuid4().hex[:6]}",
+                  first_name="Kid", last_name="One", email=email, org_id=org.id)
+    role = Role(id=str(uuid.uuid4()), name="student", slug=f"student-{uuid.uuid4().hex[:6]}",
+                permissions=list(SCHOOL_PERMISSION_PRESETS["student"]), org_id=org.id, is_system=False)
+    u = User(id=str(uuid.uuid4()), email=email, full_name="Kid One", status=UserStatus.ACTIVE, org_id=org.id)
+    u.roles = [role]
+    db.add_all([stu, role, u])
+    await db.commit()
+    return stu, u
 
 
 # ── Settings ─────────────────────────────────────────────────────────────────
@@ -104,31 +117,41 @@ async def test_student_daily_report_rejects_foreign_student(db, org):
     assert ei.value.status_code == 404
 
 
-# ── CRM ───────────────────────────────────────────────────────────────────────
+# ── Daily report is author-only for edit/delete (admin override) ──────────────
 
-async def test_crm_crud_and_stage_validation(db, org):
-    staff = await _staff(db, org)
-    c = await create_crm(CRMContactCreate(name="Jane Doe", email="jane@x.com", stage="new"),
-                         request=None, db=db, current_user=staff)
-    assert c["name"] == "Jane Doe" and c["stage"] == "new" and c["assigned_to"] == staff.id
-
-    moved = await update_crm(c["id"], CRMContactUpdate(stage="engaged"), request=None, db=db, current_user=staff)
-    assert moved["stage"] == "engaged"
+async def test_daily_report_edit_delete_author_only(db, org):
+    author = await _staff(db, org)
+    other = await _staff(db, org)             # a different staff member (no settings:write)
+    admin = await _staff(db, org, "org_admin")  # holds settings:write
+    r = await create_daily_report(DailyReportCreate(report_date=date.today(), summary="Mine"),
+                                  request=None, db=db, current_user=author)
 
     with pytest.raises(HTTPException) as ei:
-        await create_crm(CRMContactCreate(name="Bad", stage="banana"), request=None, db=db, current_user=staff)
-    assert ei.value.status_code == 422
+        await update_daily_report(r["id"], DailyReportUpdate(summary="hijacked"), request=None, db=db, current_user=other)
+    assert ei.value.status_code == 403
 
-    listed = await list_crm(stage="engaged", db=db, current_user=staff)
-    assert len(listed["items"]) == 1
+    # the author can edit; an admin (settings:write) can override
+    ok = await update_daily_report(r["id"], DailyReportUpdate(summary="edited"), request=None, db=db, current_user=author)
+    assert ok["summary"] == "edited"
+    await delete_daily_report(r["id"], request=None, db=db, current_user=admin)  # admin override, no raise
 
 
-async def test_crm_is_tenant_scoped(db, org):
+# ── Student daily report: parent/owner read (ownership-scoped) ────────────────
+
+async def test_student_daily_report_owner_read_scoped(db, org):
     staff = await _staff(db, org)
-    await create_crm(CRMContactCreate(name="OrgA lead"), request=None, db=db, current_user=staff)
-    other = Organization(id=str(uuid.uuid4()), name="Other", slug=f"o-{uuid.uuid4().hex[:6]}",
-                         industry=IndustryType.SCHOOL, modules_enabled=["school"])
-    db.add(other)
-    await db.commit()
-    other_staff = await _staff(db, other)
-    assert (await list_crm(stage=None, db=db, current_user=other_staff))["items"] == []
+    stu, stu_user = await _linked_student(db, org)
+    _, other_user = await _linked_student(db, org)
+    await create_student_daily_report(
+        StudentDailyReportCreate(student_id=stu.id, report_date=date.today(), academic="Great day"),
+        request=None, db=db, current_user=staff)
+
+    # the linked student (owner) sees their own reports
+    own = await list_student_daily_reports_for_student(stu.id, db=db, current_user=stu_user)
+    assert len(own["items"]) == 1 and own["items"][0]["academic"] == "Great day"
+    # a different student can't read this student's reports
+    with pytest.raises(HTTPException) as ei:
+        await list_student_daily_reports_for_student(stu.id, db=db, current_user=other_user)
+    assert ei.value.status_code == 403
+    # staff (students:read) can read any student's reports
+    assert len((await list_student_daily_reports_for_student(stu.id, db=db, current_user=staff))["items"]) == 1

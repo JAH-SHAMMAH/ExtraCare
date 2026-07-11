@@ -26,7 +26,7 @@ from app.deps import get_current_active_user
 from app.models.user import User
 from app.models.modules.school import (
     StudentFeedback, Student,
-    FeedbackSettings, DailyReport, StudentDailyReport, CRMContact,
+    FeedbackSettings, DailyReport, StudentDailyReport,
 )
 from app.schemas.school_experience import (
     FeedbackCreate,
@@ -37,12 +37,12 @@ from app.schemas.feedback_extras import (
     FeedbackSettingsUpdate, FeedbackSettingsResponse,
     DailyReportCreate, DailyReportUpdate, DailyReportResponse,
     StudentDailyReportCreate, StudentDailyReportUpdate, StudentDailyReportResponse,
-    CRMContactCreate, CRMContactUpdate, CRMContactResponse, _CRM_STAGES,
 )
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
+from app.routers.modules.school import _ensure_student_visible
 
 router = APIRouter(
     prefix="/feedback",
@@ -52,10 +52,13 @@ router = APIRouter(
 
 _can_read = Depends(PermissionChecker("school:feedback:read"))
 _can_write = Depends(PermissionChecker("school:feedback:write"))
-# Daily reports / CRM are staff surfaces grouped under Feedback in the reference;
-# they ride the broad school scopes so students/parents (narrow scopes) are excluded.
+# Daily reports are staff surfaces grouped under Feedback in the reference; they
+# ride the broad school scopes so students/parents (narrow scopes) are excluded.
 _staff_read = Depends(PermissionChecker("school:read"))
 _staff_write = Depends(PermissionChecker("school:write"))
+# A single student's daily reports are parent/student-visible, ownership-scoped —
+# the same "reports" visibility parents already have for the report card.
+_reports_read = Depends(PermissionChecker("school:reports:read"))
 
 
 @router.post("", status_code=201, dependencies=[_can_read])
@@ -236,10 +239,18 @@ async def create_daily_report(payload: DailyReportCreate, request: Request = Non
     return _daily_dict(r, current_user.full_name)
 
 
+def _ensure_report_owner(r: DailyReport, user: User) -> None:
+    """A daily report is a record: only its author edits/deletes it — with an
+    admin override (settings:write) for corrections."""
+    if r.author_id != user.id and not user.has_permission("settings:write"):
+        raise HTTPException(status_code=403, detail="Only the author can edit or delete this report.")
+
+
 @router.patch("/daily-reports/{report_id}", dependencies=[_staff_write])
 async def update_daily_report(report_id: str, payload: DailyReportUpdate, request: Request = None,
                               db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     r = await _load(db, DailyReport, report_id, current_user.org_id, "Report")
+    _ensure_report_owner(r, current_user)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(r, field, value)
     await db.flush()
@@ -251,6 +262,7 @@ async def update_daily_report(report_id: str, payload: DailyReportUpdate, reques
 async def delete_daily_report(report_id: str, request: Request = None,
                               db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     r = await _load(db, DailyReport, report_id, current_user.org_id, "Report")
+    _ensure_report_owner(r, current_user)
     await db.delete(r)
     await log_action(db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
                      resource_type="DailyReport", resource_id=report_id, resource_label="daily report", severity="warning", request=request)
@@ -275,6 +287,23 @@ async def list_student_daily_reports(student_id: str | None = None,
     rows = (await db.execute(q.order_by(StudentDailyReport.report_date.desc()))).scalars().all()
     names = await _student_names(db, current_user.org_id, {r.student_id for r in rows})
     return {"items": [_student_daily_dict(r, names.get(r.student_id)) for r in rows]}
+
+
+@router.get("/student-daily-reports/student/{student_id}", dependencies=[_reports_read])
+async def list_student_daily_reports_for_student(
+    student_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    """One student's daily reports, ownership-scoped: a parent/student sees only
+    their own (via _ensure_student_visible), staff (students:read) see any. Mirrors
+    how the report card is exposed to parents."""
+    await _ensure_student_visible(db, current_user, student_id)
+    rows = (await db.execute(
+        select(StudentDailyReport).where(
+            StudentDailyReport.student_id == student_id, StudentDailyReport.org_id == current_user.org_id)
+        .order_by(StudentDailyReport.report_date.desc())
+    )).scalars().all()
+    names = await _student_names(db, current_user.org_id, {student_id})
+    return {"items": [_student_daily_dict(r, names.get(student_id)) for r in rows]}
 
 
 @router.post("/student-daily-reports", status_code=201, dependencies=[_staff_write])
@@ -309,51 +338,6 @@ async def delete_student_daily_report(report_id: str, request: Request = None,
     await log_action(db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
                      resource_type="StudentDailyReport", resource_id=report_id, resource_label="student daily report", severity="warning", request=request)
 
-
-# ── CRM / enquiry pipeline ───────────────────────────────────────────────────
-
-@router.get("/crm", dependencies=[_staff_read])
-async def list_crm(stage: str | None = None,
-                   db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    q = select(CRMContact).where(CRMContact.org_id == current_user.org_id)
-    if stage:
-        q = q.where(CRMContact.stage == stage)
-    rows = (await db.execute(q.order_by(CRMContact.created_at.desc()))).scalars().all()
-    return {"items": [CRMContactResponse.model_validate(r).model_dump() for r in rows]}
-
-
-@router.post("/crm", status_code=201, dependencies=[_staff_write])
-async def create_crm(payload: CRMContactCreate, request: Request = None,
-                     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    if payload.stage not in _CRM_STAGES:
-        raise HTTPException(status_code=422, detail=f"stage must be one of {sorted(_CRM_STAGES)}")
-    c = CRMContact(**payload.model_dump(), assigned_to=current_user.id, org_id=current_user.org_id)
-    db.add(c)
-    await db.flush()
-    await log_action(db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
-                     resource_type="CRMContact", resource_id=c.id, resource_label=c.name, request=request)
-    return CRMContactResponse.model_validate(c).model_dump()
-
-
-@router.patch("/crm/{contact_id}", dependencies=[_staff_write])
-async def update_crm(contact_id: str, payload: CRMContactUpdate, request: Request = None,
-                     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    c = await _load(db, CRMContact, contact_id, current_user.org_id, "Contact")
-    data = payload.model_dump(exclude_unset=True)
-    if "stage" in data and data["stage"] not in _CRM_STAGES:
-        raise HTTPException(status_code=422, detail=f"stage must be one of {sorted(_CRM_STAGES)}")
-    for field, value in data.items():
-        setattr(c, field, value)
-    await db.flush()
-    await log_action(db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
-                     resource_type="CRMContact", resource_id=c.id, resource_label=c.name, request=request)
-    return CRMContactResponse.model_validate(c).model_dump()
-
-
-@router.delete("/crm/{contact_id}", status_code=204, dependencies=[_staff_write])
-async def delete_crm(contact_id: str, request: Request = None,
-                     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    c = await _load(db, CRMContact, contact_id, current_user.org_id, "Contact")
-    await db.delete(c)
-    await log_action(db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
-                     resource_type="CRMContact", resource_id=contact_id, resource_label=c.name, severity="warning", request=request)
+# CRM: no standalone model — the "CRM" surface is a thin view over Admissions &
+# Enquiries (see routers/modules/admissions.py). A parallel CRMContact table was
+# removed to avoid two competing prospective-parent enquiry systems.
