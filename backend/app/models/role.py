@@ -151,6 +151,12 @@ SCHOOL_PERMISSION_PRESETS = {
     # canNOT approve payroll, waive fees (discounts), or post general ledger
     # entries. Least-privilege for daily till staff.
     "cashier": _dedupe(["payments:read", "store:sell"]),
+    # Facility / maintenance staff. Scoped to the Facility Management module only
+    # via the fine-grained `school_admin:facility:*` child scope (org_admin +
+    # manager reach it automatically through their broad school_admin:read/write
+    # grant). `school:read` lets the module's user/entity pickers work. NO other
+    # back-office access — like the nurse is to medical.
+    "facilities": _dedupe(["school_admin:facility:read", "school_admin:facility:write", "school:read"]),
     "student": _dedupe(SCHOOL_STUDENT_PERMISSIONS),
     "parent": _dedupe(SCHOOL_PARENT_PERMISSIONS),
     "viewer": _dedupe(CORE_VIEWER_PERMISSIONS + ["school:read"]),
