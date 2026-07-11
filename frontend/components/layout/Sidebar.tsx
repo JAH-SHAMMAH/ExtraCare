@@ -15,7 +15,7 @@ import {
   User, NotebookPen, MonitorCheck, HeartHandshake, MessageSquare,
   Camera, MessageCircle, Users as UsersIcon, UserCircle, Cake,
   CalendarClock, Gavel, Newspaper, Radio, Library, Bus, ArrowLeftRight,
-  FileQuestion, X, LifeBuoy, Settings2, KeyRound,
+  FileQuestion, X, LifeBuoy, Settings2, KeyRound, Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/branding/Brand";
@@ -281,8 +281,27 @@ const MODULE_SECTIONS: ModuleSection[] = [
       // Batch 6 (non-financial) — shipped. Calendar → school:read; Facility +
       // Visitor (safeguarding) → school_admin:read.
       { href: "/dashboard/modules/school/calendar", label: "Calendar & Planner", icon: Calendar },
-      { href: "/dashboard/modules/school/facility", label: "Facility Management", icon: Building2 },
       { href: "/dashboard/modules/school/visitor", label: "Visitor Management", icon: UserCheck },
+    ],
+  },
+  {
+    // Educare "Facility Management" — 8 children under the school_admin:facility
+    // scope (org_admin + manager inherit it; the dedicated `facilities` role holds
+    // only it). Requisitions run the tiered approval levels; Audit Trail is a
+    // filtered view over the global audit log.
+    key: "facility-management",
+    requiredModule: "school",
+    label: "Facility Management",
+    icon: Building2,
+    items: [
+      { href: "/dashboard/modules/school/facility", label: "Facility List", icon: Building2 },
+      { href: "/dashboard/modules/school/facility/complaints", label: "Facility Complaints", icon: MessageSquare },
+      { href: "/dashboard/modules/school/facility/inspections", label: "Facility Inspections", icon: ClipboardList },
+      { href: "/dashboard/modules/school/facility/maintenance", label: "Facility Maintenance", icon: Wrench },
+      { href: "/dashboard/modules/school/facility/requisitions", label: "Facility Requisitions", icon: Receipt },
+      { href: "/dashboard/modules/school/facility/configuration", label: "Configuration", icon: Settings2 },
+      { href: "/dashboard/modules/school/facility/report", label: "Facility Report", icon: BarChart },
+      { href: "/dashboard/modules/school/facility/audit", label: "Audit Trail", icon: FileText },
     ],
   },
   {

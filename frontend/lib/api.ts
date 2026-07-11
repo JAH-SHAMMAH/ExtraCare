@@ -1296,3 +1296,66 @@ export const hrApi = {
     delete: (id: string) => api.delete(`/hr/events/${id}`),
   },
 };
+
+// Facility Management (school_admin:facility scope).
+export const facilityApi = {
+  facilities: {
+    list: () => api.get("/facility/facilities").then((r) => r.data),
+    create: (d: object) => api.post("/facility/facilities", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/facility/facilities/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/facility/facilities/${id}`),
+  },
+  types: {
+    list: () => api.get("/facility/types").then((r) => r.data),
+    create: (d: object) => api.post("/facility/types", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/facility/types/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/facility/types/${id}`),
+  },
+  locations: {
+    list: () => api.get("/facility/locations").then((r) => r.data),
+    create: (d: object) => api.post("/facility/locations", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/facility/locations/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/facility/locations/${id}`),
+  },
+  departments: {
+    list: () => api.get("/facility/departments").then((r) => r.data),
+    create: (d: object) => api.post("/facility/departments", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/facility/departments/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/facility/departments/${id}`),
+  },
+  staff: {
+    list: (role_type?: string) => api.get("/facility/staff", { params: role_type ? { role_type } : {} }).then((r) => r.data),
+    create: (d: object) => api.post("/facility/staff", d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/facility/staff/${id}`),
+  },
+  complaints: {
+    list: (mine?: boolean) => api.get("/facility/complaints", { params: mine ? { mine: true } : {} }).then((r) => r.data),
+    create: (d: object) => api.post("/facility/complaints", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/facility/complaints/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/facility/complaints/${id}`),
+  },
+  inspections: {
+    list: (mine?: boolean) => api.get("/facility/inspections", { params: mine ? { mine: true } : {} }).then((r) => r.data),
+    create: (d: object) => api.post("/facility/inspections", d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/facility/inspections/${id}`),
+  },
+  maintenance: {
+    list: (mine?: boolean) => api.get("/facility/maintenance", { params: mine ? { mine: true } : {} }).then((r) => r.data),
+    create: (d: object) => api.post("/facility/maintenance", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/facility/maintenance/${id}`, d).then((r) => r.data),
+  },
+  approvalLevels: {
+    list: () => api.get("/facility/approval-levels").then((r) => r.data),
+    create: (d: object) => api.post("/facility/approval-levels", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/facility/approval-levels/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/facility/approval-levels/${id}`),
+  },
+  requisitions: {
+    list: (mine?: boolean) => api.get("/facility/requisitions", { params: mine ? { mine: true } : {} }).then((r) => r.data),
+    create: (d: object) => api.post("/facility/requisitions", d).then((r) => r.data),
+    approve: (id: string) => api.post(`/facility/requisitions/${id}/approve`).then((r) => r.data),
+    disburse: (id: string, d: object = {}) => api.post(`/facility/requisitions/${id}/disburse`, d).then((r) => r.data),
+  },
+  report: () => api.get("/facility/report").then((r) => r.data),
+  audit: (category?: string) => api.get("/facility/audit", { params: category ? { category } : {} }).then((r) => r.data),
+};

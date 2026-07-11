@@ -149,7 +149,9 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // ── Batch 6 non-financial ──────────────────────────────────────────────
   // Calendar rides school:read; Facility + Visitor (safeguarding) are admin-tier.
   { prefix: "/dashboard/modules/school/calendar", permission: "school:read" },
-  { prefix: "/dashboard/modules/school/facility", permission: "school_admin:read" },
+  // Facility Management: its own fine-grained scope so the dedicated `facilities`
+  // role reaches it (org_admin + manager inherit via broad school_admin:read).
+  { prefix: "/dashboard/modules/school/facility", permission: "school_admin:facility:read" },
   { prefix: "/dashboard/modules/school/visitor", permission: "school_admin:read" },
 
   // ── Batch 7: Administration & Platform (settings:* — admin only) ────────

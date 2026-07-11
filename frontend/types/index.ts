@@ -2256,3 +2256,47 @@ export interface LiveAnalytics {
   average_watch_seconds: number | null;
   attendees: LiveAttendee[];
 }
+
+// ── Facility Management ──────────────────────────────────────────────────────
+export interface FacilityLookup { id: string; name: string; org_id: string; }
+export interface FacilityDepartment { id: string; name: string; org_id: string; officer_count: number; }
+export interface FacilityItem {
+  id: string; name: string; facility_type_id: string | null; facility_type_name: string | null;
+  quantity: number; notes: string | null; is_active: boolean;
+  location_ids: string[]; location_names: string[]; manager_ids: string[]; manager_names: string[];
+  inspection_count: number; org_id: string; created_at: string;
+}
+export interface FacilityStaffMember { id: string; user_id: string; user_name: string | null; role_type: string; department_id: string | null; org_id: string; }
+export interface FacilityComplaint {
+  id: string; reference: string; title: string; description: string | null; facility_id: string | null;
+  facility_name: string | null; status: string; lodged_by: string | null; lodger_name: string | null;
+  date_lodged: string | null; inspection_count: number; org_id: string; created_at: string;
+}
+export interface FacilityInspection {
+  id: string; facility_id: string | null; facility_name: string | null; inspector_id: string | null;
+  inspector_name: string | null; complaint_id: string | null; comment: string | null; outcome: string | null;
+  inspection_date: string | null; org_id: string; created_at: string;
+}
+export interface FacilityMaintenanceItem {
+  id: string; facility_id: string | null; facility_name: string | null; complaint_id: string | null;
+  maintenance_type: string | null; comment: string | null; total_cost: number | string; status: string;
+  requested_by: string | null; requester_name: string | null; request_date: string | null; org_id: string; created_at: string;
+}
+export interface FacilityApprovalLevel {
+  id: string; name: string; threshold: number | string; handler_id: string | null; handler_name: string | null;
+  is_active: boolean; position: number; org_id: string;
+}
+export interface FacilityRequisition {
+  id: string; reference: string; title: string; maintenance_id: string | null; maintenance_type: string | null;
+  maintenance_cost: number | string; requisition_cost: number | string; status: string;
+  approval_level_id: string | null; approval_level_name: string | null; total_approved: number | string;
+  approval_date: string | null; total_disbursed: number | string; requested_by: string | null;
+  requester_name: string | null; approved_by: string | null; org_id: string; created_at: string;
+}
+export interface FacilityReport {
+  cards: { facilities: number; complaints: number; maintenance: number; approved_requisitions: number };
+  pending_complaints: number;
+  by_type: { name: string; count: number }[];
+  expenses_by_level: { level: string; total: number; approved: number }[];
+}
+export interface FacilityAuditItem { id: string; full_name: string | null; activity: string | null; resource_type: string | null; date: string | null; }

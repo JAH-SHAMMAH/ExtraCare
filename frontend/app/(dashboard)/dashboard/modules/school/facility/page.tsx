@@ -1,149 +1,190 @@
 "use client";
 
 import { useState } from "react";
-import {
-  useFacilities, useCreateFacility, useUpdateFacility, useDeleteFacility,
-  useFacilityBookings, useBookFacility, useCancelBooking,
-} from "@/hooks/useOperations";
+import { cn } from "@/lib/utils";
 import { useHasPermission } from "@/components/guards/PermissionGate";
-import { cn, formatDate } from "@/lib/utils";
-import { Building2, Plus, X, Loader2, Trash2, Edit2, AlertTriangle, ArrowLeft, CalendarPlus, Ban } from "lucide-react";
-import type { Facility } from "@/types";
+import { EntityPicker } from "@/components/inputs/EntityPicker";
+import {
+  useFacilities, useSaveFacility, useDeleteFacility,
+  useFacilityTypes, useSaveFacilityType, useDeleteFacilityType,
+  useFacilityLocations, useSaveFacilityLocation, useDeleteFacilityLocation,
+  useFacilityDepartments, useSaveFacilityDepartment, useDeleteFacilityDepartment,
+} from "@/hooks/useFacility";
+import { Building2, Plus, X, Loader2, Edit2, Trash2, Eye } from "lucide-react";
+import type { FacilityItem, FacilityLookup, FacilityDepartment } from "@/types";
 
-const STATUSES = ["available", "maintenance", "unavailable"];
-const STATUS_STYLE: Record<string, string> = {
-  available: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  maintenance: "bg-amber-50 text-amber-700 border-amber-200",
-  unavailable: "bg-rose-50 text-rose-700 border-rose-200",
-};
+type Tab = "list" | "types" | "locations" | "departments";
+const TABS: [Tab, string][] = [["list", "Facility List"], ["types", "Facility Types"], ["locations", "Facility Locations"], ["departments", "Facility Departments"]];
 
-export default function FacilityPage() {
-  const canWrite = useHasPermission("school_admin:write");
-  const { data, isLoading, isError, refetch } = useFacilities();
-  const create = useCreateFacility();
-  const update = useUpdateFacility();
-  const del = useDeleteFacility();
-  const [open, setOpen] = useState<Facility | null>(null);
-  const [show, setShow] = useState(false);
-  const [editing, setEditing] = useState<Facility | null>(null);
-  const [form, setForm] = useState({ name: "", type: "", capacity: "", location: "", status: "available", notes: "" });
-
-  const reset = () => { setForm({ name: "", type: "", capacity: "", location: "", status: "available", notes: "" }); setEditing(null); setShow(false); };
-  const openEdit = (f: Facility) => { setForm({ name: f.name, type: f.type ?? "", capacity: f.capacity?.toString() ?? "", location: f.location ?? "", status: f.status, notes: f.notes ?? "" }); setEditing(f); setShow(true); };
-  const submit = () => {
-    const payload = { name: form.name.trim(), type: form.type || null, capacity: form.capacity ? Number(form.capacity) : null, location: form.location || null, status: form.status, notes: form.notes || null };
-    if (editing) update.mutate({ id: editing.id, data: payload }, { onSuccess: reset });
-    else create.mutate(payload, { onSuccess: reset });
-  };
-
-  if (open) return <BookingsView facility={open} canWrite={canWrite} onBack={() => setOpen(null)} />;
-
-  const rows = data?.items;
-
+export default function FacilityManagementPage() {
+  const [tab, setTab] = useState<Tab>("list");
   return (
     <div className="p-8 max-w-6xl mx-auto">
-      <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
-        <div>
-          <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Operations</span><span>/</span><span className="text-brand-600 font-semibold">Facility Management</span></nav>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Facility Management</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Halls, labs and rooms — with double-booking protection.</p>
-        </div>
-        {canWrite && <button onClick={() => { reset(); setShow(true); }} className="btn-primary gap-2"><Plus size={15} /> New Facility</button>}
+      <div className="mb-5">
+        <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Facility Management</span></nav>
+        <h1 className="text-2xl font-black text-slate-900 tracking-tight">Facility Management</h1>
+        <p className="text-slate-500 text-sm mt-0.5">Facilities, types, locations and departments.</p>
       </div>
-
-      {show && canWrite && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6">
-          <div className="flex items-center justify-between mb-4"><h2 className="text-sm font-bold text-slate-800">{editing ? "Edit Facility" : "New Facility"}</h2><button onClick={reset} className="text-slate-400 hover:text-slate-600"><X size={16} /></button></div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="md:col-span-2"><label className="label">Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input" /></div>
-            <div><label className="label">Type</label><input value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="input" placeholder="hall / lab / field" /></div>
-            <div><label className="label">Capacity</label><input type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} className="input" /></div>
-            <div><label className="label">Location</label><input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="input" /></div>
-            <div><label className="label">Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="input capitalize">{STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
-            <div className="md:col-span-3"><label className="label">Notes</label><textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="input" rows={2} /></div>
-          </div>
-          <div className="flex justify-end gap-3 mt-4"><button onClick={reset} className="btn-secondary">Cancel</button><button onClick={submit} disabled={!form.name.trim() || create.isPending || update.isPending} className="btn-primary gap-2">{(create.isPending || update.isPending) && <Loader2 size={15} className="animate-spin" />}{editing ? "Update" : "Create"}</button></div>
-        </div>
-      )}
-
-      {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-36 bg-slate-100 rounded-xl animate-pulse" />)}</div>
-      ) : isError ? (
-        <div className="bg-white rounded-xl border border-slate-200 py-14 text-center"><AlertTriangle size={28} className="mx-auto mb-3 text-amber-400" /><p className="text-sm font-semibold text-slate-600">Couldn’t load facilities.</p><button onClick={() => refetch()} className="mt-3 btn-secondary">Retry</button></div>
-      ) : rows && rows.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {rows.map((f) => (
-            <div key={f.id} className="bg-white rounded-xl border border-slate-200 p-5">
-              <div className="flex items-start justify-between mb-2">
-                <h3 className="text-sm font-bold text-slate-900">{f.name}</h3>
-                <span className={cn("badge capitalize", STATUS_STYLE[f.status] || "")}>{f.status}</span>
-              </div>
-              <p className="text-xs text-slate-500 mb-3">{[f.type, f.location, f.capacity ? `cap. ${f.capacity}` : null].filter(Boolean).join(" · ") || "—"}</p>
-              <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-                <button onClick={() => setOpen(f)} className="text-xs font-semibold text-brand-600 hover:text-brand-700">Bookings →</button>
-                {canWrite && (
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => openEdit(f)} className="text-slate-400 hover:text-brand-600 p-1"><Edit2 size={13} /></button>
-                    <button onClick={() => { if (confirm("Delete this facility?")) del.mutate(f.id); }} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={13} /></button>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl border border-slate-200 flex flex-col items-center justify-center py-16 text-slate-400"><Building2 size={36} className="mb-3 opacity-40" /><p className="font-semibold">No facilities yet</p></div>
-      )}
+      <div className="flex gap-1 border-b border-slate-200 mb-6 flex-wrap">
+        {TABS.map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} className={cn("px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition", tab === k ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-700")}>{l}</button>
+        ))}
+      </div>
+      {tab === "list" ? <FacilityList /> : tab === "types" ? <LookupTab kind="type" /> : tab === "locations" ? <LookupTab kind="location" /> : <DepartmentsTab />}
     </div>
   );
 }
 
-function BookingsView({ facility, canWrite, onBack }: { facility: Facility; canWrite: boolean; onBack: () => void }) {
-  const { data: bookings, isLoading } = useFacilityBookings(facility.id);
-  const book = useBookFacility();
-  const cancel = useCancelBooking();
-  const [form, setForm] = useState({ title: "", start_at: "", end_at: "", purpose: "" });
+function FacilityList() {
+  const canWrite = useHasPermission("school_admin:facility:write");
+  const { data, isLoading } = useFacilities();
+  const { data: types } = useFacilityTypes();
+  const { data: locations } = useFacilityLocations();
+  const save = useSaveFacility();
+  const del = useDeleteFacility();
+  const rows: FacilityItem[] = data || [];
 
-  const add = () => book.mutate({ id: facility.id, data: { title: form.title.trim(), start_at: form.start_at, end_at: form.end_at, purpose: form.purpose || null } },
-    { onSuccess: () => setForm({ title: "", start_at: "", end_at: "", purpose: "" }) });
+  const BLANK = { name: "", facility_type_id: "", quantity: "1", notes: "", is_active: true, location_ids: [] as string[], manager_ids: [] as string[] };
+  const [show, setShow] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [form, setForm] = useState(BLANK);
+  const [viewLoc, setViewLoc] = useState<FacilityItem | null>(null);
+
+  const reset = () => { setForm(BLANK); setEditing(null); setShow(false); };
+  const startEdit = (f: FacilityItem) => {
+    setForm({ name: f.name, facility_type_id: f.facility_type_id || "", quantity: String(f.quantity), notes: f.notes || "", is_active: f.is_active, location_ids: f.location_ids, manager_ids: f.manager_ids });
+    setEditing(f.id); setShow(true);
+  };
+  const submit = () => {
+    const payload = { name: form.name, facility_type_id: form.facility_type_id || null, quantity: Number(form.quantity) || 1, notes: form.notes || null, is_active: form.is_active, location_ids: form.location_ids, manager_ids: form.manager_ids };
+    save.mutate({ id: editing || undefined, data: payload }, { onSuccess: reset });
+  };
+  const toggleLoc = (id: string) => setForm((s) => ({ ...s, location_ids: s.location_ids.includes(id) ? s.location_ids.filter((x) => x !== id) : [...s.location_ids, id] }));
 
   return (
-    <div className="p-8 max-w-3xl mx-auto">
-      <button onClick={onBack} className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-700 mb-4"><ArrowLeft size={14} /> Back to facilities</button>
-      <h1 className="text-2xl font-black text-slate-900">{facility.name}</h1>
-      <p className="text-sm text-slate-500 mt-1 mb-6">Bookings — overlaps are blocked automatically.</p>
-
-      {canWrite && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5 mb-4 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-          <div className="md:col-span-2"><label className="label">Title *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="input" /></div>
-          <div><label className="label">Start *</label><input type="datetime-local" value={form.start_at} onChange={(e) => setForm({ ...form, start_at: e.target.value })} className="input" /></div>
-          <div><label className="label">End *</label><input type="datetime-local" value={form.end_at} onChange={(e) => setForm({ ...form, end_at: e.target.value })} className="input" /></div>
-          <button onClick={add} disabled={!form.title.trim() || !form.start_at || !form.end_at || book.isPending} className="btn-primary gap-2 justify-center md:col-span-4">{book.isPending ? <Loader2 size={14} className="animate-spin" /> : <CalendarPlus size={14} />}Book</button>
+    <>
+      {canWrite && <div className="flex justify-end mb-4">{!show && <button onClick={() => setShow(true)} className="btn-primary gap-2"><Plus size={16} /> Add Facility</button>}</div>}
+      {show && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+          <div className="flex items-center justify-between mb-4"><h2 className="text-sm font-bold text-slate-800">{editing ? "Edit facility" : "New facility"}</h2><button onClick={reset} className="text-slate-400 hover:text-slate-600"><X size={18} /></button></div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div><label className="label">Name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input" /></div>
+            <div><label className="label">Type</label><select value={form.facility_type_id} onChange={(e) => setForm({ ...form, facility_type_id: e.target.value })} className="input"><option value="">—</option>{(types || []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+            <div><label className="label">Quantity</label><input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className="input" /></div>
+            <div className="flex items-center gap-2 mt-6"><input type="checkbox" id="fac-active" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} /><label htmlFor="fac-active" className="text-xs font-medium text-slate-700">Active</label></div>
+            <div className="md:col-span-2"><label className="label">Description</label><textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="input" rows={2} /></div>
+            <div className="md:col-span-2">
+              <label className="label">Assigned locations</label>
+              <div className="flex flex-wrap gap-2">{(locations || []).map((l) => (<button key={l.id} type="button" onClick={() => toggleLoc(l.id)} className={cn("badge cursor-pointer", form.location_ids.includes(l.id) ? "bg-brand-50 text-brand-700 border-brand-200" : "bg-slate-50 text-slate-500 border-slate-200")}>{l.name}</button>))}{(locations || []).length === 0 && <span className="text-xs text-slate-400">Add locations in the Facility Locations tab.</span>}</div>
+            </div>
+            <div className="md:col-span-2">
+              <label className="label">Facility manager(s)</label>
+              <EntityPicker type="staff" value={null} onChange={(id) => { if (id && !form.manager_ids.includes(id)) setForm((s) => ({ ...s, manager_ids: [...s.manager_ids, id] })); }} />
+              <div className="flex flex-wrap gap-1 mt-2">{form.manager_ids.map((id) => (<span key={id} className="badge bg-slate-100 text-slate-600 border-slate-200 inline-flex items-center gap-1">{id.slice(0, 8)}<button onClick={() => setForm((s) => ({ ...s, manager_ids: s.manager_ids.filter((x) => x !== id) }))}><X size={10} /></button></span>))}</div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 mt-4"><button onClick={reset} className="btn-secondary">Cancel</button><button onClick={submit} disabled={!form.name || save.isPending} className="btn-primary gap-2">{save.isPending && <Loader2 size={15} className="animate-spin" />}Save</button></div>
         </div>
       )}
-
       <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-        <table className="w-full text-left">
-          <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Title", "Start", "End", "Status", ""].map((h) => <th key={h} className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>)}</tr></thead>
-          <tbody className="divide-y divide-slate-50">
-            {isLoading ? (
-              Array.from({ length: 3 }).map((_, i) => <tr key={i}>{Array.from({ length: 5 }).map((_, j) => <td key={j} className="px-5 py-4"><div className="h-4 bg-slate-100 rounded animate-pulse w-20" /></td>)}</tr>)
-            ) : bookings && bookings.length > 0 ? (
-              bookings.map((b) => (
-                <tr key={b.id} className={cn("hover:bg-slate-50/70", b.status === "cancelled" && "opacity-50")}>
-                  <td className="px-5 py-3 text-sm font-medium text-slate-800">{b.title}</td>
-                  <td className="px-5 py-3 text-xs text-slate-500">{new Date(b.start_at).toLocaleString()}</td>
-                  <td className="px-5 py-3 text-xs text-slate-500">{new Date(b.end_at).toLocaleString()}</td>
-                  <td className="px-5 py-3"><span className={cn("badge capitalize", b.status === "cancelled" ? "bg-slate-50 text-slate-400 border-slate-200" : "bg-emerald-50 text-emerald-700 border-emerald-200")}>{b.status}</span></td>
-                  <td className="px-5 py-3">{canWrite && b.status === "booked" && <button onClick={() => cancel.mutate(b.id)} className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 hover:text-rose-700"><Ban size={13} /> Cancel</button>}</td>
-                </tr>
-              ))
-            ) : (
-              <tr><td colSpan={5} className="py-10 text-center text-slate-400 text-sm">No bookings yet.</td></tr>
-            )}
-          </tbody>
-        </table>
+        {isLoading ? <div className="py-16 text-center"><Loader2 size={22} className="animate-spin text-slate-400 mx-auto" /></div>
+          : rows.length === 0 ? <div className="py-16 text-center text-slate-400 text-sm"><Building2 size={30} className="mx-auto mb-2 opacity-50" />No facilities yet.</div>
+          : (
+            <table className="w-full text-left">
+              <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Facility", "Type", "Qty", "Locations", "Status", "Inspections", "Manager(s)", ""].map((h) => (<th key={h} className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500 whitespace-nowrap">{h}</th>))}</tr></thead>
+              <tbody className="divide-y divide-slate-50">
+                {rows.map((f) => (
+                  <tr key={f.id} className="hover:bg-slate-50/70">
+                    <td className="px-4 py-3 text-sm font-bold text-slate-900">{f.name}{f.notes && <p className="text-xs font-normal text-slate-400">{f.notes}</p>}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">{f.facility_type_name || "—"}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600 tabular-nums">{f.quantity}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600"><button onClick={() => setViewLoc(f)} className="inline-flex items-center gap-1 text-brand-600 hover:underline"><Eye size={12} />{f.location_names.length}</button></td>
+                    <td className="px-4 py-3">{f.is_active ? <span className="badge bg-emerald-50 text-emerald-700 border-emerald-200">Active</span> : <span className="badge bg-slate-50 text-slate-400 border-slate-200">Inactive</span>}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600 tabular-nums">{f.inspection_count}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500">{f.manager_names.join(", ") || "—"}</td>
+                    <td className="px-4 py-3">{canWrite && (<div className="flex items-center gap-2"><button onClick={() => startEdit(f)} className="text-slate-400 hover:text-brand-600 p-1"><Edit2 size={14} /></button><button onClick={() => { if (confirm(`Delete ${f.name}?`)) del.mutate(f.id); }} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={14} /></button></div>)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
       </div>
-    </div>
+      {viewLoc && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" onClick={() => setViewLoc(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3"><h2 className="text-sm font-bold text-slate-900">{viewLoc.name} — locations</h2><button onClick={() => setViewLoc(null)}><X size={16} /></button></div>
+            {viewLoc.location_names.length ? <ul className="text-sm text-slate-700 space-y-1">{viewLoc.location_names.map((n, i) => <li key={i}>• {n}</li>)}</ul> : <p className="text-sm text-slate-400">No locations assigned.</p>}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function LookupTab({ kind }: { kind: "type" | "location" }) {
+  const canWrite = useHasPermission("school_admin:facility:write");
+  const typesQ = useFacilityTypes(); const typesSave = useSaveFacilityType(); const typesDel = useDeleteFacilityType();
+  const locsQ = useFacilityLocations(); const locsSave = useSaveFacilityLocation(); const locsDel = useDeleteFacilityLocation();
+  const q = kind === "type" ? typesQ : locsQ;
+  const save = kind === "type" ? typesSave : locsSave;
+  const del = kind === "type" ? typesDel : locsDel;
+  const rows: FacilityLookup[] = q.data || [];
+  const [name, setName] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+  const submit = () => save.mutate({ id: editing || undefined, data: { name } }, { onSuccess: () => { setName(""); setEditing(null); } });
+
+  return (
+    <>
+      {canWrite && (
+        <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4 flex items-end gap-3">
+          <div className="flex-1"><label className="label">{kind === "type" ? "Facility type" : "Location"} name</label><input value={name} onChange={(e) => setName(e.target.value)} className="input" /></div>
+          <button onClick={submit} disabled={!name || save.isPending} className="btn-primary">{editing ? "Update" : "Add"}</button>
+          {editing && <button onClick={() => { setName(""); setEditing(null); }} className="btn-secondary">Cancel</button>}
+        </div>
+      )}
+      <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-50">
+        {q.isLoading ? <div className="py-12 text-center"><Loader2 size={20} className="animate-spin text-slate-400 mx-auto" /></div>
+          : rows.length === 0 ? <p className="py-12 text-center text-slate-400 text-sm">None yet.</p>
+          : rows.map((r) => (
+            <div key={r.id} className="flex items-center gap-3 px-5 py-3">
+              <span className="text-sm font-semibold text-slate-800">{r.name}</span>
+              {canWrite && <div className="ml-auto flex items-center gap-2"><button onClick={() => { setName(r.name); setEditing(r.id); }} className="text-slate-400 hover:text-brand-600 p-1"><Edit2 size={13} /></button><button onClick={() => { if (confirm(`Delete ${r.name}?`)) del.mutate(r.id); }} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={13} /></button></div>}
+            </div>
+          ))}
+      </div>
+    </>
+  );
+}
+
+function DepartmentsTab() {
+  const canWrite = useHasPermission("school_admin:facility:write");
+  const { data, isLoading } = useFacilityDepartments();
+  const save = useSaveFacilityDepartment();
+  const del = useDeleteFacilityDepartment();
+  const rows: FacilityDepartment[] = data || [];
+  const [name, setName] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+  const submit = () => save.mutate({ id: editing || undefined, data: { name } }, { onSuccess: () => { setName(""); setEditing(null); } });
+  return (
+    <>
+      {canWrite && (
+        <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4 flex items-end gap-3">
+          <div className="flex-1"><label className="label">Department name</label><input value={name} onChange={(e) => setName(e.target.value)} className="input" /></div>
+          <button onClick={submit} disabled={!name || save.isPending} className="btn-primary">{editing ? "Update" : "Add"}</button>
+          {editing && <button onClick={() => { setName(""); setEditing(null); }} className="btn-secondary">Cancel</button>}
+        </div>
+      )}
+      <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-50">
+        {isLoading ? <div className="py-12 text-center"><Loader2 size={20} className="animate-spin text-slate-400 mx-auto" /></div>
+          : rows.length === 0 ? <p className="py-12 text-center text-slate-400 text-sm">None yet. Assign officers in Configuration.</p>
+          : rows.map((r) => (
+            <div key={r.id} className="flex items-center gap-3 px-5 py-3">
+              <span className="text-sm font-semibold text-slate-800">{r.name}</span>
+              <span className="badge bg-slate-50 text-slate-500 border-slate-200">{r.officer_count} officer{r.officer_count === 1 ? "" : "s"}</span>
+              {canWrite && <div className="ml-auto flex items-center gap-2"><button onClick={() => { setName(r.name); setEditing(r.id); }} className="text-slate-400 hover:text-brand-600 p-1"><Edit2 size={13} /></button><button onClick={() => { if (confirm(`Delete ${r.name}?`)) del.mutate(r.id); }} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={13} /></button></div>}
+            </div>
+          ))}
+      </div>
+    </>
   );
 }
