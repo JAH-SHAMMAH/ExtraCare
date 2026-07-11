@@ -15,7 +15,7 @@ import {
   User, NotebookPen, MonitorCheck, HeartHandshake, MessageSquare,
   Camera, MessageCircle, Users as UsersIcon, UserCircle, Cake,
   CalendarClock, Gavel, Newspaper, Radio, Library, Bus, ArrowLeftRight,
-  FileQuestion, X, LifeBuoy, Settings2,
+  FileQuestion, X, LifeBuoy, Settings2, KeyRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/branding/Brand";
@@ -286,10 +286,11 @@ const MODULE_SECTIONS: ModuleSection[] = [
     ],
   },
   {
-    // Educare "Admin Management". Audit Trail surfaces the existing Core Audit Log
-    // here (same route, grouped like Educare). Biometric + Custom Field reuse the
-    // platform pages. Week Entries + Result Publish Helper are now built; the old
-    // "Manage User Roles & Password" surface redirects to the Users page.
+    // Educare "Admin Management" — all 7 reference children. Audit Trail surfaces
+    // the existing Core Audit Log; Biometric + Custom Field reuse the platform
+    // pages; "Manage User Roles & Password" points at the canonical Users page
+    // (role assignment + password reset) — the single source of truth, surfaced
+    // here for menu parity rather than duplicated.
     key: "admin-management",
     requiredModule: "school",
     label: "Admin Management",
@@ -299,8 +300,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/deactivated-users", label: "Manage Deactivated Users", icon: UserCog },
       { href: "/dashboard/modules/school/week-entries", label: "Manage Week Entries", icon: CalendarClock },
       { href: "/dashboard/modules/school/result-publish", label: "Result Publish Helper", icon: ClipboardList },
-      // Role management lives on the Users page (the one source of truth); the old
-      // "Manage User Roles & Password" surface was a duplicate and now redirects there.
+      { href: "/dashboard/users", label: "Manage User Roles & Password", icon: KeyRound },
       { href: "/dashboard/modules/school/biometric", label: "Manage Biometric", icon: Activity },
       { href: "/dashboard/modules/school/custom-fields", label: "Manage Custom Field", icon: FolderOpen },
     ],
