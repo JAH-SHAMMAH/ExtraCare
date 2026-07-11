@@ -460,21 +460,7 @@ export interface StudentDailyReport {
   org_id: string;
 }
 
-export type CRMStage = "new" | "contacted" | "engaged" | "converted" | "lost";
-
-export interface CRMContact {
-  id: string;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  contact_type: string;
-  stage: CRMStage | string;
-  source: string | null;
-  assigned_to: string | null;
-  notes: string | null;
-  created_at: string;
-  org_id: string;
-}
+// CRM: no dedicated type — the CRM page reuses AdmissionApplication (enquiry) data.
 
 export interface Club {
   id: string;

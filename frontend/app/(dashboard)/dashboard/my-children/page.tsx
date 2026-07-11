@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Calendar, GraduationCap, Award, ArrowRight, AlertCircle, Users } from "lucide-react";
+import { Calendar, GraduationCap, Award, ArrowRight, AlertCircle, Users, Smile } from "lucide-react";
 import { useMyContexts, type ParentChild } from "@/hooks/useMyContexts";
 import { useDelayedFlag } from "@/hooks/useDelayedFlag";
 import { PageHeaderSkeleton, TableSkeleton } from "@/components/loading/Skeleton";
@@ -85,9 +85,10 @@ function ChildRow({ child }: { child: ParentChild }) {
         />
       </div>
 
-      <div className="flex divide-x divide-slate-50">
+      <div className="flex flex-wrap divide-x divide-slate-50">
         <LinkCell href="/dashboard/my-children/attendance" icon={Calendar} label="Attendance history" />
         <LinkCell href="/dashboard/my-children/report-card" icon={GraduationCap} label="Grades & reports" />
+        <LinkCell href="/dashboard/my-children/daily-reports" icon={Smile} label="Daily reports" />
         <LinkCell href="/dashboard/my-children/payments" icon={Award} label="Fees & invoices" />
       </div>
     </div>

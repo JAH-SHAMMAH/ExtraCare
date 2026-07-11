@@ -83,7 +83,8 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/feedback/manage", permission: "school:feedback:write" },
   { prefix: "/dashboard/modules/school/feedback/daily-reports", permission: "school:read" },
   { prefix: "/dashboard/modules/school/feedback/student-daily-reports", permission: "school:read" },
-  { prefix: "/dashboard/modules/school/feedback/crm", permission: "school:write" },
+  // CRM is a view over Admissions data — gate it on the admissions scope.
+  { prefix: "/dashboard/modules/school/feedback/crm", permission: "school:admissions:read" },
   { prefix: "/dashboard/modules/school/feedback", permission: "school:feedback:read" },
   { prefix: "/dashboard/modules/school/clubs", permission: "school:clubs:read" },
   { prefix: "/dashboard/modules/school/journals", permission: "school:journals:read" },

@@ -467,16 +467,13 @@ export const feedbackApi = {
   },
   studentDailyReports: {
     list: (p?: { student_id?: string }) => api.get("/feedback/student-daily-reports", { params: p }).then((r) => r.data),
+    forStudent: (student_id: string) => api.get(`/feedback/student-daily-reports/student/${student_id}`).then((r) => r.data),
     create: (data: object) => api.post("/feedback/student-daily-reports", data).then((r) => r.data),
     update: (id: string, data: object) => api.patch(`/feedback/student-daily-reports/${id}`, data).then((r) => r.data),
     remove: (id: string) => api.delete(`/feedback/student-daily-reports/${id}`),
   },
-  crm: {
-    list: (p?: { stage?: string }) => api.get("/feedback/crm", { params: p }).then((r) => r.data),
-    create: (data: object) => api.post("/feedback/crm", data).then((r) => r.data),
-    update: (id: string, data: object) => api.patch(`/feedback/crm/${id}`, data).then((r) => r.data),
-    remove: (id: string) => api.delete(`/feedback/crm/${id}`),
-  },
+  // CRM: no dedicated api — the CRM page reads admission-application (enquiry) data
+  // via enrollmentApi. A standalone CRM store was removed (overlapped Admissions).
 };
 
 export const clubsApi = {

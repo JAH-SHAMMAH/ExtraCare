@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { feedbackApi } from "@/lib/api";
-import type { FeedbackSettings, DailyReport, StudentDailyReport, CRMContact } from "@/types";
+import type { FeedbackSettings, DailyReport, StudentDailyReport } from "@/types";
 
 function saver<T>(fn: (v: any) => Promise<T>, key: string, ok: string) {
   return () => {
@@ -42,12 +42,11 @@ export const useSaveStudentDailyReport = saver(
 );
 export const useDeleteStudentDailyReport = saver((id: string) => feedbackApi.studentDailyReports.remove(id), "student-daily-reports", "Report deleted.");
 
-// ── CRM ──────────────────────────────────────────────────────────────────────
-export function useCrmContacts(params?: { stage?: string }) {
-  return useQuery<{ items: CRMContact[] }>({ queryKey: ["crm-contacts", params], queryFn: () => feedbackApi.crm.list(params) });
+// Parent/owner view: one student's daily reports (ownership-scoped server-side).
+export function useStudentDailyReportsForChild(studentId: string | null) {
+  return useQuery<{ items: StudentDailyReport[] }>({
+    queryKey: ["student-daily-reports", "child", studentId],
+    queryFn: () => feedbackApi.studentDailyReports.forStudent(studentId as string),
+    enabled: !!studentId,
+  });
 }
-export const useSaveCrmContact = saver(
-  (v: { id?: string; data: object }) => (v.id ? feedbackApi.crm.update(v.id, v.data) : feedbackApi.crm.create(v.data)),
-  "crm-contacts", "Contact saved.",
-);
-export const useDeleteCrmContact = saver((id: string) => feedbackApi.crm.remove(id), "crm-contacts", "Contact deleted.");
