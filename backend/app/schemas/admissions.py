@@ -249,3 +249,44 @@ class TransferListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ── Authorized Pickups ─────────────────────────────────────────────────────────
+
+class AuthorizedPickupCreate(BaseModel):
+    student_id: str
+    full_name: str
+    relationship_type: Optional[str] = None
+    phone: Optional[str] = None
+    id_document: Optional[str] = None
+    photo_url: Optional[str] = None
+
+
+class AuthorizedPickupUpdate(BaseModel):
+    full_name: Optional[str] = None
+    relationship_type: Optional[str] = None
+    phone: Optional[str] = None
+    id_document: Optional[str] = None
+    photo_url: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class AuthorizedPickupResponse(BaseModel):
+    id: str
+    student_id: str
+    student_name: Optional[str]
+    full_name: str
+    relationship_type: Optional[str]
+    phone: Optional[str]
+    id_document: Optional[str]
+    photo_url: Optional[str]
+    is_active: bool
+    created_at: datetime
+    org_id: str
+
+
+class AuthorizedPickupListResponse(BaseModel):
+    items: list[AuthorizedPickupResponse]
+    total: int
+    page: int
+    page_size: int

@@ -37,7 +37,7 @@ from app.models.user import User
 from app.models.modules.school import Student, SchoolClass
 from app.models.modules.admissions import (
     AdmissionApplication, EntranceExam, EntranceExamResult,
-    PromotionRecord, TransferRecord,
+    PromotionRecord, TransferRecord, StudentAuthorizedPickup,
 )
 from app.schemas.admissions import (
     AdmissionApplicationCreate, AdmissionApplicationUpdate, AdmissionApplicationResponse,
@@ -47,6 +47,8 @@ from app.schemas.admissions import (
     PromotionCreate, PromotionRecordResponse, PromotionListResponse,
     PromotionPreviewItem, PromotionPreviewResponse, PromotionRevertResponse,
     TransferCreate, TransferUpdate, TransferRecordResponse, TransferListResponse,
+    AuthorizedPickupCreate, AuthorizedPickupUpdate, AuthorizedPickupResponse,
+    AuthorizedPickupListResponse,
     ADMISSION_STATUSES, EXAM_STATUSES, EXAM_OUTCOMES, PROMOTION_OUTCOMES,
     TRANSFER_TYPES, TRANSFER_STATUSES,
 )
@@ -835,3 +837,125 @@ async def update_transfer(
     )
     name = (await _student_names(db, current_user.org_id, {t.student_id})).get(t.student_id)
     return _transfer_response(t, name)
+
+
+# ── Authorized Pickups (Manage Students Pickup) ────────────────────────────────
+# Registry of people allowed to collect a student. Registry only — no per-day
+# pickup log. Deactivate-not-delete: DELETE flips is_active, keeping the row.
+
+def _pickup_response(p: StudentAuthorizedPickup, student_name: str | None) -> AuthorizedPickupResponse:
+    return AuthorizedPickupResponse(
+        id=p.id, student_id=p.student_id, student_name=student_name,
+        full_name=p.full_name, relationship_type=p.relationship_type,
+        phone=p.phone, id_document=p.id_document, photo_url=p.photo_url,
+        is_active=bool(p.is_active), created_at=p.created_at, org_id=p.org_id,
+    )
+
+
+async def _load_pickup(db: AsyncSession, pickup_id: str, org_id: str) -> StudentAuthorizedPickup:
+    p = (await db.execute(
+        select(StudentAuthorizedPickup).where(
+            StudentAuthorizedPickup.id == pickup_id, StudentAuthorizedPickup.org_id == org_id,
+        )
+    )).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="pickup authorisation not found in your organisation.")
+    return p
+
+
+@router.get("/pickups", response_model=AuthorizedPickupListResponse, dependencies=[_stu_read])
+async def list_pickups(
+    student_id: str | None = None,
+    active_only: bool = False,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    base = select(StudentAuthorizedPickup).where(StudentAuthorizedPickup.org_id == current_user.org_id)
+    if student_id:
+        base = base.where(StudentAuthorizedPickup.student_id == student_id)
+    if active_only:
+        base = base.where(StudentAuthorizedPickup.is_active == True)  # noqa: E712
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
+    rows = (await db.execute(
+        base.order_by(StudentAuthorizedPickup.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    )).scalars().all()
+    names = await _student_names(db, current_user.org_id, {r.student_id for r in rows})
+    return AuthorizedPickupListResponse(
+        items=[_pickup_response(r, names.get(r.student_id)) for r in rows],
+        total=total, page=page, page_size=page_size,
+    )
+
+
+@router.post("/pickups", response_model=AuthorizedPickupResponse, status_code=201, dependencies=[_stu_write])
+async def create_pickup(
+    payload: AuthorizedPickupCreate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    if not payload.full_name.strip():
+        raise HTTPException(status_code=422, detail="full_name is required.")
+    # Validates the student exists in the caller's org (tenant guard).
+    student = await _require_student(db, current_user.org_id, payload.student_id)
+    p = StudentAuthorizedPickup(
+        student_id=student.id, full_name=payload.full_name.strip(),
+        relationship_type=payload.relationship_type, phone=payload.phone,
+        id_document=payload.id_document, photo_url=payload.photo_url,
+        created_by=current_user.id, org_id=current_user.org_id,
+    )
+    db.add(p)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="StudentAuthorizedPickup", resource_id=p.id,
+        resource_label=f"pickup {p.full_name} for student {student.id}",
+        metadata={"student_id": student.id}, request=request,
+    )
+    name = (await _student_names(db, current_user.org_id, {student.id})).get(student.id)
+    return _pickup_response(p, name)
+
+
+@router.patch("/pickups/{pickup_id}", response_model=AuthorizedPickupResponse, dependencies=[_stu_write])
+async def update_pickup(
+    pickup_id: str,
+    payload: AuthorizedPickupUpdate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    p = await _load_pickup(db, pickup_id, current_user.org_id)
+    data = payload.model_dump(exclude_unset=True)
+    if "full_name" in data and not (data["full_name"] or "").strip():
+        raise HTTPException(status_code=422, detail="full_name cannot be blank.")
+    for field, value in data.items():
+        setattr(p, field, value)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="StudentAuthorizedPickup", resource_id=p.id,
+        resource_label=f"pickup {p.full_name}",
+        metadata={"student_id": p.student_id}, request=request,
+    )
+    name = (await _student_names(db, current_user.org_id, {p.student_id})).get(p.student_id)
+    return _pickup_response(p, name)
+
+
+@router.delete("/pickups/{pickup_id}", status_code=204, dependencies=[_stu_write])
+async def delete_pickup(
+    pickup_id: str,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    # Deactivate-not-delete — flip is_active, preserve the row + audit history.
+    p = await _load_pickup(db, pickup_id, current_user.org_id)
+    p.is_active = False
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="StudentAuthorizedPickup", resource_id=p.id,
+        resource_label=f"deactivated pickup {p.full_name}",
+        metadata={"student_id": p.student_id, "is_active": False}, request=request,
+    )

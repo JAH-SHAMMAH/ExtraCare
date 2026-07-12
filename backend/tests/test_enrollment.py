@@ -25,11 +25,13 @@ from app.routers.modules.admissions import (
     update_exam_result, delete_exam_result,
     create_promotions, preview_promotions, revert_promotion_batch, list_promotions,
     create_transfer, list_transfers, update_transfer,
+    create_pickup, list_pickups, update_pickup, delete_pickup,
 )
 from app.schemas.admissions import (
     AdmissionApplicationCreate, AdmissionApplicationUpdate, AdmitRequest,
     EntranceExamCreate, EntranceExamResultCreate,
     PromotionCreate, TransferCreate, TransferUpdate,
+    AuthorizedPickupCreate, AuthorizedPickupUpdate,
 )
 
 
@@ -387,6 +389,56 @@ async def test_transfer_filter_and_tenant_scope(db, org, teacher, school_class):
     await db.commit()
     theirs = await list_transfers(status=None, page=1, page_size=25, db=db, current_user=teacher2)
     assert theirs.total == 0
+
+
+# ── Authorized Pickups ─────────────────────────────────────────────────────────
+
+async def test_pickup_create_list_and_student_filter(db, org, teacher, school_class):
+    s1 = await _make_student(db, org, school_class, first="Ada", sid="S-A")
+    s2 = await _make_student(db, org, school_class, first="Bo", sid="S-B")
+    p = await create_pickup(
+        AuthorizedPickupCreate(student_id=s1.id, full_name="Grandma Ada",
+                               relationship_type="guardian", phone="0800"),
+        request=None, db=db, current_user=teacher,
+    )
+    assert p.is_active is True
+    assert p.student_name == "Ada One"
+    await create_pickup(AuthorizedPickupCreate(student_id=s2.id, full_name="Uncle Bo"),
+                        request=None, db=db, current_user=teacher)
+
+    everyone = await list_pickups(page=1, page_size=25, db=db, current_user=teacher)
+    assert everyone.total == 2
+    just_s1 = await list_pickups(student_id=s1.id, page=1, page_size=25, db=db, current_user=teacher)
+    assert just_s1.total == 1 and just_s1.items[0].id == p.id
+
+
+async def test_pickup_create_rejects_foreign_student(db, org, teacher, school_class):
+    # A student from another org must not be pickup-registerable here.
+    other = Organization(id=str(uuid.uuid4()), name="Other", slug=f"o-{uuid.uuid4().hex[:6]}",
+                         industry=IndustryType.SCHOOL, modules_enabled=["school"])
+    db.add(other)
+    await db.commit()
+    foreign = await _make_student(db, other, None, sid="S-X")
+    with pytest.raises(HTTPException) as exc:
+        await create_pickup(AuthorizedPickupCreate(student_id=foreign.id, full_name="Intruder"),
+                            request=None, db=db, current_user=teacher)
+    assert exc.value.status_code == 404
+
+
+async def test_pickup_delete_is_deactivate_not_delete(db, org, teacher, school_class):
+    s1 = await _make_student(db, org, school_class, sid="S-D")
+    p = await create_pickup(AuthorizedPickupCreate(student_id=s1.id, full_name="Driver Dan"),
+                            request=None, db=db, current_user=teacher)
+    await delete_pickup(p.id, request=None, db=db, current_user=teacher)
+    # Row survives; active_only hides it, unfiltered still shows it as inactive.
+    active = await list_pickups(active_only=True, page=1, page_size=25, db=db, current_user=teacher)
+    assert active.total == 0
+    allrows = await list_pickups(page=1, page_size=25, db=db, current_user=teacher)
+    assert allrows.total == 1 and allrows.items[0].is_active is False
+    # Update can re-activate.
+    reactivated = await update_pickup(p.id, AuthorizedPickupUpdate(is_active=True),
+                                      request=None, db=db, current_user=teacher)
+    assert reactivated.is_active is True
 
 
 # ── RBAC contract ─────────────────────────────────────────────────────────────
