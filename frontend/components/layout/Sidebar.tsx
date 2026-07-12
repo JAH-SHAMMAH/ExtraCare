@@ -346,7 +346,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
 // items, footer) so spacing, font size/weight, icon size and states stay
 // identical across the whole sidebar. Active = a light tint of the brand (a
 // "lighter shade of the base") with a rounded corner; hover = a subtle slate wash.
-const NAV_ROW = "flex items-center gap-3 px-3 py-1 rounded-md text-[15px] font-medium transition-colors";
+const NAV_ROW = "flex items-center gap-3 px-3 py-1 rounded-md text-base font-semibold transition-colors";
 const NAV_ACTIVE = "bg-brand-50 text-brand-700";
 const NAV_IDLE = "text-slate-600 hover:bg-slate-100 hover:text-slate-900";
 const NAV_ICON = 20;      // uniform outline icon size across all items
@@ -421,7 +421,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
 
       <aside
         className={cn(
-          "no-print fixed left-0 top-0 h-screen w-[384px] max-w-[85vw] bg-white border-r border-slate-200/70 flex flex-col z-50 shadow-sm",
+          "no-print fixed left-0 top-0 h-screen w-80 max-w-[85vw] bg-white border-r border-slate-200/70 flex flex-col z-50 shadow-sm",
           "transition-transform duration-200 ease-out lg:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full",
         )}
