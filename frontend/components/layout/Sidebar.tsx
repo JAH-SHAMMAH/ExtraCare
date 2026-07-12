@@ -346,9 +346,12 @@ const MODULE_SECTIONS: ModuleSection[] = [
 // items, footer) so spacing, font size/weight, icon size and states stay
 // identical across the whole sidebar. Active = a light tint of the brand (a
 // "lighter shade of the base") with a rounded corner; hover = a subtle slate wash.
+// Dark-green rail (Educare-style). Idle text is a soft near-white green; the
+// active row is a lighter tint (white/10 reads as a lighter green over the base)
+// with bright white text; hover is a very subtle white overlay.
 const NAV_ROW = "flex items-center gap-3 px-3 py-1 rounded-md text-base font-semibold transition-colors";
-const NAV_ACTIVE = "bg-brand-50 text-brand-700";
-const NAV_IDLE = "text-slate-600 hover:bg-slate-100 hover:text-slate-900";
+const NAV_ACTIVE = "bg-white/10 text-white";
+const NAV_IDLE = "text-green-50/75 hover:bg-white/5 hover:text-white";
 const NAV_ICON = 20;      // uniform outline icon size across all items
 const NAV_STROKE = 1.75;  // uniform stroke width
 
@@ -421,22 +424,22 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
 
       <aside
         className={cn(
-          "no-print fixed left-0 top-0 h-screen w-80 max-w-[85vw] bg-white border-r border-slate-200/70 flex flex-col z-50 shadow-sm",
+          "no-print fixed left-0 top-0 h-screen w-80 max-w-[85vw] bg-[#14432f] border-r border-white/10 flex flex-col z-50 shadow-sm",
           "transition-transform duration-200 ease-out lg:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
       {/* Brand */}
-      <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-slate-100">
+      <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-white/10">
         <BrandMark className="h-8 shrink-0" priority />
         <div className="min-w-0 flex-1">
-          <p className="text-base font-black text-slate-900 truncate leading-tight">{org?.name || "Fairview School Portal"}</p>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate">
+          <p className="text-base font-black text-white truncate leading-tight">{org?.name || "Fairview School Portal"}</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-green-200/70 truncate">
             School Portal
           </p>
         </div>
         {/* Mobile: close the drawer */}
-        <button onClick={onClose} aria-label="Close menu" className="lg:hidden p-1.5 -mr-1.5 rounded-lg text-slate-400 hover:bg-slate-100">
+        <button onClick={onClose} aria-label="Close menu" className="lg:hidden p-1.5 -mr-1.5 rounded-lg text-green-100 hover:bg-white/10">
           <X size={18} />
         </button>
       </div>
@@ -445,7 +448,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
       <nav className="flex-1 overflow-y-auto px-2.5 py-2 space-y-0.5">
         {/* Core */}
         <div>
-          <p className="px-2.5 mb-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">Core</p>
+          <p className="px-2.5 mb-0.5 text-[10px] font-bold uppercase tracking-widest text-green-200/70">Core</p>
           <div className="space-y-0">
             {visibleCoreNav.map(({ href, label, icon: Icon }) => (
               <Link
@@ -475,7 +478,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
       </nav>
 
       {/* Bottom */}
-      <div className="px-2.5 pb-3 pt-2 border-t border-slate-100 space-y-0">
+      <div className="px-2.5 pb-3 pt-2 border-t border-white/10 space-y-0">
         <Link
           href="/dashboard/profile"
           className={cn(NAV_ROW, isActive("/dashboard/profile") ? NAV_ACTIVE : NAV_IDLE)}
@@ -498,7 +501,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
         </Link>
         <button
           onClick={logout}
-          className={cn(NAV_ROW, "w-full text-left text-red-500 hover:bg-red-50 hover:text-red-600")}
+          className={cn(NAV_ROW, "w-full text-left text-red-300 hover:bg-red-500/10 hover:text-red-200")}
         >
           <LogOut size={NAV_ICON} strokeWidth={NAV_STROKE} className="shrink-0" />
           <span className="truncate">Sign out</span>
@@ -507,9 +510,9 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
         {/* User card */}
         {user && (
           <Link href="/dashboard/profile" className="block mt-3">
-            <div className="px-3 py-2.5 rounded-lg bg-slate-50 border border-slate-100 hover:bg-slate-100 transition-colors">
+            <div className="px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-brand-600 flex items-center justify-center text-white text-xs font-bold shrink-0 overflow-hidden">
+                <div className="w-7 h-7 rounded-lg bg-white/15 flex items-center justify-center text-white text-xs font-bold shrink-0 overflow-hidden">
                   {user.avatar_url ? (
                     <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
                   ) : (
@@ -517,8 +520,8 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
                   )}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-slate-800 truncate">{user.full_name}</p>
-                  <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
+                  <p className="text-xs font-semibold text-white truncate">{user.full_name}</p>
+                  <p className="text-[10px] text-green-200/70 truncate">{user.email}</p>
                 </div>
               </div>
             </div>
@@ -535,10 +538,10 @@ function ModuleSectionsSkeleton() {
     <div className="space-y-5" aria-hidden>
       {[0, 1].map((i) => (
         <div key={i}>
-          <div className="px-3 mb-2 h-3 w-20 bg-slate-100 rounded animate-pulse" />
+          <div className="px-3 mb-2 h-3 w-20 bg-white/10 rounded animate-pulse" />
           <div className="space-y-1">
             {[0, 1, 2, 3].map((j) => (
-              <div key={j} className="h-8 mx-1 bg-slate-50 rounded-lg animate-pulse" />
+              <div key={j} className="h-8 mx-1 bg-white/5 rounded-lg animate-pulse" />
             ))}
           </div>
         </div>
@@ -575,18 +578,18 @@ const CollapsibleSection = memo(function CollapsibleSection({
         aria-expanded={open}
         className={cn(
           NAV_ROW, "w-full",
-          headerHint ? "bg-brand-50/60 text-brand-700 hover:bg-brand-50" : NAV_IDLE,
+          headerHint ? "bg-white/10 text-white hover:bg-white/15" : NAV_IDLE,
         )}
       >
         <ModuleIcon size={NAV_ICON} strokeWidth={NAV_STROKE} className="shrink-0" />
         <span className="flex-1 text-left truncate">{section.label}</span>
         <ChevronDown
           size={16}
-          className={cn("shrink-0 text-slate-400 transition-transform duration-200", !open && "-rotate-90")}
+          className={cn("shrink-0 text-green-200/60 transition-transform duration-200", !open && "-rotate-90")}
         />
       </button>
       {open && (
-        <div className="mt-px ml-4 pl-1.5 border-l border-slate-100 space-y-0 animate-fade-in">
+        <div className="mt-px ml-4 pl-1.5 border-l border-white/10 space-y-0 animate-fade-in">
           {section.items.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
