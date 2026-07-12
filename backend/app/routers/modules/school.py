@@ -99,6 +99,7 @@ async def list_students(
     page_size: int = Query(default=25, ge=1, le=100),
     search: str | None = None,
     class_id: str | None = None,
+    status: str | None = None,  # active | inactive | (None/all)
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -113,6 +114,12 @@ async def list_students(
         )
     if class_id:
         query = query.where(Student.class_id == class_id)
+    # Roster filter — powers the Active / Inactive tabs. Anything other than the
+    # two known values (incl. "all") is a no-op so the full roster is returned.
+    if status == "active":
+        query = query.where(Student.is_active == True)  # noqa: E712
+    elif status == "inactive":
+        query = query.where(Student.is_active == False)  # noqa: E712
 
     total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar()
     result = await db.execute(query.offset((page - 1) * page_size).limit(page_size))

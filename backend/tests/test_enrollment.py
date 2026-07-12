@@ -371,6 +371,13 @@ async def test_transfer_filter_and_tenant_scope(db, org, teacher, school_class):
     pending = await list_transfers(status="pending", page=1, page_size=25, db=db, current_user=teacher)
     assert pending.total == 1
 
+    # transfer_type filter (powers the Withdrawal List view). The record above
+    # defaults to transfer_out, so a withdrawal filter yields nothing.
+    withdrawals = await list_transfers(status=None, transfer_type="withdrawal", page=1, page_size=25, db=db, current_user=teacher)
+    assert withdrawals.total == 0
+    outs = await list_transfers(status=None, transfer_type="transfer_out", page=1, page_size=25, db=db, current_user=teacher)
+    assert outs.total == 1
+
     other = Organization(id=str(uuid.uuid4()), name="Other", slug=f"o-{uuid.uuid4().hex[:6]}",
                          industry=IndustryType.SCHOOL, modules_enabled=["school"])
     db.add(other)

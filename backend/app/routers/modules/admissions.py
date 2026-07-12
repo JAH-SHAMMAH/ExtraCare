@@ -736,6 +736,7 @@ async def _load_transfer(db: AsyncSession, transfer_id: str, org_id: str) -> Tra
 @router.get("/transfers", response_model=TransferListResponse, dependencies=[_stu_read])
 async def list_transfers(
     status: str | None = Query(default=None),
+    transfer_type: str | None = None,  # transfer_out | withdrawal
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -744,6 +745,9 @@ async def list_transfers(
     base = select(TransferRecord).where(TransferRecord.org_id == current_user.org_id)
     if status:
         base = base.where(TransferRecord.status == status)
+    # Powers the Withdrawal List view — filters to type=withdrawal (or transfer_out).
+    if transfer_type:
+        base = base.where(TransferRecord.transfer_type == transfer_type)
     total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
     rows = (await db.execute(
         base.order_by(TransferRecord.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
