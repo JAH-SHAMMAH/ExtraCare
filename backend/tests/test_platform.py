@@ -20,9 +20,10 @@ from sqlalchemy import select, func
 from app.models.user import User, UserStatus
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.modules.school import AttendanceEvent
-from app.models.modules.platform import UnmappedPunch
+from app.models.modules.platform import UnmappedPunch, BiometricDevice
 from app.routers.modules.biometric import (
     register_device, create_enrollment, ingest_punches, list_quarantine, resolve_punch,
+    issue_device_token, revoke_device_token, authenticate_device,
 )
 from app.routers.modules.platform import (
     create_poll, cast_vote, create_house, send_message, my_inbox, mark_read,
@@ -56,20 +57,29 @@ async def _events(db, org):
     return (await db.execute(select(AttendanceEvent).where(AttendanceEvent.org_id == org.id))).scalars().all()
 
 
+async def _device_with_token(db, org, admin, device_id, name="Gate"):
+    """Register a device + issue its ingest token; return (device_orm, token).
+    Ingest now authenticates by device token, so tests resolve the ORM device."""
+    resp = await register_device(DeviceCreate(device_id=device_id, name=name), db=db, current_user=admin)
+    tok = await issue_device_token(resp.id, db=db, current_user=admin)
+    dev = (await db.execute(select(BiometricDevice).where(BiometricDevice.id == resp.id))).scalar_one()
+    return dev, tok.token
+
+
 # ── Biometric: idempotency on the device record id ───────────────────────────────
 
 async def test_ingest_dedupes_on_record_id_not_timestamp(db, org, student):
     admin = await _admin(db, org)
-    await register_device(DeviceCreate(device_id="DEV1", name="Gate"), db=db, current_user=admin)
+    dev, _ = await _device_with_token(db, org, admin, "DEV1", "Gate")
     await create_enrollment(EnrollmentCreate(biometric_user_id="U100", student_id=student.id), db=db, current_user=admin)
 
     t = datetime(2026, 5, 1, 8, 0, tzinfo=timezone.utc)
     punch = PunchIn(device_id="DEV1", biometric_user_id="U100", event_time=t, direction="check_in", record_id="REC-1")
-    r1 = await ingest_punches(IngestPunchesRequest(punches=[punch]), db=db, current_user=admin)
+    r1 = await ingest_punches(IngestPunchesRequest(punches=[punch]), db=db, device=dev)
     assert r1.ingested == 1 and r1.duplicates == 0
     # Re-push the SAME record id but with a DRIFTED timestamp → still a duplicate.
     drifted = PunchIn(device_id="DEV1", biometric_user_id="U100", event_time=t + timedelta(minutes=3), direction="check_in", record_id="REC-1")
-    r2 = await ingest_punches(IngestPunchesRequest(punches=[drifted]), db=db, current_user=admin)
+    r2 = await ingest_punches(IngestPunchesRequest(punches=[drifted]), db=db, device=dev)
     assert r2.ingested == 0 and r2.duplicates == 1
     # Exactly one attendance event exists for that punch.
     evs = [e for e in await _events(db, org) if e.external_ref == "REC-1"]
@@ -79,10 +89,10 @@ async def test_ingest_dedupes_on_record_id_not_timestamp(db, org, student):
 async def test_clock_skew_is_surfaced(db, org, student):
     from app.routers.modules.biometric import list_devices
     admin = await _admin(db, org)
-    await register_device(DeviceCreate(device_id="DEV2", name="Side"), db=db, current_user=admin)
+    dev_orm, _ = await _device_with_token(db, org, admin, "DEV2", "Side")
     await create_enrollment(EnrollmentCreate(biometric_user_id="U200", student_id=student.id), db=db, current_user=admin)
     old = datetime.now(timezone.utc) - timedelta(minutes=20)
-    await ingest_punches(IngestPunchesRequest(punches=[PunchIn(device_id="DEV2", biometric_user_id="U200", event_time=old, record_id="R2")]), db=db, current_user=admin)
+    await ingest_punches(IngestPunchesRequest(punches=[PunchIn(device_id="DEV2", biometric_user_id="U200", event_time=old, record_id="R2")]), db=db, device=dev_orm)
     dev = next(d for d in await list_devices(db=db, current_user=admin) if d.device_id == "DEV2")
     assert dev.clock_skew_seconds is not None and dev.clock_skew_seconds > 60   # drift visible, not hidden
 
@@ -91,12 +101,12 @@ async def test_clock_skew_is_surfaced(db, org, student):
 
 async def test_unknown_device_and_unknown_id_quarantine(db, org, student):
     admin = await _admin(db, org)
-    await register_device(DeviceCreate(device_id="DEVK", name="Known"), db=db, current_user=admin)
+    devk, _ = await _device_with_token(db, org, admin, "DEVK", "Known")
     # unknown device
     r = await ingest_punches(IngestPunchesRequest(punches=[
         PunchIn(device_id="GHOST", biometric_user_id="U1", record_id="A"),
         PunchIn(device_id="DEVK", biometric_user_id="UNMAPPED", record_id="B"),   # unknown biometric id
-    ]), db=db, current_user=admin)
+    ]), db=db, device=devk)
     assert r.ingested == 0 and r.quarantined == 2
     assert len(await _events(db, org)) == 0   # nothing posted, no phantom student
     q = await list_quarantine(status="pending", db=db, current_user=admin)
@@ -106,8 +116,8 @@ async def test_unknown_device_and_unknown_id_quarantine(db, org, student):
 
 async def test_resolve_replays_exactly_one_event(db, org, student):
     admin = await _admin(db, org)
-    await register_device(DeviceCreate(device_id="DEVR", name="R"), db=db, current_user=admin)
-    await ingest_punches(IngestPunchesRequest(punches=[PunchIn(device_id="DEVR", biometric_user_id="NEW", record_id="RR1", direction="check_in")]), db=db, current_user=admin)
+    devr, _ = await _device_with_token(db, org, admin, "DEVR", "R")
+    await ingest_punches(IngestPunchesRequest(punches=[PunchIn(device_id="DEVR", biometric_user_id="NEW", record_id="RR1", direction="check_in")]), db=db, device=devr)
     q = await list_quarantine(status="pending", db=db, current_user=admin)
     punch_id = q[0].id
     res = await resolve_punch(punch_id, ResolvePunchRequest(student_id=student.id, enroll=True), db=db, current_user=admin)
@@ -116,6 +126,54 @@ async def test_resolve_replays_exactly_one_event(db, org, student):
     row = (await db.execute(select(UnmappedPunch).where(UnmappedPunch.id == punch_id))).scalar_one()
     assert row.status == "resolved" and row.resolved_event_id is not None
     assert len([e for e in await _events(db, org) if e.external_ref == "RR1"]) == 1
+
+
+# ── Biometric: per-device ingest token (RELEASE BLOCKER close) ────────────────────
+
+async def test_ingest_requires_valid_device_token(db, org):
+    admin = await _admin(db, org)
+    dev, token = await _device_with_token(db, org, admin, "DEVT", "Tok")
+    # No header → 401 (a general admin session can no longer reach ingest).
+    with pytest.raises(HTTPException) as e1:
+        await authenticate_device(x_device_token=None, db=db)
+    assert e1.value.status_code == 401
+    # Wrong token → 401.
+    with pytest.raises(HTTPException) as e2:
+        await authenticate_device(x_device_token="bio_not_a_real_token", db=db)
+    assert e2.value.status_code == 401
+    # Valid token → resolves the owning device (and thus its org).
+    resolved = await authenticate_device(x_device_token=token, db=db)
+    assert resolved.id == dev.id and resolved.org_id == org.id
+
+
+async def test_device_token_rotate_and_revoke(db, org):
+    from app.routers.modules.biometric import list_devices
+    admin = await _admin(db, org)
+    resp = await register_device(DeviceCreate(device_id="DEVX", name="X"), db=db, current_user=admin)
+    # Freshly registered device has no token yet.
+    d0 = next(d for d in await list_devices(db=db, current_user=admin) if d.id == resp.id)
+    assert d0.has_token is False
+
+    # Issue → plaintext returned once, prefixed; only the hash is stored.
+    t1 = await issue_device_token(resp.id, db=db, current_user=admin)
+    assert t1.token.startswith("bio_") and t1.token.startswith(t1.token_prefix)
+    d1 = next(d for d in await list_devices(db=db, current_user=admin) if d.id == resp.id)
+    assert d1.has_token is True and d1.token_prefix == t1.token_prefix
+    old_token = t1.token
+
+    # Rotate → the OLD token stops authenticating; the new one works.
+    t2 = await issue_device_token(resp.id, db=db, current_user=admin)
+    assert t2.token != old_token
+    with pytest.raises(HTTPException):
+        await authenticate_device(x_device_token=old_token, db=db)
+    assert (await authenticate_device(x_device_token=t2.token, db=db)).id == resp.id
+
+    # Revoke → even the current token stops working; has_token flips False.
+    await revoke_device_token(resp.id, db=db, current_user=admin)
+    with pytest.raises(HTTPException):
+        await authenticate_device(x_device_token=t2.token, db=db)
+    d2 = next(d for d in await list_devices(db=db, current_user=admin) if d.id == resp.id)
+    assert d2.has_token is False
 
 
 # ── Voting: one vote per voter, derived results ──────────────────────────────────

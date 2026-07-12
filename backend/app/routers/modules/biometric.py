@@ -19,9 +19,10 @@ hardware connects — tracked as a RELEASE BLOCKER in BUILD_PROGRESS.md.
 from __future__ import annotations
 
 import hashlib
+import secrets
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Header
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,20 +36,50 @@ from app.models.organization import Organization
 from app.models.modules.school import Student, AttendanceEvent
 from app.models.modules.platform import BiometricDevice, BiometricEnrollment, UnmappedPunch
 from app.schemas.platform import (
-    DeviceCreate, DeviceUpdate, DeviceResponse,
+    DeviceCreate, DeviceUpdate, DeviceResponse, DeviceTokenResponse,
     EnrollmentCreate, EnrollmentResponse,
     PunchIn, IngestPunchesRequest, IngestSummary,
     UnmappedPunchResponse, ResolvePunchRequest,
 )
 from app.schemas.attendance import AttendanceEventIn
 from app.services import attendance as attendance_service
+from app.services.audit_service import log_action
+from app.models.audit import AuditAction
 
 router = APIRouter(prefix="/biometric", tags=["Biometric Devices"], dependencies=[Depends(require_module("school"))])
+
+# The device-facing ingest endpoint authenticates by DEVICE TOKEN, not a user
+# session, so it lives on a separate router WITHOUT the require_module (user)
+# dependency. The token itself carries the org (via the device it belongs to).
+ingest_router = APIRouter(prefix="/biometric", tags=["Biometric Ingest"])
 
 _read = Depends(PermissionChecker("settings:read"))
 _write = Depends(PermissionChecker("settings:write"))
 
 _VALID_DIR = {"check_in", "check_out"}
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+async def authenticate_device(
+    x_device_token: str | None = Header(default=None, alias="X-Device-Token"),
+    db: AsyncSession = Depends(get_db),
+) -> BiometricDevice:
+    """Resolve the calling device from its ingest token (X-Device-Token header).
+
+    The token is the credential: it identifies BOTH the device and its org, so no
+    user session is involved. A revoked token (hash nulled) or an inactive device
+    is rejected. Scoped to ingest only — it grants no other capability."""
+    if not x_device_token:
+        raise HTTPException(status_code=401, detail="Device ingest token required (X-Device-Token).")
+    device = (await db.execute(
+        select(BiometricDevice).where(BiometricDevice.token_hash == _hash_token(x_device_token))
+    )).scalar_one_or_none()
+    if not device or not device.is_active:
+        raise HTTPException(status_code=401, detail="Invalid or revoked device token.")
+    return device
 
 
 def _direction(d: str | None) -> str:
@@ -82,7 +113,8 @@ async def _student_name(db, org_id, sid) -> str | None:
 def _device_response(d: BiometricDevice) -> DeviceResponse:
     return DeviceResponse(id=d.id, device_id=d.device_id, name=d.name, location=d.location, is_active=d.is_active,
                           last_seen_at=d.last_seen_at, clock_skew_seconds=d.clock_skew_seconds, notes=d.notes,
-                          created_at=d.created_at, org_id=d.org_id)
+                          created_at=d.created_at, org_id=d.org_id,
+                          has_token=bool(d.token_hash), token_prefix=d.token_prefix, token_issued_at=d.token_issued_at)
 
 
 @router.get("/devices", response_model=list[DeviceResponse], dependencies=[_read])
@@ -121,6 +153,56 @@ async def delete_device(device_pk: str, db: AsyncSession = Depends(get_db), curr
     if not d:
         raise HTTPException(status_code=404, detail="Device not found.")
     await db.delete(d)
+
+
+async def _load_device(db, device_pk, org_id) -> BiometricDevice:
+    d = (await db.execute(select(BiometricDevice).where(BiometricDevice.id == device_pk, BiometricDevice.org_id == org_id))).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Device not found.")
+    return d
+
+
+@router.post("/devices/{device_pk}/token", response_model=DeviceTokenResponse, dependencies=[_write])
+async def issue_device_token(device_pk: str, request: Request = None, db: AsyncSession = Depends(get_db),
+                             current_user: User = Depends(get_current_active_user)):
+    """Issue (or ROTATE) the device's ingest token. Returns the plaintext ONCE —
+    only its SHA-256 hash is stored. Rotating instantly invalidates the old token
+    (single active hash per device). Requires settings:write (admin)."""
+    d = await _load_device(db, device_pk, current_user.org_id)
+    rotated = bool(d.token_hash)
+    token = "bio_" + secrets.token_urlsafe(32)
+    d.token_hash = _hash_token(token)
+    d.token_prefix = token[:12]
+    d.token_issued_at = datetime.now(timezone.utc)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="BiometricDevice", resource_id=d.id,
+        resource_label=f"{'rotated' if rotated else 'issued'} ingest token for device {d.device_id}",
+        metadata={"device_id": d.device_id, "rotated": rotated}, request=request,
+    )
+    return DeviceTokenResponse(device_pk=d.id, device_id=d.device_id, token=token,
+                               token_prefix=d.token_prefix, token_issued_at=d.token_issued_at)
+
+
+@router.delete("/devices/{device_pk}/token", status_code=204, dependencies=[_write])
+async def revoke_device_token(device_pk: str, request: Request = None, db: AsyncSession = Depends(get_db),
+                              current_user: User = Depends(get_current_active_user)):
+    """Revoke the device's ingest token — the device can no longer POST /ingest
+    until a new token is issued. Requires settings:write (admin)."""
+    d = await _load_device(db, device_pk, current_user.org_id)
+    had_token = bool(d.token_hash)
+    d.token_hash = None
+    d.token_prefix = None
+    d.token_issued_at = None
+    await db.flush()
+    if had_token:
+        await log_action(
+            db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+            resource_type="BiometricDevice", resource_id=d.id,
+            resource_label=f"revoked ingest token for device {d.device_id}",
+            metadata={"device_id": d.device_id}, request=request,
+        )
 
 
 # ── Enrollments ─────────────────────────────────────────────────────────────────
@@ -165,9 +247,16 @@ async def _quarantine(db, org_id, p: PunchIn, direction, event_time, reason, ext
                          status="pending", org_id=org_id))
 
 
-@router.post("/ingest", response_model=IngestSummary, dependencies=[_write])
-async def ingest_punches(payload: IngestPunchesRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    org = await _org(db, current_user.org_id)
+@ingest_router.post("/ingest", response_model=IngestSummary)
+async def ingest_punches(payload: IngestPunchesRequest, db: AsyncSession = Depends(get_db),
+                         device: BiometricDevice = Depends(authenticate_device)):
+    """Ingest device punches. Authenticated by the DEVICE TOKEN (X-Device-Token),
+    not a user session — the token identifies the device + org and is scoped to
+    ingest only. Per-punch device/enrollment validation (quarantine of unknowns)
+    is unchanged; the token just proves a legitimate device from the org is
+    pushing. The authenticated device is stamped last_seen."""
+    org = await _org(db, device.org_id)
+    device.last_seen_at = datetime.now(timezone.utc)
     now = datetime.now(timezone.utc)
     devices = {d.device_id: d for d in (await db.execute(select(BiometricDevice).where(BiometricDevice.org_id == org.id))).scalars().all()}
     enrollments = {e.biometric_user_id: e for e in (await db.execute(select(BiometricEnrollment).where(BiometricEnrollment.org_id == org.id))).scalars().all()}

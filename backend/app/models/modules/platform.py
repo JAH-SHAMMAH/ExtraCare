@@ -33,6 +33,14 @@ class BiometricDevice(Base, UUIDMixin, TimestampMixin, TenantMixin):
     clock_skew_seconds = Column(Integer, nullable=True)   # device_time − server_receipt; surfaced, not trusted
     notes = Column(Text, nullable=True)
 
+    # Per-device ingest credential. Only the SHA-256 hash is stored (never the
+    # plaintext); the token is shown once at issue/rotate time. `token_prefix`
+    # is the first few chars, surfaced so an admin can identify the active token.
+    # Revoking nulls all three → the device can no longer POST /biometric/ingest.
+    token_hash = Column(String(64), nullable=True, unique=True)
+    token_prefix = Column(String(16), nullable=True)
+    token_issued_at = Column(DateTime(timezone=True), nullable=True)
+
     __table_args__ = (
         UniqueConstraint("org_id", "device_id", name="uq_biometric_devices_org_device"),
         Index("ix_biometric_devices_org", "org_id"),

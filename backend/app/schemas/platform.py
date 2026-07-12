@@ -33,6 +33,20 @@ class DeviceResponse(BaseModel):
     notes: Optional[str]
     created_at: datetime
     org_id: str
+    # Ingest-token status (never the token itself).
+    has_token: bool = False
+    token_prefix: Optional[str] = None
+    token_issued_at: Optional[datetime] = None
+
+
+class DeviceTokenResponse(BaseModel):
+    """Returned ONCE when a device ingest token is issued or rotated. The
+    plaintext ``token`` is not stored and cannot be retrieved again."""
+    device_pk: str
+    device_id: str
+    token: str
+    token_prefix: str
+    token_issued_at: datetime
 
 
 class EnrollmentCreate(BaseModel):
