@@ -36,6 +36,13 @@ class AdmissionApplication(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDel
     status = Column(String(20), default="enquiry", nullable=False)
     notes = Column(Text, nullable=True)
 
+    # Enquiry Appointment — a single scheduled meeting with the prospective
+    # family (visit/interview). One appointment per enquiry (no child table).
+    appointment_at = Column(DateTime(timezone=True), nullable=True)
+    # none | scheduled | attended | no_show
+    appointment_status = Column(String(20), default="none", nullable=False, server_default="none")
+    appointment_notes = Column(Text, nullable=True)
+
     # Set when the application is admitted and converted into a Student.
     admitted_student_id = Column(String(36), ForeignKey("students.id", ondelete="SET NULL"), nullable=True)
     created_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
