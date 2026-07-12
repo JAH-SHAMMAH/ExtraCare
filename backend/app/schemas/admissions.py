@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 # Allowed value sets (validated in the router on create/update).
 ADMISSION_STATUSES = {"enquiry", "applied", "screening", "offered", "admitted", "rejected", "withdrawn"}
+APPOINTMENT_STATUSES = {"none", "scheduled", "attended", "no_show"}
 EXAM_STATUSES = {"scheduled", "completed"}
 EXAM_OUTCOMES = {"pending", "pass", "fail"}
 PROMOTION_OUTCOMES = {"promoted", "repeated", "graduated"}
@@ -35,6 +36,9 @@ class AdmissionApplicationCreate(BaseModel):
     source: Optional[str] = None
     status: str = "enquiry"
     notes: Optional[str] = None
+    appointment_at: Optional[datetime] = None
+    appointment_status: Optional[str] = None
+    appointment_notes: Optional[str] = None
 
 
 class AdmissionApplicationUpdate(BaseModel):
@@ -50,6 +54,9 @@ class AdmissionApplicationUpdate(BaseModel):
     source: Optional[str] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    appointment_at: Optional[datetime] = None
+    appointment_status: Optional[str] = None
+    appointment_notes: Optional[str] = None
 
 
 class AdmissionApplicationResponse(BaseModel):
@@ -68,6 +75,9 @@ class AdmissionApplicationResponse(BaseModel):
     source: Optional[str]
     status: str
     notes: Optional[str]
+    appointment_at: Optional[datetime]
+    appointment_status: str
+    appointment_notes: Optional[str]
     admitted_student_id: Optional[str]
     created_at: datetime
     updated_at: datetime

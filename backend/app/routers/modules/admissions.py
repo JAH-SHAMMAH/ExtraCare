@@ -49,8 +49,8 @@ from app.schemas.admissions import (
     TransferCreate, TransferUpdate, TransferRecordResponse, TransferListResponse,
     AuthorizedPickupCreate, AuthorizedPickupUpdate, AuthorizedPickupResponse,
     AuthorizedPickupListResponse,
-    ADMISSION_STATUSES, EXAM_STATUSES, EXAM_OUTCOMES, PROMOTION_OUTCOMES,
-    TRANSFER_TYPES, TRANSFER_STATUSES,
+    ADMISSION_STATUSES, APPOINTMENT_STATUSES, EXAM_STATUSES, EXAM_OUTCOMES,
+    PROMOTION_OUTCOMES, TRANSFER_TYPES, TRANSFER_STATUSES,
 )
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
@@ -123,6 +123,8 @@ def _application_response(a: AdmissionApplication, class_name: str | None) -> Ad
         guardian_name=a.guardian_name, guardian_phone=a.guardian_phone, guardian_email=a.guardian_email,
         applying_for_class_id=a.applying_for_class_id, applying_for_class_name=class_name,
         applying_for_level=a.applying_for_level, source=a.source, status=a.status, notes=a.notes,
+        appointment_at=a.appointment_at, appointment_status=a.appointment_status or "none",
+        appointment_notes=a.appointment_notes,
         admitted_student_id=a.admitted_student_id,
         created_at=a.created_at, updated_at=a.updated_at, org_id=a.org_id,
     )
@@ -143,6 +145,7 @@ async def _load_application(db: AsyncSession, app_id: str, org_id: str) -> Admis
 @router.get("/applications", response_model=AdmissionApplicationListResponse, dependencies=[_adm_read])
 async def list_applications(
     status: str | None = Query(default=None),
+    appointment_status: str | None = None,  # none|scheduled|attended|no_show — Enquiry Appointment view
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
@@ -155,6 +158,8 @@ async def list_applications(
     )
     if status:
         base = base.where(AdmissionApplication.status == status)
+    if appointment_status:
+        base = base.where(AdmissionApplication.appointment_status == appointment_status)
     if search and search.strip():
         term = f"%{search.strip().lower()}%"
         base = base.where(or_(
@@ -184,8 +189,15 @@ async def create_application(
         raise HTTPException(status_code=422, detail=f"status must be one of {sorted(ADMISSION_STATUSES)}")
     if payload.applying_for_class_id:
         await _require_class(db, current_user.org_id, payload.applying_for_class_id)
+    values = payload.model_dump()
+    # appointment_status is NOT NULL with a server default — drop an omitted/None
+    # value so the default applies rather than forcing NULL. Validate if supplied.
+    if values.get("appointment_status") is None:
+        values.pop("appointment_status", None)
+    elif values["appointment_status"] not in APPOINTMENT_STATUSES:
+        raise HTTPException(status_code=422, detail=f"appointment_status must be one of {sorted(APPOINTMENT_STATUSES)}")
     a = AdmissionApplication(
-        **payload.model_dump(), org_id=current_user.org_id, created_by=current_user.id,
+        **values, org_id=current_user.org_id, created_by=current_user.id,
     )
     db.add(a)
     await db.flush()
@@ -211,6 +223,10 @@ async def update_application(
     data = payload.model_dump(exclude_unset=True)
     if "status" in data and data["status"] not in ADMISSION_STATUSES:
         raise HTTPException(status_code=422, detail=f"status must be one of {sorted(ADMISSION_STATUSES)}")
+    # Guard the NOT NULL column: a client clearing the appointment should send
+    # "none", never null. Reject anything outside the allowed set.
+    if "appointment_status" in data and data["appointment_status"] not in APPOINTMENT_STATUSES:
+        raise HTTPException(status_code=422, detail=f"appointment_status must be one of {sorted(APPOINTMENT_STATUSES)}")
     if data.get("applying_for_class_id"):
         await _require_class(db, current_user.org_id, data["applying_for_class_id"])
     for field, value in data.items():

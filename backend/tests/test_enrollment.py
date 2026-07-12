@@ -110,6 +110,35 @@ async def test_application_update_and_delete(db, org, teacher):
     assert listing.total == 0
 
 
+async def test_enquiry_appointment_schedule_and_filter(db, org, teacher):
+    from datetime import datetime, timezone
+    a = await create_application(AdmissionApplicationCreate(first_name="Pros", last_name="Pect"),
+                                 request=None, db=db, current_user=teacher)
+    # Defaults to no appointment.
+    assert a.appointment_status == "none"
+
+    when = datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc)
+    booked = await update_application(
+        a.id,
+        AdmissionApplicationUpdate(appointment_at=when, appointment_status="scheduled",
+                                   appointment_notes="Campus tour"),
+        request=None, db=db, current_user=teacher,
+    )
+    assert booked.appointment_status == "scheduled"
+    assert booked.appointment_notes == "Campus tour"
+
+    # The Enquiry Appointment view filters to scheduled ones.
+    scheduled = await list_applications(status=None, appointment_status="scheduled", search=None,
+                                        page=1, page_size=25, db=db, current_user=teacher)
+    assert scheduled.total == 1 and scheduled.items[0].id == a.id
+
+    # A bogus appointment_status is rejected (protects the NOT NULL column).
+    with pytest.raises(HTTPException) as exc:
+        await update_application(a.id, AdmissionApplicationUpdate(appointment_status="maybe"),
+                                 request=None, db=db, current_user=teacher)
+    assert exc.value.status_code == 422
+
+
 async def test_admit_creates_student(db, org, teacher, school_class):
     a = await create_application(
         AdmissionApplicationCreate(first_name="New", last_name="Pupil", applying_for_class_id=school_class.id),
