@@ -349,10 +349,10 @@ const MODULE_SECTIONS: ModuleSection[] = [
 // Dark-green rail (Educare-style). Idle text is a soft near-white green; the
 // active row is a lighter tint (white/10 reads as a lighter green over the base)
 // with bright white text; hover is a very subtle white overlay.
-const NAV_ROW = "flex items-center gap-3 px-3 py-1 rounded-md text-base font-semibold transition-colors";
+const NAV_ROW = "flex items-center gap-3 px-3 py-1 rounded-md text-sm font-semibold transition-colors";
 const NAV_ACTIVE = "bg-white/10 text-white";
 const NAV_IDLE = "text-green-50/75 hover:bg-white/5 hover:text-white";
-const NAV_ICON = 20;      // uniform outline icon size across all items
+const NAV_ICON = 18;      // uniform outline icon size across all items
 const NAV_STROKE = 1.75;  // uniform stroke width
 
 export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void } = {}) {
@@ -424,7 +424,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
 
       <aside
         className={cn(
-          "no-print fixed left-0 top-0 h-screen w-80 max-w-[85vw] bg-[#14432f] border-r border-white/10 flex flex-col z-50 shadow-sm",
+          "no-print fixed left-0 top-0 h-screen w-60 max-w-[85vw] bg-[#14432f] border-r border-white/10 flex flex-col z-50 shadow-sm",
           "transition-transform duration-200 ease-out lg:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full",
         )}

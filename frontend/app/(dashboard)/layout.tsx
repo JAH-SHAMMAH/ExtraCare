@@ -77,7 +77,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <TopProgress />
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <TopBar onMenu={() => setSidebarOpen(true)} />
-      <main className="ml-0 lg:ml-80 mt-16 min-h-[calc(100vh-64px)] animate-fade-in">
+      <main className="ml-0 lg:ml-60 mt-16 min-h-[calc(100vh-64px)] animate-fade-in">
         <ErrorBoundary>
           <RouteGuard>{children}</RouteGuard>
         </ErrorBoundary>
