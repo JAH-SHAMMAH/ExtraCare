@@ -23,10 +23,14 @@ const EMPTY = {
 export default function TransferPage() {
   const canWrite = useHasPermission("school:students:write");
   const [statusFilter, setStatusFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"" | "transfer_out" | "withdrawal">("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ ...EMPTY });
 
-  const { data, isLoading, isError, refetch } = useTransfers(statusFilter ? { status: statusFilter } : undefined);
+  const { data, isLoading, isError, refetch } = useTransfers({
+    ...(statusFilter ? { status: statusFilter } : {}),
+    ...(typeFilter ? { transfer_type: typeFilter } : {}),
+  });
   const createTransfer = useCreateTransfer();
   const updateTransfer = useUpdateTransfer();
 
@@ -57,7 +61,22 @@ export default function TransferPage() {
         {canWrite && <button onClick={() => { reset(); setShowForm(true); }} className="btn-primary gap-2"><Plus size={15} /> New Transfer</button>}
       </div>
 
-      <div className="mb-5">
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        {/* Type tabs — the Withdrawal tab is Educare's "Withdrawal List" view. */}
+        <div className="flex bg-slate-100 rounded-lg p-0.5 shrink-0">
+          {([["", "All"], ["transfer_out", "Transfers Out"], ["withdrawal", "Withdrawals"]] as const).map(([val, label]) => (
+            <button
+              key={val || "all"}
+              onClick={() => setTypeFilter(val)}
+              className={cn(
+                "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors",
+                typeFilter === val ? "bg-white shadow text-slate-900" : "text-slate-500 hover:text-slate-700",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input max-w-[180px] capitalize">
           <option value="">All statuses</option>
           {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}

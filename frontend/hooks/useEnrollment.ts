@@ -201,7 +201,7 @@ export function useRevertPromotion() {
 
 // ── Transfers ──────────────────────────────────────────────────────────────────
 
-export function useTransfers(params?: { status?: string; page?: number; page_size?: number }) {
+export function useTransfers(params?: { status?: string; transfer_type?: string; page?: number; page_size?: number }) {
   return useQuery<Paginated<TransferRecord>>({
     queryKey: ["transfers", params],
     queryFn: () => enrollmentApi.transfers.list(params),

@@ -14,13 +14,14 @@ import type { Student } from "@/types";
 export default function StudentsPage() {
   const canImport = useHasPermission("school:write");
   const [search, setSearch] = useState("");
+  const [roster, setRoster] = useState<"all" | "active" | "inactive">("all");
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [viewStudent, setViewStudent] = useState<Student | null>(null);
 
-  const { data, isLoading } = useStudents({ page, page_size: 25, search: search || undefined });
+  const { data, isLoading } = useStudents({ page, page_size: 25, search: search || undefined, status: roster === "all" ? undefined : roster });
   // Only show the skeleton after 300ms of loading — sub-300ms responses
   // render straight to data with no flicker.
   const showSkeleton = useDelayedFlag(isLoading);
@@ -159,6 +160,21 @@ export default function StudentsPage() {
 
       {/* Filter bar */}
       <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex flex-wrap items-center gap-3">
+        {/* Roster tabs — Active / Inactive parity with Educare's Manage Active/Inactive Students */}
+        <div className="flex bg-slate-100 rounded-lg p-0.5 shrink-0">
+          {([["all", "All"], ["active", "Active"], ["inactive", "Inactive"]] as const).map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => { setRoster(val); setPage(1); }}
+              className={cn(
+                "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors",
+                roster === val ? "bg-white shadow text-slate-900" : "text-slate-500 hover:text-slate-700",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="relative flex-1 min-w-64">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, ID..." className="input pl-9" />

@@ -800,7 +800,7 @@ export const enrollmentApi = {
     revert: (batchId: string) => api.post(`/enrollment/promotions/${batchId}/revert`).then((r) => r.data),
   },
   transfers: {
-    list: (p?: { status?: string; page?: number; page_size?: number }) =>
+    list: (p?: { status?: string; transfer_type?: string; page?: number; page_size?: number }) =>
       api.get("/enrollment/transfers", { params: p }).then((r) => r.data),
     create: (data: object) => api.post("/enrollment/transfers", data).then((r) => r.data),
     update: (id: string, data: object) => api.patch(`/enrollment/transfers/${id}`, data).then((r) => r.data),
