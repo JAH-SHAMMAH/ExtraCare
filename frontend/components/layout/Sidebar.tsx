@@ -346,10 +346,10 @@ const MODULE_SECTIONS: ModuleSection[] = [
 // items, footer) so spacing, font size/weight, icon size and states stay
 // identical across the whole sidebar. Active = a light tint of the brand (a
 // "lighter shade of the base") with a rounded corner; hover = a subtle slate wash.
-const NAV_ROW = "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors";
+const NAV_ROW = "flex items-center gap-3 px-3 py-1 rounded-md text-[15px] font-medium transition-colors";
 const NAV_ACTIVE = "bg-brand-50 text-brand-700";
 const NAV_IDLE = "text-slate-600 hover:bg-slate-100 hover:text-slate-900";
-const NAV_ICON = 18;      // uniform outline icon size across all items
+const NAV_ICON = 20;      // uniform outline icon size across all items
 const NAV_STROKE = 1.75;  // uniform stroke width
 
 export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void } = {}) {
@@ -421,7 +421,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
 
       <aside
         className={cn(
-          "no-print fixed left-0 top-0 h-screen w-64 bg-white border-r border-slate-200/70 flex flex-col z-50 shadow-sm",
+          "no-print fixed left-0 top-0 h-screen w-72 max-w-[85vw] bg-white border-r border-slate-200/70 flex flex-col z-50 shadow-sm",
           "transition-transform duration-200 ease-out lg:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full",
         )}
@@ -442,11 +442,11 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-2.5 py-2 space-y-1">
+      <nav className="flex-1 overflow-y-auto px-2.5 py-2 space-y-0.5">
         {/* Core */}
         <div>
           <p className="px-2.5 mb-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">Core</p>
-          <div className="space-y-px">
+          <div className="space-y-0">
             {visibleCoreNav.map(({ href, label, icon: Icon }) => (
               <Link
                 key={href}
@@ -475,7 +475,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
       </nav>
 
       {/* Bottom */}
-      <div className="px-2.5 pb-3 pt-2 border-t border-slate-100 space-y-px">
+      <div className="px-2.5 pb-3 pt-2 border-t border-slate-100 space-y-0">
         <Link
           href="/dashboard/profile"
           className={cn(NAV_ROW, isActive("/dashboard/profile") ? NAV_ACTIVE : NAV_IDLE)}
@@ -586,7 +586,7 @@ const CollapsibleSection = memo(function CollapsibleSection({
         />
       </button>
       {open && (
-        <div className="mt-px ml-4 pl-1.5 border-l border-slate-100 space-y-px animate-fade-in">
+        <div className="mt-px ml-4 pl-1.5 border-l border-slate-100 space-y-0 animate-fade-in">
           {section.items.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}

@@ -37,7 +37,7 @@ export function TopBar({ onMenu }: { onMenu?: () => void }) {
   }, [notifOpen]);
 
   return (
-    <header className="no-print fixed top-0 left-0 lg:left-64 right-0 z-30 h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/70 flex items-center px-4 md:px-6 gap-3 md:gap-4 shadow-sm shadow-slate-100/50">
+    <header className="no-print fixed top-0 left-0 lg:left-72 right-0 z-30 h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/70 flex items-center px-4 md:px-6 gap-3 md:gap-4 shadow-sm shadow-slate-100/50">
       {/* Mobile: open the sidebar drawer */}
       <button
         onClick={onMenu}
