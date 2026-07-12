@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { enrollmentApi, schoolApi } from "@/lib/api";
 import type {
   AdmissionApplication, EntranceExam, EntranceExamResult,
-  PromotionRecord, TransferRecord, Paginated,
+  PromotionRecord, TransferRecord, AuthorizedPickup, Paginated,
 } from "@/types";
 
 // Classes for the promotion from/to selectors. Reuses the existing
@@ -231,5 +231,50 @@ export function useUpdateTransfer() {
       toast.success("Transfer updated.");
     },
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update transfer."),
+  });
+}
+
+// ── Authorized Pickups (Manage Students Pickup) ─────────────────────────────────
+
+export function useStudentPickups(params?: { student_id?: string; active_only?: boolean; page?: number; page_size?: number }) {
+  return useQuery<Paginated<AuthorizedPickup>>({
+    queryKey: ["student-pickups", params],
+    queryFn: () => enrollmentApi.pickups.list(params),
+  });
+}
+
+export function useCreatePickup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => enrollmentApi.pickups.create(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["student-pickups"] });
+      toast.success("Pickup authorisation added.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to add pickup."),
+  });
+}
+
+export function useUpdatePickup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => enrollmentApi.pickups.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["student-pickups"] });
+      toast.success("Pickup authorisation updated.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update pickup."),
+  });
+}
+
+export function useDeletePickup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => enrollmentApi.pickups.remove(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["student-pickups"] });
+      toast.success("Pickup authorisation deactivated.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to deactivate pickup."),
   });
 }

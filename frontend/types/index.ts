@@ -1274,6 +1274,21 @@ export interface TransferRecord {
   org_id: string;
 }
 
+// A person authorised to collect a student (Manage Students Pickup).
+export interface AuthorizedPickup {
+  id: string;
+  student_id: string;
+  student_name: string | null;
+  full_name: string;
+  relationship_type: string | null;
+  phone: string | null;
+  id_document: string | null;
+  photo_url: string | null;
+  is_active: boolean;
+  created_at: string;
+  org_id: string;
+}
+
 // ── Academic Records & Recognition (Batch 3) ───────────────────────────────
 
 export type SelectionStatus = "requested" | "approved" | "rejected";

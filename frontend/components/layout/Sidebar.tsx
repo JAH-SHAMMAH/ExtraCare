@@ -7,7 +7,7 @@ import {
   LayoutDashboard, BarChart3, Users, Settings, LogOut,
   GraduationCap, Heart, Briefcase, Package, DollarSign,
   HelpCircle, ChevronDown, Building2, Stethoscope,
-  Calendar, ClipboardList, Users2, BookOpen, Bell, Shield,
+  Calendar, ClipboardList, Users2, BookOpen, Bell, Shield, ShieldCheck,
   FileText, Wallet, Clock, UserCheck, Award,
   BookMarked, School, Microscope, Pill, BedDouble, Activity,
   Receipt, BadgeDollarSign, FolderOpen, BarChart, Star,
@@ -127,7 +127,8 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/students", label: "Students", icon: Users2 },
       // Batch 2 (Admissions & Enrollment) — shipped. Permissions from the access
       // map: admissions/entrance-exams → school:admissions:read; promotion/
-      // transfer → school:students:write.
+      // transfer/pickup → school:students:write.
+      { href: "/dashboard/modules/school/students/pickup", label: "Manage Students Pickup", icon: ShieldCheck },
       { href: "/dashboard/modules/school/admissions", label: "Admissions & Enquiries", icon: Contact },
       { href: "/dashboard/modules/school/entrance-exams", label: "Entrance Exams", icon: Award },
       { href: "/dashboard/modules/school/promotion", label: "Promotion Manager", icon: BarChart3 },
