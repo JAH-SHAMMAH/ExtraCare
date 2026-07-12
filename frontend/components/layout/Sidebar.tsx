@@ -132,6 +132,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/admissions", label: "Admissions & Enquiries", icon: Contact },
       { href: "/dashboard/modules/school/admissions/appointments", label: "Enquiry Appointment", icon: CalendarClock },
       { href: "/dashboard/modules/school/entrance-exams", label: "Entrance Exams", icon: Award },
+      { href: "/dashboard/modules/school/admissions/post-entrance", label: "Post Entrance Form", icon: FileText },
       { href: "/dashboard/modules/school/promotion", label: "Promotion Manager", icon: BarChart3 },
       { href: "/dashboard/modules/school/transfer", label: "Transfer Manager", icon: UserCog },
     ],

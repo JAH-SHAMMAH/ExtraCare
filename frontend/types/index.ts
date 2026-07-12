@@ -1294,6 +1294,50 @@ export interface AuthorizedPickup {
   org_id: string;
 }
 
+// Full candidate registration completed after passing the entrance exam.
+// 1:1 with an AdmissionApplication (Post Entrance Form).
+export interface PostEntranceForm {
+  id: string;
+  application_id: string;
+  candidate_name: string | null;
+  applying_for_class_name: string | null;
+  full_name: string | null;
+  date_of_birth: string | null;
+  gender: string | null;
+  nationality: string | null;
+  state_origin: string | null;
+  lga: string | null;
+  religion: string | null;
+  home_address: string | null;
+  passport_photo_url: string | null;
+  previous_school: string | null;
+  applying_for_class_id: string | null;
+  applying_for_level: string | null;
+  blood_group: string | null;
+  genotype: string | null;
+  allergies: string | null;
+  special_needs: string | null;
+  father_name: string | null;
+  father_occupation: string | null;
+  father_phone: string | null;
+  father_email: string | null;
+  mother_name: string | null;
+  mother_occupation: string | null;
+  mother_phone: string | null;
+  mother_email: string | null;
+  guardian_name: string | null;
+  guardian_relationship: string | null;
+  guardian_phone: string | null;
+  guardian_address: string | null;
+  emergency_name: string | null;
+  emergency_relationship: string | null;
+  emergency_phone: string | null;
+  status: string;
+  submitted_at: string | null;
+  created_at: string;
+  org_id: string;
+}
+
 // ── Academic Records & Recognition (Batch 3) ───────────────────────────────
 
 export type SelectionStatus = "requested" | "approved" | "rejected";

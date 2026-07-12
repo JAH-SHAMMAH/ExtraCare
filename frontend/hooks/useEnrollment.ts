@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { enrollmentApi, schoolApi } from "@/lib/api";
 import type {
   AdmissionApplication, EntranceExam, EntranceExamResult,
-  PromotionRecord, TransferRecord, AuthorizedPickup, Paginated,
+  PromotionRecord, TransferRecord, AuthorizedPickup, PostEntranceForm, Paginated,
 } from "@/types";
 
 // Classes for the promotion from/to selectors. Reuses the existing
@@ -276,5 +276,38 @@ export function useDeletePickup() {
       toast.success("Pickup authorisation deactivated.");
     },
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to deactivate pickup."),
+  });
+}
+
+// ── Post Entrance Form ──────────────────────────────────────────────────────────
+
+export function usePostEntranceForms(params?: { application_id?: string; status?: string; page?: number; page_size?: number }) {
+  return useQuery<Paginated<PostEntranceForm>>({
+    queryKey: ["post-entrance", params],
+    queryFn: () => enrollmentApi.postEntrance.list(params),
+  });
+}
+
+export function useCreatePostEntrance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => enrollmentApi.postEntrance.create(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["post-entrance"] });
+      toast.success("Post-entrance form created.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to create form."),
+  });
+}
+
+export function useUpdatePostEntrance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => enrollmentApi.postEntrance.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["post-entrance"] });
+      toast.success("Post-entrance form saved.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save form."),
   });
 }

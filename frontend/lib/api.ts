@@ -812,6 +812,12 @@ export const enrollmentApi = {
     update: (id: string, data: object) => api.patch(`/enrollment/pickups/${id}`, data).then((r) => r.data),
     remove: (id: string) => api.delete(`/enrollment/pickups/${id}`).then((r) => r.data),
   },
+  postEntrance: {
+    list: (p?: { application_id?: string; status?: string; page?: number; page_size?: number }) =>
+      api.get("/enrollment/post-entrance", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/enrollment/post-entrance", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/enrollment/post-entrance/${id}`, data).then((r) => r.data),
+  },
 };
 
 // ── Academic Records & Recognition API (Batch 3) ──────────────────────────────
