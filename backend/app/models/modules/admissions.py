@@ -11,7 +11,7 @@ self-contained and free of async lazy-load pitfalls.
 """
 from __future__ import annotations
 
-from sqlalchemy import Column, String, Text, Date, Integer, Boolean, DateTime, ForeignKey, Index
+from sqlalchemy import Column, String, Text, Date, Integer, Boolean, DateTime, ForeignKey, Index, Numeric
 
 from app.models.base import Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin
 
@@ -195,6 +195,45 @@ class PostEntranceForm(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     __table_args__ = (
         Index("ix_post_entrance_forms_org", "org_id"),
+    )
+
+
+class AcceptanceForm(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """The offer/acceptance artifact a parent confirms once a place is offered.
+
+    1:1 with an ``AdmissionApplication`` (``application_id`` unique). Light finance
+    handling — flat ``acceptance_fee_amount`` / ``fee_status`` / ``payment_reference``
+    (no ledger wiring). Accepting does NOT auto-admit — staff triggers the existing
+    admit flow separately.
+    """
+    __tablename__ = "acceptance_forms"
+
+    application_id = Column(String(36), ForeignKey("admission_applications.id", ondelete="CASCADE"), nullable=False, unique=True)
+
+    # Offer
+    offered_class_id = Column(String(36), ForeignKey("school_classes.id", ondelete="SET NULL"), nullable=True)
+    offered_level = Column(String(80), nullable=True)
+    offer_date = Column(Date, nullable=True)
+    acceptance_deadline = Column(Date, nullable=True)
+    resumption_date = Column(Date, nullable=True)
+
+    # Fee (light — no ledger coupling)
+    acceptance_fee_amount = Column(Numeric(14, 2), default=0, nullable=False)
+    fee_status = Column(String(20), default="unpaid", nullable=False)  # unpaid | paid
+    payment_reference = Column(String(120), nullable=True)
+
+    terms_text = Column(Text, nullable=True)
+
+    # Acceptance
+    status = Column(String(20), default="pending", nullable=False)  # pending | accepted | declined | expired
+    accepted_by = Column(String(200), nullable=True)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    decline_reason = Column(Text, nullable=True)
+
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        Index("ix_acceptance_forms_org", "org_id"),
     )
 
 
