@@ -5,7 +5,8 @@ import { toast } from "sonner";
 import { enrollmentApi, schoolApi } from "@/lib/api";
 import type {
   AdmissionApplication, EntranceExam, EntranceExamResult,
-  PromotionRecord, TransferRecord, AuthorizedPickup, PostEntranceForm, Paginated,
+  PromotionRecord, TransferRecord, AuthorizedPickup, PostEntranceForm,
+  AcceptanceForm, Paginated,
 } from "@/types";
 
 // Classes for the promotion from/to selectors. Reuses the existing
@@ -307,6 +308,39 @@ export function useUpdatePostEntrance() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["post-entrance"] });
       toast.success("Post-entrance form saved.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save form."),
+  });
+}
+
+// ── Acceptance Form ─────────────────────────────────────────────────────────────
+
+export function useAcceptanceForms(params?: { application_id?: string; status?: string; page?: number; page_size?: number }) {
+  return useQuery<Paginated<AcceptanceForm>>({
+    queryKey: ["acceptance", params],
+    queryFn: () => enrollmentApi.acceptance.list(params),
+  });
+}
+
+export function useCreateAcceptance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => enrollmentApi.acceptance.create(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["acceptance"] });
+      toast.success("Acceptance form created.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to create form."),
+  });
+}
+
+export function useUpdateAcceptance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => enrollmentApi.acceptance.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["acceptance"] });
+      toast.success("Acceptance form saved.");
     },
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save form."),
   });

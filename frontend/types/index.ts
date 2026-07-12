@@ -1338,6 +1338,30 @@ export interface PostEntranceForm {
   org_id: string;
 }
 
+// The offer/acceptance artifact a parent confirms once a place is offered.
+// 1:1 with an AdmissionApplication (Acceptance Form).
+export interface AcceptanceForm {
+  id: string;
+  application_id: string;
+  candidate_name: string | null;
+  offered_class_name: string | null;
+  offered_class_id: string | null;
+  offered_level: string | null;
+  offer_date: string | null;
+  acceptance_deadline: string | null;
+  resumption_date: string | null;
+  acceptance_fee_amount: number;
+  fee_status: string;
+  payment_reference: string | null;
+  terms_text: string | null;
+  status: string;
+  accepted_by: string | null;
+  accepted_at: string | null;
+  decline_reason: string | null;
+  created_at: string;
+  org_id: string;
+}
+
 // ── Academic Records & Recognition (Batch 3) ───────────────────────────────
 
 export type SelectionStatus = "requested" | "approved" | "rejected";
