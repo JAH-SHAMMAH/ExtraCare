@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -342,6 +342,16 @@ const MODULE_SECTIONS: ModuleSection[] = [
   // unchanged — those routes are simply no longer mounted or navigated to.)
 ];
 
+// One nav-row recipe used by every clickable item (core, section headers, sub
+// items, footer) so spacing, font size/weight, icon size and states stay
+// identical across the whole sidebar. Active = a light tint of the brand (a
+// "lighter shade of the base") with a rounded corner; hover = a subtle slate wash.
+const NAV_ROW = "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors";
+const NAV_ACTIVE = "bg-brand-50 text-brand-700";
+const NAV_IDLE = "text-slate-600 hover:bg-slate-100 hover:text-slate-900";
+const NAV_ICON = 18;      // uniform outline icon size across all items
+const NAV_STROKE = 1.75;  // uniform stroke width
+
 export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void } = {}) {
   const pathname = usePathname();
   const { user, org, activeRole, hasPermission } = useAuthStore();
@@ -355,11 +365,23 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   // a flash of the wrong product shell.
   const enabled = org ? effectiveModulesForOrg(org) : undefined;
 
-  const isActive = useCallback(
-    (href: string) =>
-      pathname === href || (href !== "/dashboard" && pathname.startsWith(href)),
-    [pathname],
-  );
+  // Longest-prefix-wins so exactly ONE item highlights. Without this, a base
+  // route (e.g. Facility List `/…/facility`) would also match its deeper sibling
+  // routes (`/…/facility/complaints`) via startsWith and double-highlight.
+  const activeHref = useMemo(() => {
+    const candidates = [
+      ...CORE_NAV.map((i) => i.href),
+      ...MODULE_SECTIONS.flatMap((s) => s.items.map((i) => i.href)),
+      "/dashboard/profile", "/dashboard/settings", "/support",
+    ];
+    let best = "";
+    for (const h of candidates) {
+      const hit = pathname === h || (h !== "/dashboard" && pathname.startsWith(h + "/"));
+      if (hit && h.length > best.length) best = h;
+    }
+    return best;
+  }, [pathname]);
+  const isActive = useCallback((href: string) => href === activeHref, [activeHref]);
 
   // Phase 7: build the visible core-nav list, filtered by permission (+ the
   // active view-role for personal pages). Depends on `user`/`org` so it
@@ -420,25 +442,20 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+      <nav className="flex-1 overflow-y-auto px-2.5 py-2 space-y-1">
         {/* Core */}
         <div>
-          <p className="px-3 mb-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-400">Core</p>
-          <div className="space-y-0.5">
+          <p className="px-2.5 mb-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">Core</p>
+          <div className="space-y-px">
             {visibleCoreNav.map(({ href, label, icon: Icon }) => (
               <Link
                 key={href}
                 href={href}
                 onClick={() => markNavClick(href)}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-[15px] font-medium transition-all",
-                  isActive(href)
-                    ? "bg-brand-600 text-white shadow-sm shadow-brand-600/30"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                )}
+                className={cn(NAV_ROW, isActive(href) ? NAV_ACTIVE : NAV_IDLE)}
               >
-                <Icon size={16} />
-                {label}
+                <Icon size={NAV_ICON} strokeWidth={NAV_STROKE} className="shrink-0" />
+                <span className="truncate">{label}</span>
               </Link>
             ))}
           </div>
@@ -452,53 +469,39 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
           <CollapsibleSection
             key={section.key}
             section={section}
-            pathname={pathname}
             isActive={isActive}
           />
         ))}
       </nav>
 
       {/* Bottom */}
-      <div className="px-3 pb-4 pt-2 border-t border-slate-100 space-y-0.5">
+      <div className="px-2.5 pb-3 pt-2 border-t border-slate-100 space-y-px">
         <Link
           href="/dashboard/profile"
-          className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-lg text-[15px] font-medium transition-all",
-            isActive("/dashboard/profile")
-              ? "bg-brand-600 text-white shadow-sm shadow-brand-600/30"
-              : "text-slate-600 hover:bg-slate-100"
-          )}
+          className={cn(NAV_ROW, isActive("/dashboard/profile") ? NAV_ACTIVE : NAV_IDLE)}
         >
-          <User size={16} />
-          Profile
+          <User size={NAV_ICON} strokeWidth={NAV_STROKE} className="shrink-0" />
+          <span className="truncate">Profile</span>
         </Link>
         {hasPermission("settings:read") && (
           <Link
             href="/dashboard/settings"
-            className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-lg text-[15px] font-medium transition-all",
-              isActive("/dashboard/settings")
-                ? "bg-brand-600 text-white shadow-sm shadow-brand-600/30"
-                : "text-slate-600 hover:bg-slate-100"
-            )}
+            className={cn(NAV_ROW, isActive("/dashboard/settings") ? NAV_ACTIVE : NAV_IDLE)}
           >
-            <Settings size={16} />
-            Settings
+            <Settings size={NAV_ICON} strokeWidth={NAV_STROKE} className="shrink-0" />
+            <span className="truncate">Settings</span>
           </Link>
         )}
-        <Link
-          href="/support"
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-[15px] font-medium text-slate-600 hover:bg-slate-100 transition-all"
-        >
-          <HelpCircle size={16} />
-          Support
+        <Link href="/support" className={cn(NAV_ROW, NAV_IDLE)}>
+          <HelpCircle size={NAV_ICON} strokeWidth={NAV_STROKE} className="shrink-0" />
+          <span className="truncate">Support</span>
         </Link>
         <button
           onClick={logout}
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-[15px] font-medium text-red-500 hover:bg-red-50 transition-all w-full text-left"
+          className={cn(NAV_ROW, "w-full text-left text-red-500 hover:bg-red-50 hover:text-red-600")}
         >
-          <LogOut size={16} />
-          Sign out
+          <LogOut size={NAV_ICON} strokeWidth={NAV_STROKE} className="shrink-0" />
+          <span className="truncate">Sign out</span>
         </button>
 
         {/* User card */}
@@ -546,52 +549,53 @@ function ModuleSectionsSkeleton() {
 
 const CollapsibleSection = memo(function CollapsibleSection({
   section,
-  pathname,
   isActive,
 }: {
   section: ModuleSection;
-  pathname: string;
   isActive: (href: string) => boolean;
 }) {
-  // Sections render EXPANDED by default so an admin sees the whole menu at a
-  // glance (EduCare-style). Users can still collapse any section via the header.
-  const [open, setOpen] = useState(true);
   const ModuleIcon = section.icon;
+  const containsActive = section.items.some((it) => isActive(it.href));
+  // Collapsed by default; the section that holds the current route opens so its
+  // active child is visible (and re-opens if you navigate into it). Other
+  // sections stay closed until the user clicks their row.
+  const [open, setOpen] = useState(containsActive);
+  useEffect(() => {
+    if (containsActive) setOpen(true);
+  }, [containsActive]);
+
+  // A collapsed section that holds the active route gets a subtle active tint on
+  // its own row, so the current module is clear even before you expand it.
+  const headerHint = containsActive && !open;
 
   return (
     <div>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 px-3 mb-1 w-full group"
+        aria-expanded={open}
+        className={cn(
+          NAV_ROW, "w-full",
+          headerHint ? "bg-brand-50/60 text-brand-700 hover:bg-brand-50" : NAV_IDLE,
+        )}
       >
-        <ModuleIcon size={13} className="text-slate-400" />
-        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 flex-1 text-left">
-          {section.label}
-        </p>
+        <ModuleIcon size={NAV_ICON} strokeWidth={NAV_STROKE} className="shrink-0" />
+        <span className="flex-1 text-left truncate">{section.label}</span>
         <ChevronDown
-          size={12}
-          className={cn(
-            "text-slate-400 transition-transform duration-200",
-            !open && "-rotate-90"
-          )}
+          size={16}
+          className={cn("shrink-0 text-slate-400 transition-transform duration-200", !open && "-rotate-90")}
         />
       </button>
       {open && (
-        <div className="space-y-0.5 animate-fade-in">
+        <div className="mt-px ml-4 pl-1.5 border-l border-slate-100 space-y-px animate-fade-in">
           {section.items.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}
               onClick={() => markNavClick(href)}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg text-[15px] font-medium transition-all",
-                isActive(href)
-                  ? "bg-brand-50 text-brand-700 border border-brand-200"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-              )}
+              className={cn(NAV_ROW, isActive(href) ? NAV_ACTIVE : NAV_IDLE)}
             >
-              <Icon size={16} />
-              {label}
+              <Icon size={NAV_ICON} strokeWidth={NAV_STROKE} className="shrink-0" />
+              <span className="truncate">{label}</span>
             </Link>
           ))}
         </div>
