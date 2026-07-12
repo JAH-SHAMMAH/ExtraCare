@@ -37,7 +37,16 @@ export default function FacilityComplaintsPage() {
           <div className="flex items-center justify-between mb-4"><h2 className="text-sm font-bold text-slate-800">New complaint</h2><button onClick={reset}><X size={18} className="text-slate-400" /></button></div>
           <div className="grid md:grid-cols-2 gap-4">
             <div><label className="label">Title</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="input" /></div>
-            <div><label className="label">Facility</label><select value={form.facility_id} onChange={(e) => setForm({ ...form, facility_id: e.target.value })} className="input"><option value="">—</option>{(facilities || []).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
+            <div>
+              <label className="label">Facility <span className="text-slate-400 font-normal">(optional)</span></label>
+              <select value={form.facility_id} onChange={(e) => setForm({ ...form, facility_id: e.target.value })} className="input">
+                <option value="">— None / general —</option>
+                {(facilities || []).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+              {(facilities || []).length === 0 && (
+                <p className="text-[11px] text-slate-400 mt-1">No facilities yet — you can still lodge a general complaint. Add facilities under <Link href="/dashboard/modules/school/facility" className="text-brand-600 font-semibold hover:underline">Facility List</Link>.</p>
+              )}
+            </div>
             <div className="md:col-span-2"><label className="label">Description</label><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="input" rows={3} /></div>
           </div>
           <div className="flex justify-end gap-3 mt-4"><button onClick={reset} className="btn-secondary">Cancel</button><button onClick={submit} disabled={!form.title || save.isPending} className="btn-primary gap-2">{save.isPending && <Loader2 size={15} className="animate-spin" />}Lodge</button></div>
