@@ -105,6 +105,29 @@ class PromotionRecord(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class StudentAuthorizedPickup(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A person authorised to collect a student from school.
+
+    Registry only — no per-day pickup/dismissal log (deferred). Deactivate-not-
+    delete: removing an authorisation flips ``is_active`` rather than dropping
+    the row, preserving the history of who could collect a child.
+    """
+    __tablename__ = "student_authorized_pickups"
+
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    full_name = Column(String(200), nullable=False)
+    relationship_type = Column(String(50), nullable=True)  # parent | guardian | driver | sibling | other
+    phone = Column(String(50), nullable=True)
+    id_document = Column(String(120), nullable=True)       # ID type/number for gate verification
+    photo_url = Column(String(500), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        Index("ix_student_pickups_student_org", "student_id", "org_id"),
+    )
+
+
 class TransferRecord(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A student leaving the school (transfer-out or withdrawal)."""
     __tablename__ = "transfer_records"
