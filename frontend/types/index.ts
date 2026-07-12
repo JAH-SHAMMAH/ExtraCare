@@ -1188,11 +1188,16 @@ export interface AdmissionApplication {
   source: string | null;
   status: AdmissionStatus | string;
   notes: string | null;
+  appointment_at: string | null;
+  appointment_status: AppointmentStatus | string;
+  appointment_notes: string | null;
   admitted_student_id: string | null;
   created_at: string;
   updated_at: string;
   org_id: string;
 }
+
+export type AppointmentStatus = "none" | "scheduled" | "attended" | "no_show";
 
 export type EntranceExamStatus = "scheduled" | "completed";
 export type ExamOutcome = "pending" | "pass" | "fail";

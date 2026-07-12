@@ -29,7 +29,7 @@ export function useClassStudents(classId: string | null) {
 
 // ── Admission Applications ─────────────────────────────────────────────────────
 
-export function useApplications(params?: { status?: string; search?: string; page?: number; page_size?: number }) {
+export function useApplications(params?: { status?: string; appointment_status?: string; search?: string; page?: number; page_size?: number }) {
   return useQuery<Paginated<AdmissionApplication>>({
     queryKey: ["applications", params],
     queryFn: () => enrollmentApi.applications.list(params),

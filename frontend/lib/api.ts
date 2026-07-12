@@ -770,7 +770,7 @@ export const hrDevApi = {
 
 export const enrollmentApi = {
   applications: {
-    list: (p?: { status?: string; search?: string; page?: number; page_size?: number }) =>
+    list: (p?: { status?: string; appointment_status?: string; search?: string; page?: number; page_size?: number }) =>
       api.get("/enrollment/applications", { params: p }).then((r) => r.data),
     create: (data: object) => api.post("/enrollment/applications", data).then((r) => r.data),
     update: (id: string, data: object) => api.patch(`/enrollment/applications/${id}`, data).then((r) => r.data),
