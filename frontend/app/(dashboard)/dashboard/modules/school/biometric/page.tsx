@@ -2,15 +2,16 @@
 
 import { useState } from "react";
 import {
-  useDevices, useCreateDevice, useDeleteDevice,
+  useDevices, useCreateDevice, useDeleteDevice, useIssueDeviceToken, useRevokeDeviceToken,
   useEnrollments, useCreateEnrollment, useDeleteEnrollment,
   useQuarantine, useResolvePunch, useDiscardPunch,
 } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
 import { cn, formatDate } from "@/lib/utils";
-import { Activity, Plus, X, Loader2, Trash2, AlertTriangle, Clock, Check, Ban } from "lucide-react";
-import type { UnmappedPunch } from "@/types";
+import { toast } from "sonner";
+import { Activity, Plus, X, Loader2, Trash2, AlertTriangle, Clock, Check, Ban, KeyRound, Copy } from "lucide-react";
+import type { UnmappedPunch, DeviceToken } from "@/types";
 
 type Tab = "devices" | "enrollments" | "quarantine";
 
@@ -41,12 +42,34 @@ function DevicesTab({ canWrite }: { canWrite: boolean }) {
   const { data, isLoading, isError, refetch } = useDevices();
   const create = useCreateDevice();
   const del = useDeleteDevice();
+  const issueToken = useIssueDeviceToken();
+  const revokeToken = useRevokeDeviceToken();
   const [show, setShow] = useState(false);
   const [form, setForm] = useState({ device_id: "", name: "", location: "" });
+  const [revealed, setRevealed] = useState<DeviceToken | null>(null);  // shown once, then discarded
   const reset = () => { setForm({ device_id: "", name: "", location: "" }); setShow(false); };
 
   return (
     <>
+      {/* One-time token reveal — the plaintext is never retrievable again. */}
+      {revealed && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setRevealed(null)}>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-lg w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2"><KeyRound size={16} className="text-brand-600" /> Ingest token for {revealed.device_id}</h3>
+              <button onClick={() => setRevealed(null)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-3">
+              Copy this now — it is shown <strong>once</strong> and cannot be retrieved again. Configure it as the device/middleware <code>X-Device-Token</code> header. Rotating or revoking invalidates it.
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 bg-slate-900 text-emerald-300 text-xs font-mono rounded-lg px-3 py-2.5 break-all">{revealed.token}</code>
+              <button onClick={() => { navigator.clipboard?.writeText(revealed.token); toast.success("Token copied."); }} className="btn-secondary gap-1.5 shrink-0"><Copy size={14} /> Copy</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-end mb-4">{canWrite && <button onClick={() => { reset(); setShow(true); }} className="btn-primary gap-2"><Plus size={15} /> Register Device</button>}</div>
       {show && canWrite && (
         <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
@@ -57,13 +80,28 @@ function DevicesTab({ canWrite }: { canWrite: boolean }) {
         </div>
       )}
       {isLoading ? <Skel /> : isError ? <ErrBox onRetry={refetch} /> : (data ?? []).length > 0 ? (
-        <Table head={["Device", "Location", "Last seen", "Clock skew", "Status", ""]}>
+        <Table head={["Device", "Location", "Last seen", "Clock skew", "Ingest token", "Status", ""]}>
           {data!.map((d) => (
             <tr key={d.id} className="hover:bg-slate-50/70">
               <td className="px-5 py-4"><p className="text-sm font-semibold text-slate-800">{d.name}</p><p className="text-xs font-mono text-slate-400">{d.device_id}</p></td>
               <td className="px-5 py-4 text-sm text-slate-600">{d.location || "—"}</td>
               <td className="px-5 py-4 text-xs text-slate-500">{d.last_seen_at ? new Date(d.last_seen_at).toLocaleString() : "never"}</td>
               <td className="px-5 py-4">{d.clock_skew_seconds != null && Math.abs(d.clock_skew_seconds) > 300 ? <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600"><Clock size={12} /> {d.clock_skew_seconds}s drift</span> : <span className="text-xs text-slate-400">{d.clock_skew_seconds != null ? `${d.clock_skew_seconds}s` : "—"}</span>}</td>
+              <td className="px-5 py-4">
+                {d.has_token ? (
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 text-xs font-mono text-slate-600"><KeyRound size={12} className="text-emerald-600" />{d.token_prefix}…</span>
+                    {canWrite && <>
+                      <button onClick={() => issueToken.mutate(d.id, { onSuccess: (t) => setRevealed(t) })} disabled={issueToken.isPending} className="text-[11px] font-semibold text-brand-600 hover:underline">Rotate</button>
+                      <button onClick={() => { if (confirm(`Revoke the ingest token for ${d.device_id}? The device stops ingesting until a new token is issued.`)) revokeToken.mutate(d.id); }} className="text-[11px] font-semibold text-red-500 hover:underline">Revoke</button>
+                    </>}
+                  </div>
+                ) : (
+                  canWrite
+                    ? <button onClick={() => issueToken.mutate(d.id, { onSuccess: (t) => setRevealed(t) })} disabled={issueToken.isPending} className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline"><KeyRound size={12} /> Issue token</button>
+                    : <span className="text-xs text-slate-400">none</span>
+                )}
+              </td>
               <td className="px-5 py-4"><span className={cn("badge", d.is_active ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-400 border-slate-200")}>{d.is_active ? "Active" : "Inactive"}</span></td>
               <td className="px-5 py-4">{canWrite && <button onClick={() => { if (confirm("Remove device?")) del.mutate(d.id); }} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>}</td>
             </tr>

@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { biometricApi, platformApi } from "@/lib/api";
 import type {
-  BiometricDevice, BiometricEnrollment, UnmappedPunch, IngestSummary,
+  BiometricDevice, BiometricEnrollment, UnmappedPunch, IngestSummary, DeviceToken,
   AcademicSession, AcademicWeek, SchoolHouse, GradingBand, CustomFieldDef, Poll,
   MailboxMessage, MobileDevice, AppConfigItem, Paginated,
 } from "@/types";
@@ -30,6 +30,16 @@ export function useEnrollments() { return useQuery<BiometricEnrollment[]>({ quer
 export function useQuarantine() { return useQuery<UnmappedPunch[]>({ queryKey: ["bio-quarantine"], queryFn: () => biometricApi.quarantine.list() }); }
 export const useCreateDevice = m((d) => biometricApi.devices.create(d), ["bio-devices"], "Device registered.");
 export const useDeleteDevice = m((id: string) => biometricApi.devices.remove(id), ["bio-devices"], "Device removed.");
+// Custom (not the `m` helper) because the caller needs the returned plaintext token.
+export function useIssueDeviceToken() {
+  const qc = useQueryClient();
+  return useMutation<DeviceToken, any, string>({
+    mutationFn: (id: string) => biometricApi.devices.issueToken(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bio-devices"] }),
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to issue token."),
+  });
+}
+export const useRevokeDeviceToken = m((id: string) => biometricApi.devices.revokeToken(id), ["bio-devices"], "Token revoked.");
 export const useCreateEnrollment = m((d) => biometricApi.enrollments.create(d), ["bio-enrollments", "bio-quarantine"], "Mapped.");
 export const useDeleteEnrollment = m((id: string) => biometricApi.enrollments.remove(id), ["bio-enrollments"], "Removed.");
 export const useResolvePunch = m((v: { id: string; data: object }) => biometricApi.quarantine.resolve(v.id, v.data), ["bio-quarantine", "bio-enrollments"], "Resolved.");

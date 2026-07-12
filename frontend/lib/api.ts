@@ -1170,6 +1170,8 @@ export const biometricApi = {
     create: (data: object) => api.post("/biometric/devices", data).then((r) => r.data),
     update: (id: string, data: object) => api.patch(`/biometric/devices/${id}`, data).then((r) => r.data),
     remove: (id: string) => api.delete(`/biometric/devices/${id}`),
+    issueToken: (id: string) => api.post(`/biometric/devices/${id}/token`).then((r) => r.data),
+    revokeToken: (id: string) => api.delete(`/biometric/devices/${id}/token`),
   },
   enrollments: {
     list: () => api.get("/biometric/enrollments").then((r) => r.data),

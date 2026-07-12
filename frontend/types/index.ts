@@ -2199,6 +2199,12 @@ export interface BiometricDevice {
   id: string; device_id: string; name: string; location: string | null;
   is_active: boolean; last_seen_at: string | null; clock_skew_seconds: number | null;
   notes: string | null; created_at: string; org_id: string;
+  has_token: boolean; token_prefix: string | null; token_issued_at: string | null;
+}
+// Returned ONCE when a device ingest token is issued/rotated (plaintext not stored).
+export interface DeviceToken {
+  device_pk: string; device_id: string; token: string;
+  token_prefix: string; token_issued_at: string;
 }
 export interface BiometricEnrollment {
   id: string; biometric_user_id: string; student_id: string; student_name: string | null;
