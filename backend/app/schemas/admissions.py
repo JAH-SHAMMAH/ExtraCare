@@ -366,3 +366,54 @@ class PostEntranceListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ── Acceptance Form ────────────────────────────────────────────────────────────
+
+ACCEPTANCE_STATUSES = {"pending", "accepted", "declined", "expired"}
+ACCEPTANCE_FEE_STATUSES = {"unpaid", "paid"}
+# Application must be at/after the offer stage to attach an acceptance form.
+ACCEPTANCE_ALLOWED_APP_STATUSES = {"offered", "admitted"}
+
+
+class _AcceptanceBase(BaseModel):
+    offered_class_id: Optional[str] = None
+    offered_level: Optional[str] = None
+    offer_date: Optional[date] = None
+    acceptance_deadline: Optional[date] = None
+    resumption_date: Optional[date] = None
+    acceptance_fee_amount: Optional[float] = None
+    fee_status: Optional[str] = None
+    payment_reference: Optional[str] = None
+    terms_text: Optional[str] = None
+    status: Optional[str] = None
+    accepted_by: Optional[str] = None
+    decline_reason: Optional[str] = None
+
+
+class AcceptanceFormCreate(_AcceptanceBase):
+    application_id: str
+
+
+class AcceptanceFormUpdate(_AcceptanceBase):
+    pass
+
+
+class AcceptanceFormResponse(_AcceptanceBase):
+    id: str
+    application_id: str
+    candidate_name: Optional[str] = None      # resolved from the linked application
+    offered_class_name: Optional[str] = None  # resolved class name
+    acceptance_fee_amount: float
+    fee_status: str
+    status: str
+    accepted_at: Optional[datetime] = None
+    created_at: datetime
+    org_id: str
+
+
+class AcceptanceListResponse(BaseModel):
+    items: list[AcceptanceFormResponse]
+    total: int
+    page: int
+    page_size: int

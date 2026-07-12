@@ -17,7 +17,7 @@ from app.models.user import User, UserStatus
 from app.models.organization import Organization, IndustryType
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.modules.school import Student, SchoolClass
-from app.models.modules.admissions import PromotionRecord
+from app.models.modules.admissions import PromotionRecord, AdmissionApplication
 from app.models.audit import AuditLog
 from app.routers.modules.admissions import (
     list_applications, create_application, update_application, delete_application, admit_application,
@@ -27,6 +27,7 @@ from app.routers.modules.admissions import (
     create_transfer, list_transfers, update_transfer,
     create_pickup, list_pickups, update_pickup, delete_pickup,
     create_post_entrance, list_post_entrance, update_post_entrance,
+    create_acceptance, list_acceptance, update_acceptance,
 )
 from app.schemas.admissions import (
     AdmissionApplicationCreate, AdmissionApplicationUpdate, AdmitRequest,
@@ -34,6 +35,7 @@ from app.schemas.admissions import (
     PromotionCreate, TransferCreate, TransferUpdate,
     AuthorizedPickupCreate, AuthorizedPickupUpdate,
     PostEntranceFormCreate, PostEntranceFormUpdate,
+    AcceptanceFormCreate, AcceptanceFormUpdate,
 )
 
 
@@ -527,6 +529,57 @@ async def test_post_entrance_submit_stamps_and_list_filter(db, org, teacher, sch
     assert updated.status == "submitted" and updated.submitted_at is not None
     just = await list_post_entrance(application_id=app.id, page=1, page_size=25, db=db, current_user=teacher)
     assert just.total == 1 and just.items[0].id == f.id
+
+
+# ── Acceptance Form ────────────────────────────────────────────────────────────
+
+async def test_acceptance_requires_offered_and_prefills(db, org, teacher, school_class):
+    app = await create_application(
+        AdmissionApplicationCreate(first_name="Of", last_name="Fer",
+                                   applying_for_class_id=school_class.id, applying_for_level="JSS1"),
+        request=None, db=db, current_user=teacher,
+    )
+    # An enquiry-stage application can't raise an acceptance form yet.
+    with pytest.raises(HTTPException) as exc:
+        await create_acceptance(AcceptanceFormCreate(application_id=app.id),
+                                request=None, db=db, current_user=teacher)
+    assert exc.value.status_code == 422
+    # Advance to offered → now it works and prefills the offered class/level.
+    await update_application(app.id, AdmissionApplicationUpdate(status="offered"),
+                             request=None, db=db, current_user=teacher)
+    a = await create_acceptance(
+        AcceptanceFormCreate(application_id=app.id, acceptance_fee_amount=5000, fee_status="unpaid"),
+        request=None, db=db, current_user=teacher,
+    )
+    assert a.status == "pending"
+    assert a.offered_class_id == school_class.id
+    assert a.offered_class_name == school_class.name
+    assert a.offered_level == "JSS1"
+    assert a.candidate_name == "Of Fer"
+    assert float(a.acceptance_fee_amount) == 5000.0
+    # 1:1 — a second form for the same application is rejected.
+    with pytest.raises(HTTPException) as exc:
+        await create_acceptance(AcceptanceFormCreate(application_id=app.id),
+                                request=None, db=db, current_user=teacher)
+    assert exc.value.status_code == 409
+
+
+async def test_acceptance_accept_stamps_without_admitting(db, org, teacher, school_class):
+    app = await create_application(AdmissionApplicationCreate(first_name="Ac", last_name="Cept"),
+                                   request=None, db=db, current_user=teacher)
+    await update_application(app.id, AdmissionApplicationUpdate(status="offered"),
+                             request=None, db=db, current_user=teacher)
+    a = await create_acceptance(AcceptanceFormCreate(application_id=app.id),
+                                request=None, db=db, current_user=teacher)
+    assert a.accepted_at is None
+    updated = await update_acceptance(a.id, AcceptanceFormUpdate(status="accepted", accepted_by="Parent"),
+                                      request=None, db=db, current_user=teacher)
+    assert updated.status == "accepted" and updated.accepted_at is not None
+    # Accepting must NOT auto-admit — the application stays 'offered'.
+    refreshed = (await db.execute(select(AdmissionApplication).where(AdmissionApplication.id == app.id))).scalar_one()
+    assert refreshed.status == "offered"
+    just = await list_acceptance(application_id=app.id, page=1, page_size=25, db=db, current_user=teacher)
+    assert just.total == 1 and just.items[0].id == a.id
 
 
 # ── RBAC contract ─────────────────────────────────────────────────────────────

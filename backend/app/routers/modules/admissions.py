@@ -38,6 +38,7 @@ from app.models.modules.school import Student, SchoolClass
 from app.models.modules.admissions import (
     AdmissionApplication, EntranceExam, EntranceExamResult,
     PromotionRecord, TransferRecord, StudentAuthorizedPickup, PostEntranceForm,
+    AcceptanceForm,
 )
 from app.schemas.admissions import (
     AdmissionApplicationCreate, AdmissionApplicationUpdate, AdmissionApplicationResponse,
@@ -51,6 +52,9 @@ from app.schemas.admissions import (
     AuthorizedPickupListResponse,
     PostEntranceFormCreate, PostEntranceFormUpdate, PostEntranceFormResponse,
     PostEntranceListResponse, POST_ENTRANCE_STATUSES,
+    AcceptanceFormCreate, AcceptanceFormUpdate, AcceptanceFormResponse,
+    AcceptanceListResponse, ACCEPTANCE_STATUSES, ACCEPTANCE_FEE_STATUSES,
+    ACCEPTANCE_ALLOWED_APP_STATUSES,
     ADMISSION_STATUSES, APPOINTMENT_STATUSES, EXAM_STATUSES, EXAM_OUTCOMES,
     PROMOTION_OUTCOMES, TRANSFER_TYPES, TRANSFER_STATUSES,
 )
@@ -1115,4 +1119,146 @@ async def update_post_entrance(
         metadata={"application_id": f.application_id, "status": f.status}, request=request,
     )
     (resp,) = await _decorate_post_entrance(db, current_user.org_id, [f])
+    return resp
+
+
+# ── Acceptance Form ────────────────────────────────────────────────────────────
+# Offer/acceptance artifact once a place is offered. 1:1 with an application.
+# Light fee handling (flat fields, no ledger). Accepting does NOT auto-admit.
+
+def _acceptance_response(a: AcceptanceForm, candidate_name: str | None, class_name: str | None) -> AcceptanceFormResponse:
+    resp = AcceptanceFormResponse.model_validate(a, from_attributes=True)
+    resp.candidate_name = candidate_name
+    resp.offered_class_name = class_name
+    return resp
+
+
+async def _load_acceptance(db: AsyncSession, form_id: str, org_id: str) -> AcceptanceForm:
+    a = (await db.execute(
+        select(AcceptanceForm).where(AcceptanceForm.id == form_id, AcceptanceForm.org_id == org_id)
+    )).scalar_one_or_none()
+    if not a:
+        raise HTTPException(status_code=404, detail="acceptance form not found in your organisation.")
+    return a
+
+
+async def _decorate_acceptance(db: AsyncSession, org_id: str, forms: list[AcceptanceForm]) -> list[AcceptanceFormResponse]:
+    app_ids = {a.application_id for a in forms}
+    apps = {}
+    if app_ids:
+        rows = (await db.execute(
+            select(AdmissionApplication.id, AdmissionApplication.first_name, AdmissionApplication.last_name).where(
+                AdmissionApplication.org_id == org_id, AdmissionApplication.id.in_(app_ids),
+            )
+        )).all()
+        apps = {r.id: f"{r.first_name} {r.last_name}".strip() for r in rows}
+    class_names = await _class_names(db, org_id, {a.offered_class_id for a in forms})
+    return [
+        _acceptance_response(a, apps.get(a.application_id), class_names.get(a.offered_class_id))
+        for a in forms
+    ]
+
+
+def _validate_acceptance_fields(data: dict) -> None:
+    if data.get("status") is not None and data["status"] not in ACCEPTANCE_STATUSES:
+        raise HTTPException(status_code=422, detail=f"status must be one of {sorted(ACCEPTANCE_STATUSES)}")
+    if data.get("fee_status") is not None and data["fee_status"] not in ACCEPTANCE_FEE_STATUSES:
+        raise HTTPException(status_code=422, detail=f"fee_status must be one of {sorted(ACCEPTANCE_FEE_STATUSES)}")
+
+
+@router.get("/acceptance", response_model=AcceptanceListResponse, dependencies=[_adm_read])
+async def list_acceptance(
+    application_id: str | None = None,
+    status: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    base = select(AcceptanceForm).where(AcceptanceForm.org_id == current_user.org_id)
+    if application_id:
+        base = base.where(AcceptanceForm.application_id == application_id)
+    if status:
+        base = base.where(AcceptanceForm.status == status)
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
+    rows = (await db.execute(
+        base.order_by(AcceptanceForm.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    )).scalars().all()
+    return AcceptanceListResponse(
+        items=await _decorate_acceptance(db, current_user.org_id, list(rows)),
+        total=total, page=page, page_size=page_size,
+    )
+
+
+@router.post("/acceptance", response_model=AcceptanceFormResponse, status_code=201, dependencies=[_adm_write])
+async def create_acceptance(
+    payload: AcceptanceFormCreate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    app = await _load_application(db, payload.application_id, current_user.org_id)
+    # An acceptance form only makes sense once a place has been offered.
+    if app.status not in ACCEPTANCE_ALLOWED_APP_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"application must be {sorted(ACCEPTANCE_ALLOWED_APP_STATUSES)} to raise an acceptance form (currently '{app.status}').",
+        )
+    existing = (await db.execute(
+        select(AcceptanceForm.id).where(
+            AcceptanceForm.application_id == app.id, AcceptanceForm.org_id == current_user.org_id,
+        )
+    )).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="an acceptance form already exists for this application.")
+
+    data = payload.model_dump(exclude={"application_id"}, exclude_unset=True)
+    _validate_acceptance_fields(data)
+    status = data.pop("status", None) or "pending"
+    # Prefill the offered class/level from the application when left blank.
+    data.setdefault("offered_class_id", app.applying_for_class_id)
+    data.setdefault("offered_level", app.applying_for_level)
+
+    a = AcceptanceForm(
+        application_id=app.id, status=status,
+        accepted_at=datetime.now(timezone.utc) if status == "accepted" else None,
+        created_by=current_user.id, org_id=current_user.org_id, **data,
+    )
+    db.add(a)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="AcceptanceForm", resource_id=a.id,
+        resource_label=f"acceptance form for application {app.id}",
+        metadata={"application_id": app.id, "status": a.status}, request=request,
+    )
+    (resp,) = await _decorate_acceptance(db, current_user.org_id, [a])
+    return resp
+
+
+@router.patch("/acceptance/{form_id}", response_model=AcceptanceFormResponse, dependencies=[_adm_write])
+async def update_acceptance(
+    form_id: str,
+    payload: AcceptanceFormUpdate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    a = await _load_acceptance(db, form_id, current_user.org_id)
+    data = payload.model_dump(exclude_unset=True)
+    _validate_acceptance_fields(data)
+    # Stamp accepted_at on the first transition into "accepted". Does NOT touch the
+    # application status — staff triggers the admit flow separately (per scope).
+    if data.get("status") == "accepted" and a.accepted_at is None:
+        a.accepted_at = datetime.now(timezone.utc)
+    for field, value in data.items():
+        setattr(a, field, value)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="AcceptanceForm", resource_id=a.id,
+        resource_label="acceptance form",
+        metadata={"application_id": a.application_id, "status": a.status}, request=request,
+    )
+    (resp,) = await _decorate_acceptance(db, current_user.org_id, [a])
     return resp
