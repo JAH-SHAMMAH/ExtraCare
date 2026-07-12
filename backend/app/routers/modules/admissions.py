@@ -37,7 +37,7 @@ from app.models.user import User
 from app.models.modules.school import Student, SchoolClass
 from app.models.modules.admissions import (
     AdmissionApplication, EntranceExam, EntranceExamResult,
-    PromotionRecord, TransferRecord, StudentAuthorizedPickup,
+    PromotionRecord, TransferRecord, StudentAuthorizedPickup, PostEntranceForm,
 )
 from app.schemas.admissions import (
     AdmissionApplicationCreate, AdmissionApplicationUpdate, AdmissionApplicationResponse,
@@ -49,6 +49,8 @@ from app.schemas.admissions import (
     TransferCreate, TransferUpdate, TransferRecordResponse, TransferListResponse,
     AuthorizedPickupCreate, AuthorizedPickupUpdate, AuthorizedPickupResponse,
     AuthorizedPickupListResponse,
+    PostEntranceFormCreate, PostEntranceFormUpdate, PostEntranceFormResponse,
+    PostEntranceListResponse, POST_ENTRANCE_STATUSES,
     ADMISSION_STATUSES, APPOINTMENT_STATUSES, EXAM_STATUSES, EXAM_OUTCOMES,
     PROMOTION_OUTCOMES, TRANSFER_TYPES, TRANSFER_STATUSES,
 )
@@ -975,3 +977,142 @@ async def delete_pickup(
         resource_label=f"deactivated pickup {p.full_name}",
         metadata={"student_id": p.student_id, "is_active": False}, request=request,
     )
+
+
+# ── Post Entrance Form ─────────────────────────────────────────────────────────
+# Full candidate registration after passing the entrance exam. 1:1 with an
+# application. Completing it does NOT auto-advance the application status.
+
+def _post_entrance_response(f: PostEntranceForm, candidate_name: str | None, class_name: str | None) -> PostEntranceFormResponse:
+    resp = PostEntranceFormResponse.model_validate(f, from_attributes=True)
+    resp.candidate_name = candidate_name
+    resp.applying_for_class_name = class_name
+    return resp
+
+
+async def _load_post_entrance(db: AsyncSession, form_id: str, org_id: str) -> PostEntranceForm:
+    f = (await db.execute(
+        select(PostEntranceForm).where(PostEntranceForm.id == form_id, PostEntranceForm.org_id == org_id)
+    )).scalar_one_or_none()
+    if not f:
+        raise HTTPException(status_code=404, detail="post-entrance form not found in your organisation.")
+    return f
+
+
+async def _decorate_post_entrance(db: AsyncSession, org_id: str, forms: list[PostEntranceForm]) -> list[PostEntranceFormResponse]:
+    """Resolve candidate name (from the linked application) + class name for a batch."""
+    app_ids = {f.application_id for f in forms}
+    apps = {}
+    if app_ids:
+        rows = (await db.execute(
+            select(AdmissionApplication.id, AdmissionApplication.first_name, AdmissionApplication.last_name).where(
+                AdmissionApplication.org_id == org_id, AdmissionApplication.id.in_(app_ids),
+            )
+        )).all()
+        apps = {r.id: f"{r.first_name} {r.last_name}".strip() for r in rows}
+    class_names = await _class_names(db, org_id, {f.applying_for_class_id for f in forms})
+    return [
+        _post_entrance_response(f, apps.get(f.application_id), class_names.get(f.applying_for_class_id))
+        for f in forms
+    ]
+
+
+@router.get("/post-entrance", response_model=PostEntranceListResponse, dependencies=[_adm_read])
+async def list_post_entrance(
+    application_id: str | None = None,
+    status: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    base = select(PostEntranceForm).where(PostEntranceForm.org_id == current_user.org_id)
+    if application_id:
+        base = base.where(PostEntranceForm.application_id == application_id)
+    if status:
+        base = base.where(PostEntranceForm.status == status)
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
+    rows = (await db.execute(
+        base.order_by(PostEntranceForm.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    )).scalars().all()
+    return PostEntranceListResponse(
+        items=await _decorate_post_entrance(db, current_user.org_id, list(rows)),
+        total=total, page=page, page_size=page_size,
+    )
+
+
+@router.post("/post-entrance", response_model=PostEntranceFormResponse, status_code=201, dependencies=[_adm_write])
+async def create_post_entrance(
+    payload: PostEntranceFormCreate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    # Validate the application exists in the caller's org (tenant guard).
+    app = await _load_application(db, payload.application_id, current_user.org_id)
+    # Enforce the 1:1 — one post-entrance form per application.
+    existing = (await db.execute(
+        select(PostEntranceForm.id).where(
+            PostEntranceForm.application_id == app.id, PostEntranceForm.org_id == current_user.org_id,
+        )
+    )).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="a post-entrance form already exists for this application.")
+
+    data = payload.model_dump(exclude={"application_id"}, exclude_unset=True)
+    status = data.pop("status", None) or "draft"
+    if status not in POST_ENTRANCE_STATUSES:
+        raise HTTPException(status_code=422, detail=f"status must be one of {sorted(POST_ENTRANCE_STATUSES)}")
+
+    # Prefill candidate identity from the application when the client left it blank.
+    if not (data.get("full_name") or "").strip():
+        data["full_name"] = f"{app.first_name} {app.last_name}".strip()
+    data.setdefault("date_of_birth", app.date_of_birth)
+    data.setdefault("gender", app.gender)
+    data.setdefault("applying_for_class_id", app.applying_for_class_id)
+    data.setdefault("applying_for_level", app.applying_for_level)
+
+    f = PostEntranceForm(
+        application_id=app.id, status=status,
+        submitted_at=datetime.now(timezone.utc) if status == "submitted" else None,
+        created_by=current_user.id, org_id=current_user.org_id, **data,
+    )
+    db.add(f)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="PostEntranceForm", resource_id=f.id,
+        resource_label=f"post-entrance form for application {app.id}",
+        metadata={"application_id": app.id, "status": f.status}, request=request,
+    )
+    (resp,) = await _decorate_post_entrance(db, current_user.org_id, [f])
+    return resp
+
+
+@router.patch("/post-entrance/{form_id}", response_model=PostEntranceFormResponse, dependencies=[_adm_write])
+async def update_post_entrance(
+    form_id: str,
+    payload: PostEntranceFormUpdate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    f = await _load_post_entrance(db, form_id, current_user.org_id)
+    data = payload.model_dump(exclude_unset=True)
+    if "status" in data:
+        if data["status"] not in POST_ENTRANCE_STATUSES:
+            raise HTTPException(status_code=422, detail=f"status must be one of {sorted(POST_ENTRANCE_STATUSES)}")
+        # Stamp submitted_at on the first transition into "submitted".
+        if data["status"] == "submitted" and f.submitted_at is None:
+            f.submitted_at = datetime.now(timezone.utc)
+    for field, value in data.items():
+        setattr(f, field, value)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="PostEntranceForm", resource_id=f.id,
+        resource_label="post-entrance form",
+        metadata={"application_id": f.application_id, "status": f.status}, request=request,
+    )
+    (resp,) = await _decorate_post_entrance(db, current_user.org_id, [f])
+    return resp

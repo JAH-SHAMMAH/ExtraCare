@@ -26,12 +26,14 @@ from app.routers.modules.admissions import (
     create_promotions, preview_promotions, revert_promotion_batch, list_promotions,
     create_transfer, list_transfers, update_transfer,
     create_pickup, list_pickups, update_pickup, delete_pickup,
+    create_post_entrance, list_post_entrance, update_post_entrance,
 )
 from app.schemas.admissions import (
     AdmissionApplicationCreate, AdmissionApplicationUpdate, AdmitRequest,
     EntranceExamCreate, EntranceExamResultCreate,
     PromotionCreate, TransferCreate, TransferUpdate,
     AuthorizedPickupCreate, AuthorizedPickupUpdate,
+    PostEntranceFormCreate, PostEntranceFormUpdate,
 )
 
 
@@ -468,6 +470,63 @@ async def test_pickup_delete_is_deactivate_not_delete(db, org, teacher, school_c
     reactivated = await update_pickup(p.id, AuthorizedPickupUpdate(is_active=True),
                                       request=None, db=db, current_user=teacher)
     assert reactivated.is_active is True
+
+
+# ── Post Entrance Form ─────────────────────────────────────────────────────────
+
+async def test_post_entrance_prefill_and_one_to_one(db, org, teacher, school_class):
+    app = await create_application(
+        AdmissionApplicationCreate(first_name="Zed", last_name="Kay",
+                                   applying_for_class_id=school_class.id, gender="male"),
+        request=None, db=db, current_user=teacher,
+    )
+    f = await create_post_entrance(
+        PostEntranceFormCreate(application_id=app.id, father_name="Mr Kay"),
+        request=None, db=db, current_user=teacher,
+    )
+    # Candidate identity prefilled from the linked application.
+    assert f.full_name == "Zed Kay"
+    assert f.applying_for_class_id == school_class.id
+    assert f.applying_for_class_name == school_class.name
+    assert f.candidate_name == "Zed Kay"
+    assert f.father_name == "Mr Kay"
+    assert f.status == "draft"
+    # 1:1 — a second form for the same application is rejected.
+    with pytest.raises(HTTPException) as exc:
+        await create_post_entrance(PostEntranceFormCreate(application_id=app.id),
+                                   request=None, db=db, current_user=teacher)
+    assert exc.value.status_code == 409
+
+
+async def test_post_entrance_foreign_application_rejected(db, org, teacher, school_class):
+    other = Organization(id=str(uuid.uuid4()), name="Other2", slug=f"o-{uuid.uuid4().hex[:6]}",
+                         industry=IndustryType.SCHOOL, modules_enabled=["school"])
+    db.add(other)
+    other_teacher = User(id=str(uuid.uuid4()), email=f"ot-{uuid.uuid4().hex[:6]}@e.com",
+                         full_name="OT", status=UserStatus.ACTIVE, org_id=other.id)
+    other_teacher.roles = []
+    db.add(other_teacher)
+    await db.commit()
+    app = await create_application(AdmissionApplicationCreate(first_name="A", last_name="B"),
+                                   request=None, db=db, current_user=other_teacher)
+    # `teacher` (org) must not attach a form to another org's application.
+    with pytest.raises(HTTPException) as exc:
+        await create_post_entrance(PostEntranceFormCreate(application_id=app.id),
+                                   request=None, db=db, current_user=teacher)
+    assert exc.value.status_code == 404
+
+
+async def test_post_entrance_submit_stamps_and_list_filter(db, org, teacher, school_class):
+    app = await create_application(AdmissionApplicationCreate(first_name="Su", last_name="Mit"),
+                                   request=None, db=db, current_user=teacher)
+    f = await create_post_entrance(PostEntranceFormCreate(application_id=app.id),
+                                   request=None, db=db, current_user=teacher)
+    assert f.submitted_at is None
+    updated = await update_post_entrance(f.id, PostEntranceFormUpdate(status="submitted"),
+                                         request=None, db=db, current_user=teacher)
+    assert updated.status == "submitted" and updated.submitted_at is not None
+    just = await list_post_entrance(application_id=app.id, page=1, page_size=25, db=db, current_user=teacher)
+    assert just.total == 1 and just.items[0].id == f.id
 
 
 # ── RBAC contract ─────────────────────────────────────────────────────────────

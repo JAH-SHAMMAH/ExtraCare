@@ -300,3 +300,69 @@ class AuthorizedPickupListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ── Post Entrance Form ─────────────────────────────────────────────────────────
+
+POST_ENTRANCE_STATUSES = {"draft", "submitted", "reviewed"}
+
+
+class _PostEntranceBase(BaseModel):
+    full_name: Optional[str] = None
+    date_of_birth: Optional[date] = None
+    gender: Optional[str] = None
+    nationality: Optional[str] = None
+    state_origin: Optional[str] = None
+    lga: Optional[str] = None
+    religion: Optional[str] = None
+    home_address: Optional[str] = None
+    passport_photo_url: Optional[str] = None
+    previous_school: Optional[str] = None
+    applying_for_class_id: Optional[str] = None
+    applying_for_level: Optional[str] = None
+    blood_group: Optional[str] = None
+    genotype: Optional[str] = None
+    allergies: Optional[str] = None
+    special_needs: Optional[str] = None
+    father_name: Optional[str] = None
+    father_occupation: Optional[str] = None
+    father_phone: Optional[str] = None
+    father_email: Optional[str] = None
+    mother_name: Optional[str] = None
+    mother_occupation: Optional[str] = None
+    mother_phone: Optional[str] = None
+    mother_email: Optional[str] = None
+    guardian_name: Optional[str] = None
+    guardian_relationship: Optional[str] = None
+    guardian_phone: Optional[str] = None
+    guardian_address: Optional[str] = None
+    emergency_name: Optional[str] = None
+    emergency_relationship: Optional[str] = None
+    emergency_phone: Optional[str] = None
+    status: Optional[str] = None
+
+
+class PostEntranceFormCreate(_PostEntranceBase):
+    application_id: str
+
+
+class PostEntranceFormUpdate(_PostEntranceBase):
+    pass
+
+
+class PostEntranceFormResponse(_PostEntranceBase):
+    id: str
+    application_id: str
+    candidate_name: Optional[str] = None           # resolved from the linked application
+    applying_for_class_name: Optional[str] = None  # resolved class name
+    status: str
+    submitted_at: Optional[datetime] = None
+    created_at: datetime
+    org_id: str
+
+
+class PostEntranceListResponse(BaseModel):
+    items: list[PostEntranceFormResponse]
+    total: int
+    page: int
+    page_size: int
