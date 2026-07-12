@@ -135,6 +135,69 @@ class StudentAuthorizedPickup(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class PostEntranceForm(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Full candidate registration completed AFTER passing the entrance exam.
+
+    1:1 with an ``AdmissionApplication`` (``application_id`` unique). Flat
+    parent/guardian columns (no child table). Completing it does NOT auto-advance
+    the application status — staff review and advance separately.
+    """
+    __tablename__ = "post_entrance_forms"
+
+    application_id = Column(String(36), ForeignKey("admission_applications.id", ondelete="CASCADE"), nullable=False, unique=True)
+
+    # Candidate (prefilled from the application on the client)
+    full_name = Column(String(200), nullable=False)
+    date_of_birth = Column(Date, nullable=True)
+    gender = Column(String(20), nullable=True)
+    nationality = Column(String(80), nullable=True)
+    state_origin = Column(String(80), nullable=True)
+    lga = Column(String(80), nullable=True)
+    religion = Column(String(80), nullable=True)
+    home_address = Column(Text, nullable=True)
+    passport_photo_url = Column(String(500), nullable=True)
+    previous_school = Column(String(200), nullable=True)
+    applying_for_class_id = Column(String(36), ForeignKey("school_classes.id", ondelete="SET NULL"), nullable=True)
+    applying_for_level = Column(String(80), nullable=True)
+
+    # Health
+    blood_group = Column(String(10), nullable=True)
+    genotype = Column(String(10), nullable=True)
+    allergies = Column(Text, nullable=True)
+    special_needs = Column(Text, nullable=True)
+
+    # Father
+    father_name = Column(String(200), nullable=True)
+    father_occupation = Column(String(120), nullable=True)
+    father_phone = Column(String(50), nullable=True)
+    father_email = Column(String(320), nullable=True)
+
+    # Mother
+    mother_name = Column(String(200), nullable=True)
+    mother_occupation = Column(String(120), nullable=True)
+    mother_phone = Column(String(50), nullable=True)
+    mother_email = Column(String(320), nullable=True)
+
+    # Guardian (if different from parents)
+    guardian_name = Column(String(200), nullable=True)
+    guardian_relationship = Column(String(80), nullable=True)
+    guardian_phone = Column(String(50), nullable=True)
+    guardian_address = Column(Text, nullable=True)
+
+    # Emergency contact
+    emergency_name = Column(String(200), nullable=True)
+    emergency_relationship = Column(String(80), nullable=True)
+    emergency_phone = Column(String(50), nullable=True)
+
+    status = Column(String(20), default="draft", nullable=False)  # draft | submitted | reviewed
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        Index("ix_post_entrance_forms_org", "org_id"),
+    )
+
+
 class TransferRecord(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A student leaving the school (transfer-out or withdrawal)."""
     __tablename__ = "transfer_records"
