@@ -421,7 +421,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
 
       <aside
         className={cn(
-          "no-print fixed left-0 top-0 h-screen w-80 max-w-[85vw] bg-white border-r border-slate-200/70 flex flex-col z-50 shadow-sm",
+          "no-print fixed left-0 top-0 h-screen w-[384px] max-w-[85vw] bg-white border-r border-slate-200/70 flex flex-col z-50 shadow-sm",
           "transition-transform duration-200 ease-out lg:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full",
         )}
