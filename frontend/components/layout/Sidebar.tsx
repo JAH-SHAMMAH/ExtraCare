@@ -331,11 +331,24 @@ const MODULE_SECTIONS: ModuleSection[] = [
       // Batch 6 (money features) — shipped: ledger-backed student money.
       { href: "/dashboard/modules/school/wallet", label: "Wallet Manager", icon: Wallet },
       { href: "/dashboard/modules/school/pocketmoney", label: "PocketMoney", icon: BadgeDollarSign },
-      { href: "/dashboard/modules/school/cooperative", label: "Cooperative", icon: HandshakeIcon },
       // Batch 6 (non-financial) — shipped. Calendar → school:read; Facility +
       // Visitor (safeguarding) → school_admin:read.
       { href: "/dashboard/modules/school/calendar", label: "Calendar & Planner", icon: Calendar },
       { href: "/dashboard/modules/school/visitor", label: "Visitor Management", icon: UserCheck },
+    ],
+  },
+  {
+    // Cooperative — its own top-level module (Educare parity). Children deep-link
+    // the tabs of the /cooperative page (?tab=…): Console (member management),
+    // Dashboard (summary), Reports (printable member-balance statement).
+    key: "cooperative",
+    requiredModule: "school",
+    label: "Cooperative",
+    icon: HandshakeIcon,
+    items: [
+      { href: "/dashboard/modules/school/cooperative?tab=console", label: "Cooperative Console", icon: HandshakeIcon },
+      { href: "/dashboard/modules/school/cooperative?tab=dashboard", label: "Cooperative Dashboard", icon: BarChart3 },
+      { href: "/dashboard/modules/school/cooperative?tab=reports", label: "Cooperative Reports", icon: FileText },
     ],
   },
   {

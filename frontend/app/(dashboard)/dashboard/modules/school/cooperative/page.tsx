@@ -1,16 +1,49 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   useCoopMembers, useCreateMember, useContribute, usePayout, useCoopReconciliation,
 } from "@/hooks/useWallet";
 import { useAccounts } from "@/hooks/useFinance";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
-import { Handshake, Plus, X, Loader2, AlertTriangle, Scale, ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { Handshake, Plus, X, Loader2, AlertTriangle, Scale, ArrowDownLeft, ArrowUpRight, Users2, Wallet, Printer } from "lucide-react";
+import { PrintLetterhead } from "@/components/branding/Brand";
 import type { CooperativeMember } from "@/types";
 
+type Tab = "console" | "dashboard" | "reports";
+const TABS: Tab[] = ["console", "dashboard", "reports"];
+
 export default function CooperativePage() {
+  // Tab lives in the URL (?tab=…) so the sidebar's Cooperative sub-items deep-link.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const raw = searchParams.get("tab");
+  const tab: Tab = TABS.includes(raw as Tab) ? (raw as Tab) : "console";
+  const setTab = (t: Tab) => router.replace(`${pathname}?tab=${t}`, { scroll: false });
+
+  return (
+    <div className="p-8 max-w-5xl mx-auto">
+      <div className="mb-5">
+        <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Cooperative</span></nav>
+        <h1 className="text-2xl font-black text-slate-900 tracking-tight">Cooperative</h1>
+        <p className="text-slate-500 text-sm mt-0.5">Member savings held on their behalf (a liability) — contributions &amp; payouts, ledger-backed.</p>
+      </div>
+      <div className="flex gap-1 border-b border-slate-200 mb-6 no-print">
+        {([["console", "Console"], ["dashboard", "Dashboard"], ["reports", "Reports"]] as [Tab, string][]).map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} className={cn("px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition", tab === k ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-700")}>{l}</button>
+        ))}
+      </div>
+      {tab === "console" ? <Console /> : tab === "dashboard" ? <CoopDashboard /> : <CoopReports />}
+    </div>
+  );
+}
+
+// ── Console — member management (contributions / payouts) ─────────────────────────
+
+function Console() {
   const canPost = useHasPermission("payments:post");
   const canWrite = useHasPermission("payments:write");
 
@@ -39,13 +72,8 @@ export default function CooperativePage() {
   const rows = data?.items;
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <div className="flex flex-col md:flex-row md:items-end justify-between mb-6 gap-4">
-        <div>
-          <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Operations</span><span>/</span><span className="text-brand-600 font-semibold">Cooperative</span></nav>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Cooperative</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Member savings held on their behalf (a liability) — contributions &amp; payouts, ledger-backed.</p>
-        </div>
+    <>
+      <div className="flex justify-end mb-4">
         {canWrite && <button onClick={() => setShowNew((s) => !s)} className="btn-primary gap-2"><Plus size={15} /> New Member</button>}
       </div>
 
@@ -105,6 +133,83 @@ export default function CooperativePage() {
             )}
           </tbody>
         </table>
+      </div>
+    </>
+  );
+}
+
+// ── Dashboard — at-a-glance summary ───────────────────────────────────────────────
+
+function CoopDashboard() {
+  const { data } = useCoopMembers();
+  const { data: recon } = useCoopReconciliation();
+  const members = data?.items ?? [];
+  const active = members.filter((m) => m.is_active).length;
+  const fund = members.reduce((sum, m) => sum + (m.balance || 0), 0);
+
+  const cards = [
+    { label: "Members", value: members.length.toLocaleString(), icon: Users2, tint: "bg-brand-50 text-brand-600" },
+    { label: "Active", value: active.toLocaleString(), icon: Handshake, tint: "bg-emerald-50 text-emerald-600" },
+    { label: "Fund held", value: fund.toFixed(2), icon: Wallet, tint: "bg-indigo-50 text-indigo-600" },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {cards.map((c) => (
+          <div key={c.label} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+            <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center mb-3", c.tint)}><c.icon size={16} /></div>
+            <p className="text-2xl font-black tracking-tight tabular-nums text-slate-900">{c.value}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mt-1">{c.label}</p>
+          </div>
+        ))}
+      </div>
+      {recon && (
+        <div className={cn("flex items-center gap-2 text-sm rounded-xl px-4 py-3 border", recon.balanced ? "text-emerald-700 bg-emerald-50 border-emerald-200" : "text-rose-700 bg-rose-50 border-rose-200")}>
+          <Scale size={16} />
+          <span><strong>Reconciliation:</strong> general-ledger fund {recon.gl_balance.toFixed(2)} vs. member balances {recon.subledger_total.toFixed(2)} — {recon.balanced ? "balanced ✓" : "OUT OF BALANCE — investigate"}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Reports — printable member balance statement ─────────────────────────────────
+
+function CoopReports() {
+  const { data, isLoading } = useCoopMembers();
+  const members = data?.items ?? [];
+  const total = members.reduce((sum, m) => sum + (m.balance || 0), 0);
+
+  return (
+    <div>
+      <div className="flex justify-end mb-4 no-print">
+        <button onClick={() => window.print()} className="btn-secondary gap-2"><Printer size={14} /> Print statement</button>
+      </div>
+      <div className="bg-white rounded-xl border border-slate-200 p-6 print:border-0 print:p-0">
+        <PrintLetterhead title="Cooperative — Member Balances" />
+        {isLoading ? (
+          <div className="py-16 text-center"><Loader2 size={22} className="animate-spin text-slate-400 mx-auto" /></div>
+        ) : members.length === 0 ? (
+          <p className="py-12 text-center text-slate-400 text-sm">No members yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["#", "Member", "Status", "Balance"].map((h) => <th key={h} className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>)}</tr></thead>
+              <tbody className="divide-y divide-slate-50">
+                {members.map((m, i) => (
+                  <tr key={m.id}>
+                    <td className="px-4 py-2.5 text-xs text-slate-400 tabular-nums">{i + 1}</td>
+                    <td className="px-4 py-2.5 text-sm font-medium text-slate-800">{m.member_name}</td>
+                    <td className="px-4 py-2.5 text-xs capitalize text-slate-500">{m.is_active ? "active" : "inactive"}</td>
+                    <td className="px-4 py-2.5 text-sm font-semibold text-slate-900 tabular-nums">{m.balance.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot><tr className="border-t-2 border-slate-200"><td /><td /><td className="px-4 py-2.5 text-xs font-bold uppercase text-slate-500 text-right">Total fund</td><td className="px-4 py-2.5 text-sm font-black text-slate-900 tabular-nums">{total.toFixed(2)}</td></tr></tfoot>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
