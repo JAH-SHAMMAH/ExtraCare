@@ -14,6 +14,13 @@ function inv(qc: ReturnType<typeof useQueryClient>, keys: string[]) {
 export function useCalendar() {
   return useQuery<Paginated<CalendarEvent>>({ queryKey: ["calendar"], queryFn: () => operationsApi.calendar.list() });
 }
+// Dashboard "Upcoming Events" widget — future events only, soonest first.
+export function useUpcomingEvents(limit = 5) {
+  return useQuery<Paginated<CalendarEvent>>({
+    queryKey: ["calendar", "upcoming", limit],
+    queryFn: () => operationsApi.calendar.list({ upcoming_only: true, page_size: limit }),
+  });
+}
 export function useCreateEvent() {
   const qc = useQueryClient();
   return useMutation({

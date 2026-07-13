@@ -6,18 +6,22 @@ import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { SchoolWidgets } from "@/components/dashboard/widgets/SchoolWidgets";
 import { ClassDistributionChart } from "@/components/dashboard/ClassDistributionChart";
 import { PeoplePulse } from "@/components/dashboard/PeoplePulse";
+import { NewsFeed } from "@/components/feed/NewsFeed";
 import { useAuthStore } from "@/lib/store";
 import { useExecutiveOverview, useWorkspaceOverview, type ExecutiveOverview, type WorkspaceOverview } from "@/hooks/useDashboard";
+import { useUpcomingEvents } from "@/hooks/useOperations";
+import { useHrBirthdays } from "@/hooks/useHrm";
 import { useDelayedFlag } from "@/hooks/useDelayedFlag";
 import { moduleAllowedForOrg } from "@/lib/workspace";
 import { Skeleton } from "@/components/loading/Skeleton";
 import {
-  Users, GraduationCap, Heart, TrendingUp, AlertCircle,
+  Users, GraduationCap, Heart, AlertCircle,
   School as SchoolIcon, UserCheck, ClipboardCheck, Bus,
   MessageSquare, AlertTriangle, ArrowUpRight,
   CheckCircle2, RefreshCw, Loader2, User as UserIcon, UserCircle,
+  Calendar, FileText, Cake, MapPin, Newspaper,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDate, getInitials } from "@/lib/utils";
 
 /**
  * Executive Dashboard (Phase 6.8). One-screen control centre that answers:
@@ -95,29 +99,43 @@ export function AdminHome() {
           <div className="mt-8">
             <SchoolWidgets />
           </div>
+
+      {/* People pulse — kept above the feed */}
+          <div className="mt-6">
+            <PeoplePulse variant="stacked" />
+          </div>
+
+      {/* News Feed (main) + right rail — Educare-style home feed. The News Feed
+          is the shared org social feed (same component as /news-feed). */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
+            <div className="lg:col-span-2">
+              <div className="flex items-center gap-2 mb-3">
+                <Newspaper size={16} className="text-indigo-600" />
+                <h2 className="text-sm font-bold text-slate-800">News Feed</h2>
+              </div>
+              <NewsFeed limit={20} />
+            </div>
+            <aside className="space-y-4">
+              <QuickLinks modules={org?.modules_enabled || []} />
+              <UpcomingEvents />
+              <UpcomingBirthdays />
+            </aside>
+          </div>
         </>
       ) : (
-        <WorkspaceStrip data={workspaceData} loading={showSkeleton} />
+        <>
+          <WorkspaceStrip data={workspaceData} loading={showSkeleton} />
+          {/* Legacy non-school workspaces keep the audit activity + quick actions. */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
+            <div className="lg:col-span-2">
+              <ActivityFeed />
+            </div>
+            <div className="space-y-4">
+              <WorkspaceQuickActions data={workspaceData} loading={showSkeleton} />
+            </div>
+          </div>
+        </>
       )}
-
-      {/* Activity + Quick actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
-        <div className="lg:col-span-2">
-          <ActivityFeed />
-        </div>
-        <div className="space-y-4">
-          {isSchoolWorkspace ? (
-            <QuickActions modules={org?.modules_enabled || []} />
-          ) : (
-            <WorkspaceQuickActions data={workspaceData} loading={showSkeleton} />
-          )}
-        </div>
-      </div>
-
-      {/* People pulse */}
-      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <PeoplePulse variant="stacked" />
-      </div>
     </div>
   );
 }
@@ -504,29 +522,114 @@ function formatMetric(value: number | string): string {
   return value;
 }
 
-function QuickActions({ modules }: { modules: string[] }) {
-  const actions = [
-    { label: "Add User", href: "/dashboard/users?new=1", icon: Users, show: true },
+// ── Right-rail widgets ───────────────────────────────────────────────────────
+
+function QuickLinks({ modules }: { modules: string[] }) {
+  const links = [
     { label: "New Student", href: "/dashboard/modules/school/students?new=1", icon: GraduationCap, show: modules.includes("school") },
     { label: "Send SMS", href: "/dashboard/modules/school/sms", icon: MessageSquare, show: modules.includes("school") },
-    { label: "Run Payroll", href: "/dashboard/modules/business/payroll?run=1", icon: TrendingUp, show: modules.includes("hr") },
+    { label: "Make Report", href: "/dashboard/modules/school/report-workflow", icon: FileText, show: modules.includes("school") },
+    { label: "My Schedules", href: "/dashboard/modules/school/timetable", icon: Calendar, show: modules.includes("school") },
+    { label: "Calendar", href: "/dashboard/modules/school/calendar", icon: Calendar, show: modules.includes("school") },
   ].filter((a) => a.show);
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5">
-      <h3 className="text-sm font-bold text-slate-800 mb-4">Quick Actions</h3>
+      <h3 className="text-sm font-bold text-slate-800 mb-4">Quick Links</h3>
       <div className="space-y-2">
-        {actions.map(({ label, href, icon: Icon }) => (
-          <a
-            key={href}
+        {links.map(({ label, href, icon: Icon }) => (
+          <Link
+            key={label}
             href={href}
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-slate-50 hover:bg-brand-50 hover:text-brand-700 text-slate-600 text-sm font-medium transition-all group"
           >
             <Icon size={15} className="group-hover:text-brand-600" />
             {label}
-          </a>
+          </Link>
         ))}
       </div>
+    </div>
+  );
+}
+
+function UpcomingEvents() {
+  const { data, isLoading } = useUpcomingEvents(5);
+  const events = data?.items ?? [];
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+        <Calendar size={15} className="text-brand-600" /> Upcoming Events
+      </h3>
+      {isLoading ? (
+        <div className="space-y-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-10 rounded-lg" />)}</div>
+      ) : events.length === 0 ? (
+        <p className="text-xs text-slate-400">No upcoming events.</p>
+      ) : (
+        <ul className="space-y-3">
+          {events.map((e) => {
+            const d = new Date(e.start_at);
+            return (
+              <li key={e.id} className="flex gap-3">
+                <div className="shrink-0 w-10 text-center rounded-lg bg-brand-50 py-1">
+                  <p className="text-[9px] font-bold uppercase tracking-wide text-brand-600 leading-none">
+                    {d.toLocaleDateString("en-GB", { month: "short" })}
+                  </p>
+                  <p className="text-base font-black text-slate-900 leading-tight tabular-nums">{d.getDate()}</p>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-800 truncate">{e.title}</p>
+                  <p className="text-[11px] text-slate-400 truncate flex items-center gap-1">
+                    {e.location ? <><MapPin size={10} /> {e.location}</> : formatDate(e.start_at)}
+                  </p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <Link href="/dashboard/modules/school/calendar" className="mt-3 inline-block text-xs font-semibold text-brand-600 hover:underline">
+        View calendar →
+      </Link>
+    </div>
+  );
+}
+
+function UpcomingBirthdays() {
+  const { data: birthdays = [], isLoading } = useHrBirthdays();
+  // Backend returns the whole month (today-first). Keep genuinely-upcoming only.
+  const upcoming = birthdays.filter((b) => b.is_today || b.days_until > 0).slice(0, 6);
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+        <Cake size={15} className="text-rose-500" /> Upcoming Birthdays
+      </h3>
+      {isLoading ? (
+        <div className="space-y-2.5">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-9 rounded-lg" />)}</div>
+      ) : upcoming.length === 0 ? (
+        <p className="text-xs text-slate-400">No upcoming birthdays this month.</p>
+      ) : (
+        <ul className="space-y-2.5">
+          {upcoming.map((b, i) => (
+            <li key={i} className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center text-[10px] font-bold shrink-0">
+                {getInitials(b.name)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-slate-800 truncate">{b.name}</p>
+                <p className="text-[10px] text-slate-400 capitalize">{b.role}</p>
+              </div>
+              <span className={cn(
+                "text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0",
+                b.is_today ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-500",
+              )}>
+                {b.is_today ? "Today 🎂" : b.days_until === 1 ? "Tomorrow" : `in ${b.days_until}d`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

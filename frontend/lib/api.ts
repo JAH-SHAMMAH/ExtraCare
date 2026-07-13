@@ -1135,7 +1135,7 @@ export const walletApi = {
 
 export const operationsApi = {
   calendar: {
-    list: (p?: { page?: number; page_size?: number }) => api.get("/operations/calendar", { params: p }).then((r) => r.data),
+    list: (p?: { page?: number; page_size?: number; upcoming_only?: boolean }) => api.get("/operations/calendar", { params: p }).then((r) => r.data),
     create: (data: object) => api.post("/operations/calendar", data).then((r) => r.data),
     update: (id: string, data: object) => api.patch(`/operations/calendar/${id}`, data).then((r) => r.data),
     remove: (id: string) => api.delete(`/operations/calendar/${id}`),
