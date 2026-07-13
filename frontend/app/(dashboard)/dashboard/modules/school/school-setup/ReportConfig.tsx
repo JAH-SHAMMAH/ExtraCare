@@ -2,28 +2,24 @@
 
 import { useState } from "react";
 import {
-  useSections, useCreateSection, useUpdateSection, useDeleteSection, useAutoMapSections,
-  useReportTemplates, useUpdateTemplate,
+  useSections, useReportTemplates, useUpdateTemplate,
   useGradingScales, useReplaceScaleBands, useBootstrapReportConfig,
 } from "@/hooks/usePlatform";
 import { Loader2, Trash2, Plus, Wand2, FileText, Save } from "lucide-react";
-import type { SchoolSection, ReportTemplate, GradingScale } from "@/types";
+import type { ReportTemplate, GradingScale } from "@/types";
 
 /**
- * School Reports R2 config. Every number here (grading bands, CA/exam weights) is
- * editable data — seeded values are flagged provisional until the school enters
- * real figures, so a report never prints a hardcoded boundary.
+ * School Reports R2 config — report templates + grading scales (per section).
+ * Sections/divisions themselves are managed on the "School Types" tab. Every
+ * number here (grading bands, CA/exam weights) is editable data — seeded values
+ * are flagged provisional until the school enters real figures, so a report never
+ * prints a hardcoded boundary.
  */
 export function ReportConfig({ canWrite }: { canWrite: boolean }) {
   const { data: sections = [], isLoading } = useSections();
   const { data: templates = [] } = useReportTemplates();
   const { data: scales = [] } = useGradingScales();
-  const createSection = useCreateSection();
-  const delSection = useDeleteSection();
-  const autoMap = useAutoMapSections();
   const bootstrap = useBootstrapReportConfig();
-  const [name, setName] = useState("");
-  const [curriculum, setCurriculum] = useState("hybrid");
 
   if (isLoading) return <div className="py-16 text-center"><Loader2 className="animate-spin mx-auto text-slate-400" /></div>;
 
@@ -39,37 +35,12 @@ export function ReportConfig({ canWrite }: { canWrite: boolean }) {
         <div className="bg-white rounded-xl border border-slate-200 p-6 text-center">
           <FileText size={28} className="mx-auto mb-3 text-brand-600" />
           <p className="text-sm font-semibold text-slate-800">No report configuration yet</p>
-          <p className="text-xs text-slate-500 mt-1 mb-4">Create the standard Nursery (EYFS) / Junior / Secondary sections, provisional grading scales and a template each.</p>
+          <p className="text-xs text-slate-500 mt-1 mb-4">Create the standard Nursery (EYFS) / Primary / Secondary sections, provisional grading scales and a template each.</p>
           <button onClick={() => bootstrap.mutate(undefined as any)} disabled={bootstrap.isPending} className="btn-primary gap-2 mx-auto">
             {bootstrap.isPending ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />} Create standard setup
           </button>
         </div>
       )}
-
-      {/* Sections */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-bold text-slate-800">School Sections</h2>
-          {canWrite && sections.length > 0 && (
-            <button onClick={() => autoMap.mutate()} disabled={autoMap.isPending} className="btn-secondary gap-2 text-xs py-1.5" title="Link classes to sections by an exact normalized level match">
-              {autoMap.isPending ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />} Auto-map classes
-            </button>
-          )}
-        </div>
-        <p className="text-xs text-slate-400 mb-2">Aliases are the class <strong>level</strong> values that map to a section — &ldquo;Auto-map classes&rdquo; links a class when its level matches the section name or an alias (case/spacing-insensitive). Unmatched levels stay unassigned.</p>
-        <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-50">
-          {sections.length === 0 ? <p className="p-4 text-sm text-slate-400">No sections yet.</p> : sections.map((s: SchoolSection) => (
-            <SectionRow key={s.id} section={s} canWrite={canWrite} onDelete={() => { if (confirm(`Delete section ${s.name}? Its template is removed and classes become unassigned.`)) delSection.mutate(s.id); }} />
-          ))}
-          {canWrite && (
-            <div className="flex items-end gap-3 px-4 py-3">
-              <div className="flex-1"><label className="label">Section name</label><input value={name} onChange={(e) => setName(e.target.value)} className="input" placeholder="e.g. Junior" /></div>
-              <div><label className="label">Curriculum</label><select value={curriculum} onChange={(e) => setCurriculum(e.target.value)} className="input"><option value="eyfs">EYFS</option><option value="nigerian">Nigerian</option><option value="hybrid">Hybrid</option></select></div>
-              <button onClick={() => name.trim() && createSection.mutate({ name: name.trim(), curriculum, position: sections.length }, { onSuccess: () => setName("") })} disabled={!name.trim() || createSection.isPending} className="btn-primary gap-2"><Plus size={15} /> Add</button>
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* Templates */}
       <div>
@@ -89,26 +60,6 @@ export function ReportConfig({ canWrite }: { canWrite: boolean }) {
             <ScaleRow key={sc.id} scale={sc} canWrite={canWrite} />
           ))}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function SectionRow({ section, canWrite, onDelete }: { section: SchoolSection; canWrite: boolean; onDelete: () => void }) {
-  const update = useUpdateSection();
-  const [aliases, setAliases] = useState((section.aliases || []).join(", "));
-  const dirty = aliases.trim() !== (section.aliases || []).join(", ");
-  const save = () => update.mutate({ id: section.id, data: { aliases: aliases.split(",").map((a) => a.trim()).filter(Boolean) } });
-
-  return (
-    <div className="px-4 py-3">
-      <div className="flex items-center justify-between">
-        <div><span className="text-sm font-semibold text-slate-800">{section.name}</span><span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">{section.curriculum}</span></div>
-        {canWrite && <button onClick={onDelete} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>}
-      </div>
-      <div className="flex items-center gap-2 mt-2">
-        <input value={aliases} onChange={(e) => setAliases(e.target.value)} disabled={!canWrite} className="input text-xs flex-1" placeholder="Level aliases, comma-separated (e.g. YEAR 1, YEAR 2, …)" />
-        {canWrite && <button onClick={save} disabled={!dirty || update.isPending} className="btn-secondary gap-1.5 text-xs py-1.5 shrink-0">{update.isPending ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save</button>}
       </div>
     </div>
   );

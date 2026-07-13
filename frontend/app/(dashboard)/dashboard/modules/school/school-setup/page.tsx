@@ -13,9 +13,10 @@ import { Settings, Loader2, Trash2, Plus, Pencil } from "lucide-react";
 import { TERMS } from "@/lib/terms";
 import type { AcademicSession } from "@/types";
 import { ReportConfig } from "./ReportConfig";
+import { SchoolSections } from "./SchoolSections";
 
-type Tab = "sessions" | "houses" | "bands" | "reports";
-const TABS: Tab[] = ["sessions", "houses", "bands", "reports"];
+type Tab = "sections" | "sessions" | "houses" | "bands" | "reports";
+const TABS: Tab[] = ["sections", "sessions", "houses", "bands", "reports"];
 
 export default function SchoolSetupPage() {
   const canWrite = useHasPermission("settings:write");
@@ -34,12 +35,12 @@ export default function SchoolSetupPage() {
         <h1 className="text-2xl font-black text-slate-900 tracking-tight">School Setup</h1>
         <p className="text-slate-500 text-sm mt-0.5">Academic sessions, houses, grading and report configuration.</p>
       </div>
-      <div className="flex gap-1 border-b border-slate-200 mb-6">
-        {([["sessions", "Sessions / Terms"], ["houses", "Houses"], ["bands", "Grading Bands"], ["reports", "Report Config"]] as [Tab, string][]).map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} className={cn("px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition", tab === k ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-700")}>{l}</button>
+      <div className="flex gap-1 border-b border-slate-200 mb-6 overflow-x-auto">
+        {([["sections", "School Types"], ["sessions", "Manage Sessions"], ["houses", "Houses"], ["bands", "Grading Bands"], ["reports", "Report Config"]] as [Tab, string][]).map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} className={cn("px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition whitespace-nowrap", tab === k ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-700")}>{l}</button>
         ))}
       </div>
-      {tab === "sessions" ? <Sessions canWrite={canWrite} /> : tab === "houses" ? <Houses canWrite={canWrite} /> : tab === "bands" ? <Bands canWrite={canWrite} /> : <ReportConfig canWrite={canWrite} />}
+      {tab === "sections" ? <SchoolSections canWrite={canWrite} /> : tab === "sessions" ? <Sessions canWrite={canWrite} /> : tab === "houses" ? <Houses canWrite={canWrite} /> : tab === "bands" ? <Bands canWrite={canWrite} /> : <ReportConfig canWrite={canWrite} />}
     </div>
   );
 }

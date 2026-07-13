@@ -339,7 +339,8 @@ const MODULE_SECTIONS: ModuleSection[] = [
     label: "School Setup",
     icon: Settings,
     items: [
-      { href: "/dashboard/modules/school/school-setup?tab=sessions", label: "Sessions & Terms", icon: CalendarClock },
+      { href: "/dashboard/modules/school/school-setup?tab=sections", label: "School Types", icon: School },
+      { href: "/dashboard/modules/school/school-setup?tab=sessions", label: "Manage Sessions", icon: CalendarClock },
       { href: "/dashboard/modules/school/school-setup?tab=houses", label: "Houses", icon: Building2 },
       { href: "/dashboard/modules/school/school-setup?tab=bands", label: "Grading Bands", icon: Award },
       { href: "/dashboard/modules/school/school-setup?tab=reports", label: "Report Config", icon: FileText },
