@@ -527,6 +527,9 @@ class CBTAttempt(Base, UUIDMixin, TimestampMixin, TenantMixin):
     # stats. NULL = active.
     superseded_at = Column(DateTime(timezone=True), nullable=True)
     superseded_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    # Staff textual remark on the result ("Test Remark") — distinct from the
+    # per-answer manual grading flow (which awards points).
+    remark_note = Column(Text, nullable=True)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 

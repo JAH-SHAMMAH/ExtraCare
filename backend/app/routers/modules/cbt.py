@@ -974,6 +974,7 @@ def _result_rows(attempts, names, ungraded, total_points, pass_fraction):
             "passed": passed,
             "superseded": a.superseded_at is not None,
             "needs_review": ungraded.get(a.id, 0) > 0,
+            "remark_note": a.remark_note,
         })
     return rows
 
@@ -1360,6 +1361,61 @@ async def reset_attempt(
         severity="warning", request=request,
     )
     return {"reset": True, "superseded_at": attempt.superseded_at.isoformat() if attempt.superseded_at else None}
+
+
+@router.post("/exams/{exam_id}/reset", dependencies=[_bank_write])
+async def reset_exam_attempts(
+    exam_id: str,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Bulk reset ("Admin CBT Reset"): supersede EVERY active attempt on an exam so
+    the whole class can retake. Attempts + answers are kept for the record (badged,
+    excluded from stats), same as the per-attempt reset. Returns the count reset."""
+    org_id = current_user.org_id
+    exam = await _get_exam_or_404(db, exam_id, org_id)
+    attempts = (await db.execute(
+        select(CBTAttempt).where(
+            CBTAttempt.exam_id == exam.id, CBTAttempt.org_id == org_id,
+            CBTAttempt.superseded_at.is_(None),
+        )
+    )).scalars().all()
+    now = datetime.now(timezone.utc)
+    for a in attempts:
+        a.superseded_at = now
+        a.superseded_by = current_user.id
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="CBTExam", resource_id=exam.id,
+        resource_label=f"reset ALL attempts on exam '{exam.title}' ({len(attempts)})",
+        severity="warning", metadata={"reset_count": len(attempts)}, request=request,
+    )
+    return {"reset": len(attempts)}
+
+
+@router.patch("/attempts/{attempt_id}/remark-note", dependencies=[_bank_write])
+async def set_attempt_remark_note(
+    attempt_id: str,
+    payload: dict,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Set the staff textual remark on a result ("Admin Test Remark"). Body:
+    {"remark_note": "..."}. Distinct from per-answer grading."""
+    org_id = current_user.org_id
+    attempt = await _load_attempt(db, attempt_id, org_id)
+    note = (payload or {}).get("remark_note")
+    attempt.remark_note = (note or "").strip() or None
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="CBTAttempt", resource_id=attempt_id,
+        resource_label="set result remark", request=request,
+    )
+    return {"id": attempt.id, "remark_note": attempt.remark_note}
 
 
 def _intervention_dict(iv: CBTIntervention, student_name) -> dict:

@@ -14,7 +14,10 @@ from fastapi import HTTPException
 from app.models.user import User, UserStatus
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.modules.school import CBTExam, CBTAttempt, ExamStatus, AttemptStatus, Student
-from app.routers.modules.cbt import reset_attempt, start_attempt, exam_results, list_attempts
+from app.routers.modules.cbt import (
+    reset_attempt, start_attempt, exam_results, list_attempts,
+    reset_exam_attempts, set_attempt_remark_note,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -110,3 +113,41 @@ async def test_list_attempts_excludes_superseded(db, org):
     await db.commit()
     res = await list_attempts(exam_id=exam.id, student_id=None, db=db, current_user=staff)
     assert len(res["items"]) == 1 and all("superseded" not in i or i for i in res["items"])
+
+
+# ── Admin CBT Reset (bulk) + Admin Test Remark ────────────────────────────────────
+
+async def test_bulk_reset_supersedes_all_active(db, org):
+    staff = await _staff(db, org)
+    s1, s2 = await _student(db, org), await _student(db, org)
+    exam = await _exam(db, org, staff)
+    a1 = _attempt(exam, s1.id, org, status=AttemptStatus.GRADED)
+    a2 = _attempt(exam, s2.id, org, status=AttemptStatus.GRADED)
+    already = _attempt(exam, s1.id, org, status=AttemptStatus.GRADED, superseded=True)
+    db.add_all([a1, a2, already])
+    await db.commit()
+
+    res = await reset_exam_attempts(exam.id, request=None, db=db, current_user=staff)
+    assert res["reset"] == 2   # only the two ACTIVE attempts (the already-superseded one is left)
+    # every active attempt now superseded → Result Manager stats show none active
+    rr = await exam_results(exam.id, db=db, current_user=staff)
+    assert rr["stats"]["attempts"] == 0
+
+
+async def test_set_result_remark_note(db, org):
+    staff, stu = await _staff(db, org), await _student(db, org)
+    exam = await _exam(db, org, staff)
+    att = _attempt(exam, stu.id, org, status=AttemptStatus.GRADED)
+    db.add(att)
+    await db.commit()
+
+    out = await set_attempt_remark_note(att.id, {"remark_note": "  Great improvement.  "},
+                                        request=None, db=db, current_user=staff)
+    assert out["remark_note"] == "Great improvement."   # trimmed
+    # surfaces in the Result Manager rows
+    rr = await exam_results(exam.id, db=db, current_user=staff)
+    assert next(r for r in rr["attempts"] if r["id"] == att.id)["remark_note"] == "Great improvement."
+    # clearing (blank) → None
+    cleared = await set_attempt_remark_note(att.id, {"remark_note": "   "},
+                                            request=None, db=db, current_user=staff)
+    assert cleared["remark_note"] is None
