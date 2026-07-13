@@ -2227,7 +2227,19 @@ export interface AcademicWeek {
   is_holiday: boolean; is_locked: boolean; created_at: string; org_id: string;
 }
 export interface SchoolHouse { id: string; name: string; color: string | null; motto: string | null; created_at: string; org_id: string; }
-export interface GradingBand { id: string; grade: string; min_score: number; max_score: number; remark: string | null; created_at: string; org_id: string; }
+export interface GradingBand { id: string; grade: string; min_score: number | null; max_score: number | null; remark: string | null; scale_id: string | null; position: number; created_at: string; org_id: string; }
+// School Reports R2 config
+export interface SchoolSection { id: string; name: string; curriculum: "eyfs" | "nigerian" | "hybrid" | string; position: number; org_id: string; }
+export interface GradingScale { id: string; name: string; scale_type: "numeric" | "descriptor" | string; is_provisional: boolean; bands: GradingBand[]; org_id: string; }
+export interface ReportTemplate {
+  id: string; section_id: string; section_name: string | null; name: string;
+  assessment_mode: "descriptive" | "numeric" | "hybrid" | string;
+  ca_weight: number | null; exam_weight: number | null;
+  grading_scale_id: string | null; grading_scale_name: string | null;
+  show_cognitive_table: boolean; show_position: boolean; show_attendance: boolean;
+  show_affective: boolean; show_psychomotor: boolean; is_provisional: boolean; org_id: string;
+}
+export interface AutoMapResult { linked: number; unassigned: string[]; }
 
 export interface CustomFieldDef {
   id: string; entity_type: string; field_key: string; label: string; field_type: string;

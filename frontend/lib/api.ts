@@ -1199,6 +1199,27 @@ export const platformApi = {
   },
   houses: { list: () => api.get("/platform/houses").then((r) => r.data), create: (d: object) => api.post("/platform/houses", d).then((r) => r.data), remove: (id: string) => api.delete(`/platform/houses/${id}`) },
   bands: { list: () => api.get("/platform/grading-bands").then((r) => r.data), create: (d: object) => api.post("/platform/grading-bands", d).then((r) => r.data), remove: (id: string) => api.delete(`/platform/grading-bands/${id}`) },
+  // School Reports R2 config
+  sections: {
+    list: () => api.get("/platform/sections").then((r) => r.data),
+    create: (d: object) => api.post("/platform/sections", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/platform/sections/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/sections/${id}`),
+    autoMap: () => api.post("/platform/sections/auto-map").then((r) => r.data),
+  },
+  gradingScales: {
+    list: () => api.get("/platform/grading-scales").then((r) => r.data),
+    create: (d: object) => api.post("/platform/grading-scales", d).then((r) => r.data),
+    replaceBands: (id: string, bands: object[]) => api.put(`/platform/grading-scales/${id}/bands`, bands).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/grading-scales/${id}`),
+  },
+  reportTemplates: {
+    list: () => api.get("/platform/report-templates").then((r) => r.data),
+    create: (d: object) => api.post("/platform/report-templates", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/platform/report-templates/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/report-templates/${id}`),
+    bootstrap: () => api.post("/platform/report-config/bootstrap").then((r) => r.data),
+  },
   customFields: {
     list: (entity_type?: string) => api.get("/platform/custom-fields", { params: { entity_type } }).then((r) => r.data),
     create: (d: object) => api.post("/platform/custom-fields", d).then((r) => r.data),

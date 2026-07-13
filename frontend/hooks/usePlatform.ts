@@ -7,6 +7,7 @@ import { biometricApi, platformApi } from "@/lib/api";
 import type {
   BiometricDevice, BiometricEnrollment, UnmappedPunch, IngestSummary, DeviceToken,
   AcademicSession, AcademicWeek, SchoolHouse, GradingBand, CustomFieldDef, Poll,
+  SchoolSection, GradingScale, ReportTemplate, AutoMapResult,
   MailboxMessage, MobileDevice, AppConfigItem, Paginated,
 } from "@/types";
 
@@ -82,6 +83,33 @@ export const useCreateHouse = m((d) => platformApi.houses.create(d), ["houses"],
 export const useDeleteHouse = m((id: string) => platformApi.houses.remove(id), ["houses"], "Removed.");
 export const useCreateBand = m((d) => platformApi.bands.create(d), ["bands"], "Band added.");
 export const useDeleteBand = m((id: string) => platformApi.bands.remove(id), ["bands"], "Removed.");
+
+// ── School Reports R2 config: sections / grading scales / report templates ────────
+export function useSections() { return useQuery<SchoolSection[]>({ queryKey: ["sections"], queryFn: () => platformApi.sections.list() }); }
+export function useGradingScales() { return useQuery<GradingScale[]>({ queryKey: ["grading-scales"], queryFn: () => platformApi.gradingScales.list() }); }
+export function useReportTemplates() { return useQuery<ReportTemplate[]>({ queryKey: ["report-templates"], queryFn: () => platformApi.reportTemplates.list() }); }
+export const useCreateSection = m((d) => platformApi.sections.create(d), ["sections"], "Section added.");
+export const useUpdateSection = m((v: { id: string; data: object }) => platformApi.sections.update(v.id, v.data), ["sections"], "Section updated.");
+export const useDeleteSection = m((id: string) => platformApi.sections.remove(id), ["sections", "report-templates"], "Removed.");
+export const useCreateScale = m((d) => platformApi.gradingScales.create(d), ["grading-scales"], "Scale added.");
+export const useReplaceScaleBands = m((v: { id: string; bands: object[] }) => platformApi.gradingScales.replaceBands(v.id, v.bands), ["grading-scales"], "Bands saved.");
+export const useDeleteScale = m((id: string) => platformApi.gradingScales.remove(id), ["grading-scales", "report-templates"], "Removed.");
+export const useCreateTemplate = m((d) => platformApi.reportTemplates.create(d), ["report-templates"], "Template added.");
+export const useUpdateTemplate = m((v: { id: string; data: object }) => platformApi.reportTemplates.update(v.id, v.data), ["report-templates"], "Template updated.");
+export const useDeleteTemplate = m((id: string) => platformApi.reportTemplates.remove(id), ["report-templates"], "Removed.");
+export const useBootstrapReportConfig = m(() => platformApi.reportTemplates.bootstrap(), ["sections", "grading-scales", "report-templates"], "Standard report config created.");
+
+export function useAutoMapSections() {
+  const qc = useQueryClient();
+  return useMutation<AutoMapResult, any, void>({
+    mutationFn: () => platformApi.sections.autoMap(),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["classes"] });
+      toast.success(`${res.linked} class(es) linked${res.unassigned.length ? `, ${res.unassigned.length} left unassigned` : ""}.`);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Auto-map failed."),
+  });
+}
 
 // ── Academic weeks (calendar backbone) ──────────────────────────────────────────
 export function useWeeks(params?: { academic_year?: string; term?: string }) {
