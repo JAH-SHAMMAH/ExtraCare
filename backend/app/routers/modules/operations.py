@@ -77,11 +77,19 @@ def _event_response(e: CalendarEvent) -> CalendarEventResponse:
 @router.get("/calendar", response_model=CalendarEventListResponse, dependencies=[_cal_read])
 async def list_events(
     page: int = Query(default=1, ge=1), page_size: int = Query(default=100, ge=1, le=200),
+    upcoming_only: bool = False,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     base = select(CalendarEvent).where(CalendarEvent.org_id == current_user.org_id, CalendarEvent.is_deleted == False)  # noqa: E712
+    # Dashboard "Upcoming Events" widget: only future events, soonest first.
+    # Default keeps the calendar page's newest-first listing unchanged.
+    if upcoming_only:
+        base = base.where(CalendarEvent.start_at >= datetime.now(timezone.utc))
+        order = CalendarEvent.start_at.asc()
+    else:
+        order = CalendarEvent.start_at.desc()
     total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
-    rows = (await db.execute(base.order_by(CalendarEvent.start_at.desc()).offset((page - 1) * page_size).limit(page_size))).scalars().all()
+    rows = (await db.execute(base.order_by(order).offset((page - 1) * page_size).limit(page_size))).scalars().all()
     return CalendarEventListResponse(items=[_event_response(e) for e in rows], total=total, page=page, page_size=page_size)
 
 

@@ -61,6 +61,20 @@ async def test_calendar_crud(db, org, teacher):
     assert (await list_events(page=1, page_size=100, db=db, current_user=teacher)).total == 0
 
 
+async def test_calendar_upcoming_only_filter(db, org, teacher):
+    """upcoming_only powers the dashboard widget: future events, soonest first."""
+    now = datetime.now(timezone.utc)
+    await create_event(CalendarEventCreate(title="Past", start_at=now - timedelta(days=3)),
+                       db=db, current_user=teacher)
+    future = await create_event(CalendarEventCreate(title="Future", start_at=now + timedelta(days=3)),
+                                db=db, current_user=teacher)
+    # Default lists everything (newest-first) — unchanged behaviour.
+    assert (await list_events(page=1, page_size=100, db=db, current_user=teacher)).total == 2
+    # upcoming_only → only the future event.
+    up = await list_events(page=1, page_size=100, upcoming_only=True, db=db, current_user=teacher)
+    assert up.total == 1 and up.items[0].id == future.id
+
+
 # ── Facility + double-booking guard ──────────────────────────────────────────────
 
 async def test_facility_double_booking_blocked(db, org, teacher):
