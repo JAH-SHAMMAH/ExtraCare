@@ -100,7 +100,11 @@ class SchoolClass(Base, UUIDMixin, TimestampMixin, TenantMixin):
     __tablename__ = "school_classes"
 
     name = Column(String(100), nullable=False)  # e.g. "Grade 10A"
-    level = Column(String(50), nullable=True)   # e.g. "Secondary", "Primary" (UI: grade_level)
+    level = Column(String(50), nullable=True)   # e.g. "Secondary", "Primary" (UI: grade_level) — legacy free-text
+    # Managed section (School Reports R2). Nullable: unassigned classes fall back to
+    # the legacy `level`-tagged report. Backfilled explicitly (normalized match),
+    # never guessed — see the auto-map action.
+    section_id = Column(String(36), ForeignKey("school_sections.id", ondelete="SET NULL"), nullable=True, index=True)
     section = Column(String(50), nullable=True)  # e.g. "A" (UI: section)
     academic_year = Column(String(20), nullable=True)  # e.g. "2024/2025"
     teacher_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)

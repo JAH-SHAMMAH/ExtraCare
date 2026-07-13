@@ -139,17 +139,82 @@ class SchoolHouse(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class SchoolSection(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A managed school section (e.g. Nursery / Junior / Secondary). The level a
+    class belongs to and that a ReportTemplate is keyed on — replaces the free-text
+    ``SchoolClass.level`` for report/grading purposes. ``curriculum`` selects the
+    assessment paradigm feel (EYFS Nursery vs Nigerian/hybrid Junior-Secondary)."""
+    __tablename__ = "school_sections"
+
+    name = Column(String(60), nullable=False)
+    curriculum = Column(String(20), default="nigerian", nullable=False)  # eyfs | nigerian | hybrid
+    position = Column(Integer, default=0, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "name", name="uq_school_sections_org_name"),
+        Index("ix_school_sections_org", "org_id"),
+    )
+
+
+class GradingScale(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A named grading scale. ``numeric`` scales map a percentage to a grade via
+    GradingBand min/max ranges; ``descriptor`` scales are ordered labels (EYFS
+    emerging/expected/exceeding, Cambridge attainment) with no score ranges.
+    ``is_provisional`` marks a seeded placeholder until the school locks real
+    numbers — never a code constant."""
+    __tablename__ = "grading_scales"
+
+    name = Column(String(80), nullable=False)
+    scale_type = Column(String(20), default="numeric", nullable=False)  # numeric | descriptor
+    is_provisional = Column(Boolean, default=True, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "name", name="uq_grading_scales_org_name"),
+        Index("ix_grading_scales_org", "org_id"),
+    )
+
+
 class GradingBand(Base, UUIDMixin, TimestampMixin, TenantMixin):
-    """A grade band, e.g. A = 70–100."""
+    """A grade band. Numeric scale: ``grade`` for [min_score, max_score]. Descriptor
+    scale: ``grade`` is the label (min/max null), ordered by ``position``."""
     __tablename__ = "grading_bands"
 
-    grade = Column(String(10), nullable=False)        # A / B / C…
-    min_score = Column(Numeric(6, 2), nullable=False)
-    max_score = Column(Numeric(6, 2), nullable=False)
+    scale_id = Column(String(36), ForeignKey("grading_scales.id", ondelete="CASCADE"), nullable=True, index=True)
+    grade = Column(String(20), nullable=False)        # A1 / B2 / … or a descriptor label
+    min_score = Column(Numeric(6, 2), nullable=True)  # nullable: descriptor bands have no range
+    max_score = Column(Numeric(6, 2), nullable=True)
     remark = Column(String(120), nullable=True)
+    position = Column(Integer, default=0, nullable=False)
 
     __table_args__ = (
         Index("ix_grading_bands_org", "org_id"),
+    )
+
+
+class ReportTemplate(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Per-section report format (School Reports R2). Chooses the assessment
+    paradigm (``descriptive`` for EYFS Nursery, ``hybrid`` for Junior/Secondary),
+    the CA/exam weighting, the numeric grading scale, and which sections/domains
+    print. All numeric values are editable data, never code constants; unset
+    weights fall back to the engine default."""
+    __tablename__ = "report_templates"
+
+    section_id = Column(String(36), ForeignKey("school_sections.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    assessment_mode = Column(String(20), default="hybrid", nullable=False)  # descriptive | numeric | hybrid
+    ca_weight = Column(Numeric(5, 2), nullable=True)     # provisional/editable (e.g. 40); None → engine default
+    exam_weight = Column(Numeric(5, 2), nullable=True)   # provisional/editable (e.g. 60)
+    grading_scale_id = Column(String(36), ForeignKey("grading_scales.id", ondelete="SET NULL"), nullable=True)
+    show_cognitive_table = Column(Boolean, default=True, nullable=False)
+    show_position = Column(Boolean, default=True, nullable=False)
+    show_attendance = Column(Boolean, default=True, nullable=False)
+    show_affective = Column(Boolean, default=False, nullable=False)
+    show_psychomotor = Column(Boolean, default=False, nullable=False)
+    is_provisional = Column(Boolean, default=True, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "section_id", name="uq_report_templates_org_section"),
+        Index("ix_report_templates_org", "org_id"),
     )
 
 
