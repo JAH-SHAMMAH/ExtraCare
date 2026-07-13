@@ -3,9 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
-import { SchoolWidgets } from "@/components/dashboard/widgets/SchoolWidgets";
 import { ClassDistributionChart } from "@/components/dashboard/ClassDistributionChart";
-import { PeoplePulse } from "@/components/dashboard/PeoplePulse";
 import { NewsFeed } from "@/components/feed/NewsFeed";
 import { useAuthStore } from "@/lib/store";
 import { useExecutiveOverview, useWorkspaceOverview, type ExecutiveOverview, type WorkspaceOverview } from "@/hooks/useDashboard";
@@ -93,16 +91,6 @@ export function AdminHome() {
       {/* School class distribution (students per class · current session / all sessions) */}
           <div className="mt-4">
             <ClassDistributionChart />
-          </div>
-
-      {/* Module-specific widgets (school) */}
-          <div className="mt-8">
-            <SchoolWidgets />
-          </div>
-
-      {/* People pulse — kept above the feed */}
-          <div className="mt-6">
-            <PeoplePulse variant="stacked" />
           </div>
 
       {/* Three independent columns (Educare-style): Quick Links (left) · News
