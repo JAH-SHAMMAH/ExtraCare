@@ -106,17 +106,28 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/grades", label: "Gradebook", icon: BookOpen },
       { href: "/dashboard/modules/school/report-cards", label: "Report Cards", icon: FileText },
       { href: "/dashboard/modules/school/eclassroom", label: "eClassroom", icon: NotebookPen },
-      { href: "/dashboard/modules/school/cbt", label: "CBT", icon: MonitorCheck },
-      { href: "/dashboard/modules/school/cbt/question-bank", label: "Question Bank", icon: FileQuestion },
-      { href: "/dashboard/modules/school/cbt/results", label: "Result Manager", icon: BarChart3 },
-      { href: "/dashboard/modules/school/cbt/interventions", label: "Interventions", icon: LifeBuoy },
-      { href: "/dashboard/modules/school/cbt/settings", label: "CBT Setup", icon: Settings2 },
-      { href: "/dashboard/modules/school/cbt/live", label: "Live Classes", icon: Radio },
       // Batch 3 (Academic Records) — shipped. subject-selection → school:subjects:read;
       // mark-books → school:grades:read; report-workflow → school:reports:write.
       { href: "/dashboard/modules/school/subject-selection", label: "Subject Selection", icon: BookMarked },
       { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: FileText },
       { href: "/dashboard/modules/school/report-workflow", label: "Report Workflow", icon: FolderOpen },
+    ],
+  },
+  {
+    // CBT — its own top-level module (Educare parity). These were already distinct
+    // routes under Academics; grouped here. Educare children we have no page for
+    // yet (Test Remark, Test Export, CBT Import, CBT Reset) are omitted, not dead-linked.
+    key: "cbt",
+    requiredModule: "school",
+    label: "CBT",
+    icon: MonitorCheck,
+    items: [
+      { href: "/dashboard/modules/school/cbt/settings", label: "CBT Setup", icon: Settings2 },
+      { href: "/dashboard/modules/school/cbt/question-bank", label: "Admin Question Bank", icon: FileQuestion },
+      { href: "/dashboard/modules/school/cbt", label: "Admin Test Manager", icon: MonitorCheck },
+      { href: "/dashboard/modules/school/cbt/results", label: "Admin Result Manager", icon: BarChart3 },
+      { href: "/dashboard/modules/school/cbt/interventions", label: "Admin Intervention", icon: LifeBuoy },
+      { href: "/dashboard/modules/school/cbt/live", label: "Live Classes", icon: Radio },
     ],
   },
   // Educare's three per-level report modules (Nursery / Primary / Secondary School
