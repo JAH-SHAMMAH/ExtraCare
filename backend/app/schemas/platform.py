@@ -229,12 +229,14 @@ class SectionCreate(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     curriculum: str = "nigerian"
     position: int = 0
+    aliases: list[str] = Field(default_factory=list)   # class `level` values that map here
 
 
 class SectionUpdate(BaseModel):
     name: Optional[str] = None
     curriculum: Optional[str] = None
     position: Optional[int] = None
+    aliases: Optional[list[str]] = None
 
 
 class SectionResponse(BaseModel):
@@ -242,6 +244,7 @@ class SectionResponse(BaseModel):
     name: str
     curriculum: str
     position: int
+    aliases: list[str] = Field(default_factory=list)
     org_id: str
 
 

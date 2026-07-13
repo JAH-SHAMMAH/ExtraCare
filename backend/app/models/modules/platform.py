@@ -149,6 +149,10 @@ class SchoolSection(Base, UUIDMixin, TimestampMixin, TenantMixin):
     name = Column(String(60), nullable=False)
     curriculum = Column(String(20), default="nigerian", nullable=False)  # eyfs | nigerian | hybrid
     position = Column(Integer, default=0, nullable=False)
+    # Class `level` values that map to this section (e.g. ["YEAR 1", …, "YEAR 6"]).
+    # Auto-map links a class when its normalized level matches the section name OR
+    # one of these aliases; anything else is left unassigned, never guessed.
+    level_aliases = Column(JSON, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("org_id", "name", name="uq_school_sections_org_name"),

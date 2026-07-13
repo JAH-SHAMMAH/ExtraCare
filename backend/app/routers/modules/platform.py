@@ -182,8 +182,25 @@ async def delete_band(band_id: str, db: AsyncSession = Depends(get_db), current_
 
 # ── School Reports R2: sections ───────────────────────────────────────────────────
 
+def _norm_level(x) -> str:
+    """Normalize a level/section label for matching: trim, collapse whitespace, casefold."""
+    return " ".join((x or "").split()).casefold()
+
+
+def _clean_aliases(aliases) -> list[str]:
+    seen, out = set(), []
+    for a in (aliases or []):
+        a = (a or "").strip()
+        k = _norm_level(a)
+        if a and k not in seen:
+            seen.add(k)
+            out.append(a)
+    return out
+
+
 def _section_response(s: SchoolSection) -> SectionResponse:
-    return SectionResponse(id=s.id, name=s.name, curriculum=s.curriculum, position=s.position, org_id=s.org_id)
+    return SectionResponse(id=s.id, name=s.name, curriculum=s.curriculum, position=s.position,
+                           aliases=s.level_aliases or [], org_id=s.org_id)
 
 
 @router.get("/sections", response_model=list[SectionResponse], dependencies=[_read])
@@ -198,7 +215,8 @@ async def list_sections(db: AsyncSession = Depends(get_db), current_user: User =
 async def create_section(payload: SectionCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     if payload.curriculum not in SECTION_CURRICULA:
         raise HTTPException(status_code=422, detail=f"curriculum must be one of {sorted(SECTION_CURRICULA)}")
-    s = SchoolSection(name=payload.name.strip(), curriculum=payload.curriculum, position=payload.position, org_id=current_user.org_id)
+    s = SchoolSection(name=payload.name.strip(), curriculum=payload.curriculum, position=payload.position,
+                      level_aliases=_clean_aliases(payload.aliases) or None, org_id=current_user.org_id)
     db.add(s)
     try:
         await db.flush()
@@ -216,6 +234,8 @@ async def update_section(section_id: str, payload: SectionUpdate, db: AsyncSessi
     data = payload.model_dump(exclude_unset=True)
     if "curriculum" in data and data["curriculum"] not in SECTION_CURRICULA:
         raise HTTPException(status_code=422, detail=f"curriculum must be one of {sorted(SECTION_CURRICULA)}")
+    if "aliases" in data:
+        s.level_aliases = _clean_aliases(data.pop("aliases")) or None
     for f, v in data.items():
         setattr(s, f, v)
     await db.flush()
@@ -232,18 +252,24 @@ async def delete_section(section_id: str, db: AsyncSession = Depends(get_db), cu
 
 @router.post("/sections/auto-map", response_model=AutoMapResult, dependencies=[_write])
 async def auto_map_sections(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    """Link each currently-unassigned class to a section by an EXACT normalized
-    match (trim + collapse whitespace + casefold) of its free-text `level` against
-    a section name. Blank / typo / unknown levels are left unassigned — never
-    guessed. Returns the count linked and the class names left unmatched."""
+    """Link each currently-unassigned class to a section by a NORMALIZED match
+    (trim + collapse whitespace + casefold) of its free-text `level` against the
+    section name OR any of the section's level aliases. Blank / typo / unknown
+    levels are left unassigned — never guessed. Returns the count linked and the
+    class names left unmatched."""
     sections = (await db.execute(select(SchoolSection).where(SchoolSection.org_id == current_user.org_id))).scalars().all()
-    by_norm = {" ".join(s.name.split()).casefold(): s.id for s in sections}
+    by_norm = {}
+    for s in sections:
+        for label in [s.name, *(s.level_aliases or [])]:
+            k = _norm_level(label)
+            if k:
+                by_norm.setdefault(k, s.id)   # first section wins on any collision
     classes = (await db.execute(
         select(SchoolClass).where(SchoolClass.org_id == current_user.org_id, SchoolClass.section_id.is_(None))
     )).scalars().all()
     linked, unassigned = 0, []
     for c in classes:
-        key = " ".join((c.level or "").split()).casefold()
+        key = _norm_level(c.level)
         sid = by_norm.get(key) if key else None
         if sid:
             c.section_id = sid
@@ -411,30 +437,34 @@ async def delete_template(template_id: str, db: AsyncSession = Depends(get_db), 
 
 @router.post("/report-config/bootstrap", response_model=list[ReportTemplateResponse], dependencies=[_write])
 async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    """One-click starting point: create the standard Nursery/Junior/Secondary
-    sections, PROVISIONAL grading scales + bands, and a template per section — all
-    flagged is_provisional so the school knows to replace the numbers. Idempotent:
-    skips anything already present. The numbers below are placeholders, NOT the
-    school's locked constants."""
+    """One-click starting point: create the standard Nursery / Primary / Secondary
+    sections (British curriculum: Year 1–6 Primary, Year 7–12 Secondary), each with
+    its level aliases, PROVISIONAL grading scales + bands, and a template per
+    section — all flagged is_provisional so the school knows to replace the numbers.
+    Idempotent: skips anything already present. The numbers are placeholders, NOT
+    the school's locked constants."""
     org_id = current_user.org_id
     existing_secs = {s.name.casefold(): s for s in (await db.execute(select(SchoolSection).where(SchoolSection.org_id == org_id))).scalars().all()}
     existing_scales = {s.name.casefold(): s for s in (await db.execute(select(GradingScale).where(GradingScale.org_id == org_id))).scalars().all()}
 
-    def ensure_section(name, curriculum, pos):
+    def ensure_section(name, curriculum, pos, aliases):
         s = existing_secs.get(name.casefold())
         if not s:
-            s = SchoolSection(name=name, curriculum=curriculum, position=pos, org_id=org_id)
+            s = SchoolSection(name=name, curriculum=curriculum, position=pos,
+                              level_aliases=_clean_aliases(aliases) or None, org_id=org_id)
             db.add(s)
             existing_secs[name.casefold()] = s
+        elif not s.level_aliases:
+            s.level_aliases = _clean_aliases(aliases) or None   # backfill aliases onto a pre-existing bare section
         return s
 
-    nursery = ensure_section("Nursery", "eyfs", 0)
-    junior = ensure_section("Junior", "hybrid", 1)
-    secondary = ensure_section("Secondary", "hybrid", 2)
+    nursery = ensure_section("Nursery", "eyfs", 0, ["PLAY GROUP", "PRE-NURSERY", "NURSERY", "RECEPTION"])
+    primary = ensure_section("Primary", "hybrid", 1, ["YEAR 1", "YEAR 2", "YEAR 3", "YEAR 4", "YEAR 5", "YEAR 6"])
+    secondary = ensure_section("Secondary", "hybrid", 2, ["YEAR 7", "YEAR 8", "YEAR 9", "YEAR 10", "YEAR 11", "YEAR 12"])
 
     # PROVISIONAL placeholders — replace with the school's real boundaries.
     scale_specs = [
-        ("Junior A–F (provisional)", "numeric", [
+        ("Primary A–F (provisional)", "numeric", [
             ("A", 70, 100, "Excellent"), ("B", 60, 69, "Very good"), ("C", 50, 59, "Good"),
             ("D", 45, 49, "Fair"), ("E", 40, 44, "Pass"), ("F", 0, 39, "Fail")]),
         ("WAEC A1–F9 (provisional)", "numeric", [
@@ -463,7 +493,7 @@ async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_us
                                    max_score=money(hi) if hi is not None else None,
                                    remark=remark, position=i, org_id=org_id))
     await db.flush()
-    junior_scale = existing_scales["junior a–f (provisional)".casefold()]
+    primary_scale = existing_scales["primary a–f (provisional)".casefold()]
     waec_scale = existing_scales["waec a1–f9 (provisional)".casefold()]
 
     def ensure_template(section, name, mode, ca, exam, scale):
@@ -479,8 +509,8 @@ async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_us
     to_add = []
     if nursery.id not in have_templates:
         to_add.append(ensure_template(nursery, "Nursery (EYFS)", "descriptive", None, None, None))
-    if junior.id not in have_templates:
-        to_add.append(ensure_template(junior, "Junior report", "hybrid", 40, 60, junior_scale))
+    if primary.id not in have_templates:
+        to_add.append(ensure_template(primary, "Primary report", "hybrid", 40, 60, primary_scale))
     if secondary.id not in have_templates:
         to_add.append(ensure_template(secondary, "Secondary report", "hybrid", 40, 60, waec_scale))
     for t in to_add:

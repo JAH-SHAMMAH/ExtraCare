@@ -287,13 +287,45 @@ async def test_sections_auto_map_normalizes_and_leaves_unknowns(db, org, school_
     assert ghost.section_id is None               # unknown left unassigned, never guessed
 
 
+async def test_auto_map_via_level_aliases(db, org, school_class):
+    """Level->section mapping via aliases (option 2): a class whose `level` matches
+    a section alias (normalized) links; anything else is left unassigned."""
+    from app.routers.modules.platform import create_section, auto_map_sections
+    from app.schemas.platform import SectionCreate
+    from app.models.modules.school import SchoolClass
+    admin = await _admin(db, org)
+    primary = await create_section(
+        SectionCreate(name="Primary", curriculum="hybrid",
+                      aliases=["YEAR 1", "YEAR 2", "YEAR 3", "YEAR 4", "YEAR 5", "YEAR 6"]),
+        db=db, current_user=admin,
+    )
+    assert "YEAR 6" in primary.aliases
+    school_class.level = "year 6 "        # messy casing/spacing still matches the alias
+    ghost = SchoolClass(id=str(uuid.uuid4()), name="Y13", level="YEAR 13", org_id=org.id)
+    db.add(ghost)
+    await db.commit()
+
+    res = await auto_map_sections(db=db, current_user=admin)
+    assert res.linked == 1 and "Y13" in res.unassigned
+    await db.refresh(school_class)
+    await db.refresh(ghost)
+    assert school_class.section_id == primary.id   # matched via alias
+    assert ghost.section_id is None                # YEAR 13 not in any alias → unassigned
+
+
 async def test_bootstrap_report_config_is_idempotent(db, org):
     from app.routers.modules.platform import bootstrap_report_config, list_sections, list_scales
     admin = await _admin(db, org)
     first = await bootstrap_report_config(db=db, current_user=admin)
     assert len(first) == 3 and all(t.is_provisional for t in first)
     modes = {t.assessment_mode for t in first}
-    assert "descriptive" in modes and "hybrid" in modes   # Nursery EYFS + Junior/Sec hybrid
+    assert "descriptive" in modes and "hybrid" in modes   # Nursery EYFS + Primary/Sec hybrid
+    # British-curriculum sections seeded with their level aliases (Primary, not Junior).
+    sections = await list_sections(db=db, current_user=admin)
+    primary = next(s for s in sections if s.name == "Primary")
+    assert "YEAR 3" in primary.aliases and "YEAR 13" not in primary.aliases
+    assert "RECEPTION" in next(s for s in sections if s.name == "Nursery").aliases
+    assert "YEAR 9" in next(s for s in sections if s.name == "Secondary").aliases
     # Idempotent: a second run doesn't duplicate sections/templates.
     second = await bootstrap_report_config(db=db, current_user=admin)
     assert len(second) == 3
