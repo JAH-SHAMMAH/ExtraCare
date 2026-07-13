@@ -636,3 +636,17 @@ export function useReportCard(student_id: string, term?: string) {
     staleTime: 60_000,
   });
 }
+
+// Author the human parts of a report (comments / attendance / next-term).
+export function useSaveReportMeta() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ student_id, term, data }: { student_id: string; term: string; data: object }) =>
+      schoolApi.grades.saveReportMeta(student_id, term, data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["report-card", vars.student_id, vars.term] });
+      toast.success("Report details saved.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save report details."),
+  });
+}
