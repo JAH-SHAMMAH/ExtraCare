@@ -364,6 +364,7 @@ export const cbtApi = {
     create: (data: object) => api.post("/cbt/exams", data).then((r) => r.data),
     update: (id: string, data: object) => api.patch(`/cbt/exams/${id}`, data).then((r) => r.data),
     delete: (id: string) => api.delete(`/cbt/exams/${id}`),
+    reset: (id: string) => api.post(`/cbt/exams/${id}/reset`).then((r) => r.data),
   },
   questions: {
     list: (exam_id: string, include_answers = false) =>
@@ -398,6 +399,8 @@ export const cbtApi = {
     remark: (id: string, items: Array<{ answer_id: string; points_awarded: number }>) =>
       api.post(`/cbt/attempts/${id}/remark`, items).then((r) => r.data),
     reset: (id: string) => api.post(`/cbt/attempts/${id}/reset`).then((r) => r.data),
+    setRemarkNote: (id: string, remark_note: string) =>
+      api.patch(`/cbt/attempts/${id}/remark-note`, { remark_note }).then((r) => r.data),
   },
   results: {
     get: (exam_id: string) => api.get(`/cbt/exams/${exam_id}/results`).then((r) => r.data),

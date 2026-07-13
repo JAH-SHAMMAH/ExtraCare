@@ -74,6 +74,12 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // Interventions surface flagged students' scores; Setup edits org-wide defaults — staff-only.
   { prefix: "/dashboard/modules/school/cbt/interventions", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt/settings", permission: "school:read" },
+  // Admin CBT ops (import / export / reset / remark) — staff-only, like the bank
+  // and Result Manager (NOT the student cbt scope which sits tests).
+  { prefix: "/dashboard/modules/school/cbt/import", permission: "school:read" },
+  { prefix: "/dashboard/modules/school/cbt/export", permission: "school:read" },
+  { prefix: "/dashboard/modules/school/cbt/reset", permission: "school:read" },
+  { prefix: "/dashboard/modules/school/cbt/remark", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt", permission: "school:cbt:read" },
   { prefix: "/dashboard/modules/school/behaviour", permission: "school:behaviour:read" },
   // Feedback section: Form / My Feedback inherit feedback:read (self-service);
