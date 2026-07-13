@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard, BarChart3, Users, Settings, LogOut,
   GraduationCap, Heart, Briefcase, Package, DollarSign,
@@ -67,8 +67,9 @@ function navItemVisible(
 ): boolean {
   if (item.roleOnly) return roleScope === item.roleOnly;
   // Real pages: the shared access map decides. A null requirement means the
-  // route is open to any authenticated user.
-  return canAccessPath(item.href, hasPermission);
+  // route is open to any authenticated user. Strip any ?query (e.g. deep-linked
+  // School Setup tabs) so the access map matches on the base path, not the full URL.
+  return canAccessPath(item.href.split("?")[0], hasPermission);
 }
 
 interface NavItem {
@@ -329,13 +330,28 @@ const MODULE_SECTIONS: ModuleSection[] = [
     ],
   },
   {
+    // School Setup — its own top-level section (peer of Admin Management), matching
+    // Educare where School Setup is a distinct route. Children deep-link the config
+    // tabs of the /school-setup page (?tab=…); the sidebar's tab-aware active
+    // detection highlights the current tab.
+    key: "school-setup",
+    requiredModule: "school",
+    label: "School Setup",
+    icon: Settings,
+    items: [
+      { href: "/dashboard/modules/school/school-setup?tab=sessions", label: "Sessions & Terms", icon: CalendarClock },
+      { href: "/dashboard/modules/school/school-setup?tab=houses", label: "Houses", icon: Building2 },
+      { href: "/dashboard/modules/school/school-setup?tab=bands", label: "Grading Bands", icon: Award },
+      { href: "/dashboard/modules/school/school-setup?tab=reports", label: "Report Config", icon: FileText },
+    ],
+  },
+  {
     key: "administration",
     requiredModule: "school",
     label: "Administration",
-    icon: Settings,
+    icon: Settings2,
     items: [
       // Batch 7 (Administration & Platform) — shipped. All settings:read gated.
-      { href: "/dashboard/modules/school/school-setup", label: "School Setup", icon: Settings },
       { href: "/dashboard/modules/school/voting", label: "Voting System", icon: Gavel },
       { href: "/dashboard/modules/school/mailbox", label: "Mailbox", icon: MessageSquare },
       { href: "/dashboard/modules/school/mobile", label: "Mobile Manager", icon: MonitorCheck },
@@ -361,6 +377,8 @@ const NAV_STROKE = 1.75;  // uniform stroke width
 
 export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void } = {}) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentTab = searchParams.get("tab");
   const { user, org, activeRole, hasPermission } = useAuthStore();
   const logout = useLogout();
   const roleScope = moduleAllowedForOrg(org, "school") ? activeRole : "admin";
@@ -376,11 +394,13 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   // route (e.g. Facility List `/…/facility`) would also match its deeper sibling
   // routes (`/…/facility/complaints`) via startsWith and double-highlight.
   const activeHref = useMemo(() => {
+    // Match on the base path (query stripped) so deep-linked tabs like
+    // `/school-setup?tab=houses` resolve to their page for the longest-prefix win.
     const candidates = [
       ...CORE_NAV.map((i) => i.href),
       ...MODULE_SECTIONS.flatMap((s) => s.items.map((i) => i.href)),
       "/dashboard/profile", "/dashboard/settings", "/support",
-    ];
+    ].map((h) => h.split("?")[0]);
     let best = "";
     for (const h of candidates) {
       const hit = pathname === h || (h !== "/dashboard" && pathname.startsWith(h + "/"));
@@ -388,7 +408,17 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
     }
     return best;
   }, [pathname]);
-  const isActive = useCallback((href: string) => href === activeHref, [activeHref]);
+  // A plain item is active when its base path is the winner. A tabbed item
+  // (href carries ?tab=) is active only when its tab is the current one — so the
+  // four School Setup sub-items each highlight for their own tab (default: the
+  // first, "sessions").
+  const isActive = useCallback((href: string) => {
+    const [base, query] = href.split("?");
+    if (base !== activeHref) return false;
+    if (!query) return true;
+    const tab = new URLSearchParams(query).get("tab");
+    return !tab || (currentTab || "sessions") === tab;
+  }, [activeHref, currentTab]);
 
   // Phase 7: build the visible core-nav list, filtered by permission (+ the
   // active view-role for personal pages). Depends on `user`/`org` so it

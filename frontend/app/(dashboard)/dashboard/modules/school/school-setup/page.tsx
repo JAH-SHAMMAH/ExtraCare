@@ -7,6 +7,7 @@ import {
   useBands, useCreateBand, useDeleteBand,
 } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Settings, Loader2, Trash2, Plus, Pencil } from "lucide-react";
 import { TERMS } from "@/lib/terms";
@@ -14,10 +15,18 @@ import type { AcademicSession } from "@/types";
 import { ReportConfig } from "./ReportConfig";
 
 type Tab = "sessions" | "houses" | "bands" | "reports";
+const TABS: Tab[] = ["sessions", "houses", "bands", "reports"];
 
 export default function SchoolSetupPage() {
   const canWrite = useHasPermission("settings:write");
-  const [tab, setTab] = useState<Tab>("sessions");
+  // Tab lives in the URL (?tab=…) so the sidebar's School Setup sub-items deep-link
+  // straight to it and highlight the active tab.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const raw = searchParams.get("tab");
+  const tab: Tab = TABS.includes(raw as Tab) ? (raw as Tab) : "sessions";
+  const setTab = (t: Tab) => router.replace(`${pathname}?tab=${t}`, { scroll: false });
   return (
     <div className="p-8 max-w-5xl mx-auto">
       <div className="mb-5">
