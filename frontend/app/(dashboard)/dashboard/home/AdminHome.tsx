@@ -105,18 +105,28 @@ export function AdminHome() {
             <PeoplePulse variant="stacked" />
           </div>
 
-      {/* News Feed (main) + right rail — Educare-style home feed. The News Feed
-          is the shared org social feed (same component as /news-feed). */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
-            <div className="lg:col-span-2">
+      {/* Three independent columns (Educare-style): Quick Links (left) · News
+          Feed (center — the only column that grows with content) · Upcoming
+          Events + Birthdays (right). The two side rails are `sticky` on desktop
+          so they stay pinned in the viewport as a long feed scrolls past, and
+          scroll internally if their own content ever exceeds the viewport.
+          Below lg the grid collapses to one column — feed first (it's first in
+          the DOM), then Quick Links, then the Events/Birthdays rail. */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-8 items-start">
+            {/* Center — the feed (cols 3–9). First in the DOM so it leads on mobile. */}
+            <div className="min-w-0 lg:col-start-3 lg:col-span-7 lg:row-start-1">
               <div className="flex items-center gap-2 mb-3">
                 <Newspaper size={16} className="text-indigo-600" />
                 <h2 className="text-sm font-bold text-slate-800">News Feed</h2>
               </div>
               <NewsFeed limit={20} />
             </div>
-            <aside className="space-y-4">
+            {/* Left rail — Quick Links (cols 1–2, sticky on desktop). */}
+            <aside className="lg:col-start-1 lg:col-span-2 lg:row-start-1 lg:sticky lg:top-20 lg:max-h-[calc(100vh_-_6rem)] lg:overflow-y-auto">
               <QuickLinks modules={org?.modules_enabled || []} />
+            </aside>
+            {/* Right rail — Events + Birthdays (cols 10–12, sticky on desktop). */}
+            <aside className="space-y-4 lg:col-start-10 lg:col-span-3 lg:row-start-1 lg:sticky lg:top-20 lg:max-h-[calc(100vh_-_6rem)] lg:overflow-y-auto">
               <UpcomingEvents />
               <UpcomingBirthdays />
             </aside>
