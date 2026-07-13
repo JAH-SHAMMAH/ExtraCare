@@ -119,6 +119,55 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/report-workflow", label: "Report Workflow", icon: FolderOpen },
     ],
   },
+  // Educare's three per-level report modules (Nursery / Primary / Secondary School
+  // Report). Our report engine is unified (the card adapts to the student's section
+  // template), so these are level-organised entry points into the shared report
+  // tools. Every child links to a REAL page. Educare children we don't have as pages
+  // yet (Reports Insight, Reports Upload, Result Analysis, Communication Book) are
+  // deliberately omitted rather than shipped as dead links.
+  {
+    key: "nursery-report",
+    requiredModule: "school",
+    label: "Nursery School Report",
+    icon: FileText,
+    items: [
+      { href: "/dashboard/modules/school/school-setup?tab=reports", label: "Report Setup", icon: Settings2 },
+      { href: "/dashboard/modules/school/report-cards", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/exams", label: "Report Entry", icon: NotebookPen },
+      { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
+      { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
+      { href: "/dashboard/modules/school/promotion", label: "Promotion Manager", icon: BarChart3 },
+      { href: "/dashboard/modules/school/transfer", label: "Transfer Manager", icon: UserCog },
+    ],
+  },
+  {
+    key: "primary-report",
+    requiredModule: "school",
+    label: "Primary School Report",
+    icon: FileText,
+    items: [
+      { href: "/dashboard/modules/school/school-setup?tab=reports", label: "Report Setup", icon: Settings2 },
+      { href: "/dashboard/modules/school/report-cards", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/exams", label: "Report Entry", icon: NotebookPen },
+      { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
+      { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
+      { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: BookOpen },
+    ],
+  },
+  {
+    key: "secondary-report",
+    requiredModule: "school",
+    label: "Secondary School Report",
+    icon: FileText,
+    items: [
+      { href: "/dashboard/modules/school/school-setup?tab=reports", label: "Report Setup", icon: Settings2 },
+      { href: "/dashboard/modules/school/report-cards", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/exams", label: "Report Entry", icon: NotebookPen },
+      { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
+      { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
+      { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: BookOpen },
+    ],
+  },
   {
     key: "students",
     requiredModule: "school",
