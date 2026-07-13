@@ -2229,7 +2229,7 @@ export interface AcademicWeek {
 export interface SchoolHouse { id: string; name: string; color: string | null; motto: string | null; created_at: string; org_id: string; }
 export interface GradingBand { id: string; grade: string; min_score: number | null; max_score: number | null; remark: string | null; scale_id: string | null; position: number; created_at: string; org_id: string; }
 // School Reports R2 config
-export interface SchoolSection { id: string; name: string; curriculum: "eyfs" | "nigerian" | "hybrid" | string; position: number; org_id: string; }
+export interface SchoolSection { id: string; name: string; curriculum: "eyfs" | "nigerian" | "hybrid" | string; position: number; aliases: string[]; org_id: string; }
 export interface GradingScale { id: string; name: string; scale_type: "numeric" | "descriptor" | string; is_provisional: boolean; bands: GradingBand[]; org_id: string; }
 export interface ReportTemplate {
   id: string; section_id: string; section_name: string | null; name: string;

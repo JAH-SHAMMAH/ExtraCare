@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  useSections, useCreateSection, useDeleteSection, useAutoMapSections,
+  useSections, useCreateSection, useUpdateSection, useDeleteSection, useAutoMapSections,
   useReportTemplates, useUpdateTemplate,
   useGradingScales, useReplaceScaleBands, useBootstrapReportConfig,
 } from "@/hooks/usePlatform";
@@ -56,12 +56,10 @@ export function ReportConfig({ canWrite }: { canWrite: boolean }) {
             </button>
           )}
         </div>
+        <p className="text-xs text-slate-400 mb-2">Aliases are the class <strong>level</strong> values that map to a section — &ldquo;Auto-map classes&rdquo; links a class when its level matches the section name or an alias (case/spacing-insensitive). Unmatched levels stay unassigned.</p>
         <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-50">
           {sections.length === 0 ? <p className="p-4 text-sm text-slate-400">No sections yet.</p> : sections.map((s: SchoolSection) => (
-            <div key={s.id} className="flex items-center justify-between px-4 py-3">
-              <div><span className="text-sm font-semibold text-slate-800">{s.name}</span><span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">{s.curriculum}</span></div>
-              {canWrite && <button onClick={() => { if (confirm(`Delete section ${s.name}? Its template is removed and classes become unassigned.`)) delSection.mutate(s.id); }} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>}
-            </div>
+            <SectionRow key={s.id} section={s} canWrite={canWrite} onDelete={() => { if (confirm(`Delete section ${s.name}? Its template is removed and classes become unassigned.`)) delSection.mutate(s.id); }} />
           ))}
           {canWrite && (
             <div className="flex items-end gap-3 px-4 py-3">
@@ -91,6 +89,26 @@ export function ReportConfig({ canWrite }: { canWrite: boolean }) {
             <ScaleRow key={sc.id} scale={sc} canWrite={canWrite} />
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function SectionRow({ section, canWrite, onDelete }: { section: SchoolSection; canWrite: boolean; onDelete: () => void }) {
+  const update = useUpdateSection();
+  const [aliases, setAliases] = useState((section.aliases || []).join(", "));
+  const dirty = aliases.trim() !== (section.aliases || []).join(", ");
+  const save = () => update.mutate({ id: section.id, data: { aliases: aliases.split(",").map((a) => a.trim()).filter(Boolean) } });
+
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-center justify-between">
+        <div><span className="text-sm font-semibold text-slate-800">{section.name}</span><span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">{section.curriculum}</span></div>
+        {canWrite && <button onClick={onDelete} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>}
+      </div>
+      <div className="flex items-center gap-2 mt-2">
+        <input value={aliases} onChange={(e) => setAliases(e.target.value)} disabled={!canWrite} className="input text-xs flex-1" placeholder="Level aliases, comma-separated (e.g. YEAR 1, YEAR 2, …)" />
+        {canWrite && <button onClick={save} disabled={!dirty || update.isPending} className="btn-secondary gap-1.5 text-xs py-1.5 shrink-0">{update.isPending ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save</button>}
       </div>
     </div>
   );
