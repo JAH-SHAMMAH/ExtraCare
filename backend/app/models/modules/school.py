@@ -270,6 +270,31 @@ class Grade(Base, UUIDMixin, TimestampMixin, TenantMixin):
     student = relationship("Student", back_populates="grades")
 
 
+class StudentReport(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Per-student, per-term report metadata that ISN'T derivable from grades.
+
+    The cognitive marks table, subject totals, average and class position are all
+    computed live from ``Grade`` rows at read time; only the human-authored fields
+    live here — the class-teacher / head-teacher comments, the attendance summary,
+    and the next-term-begins date. One row per (student, term)."""
+    __tablename__ = "student_reports"
+
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    term = Column(String(50), nullable=False)
+    academic_year = Column(String(20), nullable=True)   # session name snapshot at authoring time
+    class_teacher_comment = Column(Text, nullable=True)
+    head_teacher_comment = Column(Text, nullable=True)
+    attendance_present = Column(Integer, nullable=True)  # days present
+    attendance_total = Column(Integer, nullable=True)    # school days in the term (absent = total - present)
+    next_term_begins = Column(Date, nullable=True)
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("student_id", "term", "org_id", name="uq_student_report_student_term"),
+        Index("ix_student_reports_org_term", "org_id", "term"),
+    )
+
+
 class Exam(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A manual exam sitting for a class + subject — teachers enter marks against
     it, which land as Grade rows tagged with exam_id (so results flow into the
