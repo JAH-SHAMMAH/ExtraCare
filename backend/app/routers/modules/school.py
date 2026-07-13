@@ -11,8 +11,9 @@ from app.models.user import User, UserStatus
 from app.models.modules.school import (
     Student, SchoolClass, AttendanceRecord, Grade, Subject, Timetable,
     LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus, TeacherRating,
-    GradeStatus, AttendanceSettings, AbsenceReason,
+    GradeStatus, AttendanceSettings, AbsenceReason, StudentReport,
 )
+from app.models.modules.platform import AcademicSession
 from app.schemas.attendance_config import (
     AttendanceSettingsResponse, AttendanceSettingsUpdate,
     AbsenceReasonResponse, AbsenceReasonCreate, AbsenceReasonUpdate,
@@ -28,7 +29,7 @@ from app.schemas.school_class import ClassCreate, ClassUpdate
 from app.schemas.subject import SubjectCreate, SubjectUpdate
 from app.schemas.exam import ExamCreate, ExamUpdate, ExamResultRow, EXAM_TYPES, EXAM_STATUSES
 from app.schemas.rating import RatingCreate
-from app.schemas.grade import GradePublish
+from app.schemas.grade import GradePublish, ReportMetaUpdate
 
 logger = logging.getLogger("extracare.school")
 
@@ -45,6 +46,7 @@ _can_write = Depends(PermissionChecker("school:write"))
 # unaffected; students and parents reach them with their narrow grants, and the
 # per-record ownership check below stops them seeing anyone else's data.
 _reports_read = Depends(PermissionChecker("school:reports:read"))
+_reports_write = Depends(PermissionChecker("school:reports:write"))  # authoring report comments/attendance (staff)
 _attendance_read = Depends(PermissionChecker("school:attendance:read"))
 _lessons_read = Depends(PermissionChecker("school:lessons:read"))
 # Attendance Setup (config) is admin-only; reading the reason list is broader so
@@ -862,6 +864,115 @@ async def submit_grades(
     return {"submitted": len(created)}
 
 
+# ── Report cards (School Reports R1) ──────────────────────────────────────────────
+# Computed live from Grade rows: per-subject CA (out of 40) + Exam (out of 60) =
+# total (out of 100), class average, and class position. Only the human-authored
+# bits (comments, attendance, next-term) are persisted, in StudentReport. R1 uses a
+# fixed 40/60 CA/exam split and the shared grading scale; R2 templates make the
+# split per-level and R4 makes the grading bands authoritative.
+
+_CA_WEIGHT = 0.40
+_EXAM_WEIGHT = 0.60
+
+
+def _pct(score, max_score):
+    if score is None or not max_score or float(max_score) <= 0:
+        return None
+    return (float(score) / float(max_score)) * 100.0
+
+
+async def _exam_type_map(db, org_id, exam_ids):
+    exam_ids = {i for i in exam_ids if i}
+    if not exam_ids:
+        return {}
+    rows = (await db.execute(
+        select(Exam.id, Exam.exam_type).where(Exam.org_id == org_id, Exam.id.in_(exam_ids))
+    )).all()
+    return {r.id: r.exam_type for r in rows}
+
+
+async def _user_name_map(db, ids):
+    ids = {i for i in ids if i}
+    if not ids:
+        return {}
+    rows = (await db.execute(select(User.id, User.full_name).where(User.id.in_(ids)))).all()
+    return {r.id: r.full_name for r in rows}
+
+
+def _subject_breakdown(subject_grades, exam_types):
+    """CA + Exam split for one subject's grades in a term. Returns (ca, exam, total).
+
+    When a grade is tied to a ``final`` exam, split CA→40 / Exam→60 (Nigerian
+    standard). With NO final recorded the subject is left UNSPLIT — the total is
+    the straight average of whatever marks exist and ``exam`` is None — so a
+    school that records a single term score per subject sees that score, not a
+    deflated 40%. Continuous Assessment = anything not tied to a final (midterm/
+    quiz/assignment/practical/CBT/standalone). R2 templates make the weighting
+    per-level configurable."""
+    ca_pcts, exam_pcts = [], []
+    for g in subject_grades:
+        p = _pct(g.score, g.max_score)
+        if p is None:
+            continue
+        is_final = g.exam_id and exam_types.get(g.exam_id) == "final"
+        (exam_pcts if is_final else ca_pcts).append(p)
+    if exam_pcts:
+        ca = round((sum(ca_pcts) / len(ca_pcts)) * _CA_WEIGHT, 1) if ca_pcts else 0.0
+        exam = round((sum(exam_pcts) / len(exam_pcts)) * _EXAM_WEIGHT, 1)
+        return ca, exam, round(ca + exam, 1)
+    if ca_pcts:
+        avg = round(sum(ca_pcts) / len(ca_pcts), 1)
+        return avg, None, avg
+    return 0.0, None, 0.0
+
+
+def _term_average(grades, exam_types):
+    """Mean of per-subject totals for one student's grades."""
+    by_subject = {}
+    for g in grades:
+        by_subject.setdefault(g.subject_id, []).append(g)
+    totals = [_subject_breakdown(sg, exam_types)[2] for sg in by_subject.values()]
+    return (sum(totals) / len(totals)) if totals else 0.0
+
+
+async def _class_position(db, org_id, class_id, term, student_id):
+    """Rank the student among classmates by PUBLISHED-grade term average (an
+    official ranking uses finalised marks only). Returns (rank, class_size)."""
+    if not class_id:
+        return None, None
+    sids = (await db.execute(
+        select(Student.id).where(
+            Student.class_id == class_id, Student.org_id == org_id, Student.is_deleted == False,  # noqa: E712
+        )
+    )).scalars().all()
+    if not sids:
+        return None, None
+    q = select(Grade).where(
+        Grade.org_id == org_id, Grade.student_id.in_(sids), Grade.status == GradeStatus.PUBLISHED,
+    )
+    if term:
+        q = q.where(Grade.term == term)
+    rows = (await db.execute(q)).scalars().all()
+    etypes = await _exam_type_map(db, org_id, {g.exam_id for g in rows})
+    by_student = {}
+    for g in rows:
+        by_student.setdefault(g.student_id, []).append(g)
+    avgs = {sid: _term_average(gs, etypes) for sid, gs in by_student.items()}
+    if student_id not in avgs:
+        return None, len(sids)
+    target = avgs[student_id]
+    rank = 1 + sum(1 for v in avgs.values() if v > target)   # ties share a rank
+    return rank, len(sids)
+
+
+async def _current_year(db, org_id):
+    return (await db.execute(
+        select(AcademicSession.name).where(
+            AcademicSession.org_id == org_id, AcademicSession.is_current == True,  # noqa: E712
+        )
+    )).scalar_one_or_none()
+
+
 @router.get("/students/{student_id}/report-card", dependencies=[_reports_read])
 async def get_report_card(
     student_id: str,
@@ -870,26 +981,80 @@ async def get_report_card(
     current_user: User = Depends(get_current_active_user),
 ):
     await _ensure_student_visible(db, current_user, student_id)
-    query = select(Grade).where(
-        Grade.student_id == student_id,
-        Grade.org_id == current_user.org_id,
-    )
+    student = (await db.execute(
+        select(Student).where(Student.id == student_id, Student.org_id == current_user.org_id)
+    )).scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="student not found in your organisation.")
+    cls = None
+    if student.class_id:
+        cls = (await db.execute(
+            select(SchoolClass).where(SchoolClass.id == student.class_id, SchoolClass.org_id == current_user.org_id)
+        )).scalar_one_or_none()
+
+    query = select(Grade).where(Grade.student_id == student_id, Grade.org_id == current_user.org_id)
     if term:
         query = query.where(Grade.term == term)
-    # Fail-safe: parents/students see only published/finalised grades. Staff — the
-    # people who enter and publish grades, identified by the broad students-read
-    # scope — see everything, drafts included. Draft grades never leak downstream.
+    # Fail-safe: parents/students see only published/finalised grades. Staff (broad
+    # students-read scope) see drafts too. Draft grades never leak downstream.
     see_drafts = current_user.has_permission("school:students:read")
     if not see_drafts:
         query = query.where(Grade.status == GradeStatus.PUBLISHED)
+    grades = (await db.execute(query)).scalars().all()
 
-    result = await db.execute(query)
-    grades = result.scalars().all()
     subj_names = await _subject_names(db, current_user.org_id, {g.subject_id for g in grades})
+    exam_types = await _exam_type_map(db, current_user.org_id, {g.exam_id for g in grades})
+    teacher_names = await _user_name_map(db, {g.graded_by for g in grades})
+
+    # Aggregate the (visibility-filtered) grades into one row per subject.
+    by_subject = {}
+    for g in grades:
+        by_subject.setdefault(g.subject_id, []).append(g)
+    subjects = []
+    for sid, sg in by_subject.items():
+        ca, exam, total = _subject_breakdown(sg, exam_types)
+        remark = next((g.remarks for g in sg if g.remarks), None)
+        teacher = next((teacher_names.get(g.graded_by) for g in sg if teacher_names.get(g.graded_by)), None)
+        subjects.append({
+            "subject_id": sid, "subject_name": subj_names.get(sid),
+            "ca_score": ca, "exam_score": exam, "total": total, "max_score": 100,
+            "grade": _grade_letter(total, 100), "remarks": remark, "teacher_name": teacher,
+        })
+    subjects.sort(key=lambda s: (s["subject_name"] or "").lower())
+
+    subject_totals = [s["total"] for s in subjects]
+    total_score = round(sum(subject_totals), 1)
+    average = round(sum(subject_totals) / len(subject_totals), 2) if subject_totals else 0
+
+    rank, class_size = await _class_position(db, current_user.org_id, student.class_id, term, student_id)
+
+    meta = None
+    if term:
+        meta = (await db.execute(
+            select(StudentReport).where(
+                StudentReport.student_id == student_id, StudentReport.term == term,
+                StudentReport.org_id == current_user.org_id,
+            )
+        )).scalar_one_or_none()
+    academic_year = (meta.academic_year if meta and meta.academic_year else await _current_year(db, current_user.org_id))
+    absent = None
+    if meta and meta.attendance_total is not None and meta.attendance_present is not None:
+        absent = meta.attendance_total - meta.attendance_present
 
     return {
         "student_id": student_id,
+        "student": {
+            "first_name": student.first_name, "last_name": student.last_name,
+            "student_id": student.student_id, "class_name": cls.name if cls else None,
+        },
         "term": term,
+        "academic_year": academic_year,
+        "level": cls.level if cls else None,
+        "section": cls.section if cls else None,
+        "class_name": cls.name if cls else None,
+        "class_size": class_size,
+        "position": rank,
+        # Raw per-row grades kept for back-compat + the draft/published visibility contract.
         "grades": [
             {
                 "subject_id": g.subject_id, "subject_name": subj_names.get(g.subject_id),
@@ -899,7 +1064,65 @@ async def get_report_card(
             }
             for g in grades
         ],
-        "average": round(sum(g.score for g in grades if g.score) / len(grades), 2) if grades else 0,
+        "subjects": subjects,
+        "total_score": total_score,
+        "average": average,
+        "teacher_remark": meta.class_teacher_comment if meta else None,
+        "principal_remark": meta.head_teacher_comment if meta else None,
+        "attendance_present": meta.attendance_present if meta else None,
+        "attendance_total": meta.attendance_total if meta else None,
+        "attendance_absent": absent,
+        "next_term_begins": meta.next_term_begins.isoformat() if meta and meta.next_term_begins else None,
+    }
+
+
+@router.put("/students/{student_id}/report-card/meta", dependencies=[_reports_write])
+async def upsert_report_meta(
+    student_id: str,
+    payload: ReportMetaUpdate,
+    term: str = Query(...),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Author the human parts of a report (School Reports R1): class-teacher +
+    head-teacher comments, attendance summary, next-term date. Staff-only
+    (school:reports:write). Upserts one row per (student, term)."""
+    student = (await db.execute(
+        select(Student).where(
+            Student.id == student_id, Student.org_id == current_user.org_id, Student.is_deleted == False,  # noqa: E712
+        )
+    )).scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="student not found in your organisation.")
+    meta = (await db.execute(
+        select(StudentReport).where(
+            StudentReport.student_id == student_id, StudentReport.term == term,
+            StudentReport.org_id == current_user.org_id,
+        )
+    )).scalar_one_or_none()
+    created = meta is None
+    if created:
+        meta = StudentReport(student_id=student_id, term=term, org_id=current_user.org_id, created_by=current_user.id)
+        db.add(meta)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(meta, field, value)
+    if meta.attendance_present is not None and meta.attendance_total is not None and meta.attendance_present > meta.attendance_total:
+        raise HTTPException(status_code=422, detail="attendance_present cannot exceed attendance_total.")
+    if not meta.academic_year:
+        meta.academic_year = await _current_year(db, current_user.org_id)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED if created else AuditAction.RECORD_UPDATED, current_user.org_id,
+        actor=current_user, resource_type="StudentReport", resource_id=meta.id,
+        resource_label=f"report meta for student {student_id} ({term})",
+        metadata={"student_id": student_id, "term": term}, request=request,
+    )
+    return {
+        "student_id": student_id, "term": meta.term, "academic_year": meta.academic_year,
+        "class_teacher_comment": meta.class_teacher_comment, "head_teacher_comment": meta.head_teacher_comment,
+        "attendance_present": meta.attendance_present, "attendance_total": meta.attendance_total,
+        "next_term_begins": meta.next_term_begins.isoformat() if meta.next_term_begins else None,
     }
 
 

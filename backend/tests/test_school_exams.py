@@ -20,13 +20,16 @@ from sqlalchemy import select
 from app.models.user import User, UserStatus
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.modules.school import Exam, Grade, Student
+from datetime import date
+
 from app.routers.modules.school import (
     list_exams, get_exam, create_exam, update_exam,
     get_exam_results, submit_exam_results, get_report_card, _grade_letter,
-    create_subject,
+    create_subject, upsert_report_meta, publish_grades,
 )
 from app.schemas.exam import ExamCreate, ExamUpdate, ExamResultRow
 from app.schemas.subject import SubjectCreate
+from app.schemas.grade import GradePublish, ReportMetaUpdate
 
 
 pytestmark = pytest.mark.asyncio
@@ -174,3 +177,62 @@ async def test_update_status_and_404(db, org, teacher, school_class):
     with pytest.raises(HTTPException) as exc:
         await get_exam(str(uuid.uuid4()), db=db, current_user=teacher)
     assert exc.value.status_code == 404
+
+
+# ── School Reports R1: CA/exam split, position, report meta ───────────────────────
+
+async def test_report_card_ca_exam_split(db, org, teacher, school_class, student):
+    subj = await _subject(db, teacher)
+    ca = await create_exam(ExamCreate(name="CA", subject_id=subj["id"], class_id=school_class.id,
+                                      term="Term 1", exam_type="midterm"), request=None, db=db, current_user=teacher)
+    final = await create_exam(ExamCreate(name="Exam", subject_id=subj["id"], class_id=school_class.id,
+                                         term="Term 1", exam_type="final"), request=None, db=db, current_user=teacher)
+    await submit_exam_results(ca["id"], [ExamResultRow(student_id=student.id, score=80)],
+                              request=None, db=db, current_user=teacher)
+    await submit_exam_results(final["id"], [ExamResultRow(student_id=student.id, score=60)],
+                              request=None, db=db, current_user=teacher)
+    staff = await _preset_user(db, org, "teacher")
+    card = await get_report_card(student.id, term="Term 1", db=db, current_user=staff)
+    row = next(s for s in card["subjects"] if s["subject_id"] == subj["id"])
+    # CA 80% → 32/40 ; Exam 60% → 36/60 ; total 68 → grade B.
+    assert row["ca_score"] == 32.0 and row["exam_score"] == 36.0 and row["total"] == 68.0
+    assert row["grade"] == "B" and card["average"] == 68.0
+    # Report is level-tagged from the student's class.
+    assert card["level"] == school_class.level and card["class_name"] == school_class.name
+
+
+async def test_report_card_position_uses_published_average(db, org, teacher, school_class, student):
+    top = await _extra_student(db, org, school_class, "Top", "Scorer")
+    subj = await _subject(db, teacher)
+    exam = await create_exam(ExamCreate(name="Exam", subject_id=subj["id"], class_id=school_class.id, term="Term 1"),
+                             request=None, db=db, current_user=teacher)
+    await submit_exam_results(exam["id"], [ExamResultRow(student_id=student.id, score=55),
+                                           ExamResultRow(student_id=top.id, score=90)],
+                              request=None, db=db, current_user=teacher)
+    # Position ranks on PUBLISHED grades only — publish, then the ranking appears.
+    await publish_grades(GradePublish(term="Term 1", class_id=school_class.id, status="published"),
+                         request=None, db=db, current_user=teacher)
+    staff = await _preset_user(db, org, "teacher")
+    top_card = await get_report_card(top.id, term="Term 1", db=db, current_user=staff)
+    assert top_card["position"] == 1 and top_card["class_size"] == 2
+    low_card = await get_report_card(student.id, term="Term 1", db=db, current_user=staff)
+    assert low_card["position"] == 2
+
+
+async def test_report_meta_upsert_and_surface(db, org, teacher, school_class, student):
+    staff = await _preset_user(db, org, "teacher")  # school:write covers school:reports:write
+    await upsert_report_meta(
+        student.id,
+        ReportMetaUpdate(class_teacher_comment="Great term.", head_teacher_comment="Keep it up.",
+                         attendance_present=58, attendance_total=60, next_term_begins=date(2026, 9, 14)),
+        term="Term 1", request=None, db=db, current_user=staff,
+    )
+    card = await get_report_card(student.id, term="Term 1", db=db, current_user=staff)
+    assert card["teacher_remark"] == "Great term." and card["principal_remark"] == "Keep it up."
+    assert card["attendance_present"] == 58 and card["attendance_total"] == 60 and card["attendance_absent"] == 2
+    assert card["next_term_begins"] == "2026-09-14"
+    # Re-authoring updates in place (no duplicate row) and attendance sanity is enforced.
+    with pytest.raises(HTTPException) as exc:
+        await upsert_report_meta(student.id, ReportMetaUpdate(attendance_present=70, attendance_total=60),
+                                 term="Term 1", request=None, db=db, current_user=staff)
+    assert exc.value.status_code == 422
