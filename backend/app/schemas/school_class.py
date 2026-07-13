@@ -24,6 +24,7 @@ class ClassUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     grade_level: Optional[str] = None
     section: Optional[str] = None
+    section_id: Optional[str] = None   # managed School Section (Reports R2); "" clears it
     capacity: Optional[int] = Field(default=None, ge=0)
     academic_year: Optional[str] = None
     class_teacher_id: Optional[str] = None

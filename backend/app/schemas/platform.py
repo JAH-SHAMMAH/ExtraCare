@@ -209,11 +209,117 @@ class BandCreate(BaseModel):
 class BandResponse(BaseModel):
     id: str
     grade: str
-    min_score: float
-    max_score: float
+    min_score: Optional[float] = None   # None for descriptor-scale bands
+    max_score: Optional[float] = None
     remark: Optional[str]
+    scale_id: Optional[str] = None
+    position: int = 0
     created_at: datetime
     org_id: str
+
+
+# ── School Reports R2: sections, grading scales, report templates ─────────────────
+
+SECTION_CURRICULA = {"eyfs", "nigerian", "hybrid"}
+ASSESSMENT_MODES = {"descriptive", "numeric", "hybrid"}
+SCALE_TYPES = {"numeric", "descriptor"}
+
+
+class SectionCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    curriculum: str = "nigerian"
+    position: int = 0
+
+
+class SectionUpdate(BaseModel):
+    name: Optional[str] = None
+    curriculum: Optional[str] = None
+    position: Optional[int] = None
+
+
+class SectionResponse(BaseModel):
+    id: str
+    name: str
+    curriculum: str
+    position: int
+    org_id: str
+
+
+class ScaleBandCreate(BaseModel):
+    grade: str = Field(min_length=1, max_length=20)
+    min_score: Optional[Decimal] = None
+    max_score: Optional[Decimal] = None
+    remark: Optional[str] = None
+    position: int = 0
+
+
+class GradingScaleCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    scale_type: str = "numeric"
+    is_provisional: bool = True
+    bands: list[ScaleBandCreate] = Field(default_factory=list)
+
+
+class GradingScaleResponse(BaseModel):
+    id: str
+    name: str
+    scale_type: str
+    is_provisional: bool
+    bands: list[BandResponse]
+    org_id: str
+
+
+class ReportTemplateCreate(BaseModel):
+    section_id: str
+    name: str = Field(min_length=1, max_length=120)
+    assessment_mode: str = "hybrid"
+    ca_weight: Optional[Decimal] = None
+    exam_weight: Optional[Decimal] = None
+    grading_scale_id: Optional[str] = None
+    show_cognitive_table: bool = True
+    show_position: bool = True
+    show_attendance: bool = True
+    show_affective: bool = False
+    show_psychomotor: bool = False
+    is_provisional: bool = True
+
+
+class ReportTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    assessment_mode: Optional[str] = None
+    ca_weight: Optional[Decimal] = None
+    exam_weight: Optional[Decimal] = None
+    grading_scale_id: Optional[str] = None
+    show_cognitive_table: Optional[bool] = None
+    show_position: Optional[bool] = None
+    show_attendance: Optional[bool] = None
+    show_affective: Optional[bool] = None
+    show_psychomotor: Optional[bool] = None
+    is_provisional: Optional[bool] = None
+
+
+class ReportTemplateResponse(BaseModel):
+    id: str
+    section_id: str
+    section_name: Optional[str] = None
+    name: str
+    assessment_mode: str
+    ca_weight: Optional[float]
+    exam_weight: Optional[float]
+    grading_scale_id: Optional[str]
+    grading_scale_name: Optional[str] = None
+    show_cognitive_table: bool
+    show_position: bool
+    show_attendance: bool
+    show_affective: bool
+    show_psychomotor: bool
+    is_provisional: bool
+    org_id: str
+
+
+class AutoMapResult(BaseModel):
+    linked: int
+    unassigned: list[str]        # class names left unmatched (blank/typo/unknown level)
 
 
 # ── Custom Fields ────────────────────────────────────────────────────────────────

@@ -236,3 +236,41 @@ async def test_report_meta_upsert_and_surface(db, org, teacher, school_class, st
         await upsert_report_meta(student.id, ReportMetaUpdate(attendance_present=70, attendance_total=60),
                                  term="Term 1", request=None, db=db, current_user=staff)
     assert exc.value.status_code == 422
+
+
+async def test_report_card_uses_section_template(db, org, teacher, school_class, student):
+    """A class assigned to a section resolves that section's ReportTemplate — its
+    CA/exam weights and grading scale drive the printed totals + letters."""
+    from app.routers.modules.platform import create_section, create_scale, create_template
+    from app.routers.modules.school import update_class
+    from app.schemas.platform import SectionCreate, GradingScaleCreate, ScaleBandCreate, ReportTemplateCreate
+    from app.schemas.school_class import ClassUpdate
+
+    admin = await _preset_user(db, org, "org_admin")
+    sec = await create_section(SectionCreate(name="Secondary", curriculum="hybrid"), db=db, current_user=admin)
+    scale = await create_scale(GradingScaleCreate(name="WAEC", scale_type="numeric", bands=[
+        ScaleBandCreate(grade="A1", min_score=75, max_score=100),
+        ScaleBandCreate(grade="B2", min_score=70, max_score=74),
+        ScaleBandCreate(grade="F9", min_score=0, max_score=49),
+    ]), db=db, current_user=admin)
+    await create_template(ReportTemplateCreate(
+        section_id=sec.id, name="Sec", assessment_mode="hybrid",
+        ca_weight=30, exam_weight=70, grading_scale_id=scale.id,
+    ), db=db, current_user=admin)
+    await update_class(school_class.id, ClassUpdate(section_id=sec.id), request=None, db=db, current_user=admin)
+
+    subj = await _subject(db, teacher)
+    ca = await create_exam(ExamCreate(name="CA", subject_id=subj["id"], class_id=school_class.id,
+                                      term="Term 1", exam_type="midterm"), request=None, db=db, current_user=teacher)
+    fin = await create_exam(ExamCreate(name="Exam", subject_id=subj["id"], class_id=school_class.id,
+                                       term="Term 1", exam_type="final"), request=None, db=db, current_user=teacher)
+    await submit_exam_results(ca["id"], [ExamResultRow(student_id=student.id, score=80)], request=None, db=db, current_user=teacher)
+    await submit_exam_results(fin["id"], [ExamResultRow(student_id=student.id, score=90)], request=None, db=db, current_user=teacher)
+
+    staff = await _preset_user(db, org, "teacher")
+    card = await get_report_card(student.id, term="Term 1", db=db, current_user=staff)
+    row = next(s for s in card["subjects"] if s["subject_id"] == subj["id"])
+    # 30/70 weights: CA 80%→24/30, Exam 90%→63/70, total 87 → WAEC A1 (from the scale, not the hardcode).
+    assert row["ca_score"] == 24.0 and row["exam_score"] == 63.0 and row["total"] == 87.0
+    assert row["grade"] == "A1"
+    assert card["assessment_mode"] == "hybrid" and card["template_name"] == "Sec"

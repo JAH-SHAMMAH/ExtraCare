@@ -13,7 +13,7 @@ from app.models.modules.school import (
     LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus, TeacherRating,
     GradeStatus, AttendanceSettings, AbsenceReason, StudentReport,
 )
-from app.models.modules.platform import AcademicSession
+from app.models.modules.platform import AcademicSession, SchoolSection, ReportTemplate, GradingBand
 from app.schemas.attendance_config import (
     AttendanceSettingsResponse, AttendanceSettingsUpdate,
     AbsenceReasonResponse, AbsenceReasonCreate, AbsenceReasonUpdate,
@@ -434,6 +434,15 @@ async def update_class(
     updates = data.model_dump(exclude_unset=True)
     if "class_teacher_id" in updates:
         await _validate_teacher(db, org_id, updates["class_teacher_id"])
+    if "section_id" in updates:
+        sid = updates["section_id"] or None   # "" clears the assignment
+        updates["section_id"] = sid
+        if sid:
+            exists = (await db.execute(
+                select(SchoolSection.id).where(SchoolSection.id == sid, SchoolSection.org_id == org_id)
+            )).scalar_one_or_none()
+            if not exists:
+                raise HTTPException(status_code=404, detail="section not found in your organisation.")
     # Map frontend field names onto the ORM columns.
     field_map = {"grade_level": "level", "capacity": "max_capacity", "class_teacher_id": "teacher_id"}
     for field, value in updates.items():
@@ -871,7 +880,7 @@ async def submit_grades(
 # fixed 40/60 CA/exam split and the shared grading scale; R2 templates make the
 # split per-level and R4 makes the grading bands authoritative.
 
-_CA_WEIGHT = 0.40
+_CA_WEIGHT = 0.40      # engine default when a section's ReportTemplate sets no weight
 _EXAM_WEIGHT = 0.60
 
 
@@ -879,6 +888,43 @@ def _pct(score, max_score):
     if score is None or not max_score or float(max_score) <= 0:
         return None
     return (float(score) / float(max_score)) * 100.0
+
+
+async def _report_context(db, org_id, cls):
+    """Resolve the class's ReportTemplate (via its managed section) → CA/exam
+    weights (as fractions) + numeric grading bands. Unassigned/unconfigured falls
+    back to the engine default weights and the hardcoded grading scale, so R1
+    behaviour is preserved for any class without a template."""
+    ca_w, exam_w, bands, template = _CA_WEIGHT, _EXAM_WEIGHT, None, None
+    if cls is not None and getattr(cls, "section_id", None):
+        template = (await db.execute(
+            select(ReportTemplate).where(
+                ReportTemplate.org_id == org_id, ReportTemplate.section_id == cls.section_id,
+            )
+        )).scalar_one_or_none()
+        if template:
+            if template.ca_weight is not None and template.exam_weight is not None:
+                ca_w = float(template.ca_weight) / 100.0
+                exam_w = float(template.exam_weight) / 100.0
+            if template.grading_scale_id:
+                rows = (await db.execute(
+                    select(GradingBand).where(
+                        GradingBand.org_id == org_id, GradingBand.scale_id == template.grading_scale_id,
+                    ).order_by(GradingBand.position)
+                )).scalars().all()
+                bands = rows or None
+    return template, ca_w, exam_w, bands
+
+
+def _letter(pct, bands):
+    """Grade letter for a percentage — from the level's configured numeric bands
+    when present, else the hardcoded fallback scale (R1)."""
+    if bands:
+        for b in bands:
+            if b.min_score is not None and b.max_score is not None and float(b.min_score) <= pct <= float(b.max_score):
+                return b.grade
+        return None
+    return _grade_letter(pct, 100)
 
 
 async def _exam_type_map(db, org_id, exam_ids):
@@ -899,16 +945,15 @@ async def _user_name_map(db, ids):
     return {r.id: r.full_name for r in rows}
 
 
-def _subject_breakdown(subject_grades, exam_types):
+def _subject_breakdown(subject_grades, exam_types, ca_weight=_CA_WEIGHT, exam_weight=_EXAM_WEIGHT):
     """CA + Exam split for one subject's grades in a term. Returns (ca, exam, total).
 
-    When a grade is tied to a ``final`` exam, split CA→40 / Exam→60 (Nigerian
-    standard). With NO final recorded the subject is left UNSPLIT — the total is
-    the straight average of whatever marks exist and ``exam`` is None — so a
-    school that records a single term score per subject sees that score, not a
-    deflated 40%. Continuous Assessment = anything not tied to a final (midterm/
-    quiz/assignment/practical/CBT/standalone). R2 templates make the weighting
-    per-level configurable."""
+    When a grade is tied to a ``final`` exam, split CA / Exam by the section's
+    configured weights (default 40/60). With NO final recorded the subject is left
+    UNSPLIT — the total is the straight average of whatever marks exist and ``exam``
+    is None — so a school that records a single term score per subject sees that
+    score, not a deflated 40%. Continuous Assessment = anything not tied to a final
+    (midterm/quiz/assignment/practical/CBT/standalone)."""
     ca_pcts, exam_pcts = [], []
     for g in subject_grades:
         p = _pct(g.score, g.max_score)
@@ -917,8 +962,8 @@ def _subject_breakdown(subject_grades, exam_types):
         is_final = g.exam_id and exam_types.get(g.exam_id) == "final"
         (exam_pcts if is_final else ca_pcts).append(p)
     if exam_pcts:
-        ca = round((sum(ca_pcts) / len(ca_pcts)) * _CA_WEIGHT, 1) if ca_pcts else 0.0
-        exam = round((sum(exam_pcts) / len(exam_pcts)) * _EXAM_WEIGHT, 1)
+        ca = round((sum(ca_pcts) / len(ca_pcts)) * ca_weight, 1) if ca_pcts else 0.0
+        exam = round((sum(exam_pcts) / len(exam_pcts)) * exam_weight, 1)
         return ca, exam, round(ca + exam, 1)
     if ca_pcts:
         avg = round(sum(ca_pcts) / len(ca_pcts), 1)
@@ -926,18 +971,19 @@ def _subject_breakdown(subject_grades, exam_types):
     return 0.0, None, 0.0
 
 
-def _term_average(grades, exam_types):
+def _term_average(grades, exam_types, ca_weight=_CA_WEIGHT, exam_weight=_EXAM_WEIGHT):
     """Mean of per-subject totals for one student's grades."""
     by_subject = {}
     for g in grades:
         by_subject.setdefault(g.subject_id, []).append(g)
-    totals = [_subject_breakdown(sg, exam_types)[2] for sg in by_subject.values()]
+    totals = [_subject_breakdown(sg, exam_types, ca_weight, exam_weight)[2] for sg in by_subject.values()]
     return (sum(totals) / len(totals)) if totals else 0.0
 
 
-async def _class_position(db, org_id, class_id, term, student_id):
+async def _class_position(db, org_id, class_id, term, student_id, ca_weight=_CA_WEIGHT, exam_weight=_EXAM_WEIGHT):
     """Rank the student among classmates by PUBLISHED-grade term average (an
-    official ranking uses finalised marks only). Returns (rank, class_size)."""
+    official ranking uses finalised marks only). Uses the section's CA/exam weights
+    so ranking matches the printed totals. Returns (rank, class_size)."""
     if not class_id:
         return None, None
     sids = (await db.execute(
@@ -957,7 +1003,7 @@ async def _class_position(db, org_id, class_id, term, student_id):
     by_student = {}
     for g in rows:
         by_student.setdefault(g.student_id, []).append(g)
-    avgs = {sid: _term_average(gs, etypes) for sid, gs in by_student.items()}
+    avgs = {sid: _term_average(gs, etypes, ca_weight, exam_weight) for sid, gs in by_student.items()}
     if student_id not in avgs:
         return None, len(sids)
     target = avgs[student_id]
@@ -991,6 +1037,9 @@ async def get_report_card(
         cls = (await db.execute(
             select(SchoolClass).where(SchoolClass.id == student.class_id, SchoolClass.org_id == current_user.org_id)
         )).scalar_one_or_none()
+    # Resolve the section's ReportTemplate → CA/exam weights + numeric grading
+    # bands (falls back to engine defaults + hardcoded scale when unassigned).
+    template, ca_w, exam_w, bands = await _report_context(db, current_user.org_id, cls)
 
     query = select(Grade).where(Grade.student_id == student_id, Grade.org_id == current_user.org_id)
     if term:
@@ -1012,13 +1061,13 @@ async def get_report_card(
         by_subject.setdefault(g.subject_id, []).append(g)
     subjects = []
     for sid, sg in by_subject.items():
-        ca, exam, total = _subject_breakdown(sg, exam_types)
+        ca, exam, total = _subject_breakdown(sg, exam_types, ca_w, exam_w)
         remark = next((g.remarks for g in sg if g.remarks), None)
         teacher = next((teacher_names.get(g.graded_by) for g in sg if teacher_names.get(g.graded_by)), None)
         subjects.append({
             "subject_id": sid, "subject_name": subj_names.get(sid),
             "ca_score": ca, "exam_score": exam, "total": total, "max_score": 100,
-            "grade": _grade_letter(total, 100), "remarks": remark, "teacher_name": teacher,
+            "grade": _letter(total, bands), "remarks": remark, "teacher_name": teacher,
         })
     subjects.sort(key=lambda s: (s["subject_name"] or "").lower())
 
@@ -1026,7 +1075,7 @@ async def get_report_card(
     total_score = round(sum(subject_totals), 1)
     average = round(sum(subject_totals) / len(subject_totals), 2) if subject_totals else 0
 
-    rank, class_size = await _class_position(db, current_user.org_id, student.class_id, term, student_id)
+    rank, class_size = await _class_position(db, current_user.org_id, student.class_id, term, student_id, ca_w, exam_w)
 
     meta = None
     if term:
@@ -1054,6 +1103,15 @@ async def get_report_card(
         "class_name": cls.name if cls else None,
         "class_size": class_size,
         "position": rank,
+        # Report format resolved from the section's template (R2). Null = unassigned
+        # class on the legacy default. `assessment_mode` drives what the UI renders.
+        "assessment_mode": template.assessment_mode if template else None,
+        "template_name": template.name if template else None,
+        "show_cognitive_table": template.show_cognitive_table if template else True,
+        "show_position": template.show_position if template else True,
+        "show_attendance": template.show_attendance if template else True,
+        "show_affective": template.show_affective if template else False,
+        "show_psychomotor": template.show_psychomotor if template else False,
         # Raw per-row grades kept for back-compat + the draft/published visibility contract.
         "grades": [
             {

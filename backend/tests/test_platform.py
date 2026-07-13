@@ -263,3 +263,62 @@ async def test_platform_rbac_settings_only(db, org):
 
 async def _preset(db, org, slug) -> User:
     return await _user(db, org, SCHOOL_PERMISSION_PRESETS[slug])
+
+
+# ── School Reports R2: sections, grading scales, report templates ─────────────────
+
+async def test_sections_auto_map_normalizes_and_leaves_unknowns(db, org, school_class):
+    from app.routers.modules.platform import create_section, auto_map_sections
+    from app.schemas.platform import SectionCreate
+    from app.models.modules.school import SchoolClass
+    admin = await _admin(db, org)
+    sec = await create_section(SectionCreate(name="Secondary", curriculum="hybrid"), db=db, current_user=admin)
+    # messy casing/spacing on the matching class; a second class with an unknown level.
+    school_class.level = "  secondary "
+    ghost = SchoolClass(id=str(uuid.uuid4()), name="Mystery", level="JSS-Typo", org_id=org.id)
+    db.add(ghost)
+    await db.commit()
+
+    res = await auto_map_sections(db=db, current_user=admin)
+    assert res.linked == 1 and "Mystery" in res.unassigned
+    await db.refresh(school_class)
+    await db.refresh(ghost)
+    assert school_class.section_id == sec.id      # normalized exact match links
+    assert ghost.section_id is None               # unknown left unassigned, never guessed
+
+
+async def test_bootstrap_report_config_is_idempotent(db, org):
+    from app.routers.modules.platform import bootstrap_report_config, list_sections, list_scales
+    admin = await _admin(db, org)
+    first = await bootstrap_report_config(db=db, current_user=admin)
+    assert len(first) == 3 and all(t.is_provisional for t in first)
+    modes = {t.assessment_mode for t in first}
+    assert "descriptive" in modes and "hybrid" in modes   # Nursery EYFS + Junior/Sec hybrid
+    # Idempotent: a second run doesn't duplicate sections/templates.
+    second = await bootstrap_report_config(db=db, current_user=admin)
+    assert len(second) == 3
+    assert len(await list_sections(db=db, current_user=admin)) == 3
+    scales = await list_scales(db=db, current_user=admin)
+    # Seeded scales carry their bands (not orphaned): EYFS descriptors + WAEC 9-band.
+    eyfs = next(s for s in scales if s.scale_type == "descriptor")
+    assert {b.grade for b in eyfs.bands} == {"Emerging", "Expected", "Exceeding"}
+    waec = next(s for s in scales if "WAEC" in s.name)
+    assert len(waec.bands) == 9
+
+
+async def test_scale_replace_bands_locks_provisional(db, org):
+    from app.routers.modules.platform import create_scale, replace_scale_bands
+    from app.schemas.platform import GradingScaleCreate, ScaleBandCreate
+    admin = await _admin(db, org)
+    scale = await create_scale(
+        GradingScaleCreate(name="WAEC", bands=[ScaleBandCreate(grade="A1", min_score=75, max_score=100)]),
+        db=db, current_user=admin,
+    )
+    assert scale.is_provisional is True and len(scale.bands) == 1
+    # Editing the bands = the school locked real numbers → provisional clears.
+    updated = await replace_scale_bands(
+        scale.id,
+        [ScaleBandCreate(grade="A1", min_score=80, max_score=100), ScaleBandCreate(grade="F9", min_score=0, max_score=79)],
+        db=db, current_user=admin,
+    )
+    assert updated.is_provisional is False and len(updated.bands) == 2

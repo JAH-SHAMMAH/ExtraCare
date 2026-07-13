@@ -22,11 +22,13 @@ from app.core.permissions import PermissionChecker
 from app.models.user import User, UserStatus
 from app.models.modules.platform import (
     AcademicSession, AcademicWeek, SchoolHouse, GradingBand,
+    SchoolSection, GradingScale, ReportTemplate,
     CustomFieldDefinition, CustomFieldValue,
     Poll, PollOption, PollVote,
     MailboxMessage, MailboxRecipient,
     MobileDevice, MobileAppConfig,
 )
+from app.models.modules.school import SchoolClass
 from app.schemas.platform import (
     SessionCreate, SessionUpdate, SessionResponse, CurrentSessionResponse,
     HouseCreate, HouseResponse, BandCreate, BandResponse,
@@ -35,6 +37,10 @@ from app.schemas.platform import (
     PollCreate, PollResponse, PollOptionResult, PollListResponse, CastVote,
     MessageCreate, MessageResponse, InboxItemResponse,
     MobileDeviceRegister, MobileDeviceResponse, AppConfigSet, AppConfigResponse,
+    SectionCreate, SectionUpdate, SectionResponse,
+    GradingScaleCreate, GradingScaleResponse, ScaleBandCreate,
+    ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
+    SECTION_CURRICULA, ASSESSMENT_MODES, SCALE_TYPES,
 )
 from app.services.ledger import money  # Decimal helper for grading bands
 
@@ -136,10 +142,24 @@ async def delete_house(house_id: str, db: AsyncSession = Depends(get_db), curren
     await db.delete(h)
 
 
+def _band_response(b: GradingBand) -> BandResponse:
+    return BandResponse(
+        id=b.id, grade=b.grade,
+        min_score=float(b.min_score) if b.min_score is not None else None,
+        max_score=float(b.max_score) if b.max_score is not None else None,
+        remark=b.remark, scale_id=b.scale_id, position=b.position or 0,
+        created_at=b.created_at, org_id=b.org_id,
+    )
+
+
 @router.get("/grading-bands", response_model=list[BandResponse], dependencies=[_read])
 async def list_bands(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    rows = (await db.execute(select(GradingBand).where(GradingBand.org_id == current_user.org_id).order_by(GradingBand.min_score.desc()))).scalars().all()
-    return [BandResponse(id=b.id, grade=b.grade, min_score=float(b.min_score), max_score=float(b.max_score), remark=b.remark, created_at=b.created_at, org_id=b.org_id) for b in rows]
+    # Legacy flat listing (scale-less bands). Scale-scoped bands come back with the scale.
+    rows = (await db.execute(
+        select(GradingBand).where(GradingBand.org_id == current_user.org_id, GradingBand.scale_id.is_(None))
+        .order_by(GradingBand.min_score.desc())
+    )).scalars().all()
+    return [_band_response(b) for b in rows]
 
 
 @router.post("/grading-bands", response_model=BandResponse, status_code=201, dependencies=[_write])
@@ -149,7 +169,7 @@ async def create_band(payload: BandCreate, db: AsyncSession = Depends(get_db), c
     b = GradingBand(grade=payload.grade, min_score=money(payload.min_score), max_score=money(payload.max_score), remark=payload.remark, org_id=current_user.org_id)
     db.add(b)
     await db.flush()
-    return BandResponse(id=b.id, grade=b.grade, min_score=float(b.min_score), max_score=float(b.max_score), remark=b.remark, created_at=b.created_at, org_id=b.org_id)
+    return _band_response(b)
 
 
 @router.delete("/grading-bands/{band_id}", status_code=204, dependencies=[_write])
@@ -158,6 +178,318 @@ async def delete_band(band_id: str, db: AsyncSession = Depends(get_db), current_
     if not b:
         raise HTTPException(status_code=404, detail="Band not found.")
     await db.delete(b)
+
+
+# ── School Reports R2: sections ───────────────────────────────────────────────────
+
+def _section_response(s: SchoolSection) -> SectionResponse:
+    return SectionResponse(id=s.id, name=s.name, curriculum=s.curriculum, position=s.position, org_id=s.org_id)
+
+
+@router.get("/sections", response_model=list[SectionResponse], dependencies=[_read])
+async def list_sections(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(
+        select(SchoolSection).where(SchoolSection.org_id == current_user.org_id).order_by(SchoolSection.position, SchoolSection.name)
+    )).scalars().all()
+    return [_section_response(s) for s in rows]
+
+
+@router.post("/sections", response_model=SectionResponse, status_code=201, dependencies=[_write])
+async def create_section(payload: SectionCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    if payload.curriculum not in SECTION_CURRICULA:
+        raise HTTPException(status_code=422, detail=f"curriculum must be one of {sorted(SECTION_CURRICULA)}")
+    s = SchoolSection(name=payload.name.strip(), curriculum=payload.curriculum, position=payload.position, org_id=current_user.org_id)
+    db.add(s)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=f"Section '{payload.name}' already exists.")
+    return _section_response(s)
+
+
+@router.patch("/sections/{section_id}", response_model=SectionResponse, dependencies=[_write])
+async def update_section(section_id: str, payload: SectionUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = (await db.execute(select(SchoolSection).where(SchoolSection.id == section_id, SchoolSection.org_id == current_user.org_id))).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Section not found.")
+    data = payload.model_dump(exclude_unset=True)
+    if "curriculum" in data and data["curriculum"] not in SECTION_CURRICULA:
+        raise HTTPException(status_code=422, detail=f"curriculum must be one of {sorted(SECTION_CURRICULA)}")
+    for f, v in data.items():
+        setattr(s, f, v)
+    await db.flush()
+    return _section_response(s)
+
+
+@router.delete("/sections/{section_id}", status_code=204, dependencies=[_write])
+async def delete_section(section_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = (await db.execute(select(SchoolSection).where(SchoolSection.id == section_id, SchoolSection.org_id == current_user.org_id))).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Section not found.")
+    await db.delete(s)   # classes.section_id → SET NULL; templates → CASCADE
+
+
+@router.post("/sections/auto-map", response_model=AutoMapResult, dependencies=[_write])
+async def auto_map_sections(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Link each currently-unassigned class to a section by an EXACT normalized
+    match (trim + collapse whitespace + casefold) of its free-text `level` against
+    a section name. Blank / typo / unknown levels are left unassigned — never
+    guessed. Returns the count linked and the class names left unmatched."""
+    sections = (await db.execute(select(SchoolSection).where(SchoolSection.org_id == current_user.org_id))).scalars().all()
+    by_norm = {" ".join(s.name.split()).casefold(): s.id for s in sections}
+    classes = (await db.execute(
+        select(SchoolClass).where(SchoolClass.org_id == current_user.org_id, SchoolClass.section_id.is_(None))
+    )).scalars().all()
+    linked, unassigned = 0, []
+    for c in classes:
+        key = " ".join((c.level or "").split()).casefold()
+        sid = by_norm.get(key) if key else None
+        if sid:
+            c.section_id = sid
+            linked += 1
+        else:
+            unassigned.append(c.name)
+    await db.flush()
+    return AutoMapResult(linked=linked, unassigned=unassigned)
+
+
+# ── School Reports R2: grading scales ─────────────────────────────────────────────
+
+def _scale_response(scale: GradingScale, bands: list[GradingBand]) -> GradingScaleResponse:
+    ordered = sorted(bands, key=lambda b: (b.position or 0))
+    return GradingScaleResponse(
+        id=scale.id, name=scale.name, scale_type=scale.scale_type, is_provisional=scale.is_provisional,
+        bands=[_band_response(b) for b in ordered], org_id=scale.org_id,
+    )
+
+
+@router.get("/grading-scales", response_model=list[GradingScaleResponse], dependencies=[_read])
+async def list_scales(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    scales = (await db.execute(select(GradingScale).where(GradingScale.org_id == current_user.org_id).order_by(GradingScale.name))).scalars().all()
+    band_rows = (await db.execute(select(GradingBand).where(GradingBand.org_id == current_user.org_id, GradingBand.scale_id.is_not(None)))).scalars().all()
+    by_scale: dict[str, list[GradingBand]] = {}
+    for b in band_rows:
+        by_scale.setdefault(b.scale_id, []).append(b)
+    return [_scale_response(s, by_scale.get(s.id, [])) for s in scales]
+
+
+@router.post("/grading-scales", response_model=GradingScaleResponse, status_code=201, dependencies=[_write])
+async def create_scale(payload: GradingScaleCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    if payload.scale_type not in SCALE_TYPES:
+        raise HTTPException(status_code=422, detail=f"scale_type must be one of {sorted(SCALE_TYPES)}")
+    scale = GradingScale(name=payload.name.strip(), scale_type=payload.scale_type, is_provisional=payload.is_provisional, org_id=current_user.org_id)
+    db.add(scale)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=f"Scale '{payload.name}' already exists.")
+    bands = []
+    for i, bd in enumerate(payload.bands):
+        b = GradingBand(
+            scale_id=scale.id, grade=bd.grade,
+            min_score=money(bd.min_score) if bd.min_score is not None else None,
+            max_score=money(bd.max_score) if bd.max_score is not None else None,
+            remark=bd.remark, position=bd.position or i, org_id=current_user.org_id,
+        )
+        db.add(b)
+        bands.append(b)
+    await db.flush()
+    return _scale_response(scale, bands)
+
+
+@router.put("/grading-scales/{scale_id}/bands", response_model=GradingScaleResponse, dependencies=[_write])
+async def replace_scale_bands(scale_id: str, bands: list[ScaleBandCreate], db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Replace a scale's bands wholesale — the simplest correct edit for a small,
+    ordered band set (no per-row diffing). Locking the school's real boundaries is
+    this call, not a migration."""
+    scale = (await db.execute(select(GradingScale).where(GradingScale.id == scale_id, GradingScale.org_id == current_user.org_id))).scalar_one_or_none()
+    if not scale:
+        raise HTTPException(status_code=404, detail="Scale not found.")
+    existing = (await db.execute(select(GradingBand).where(GradingBand.scale_id == scale_id, GradingBand.org_id == current_user.org_id))).scalars().all()
+    for b in existing:
+        await db.delete(b)
+    await db.flush()
+    fresh = []
+    for i, bd in enumerate(bands):
+        b = GradingBand(
+            scale_id=scale.id, grade=bd.grade,
+            min_score=money(bd.min_score) if bd.min_score is not None else None,
+            max_score=money(bd.max_score) if bd.max_score is not None else None,
+            remark=bd.remark, position=bd.position or i, org_id=current_user.org_id,
+        )
+        db.add(b)
+        fresh.append(b)
+    scale.is_provisional = False   # editing the bands = the school has locked real numbers
+    await db.flush()
+    return _scale_response(scale, fresh)
+
+
+@router.delete("/grading-scales/{scale_id}", status_code=204, dependencies=[_write])
+async def delete_scale(scale_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    scale = (await db.execute(select(GradingScale).where(GradingScale.id == scale_id, GradingScale.org_id == current_user.org_id))).scalar_one_or_none()
+    if not scale:
+        raise HTTPException(status_code=404, detail="Scale not found.")
+    await db.delete(scale)   # bands CASCADE; templates.grading_scale_id → SET NULL
+
+
+# ── School Reports R2: report templates ───────────────────────────────────────────
+
+def _template_response(t: ReportTemplate, section_name: str | None, scale_name: str | None) -> ReportTemplateResponse:
+    return ReportTemplateResponse(
+        id=t.id, section_id=t.section_id, section_name=section_name, name=t.name,
+        assessment_mode=t.assessment_mode,
+        ca_weight=float(t.ca_weight) if t.ca_weight is not None else None,
+        exam_weight=float(t.exam_weight) if t.exam_weight is not None else None,
+        grading_scale_id=t.grading_scale_id, grading_scale_name=scale_name,
+        show_cognitive_table=t.show_cognitive_table, show_position=t.show_position,
+        show_attendance=t.show_attendance, show_affective=t.show_affective,
+        show_psychomotor=t.show_psychomotor, is_provisional=t.is_provisional, org_id=t.org_id,
+    )
+
+
+async def _section_and_scale_names(db, org_id, section_ids, scale_ids):
+    secs = {s.id: s.name for s in (await db.execute(select(SchoolSection).where(SchoolSection.org_id == org_id, SchoolSection.id.in_({i for i in section_ids if i})))).scalars().all()} if section_ids else {}
+    scls = {s.id: s.name for s in (await db.execute(select(GradingScale).where(GradingScale.org_id == org_id, GradingScale.id.in_({i for i in scale_ids if i})))).scalars().all()} if scale_ids else {}
+    return secs, scls
+
+
+@router.get("/report-templates", response_model=list[ReportTemplateResponse], dependencies=[_read])
+async def list_templates(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(ReportTemplate).where(ReportTemplate.org_id == current_user.org_id))).scalars().all()
+    secs, scls = await _section_and_scale_names(db, current_user.org_id, {t.section_id for t in rows}, {t.grading_scale_id for t in rows})
+    return [_template_response(t, secs.get(t.section_id), scls.get(t.grading_scale_id)) for t in rows]
+
+
+@router.post("/report-templates", response_model=ReportTemplateResponse, status_code=201, dependencies=[_write])
+async def create_template(payload: ReportTemplateCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    if payload.assessment_mode not in ASSESSMENT_MODES:
+        raise HTTPException(status_code=422, detail=f"assessment_mode must be one of {sorted(ASSESSMENT_MODES)}")
+    sec = (await db.execute(select(SchoolSection).where(SchoolSection.id == payload.section_id, SchoolSection.org_id == current_user.org_id))).scalar_one_or_none()
+    if not sec:
+        raise HTTPException(status_code=404, detail="Section not found.")
+    t = ReportTemplate(
+        section_id=payload.section_id, name=payload.name.strip(), assessment_mode=payload.assessment_mode,
+        ca_weight=payload.ca_weight, exam_weight=payload.exam_weight, grading_scale_id=payload.grading_scale_id,
+        show_cognitive_table=payload.show_cognitive_table, show_position=payload.show_position,
+        show_attendance=payload.show_attendance, show_affective=payload.show_affective,
+        show_psychomotor=payload.show_psychomotor, is_provisional=payload.is_provisional, org_id=current_user.org_id,
+    )
+    db.add(t)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="A template already exists for that section.")
+    secs, scls = await _section_and_scale_names(db, current_user.org_id, {t.section_id}, {t.grading_scale_id})
+    return _template_response(t, secs.get(t.section_id), scls.get(t.grading_scale_id))
+
+
+@router.patch("/report-templates/{template_id}", response_model=ReportTemplateResponse, dependencies=[_write])
+async def update_template(template_id: str, payload: ReportTemplateUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    t = (await db.execute(select(ReportTemplate).where(ReportTemplate.id == template_id, ReportTemplate.org_id == current_user.org_id))).scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found.")
+    data = payload.model_dump(exclude_unset=True)
+    if "assessment_mode" in data and data["assessment_mode"] not in ASSESSMENT_MODES:
+        raise HTTPException(status_code=422, detail=f"assessment_mode must be one of {sorted(ASSESSMENT_MODES)}")
+    for f, v in data.items():
+        setattr(t, f, v)
+    await db.flush()
+    secs, scls = await _section_and_scale_names(db, current_user.org_id, {t.section_id}, {t.grading_scale_id})
+    return _template_response(t, secs.get(t.section_id), scls.get(t.grading_scale_id))
+
+
+@router.delete("/report-templates/{template_id}", status_code=204, dependencies=[_write])
+async def delete_template(template_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    t = (await db.execute(select(ReportTemplate).where(ReportTemplate.id == template_id, ReportTemplate.org_id == current_user.org_id))).scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found.")
+    await db.delete(t)
+
+
+@router.post("/report-config/bootstrap", response_model=list[ReportTemplateResponse], dependencies=[_write])
+async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """One-click starting point: create the standard Nursery/Junior/Secondary
+    sections, PROVISIONAL grading scales + bands, and a template per section — all
+    flagged is_provisional so the school knows to replace the numbers. Idempotent:
+    skips anything already present. The numbers below are placeholders, NOT the
+    school's locked constants."""
+    org_id = current_user.org_id
+    existing_secs = {s.name.casefold(): s for s in (await db.execute(select(SchoolSection).where(SchoolSection.org_id == org_id))).scalars().all()}
+    existing_scales = {s.name.casefold(): s for s in (await db.execute(select(GradingScale).where(GradingScale.org_id == org_id))).scalars().all()}
+
+    def ensure_section(name, curriculum, pos):
+        s = existing_secs.get(name.casefold())
+        if not s:
+            s = SchoolSection(name=name, curriculum=curriculum, position=pos, org_id=org_id)
+            db.add(s)
+            existing_secs[name.casefold()] = s
+        return s
+
+    nursery = ensure_section("Nursery", "eyfs", 0)
+    junior = ensure_section("Junior", "hybrid", 1)
+    secondary = ensure_section("Secondary", "hybrid", 2)
+
+    # PROVISIONAL placeholders — replace with the school's real boundaries.
+    scale_specs = [
+        ("Junior A–F (provisional)", "numeric", [
+            ("A", 70, 100, "Excellent"), ("B", 60, 69, "Very good"), ("C", 50, 59, "Good"),
+            ("D", 45, 49, "Fair"), ("E", 40, 44, "Pass"), ("F", 0, 39, "Fail")]),
+        ("WAEC A1–F9 (provisional)", "numeric", [
+            ("A1", 75, 100, "Excellent"), ("B2", 70, 74, "Very good"), ("B3", 65, 69, "Good"),
+            ("C4", 60, 64, "Credit"), ("C5", 55, 59, "Credit"), ("C6", 50, 54, "Credit"),
+            ("D7", 45, 49, "Pass"), ("E8", 40, 44, "Pass"), ("F9", 0, 39, "Fail")]),
+        ("EYFS descriptors (provisional)", "descriptor", [
+            ("Emerging", None, None, None), ("Expected", None, None, None), ("Exceeding", None, None, None)]),
+    ]
+    new_scale_names = set()
+    for name, stype, _bands in scale_specs:
+        if name.casefold() not in existing_scales:
+            s = GradingScale(name=name, scale_type=stype, is_provisional=True, org_id=org_id)
+            db.add(s)
+            existing_scales[name.casefold()] = s
+            new_scale_names.add(name.casefold())
+    # Flush so sections AND scales get their ids before we reference them below.
+    await db.flush()
+    # Bands only for scales we just created (ids now assigned) — idempotent.
+    for name, _stype, bands in scale_specs:
+        if name.casefold() in new_scale_names:
+            s = existing_scales[name.casefold()]
+            for i, (grade, lo, hi, remark) in enumerate(bands):
+                db.add(GradingBand(scale_id=s.id, grade=grade,
+                                   min_score=money(lo) if lo is not None else None,
+                                   max_score=money(hi) if hi is not None else None,
+                                   remark=remark, position=i, org_id=org_id))
+    await db.flush()
+    junior_scale = existing_scales["junior a–f (provisional)".casefold()]
+    waec_scale = existing_scales["waec a1–f9 (provisional)".casefold()]
+
+    def ensure_template(section, name, mode, ca, exam, scale):
+        return ReportTemplate(
+            section_id=section.id, name=name, assessment_mode=mode,
+            ca_weight=ca, exam_weight=exam, grading_scale_id=scale.id if scale else None,
+            show_cognitive_table=(mode != "descriptive"), show_position=(mode != "descriptive"),
+            show_attendance=True, show_affective=True, show_psychomotor=(mode == "descriptive"),
+            is_provisional=True, org_id=org_id,
+        )
+
+    have_templates = {t.section_id for t in (await db.execute(select(ReportTemplate).where(ReportTemplate.org_id == org_id))).scalars().all()}
+    to_add = []
+    if nursery.id not in have_templates:
+        to_add.append(ensure_template(nursery, "Nursery (EYFS)", "descriptive", None, None, None))
+    if junior.id not in have_templates:
+        to_add.append(ensure_template(junior, "Junior report", "hybrid", 40, 60, junior_scale))
+    if secondary.id not in have_templates:
+        to_add.append(ensure_template(secondary, "Secondary report", "hybrid", 40, 60, waec_scale))
+    for t in to_add:
+        db.add(t)
+    await db.flush()
+
+    rows = (await db.execute(select(ReportTemplate).where(ReportTemplate.org_id == org_id))).scalars().all()
+    secs, scls = await _section_and_scale_names(db, org_id, {t.section_id for t in rows}, {t.grading_scale_id for t in rows})
+    return [_template_response(t, secs.get(t.section_id), scls.get(t.grading_scale_id)) for t in rows]
 
 
 # ── Academic Weeks (calendar backbone) ────────────────────────────────────────
