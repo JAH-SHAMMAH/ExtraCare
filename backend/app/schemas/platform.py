@@ -325,6 +325,23 @@ class AutoMapResult(BaseModel):
     unassigned: list[str]        # class names left unmatched (blank/typo/unknown level)
 
 
+class SubjectAssessmentResponse(BaseModel):
+    subject_id: str
+    subject_name: Optional[str] = None
+    carries_cambridge: bool = False
+    cambridge_scale_id: Optional[str] = None
+
+
+class SubjectAssessmentUpdate(BaseModel):
+    carries_cambridge: bool
+    cambridge_scale_id: Optional[str] = None
+
+
+class SetCambridgeAllRequest(BaseModel):
+    carries_cambridge: bool
+    cambridge_scale_id: Optional[str] = None
+
+
 # ── Custom Fields ────────────────────────────────────────────────────────────────
 
 class FieldDefCreate(BaseModel):

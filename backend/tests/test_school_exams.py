@@ -274,3 +274,32 @@ async def test_report_card_uses_section_template(db, org, teacher, school_class,
     assert row["ca_score"] == 24.0 and row["exam_score"] == 63.0 and row["total"] == 87.0
     assert row["grade"] == "A1"
     assert card["assessment_mode"] == "hybrid" and card["template_name"] == "Sec"
+
+
+async def test_report_card_flags_cambridge_subjects(db, org, teacher, school_class, student):
+    """R2b: a subject flagged carries_cambridge for the section shows cambridge=true
+    on the report card (the overlay switch)."""
+    from app.routers.modules.platform import create_section, create_template, set_all_subjects_cambridge
+    from app.routers.modules.school import update_class
+    from app.schemas.platform import SectionCreate, ReportTemplateCreate, SetCambridgeAllRequest
+    from app.schemas.school_class import ClassUpdate
+
+    admin = await _preset_user(db, org, "org_admin")
+    sec = await create_section(SectionCreate(name="Secondary", curriculum="hybrid"), db=db, current_user=admin)
+    await create_template(ReportTemplateCreate(section_id=sec.id, name="Sec", assessment_mode="hybrid",
+                                               ca_weight=40, exam_weight=60), db=db, current_user=admin)
+    await update_class(school_class.id, ClassUpdate(section_id=sec.id), request=None, db=db, current_user=admin)
+    subj = await _subject(db, teacher)
+    exam = await create_exam(ExamCreate(name="T", subject_id=subj["id"], class_id=school_class.id, term="Term 1"),
+                             request=None, db=db, current_user=teacher)
+    await submit_exam_results(exam["id"], [ExamResultRow(student_id=student.id, score=70)],
+                              request=None, db=db, current_user=teacher)
+    # enable Cambridge across ALL subjects for the section
+    applied = await set_all_subjects_cambridge(sec.id, SetCambridgeAllRequest(carries_cambridge=True),
+                                               db=db, current_user=admin)
+    assert any(a.subject_id == subj["id"] and a.carries_cambridge for a in applied)
+
+    staff = await _preset_user(db, org, "teacher")
+    card = await get_report_card(student.id, term="Term 1", db=db, current_user=staff)
+    row = next(s for s in card["subjects"] if s["subject_id"] == subj["id"])
+    assert row["cambridge"] is True

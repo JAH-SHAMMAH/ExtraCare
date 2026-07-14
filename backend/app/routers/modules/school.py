@@ -13,7 +13,7 @@ from app.models.modules.school import (
     LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus, TeacherRating,
     GradeStatus, AttendanceSettings, AbsenceReason, StudentReport,
 )
-from app.models.modules.platform import AcademicSession, SchoolSection, ReportTemplate, GradingBand
+from app.models.modules.platform import AcademicSession, SchoolSection, ReportTemplate, GradingBand, ReportSubjectAssessment
 from app.schemas.attendance_config import (
     AttendanceSettingsResponse, AttendanceSettingsUpdate,
     AbsenceReasonResponse, AbsenceReasonCreate, AbsenceReasonUpdate,
@@ -1040,6 +1040,18 @@ async def get_report_card(
     # Resolve the section's ReportTemplate → CA/exam weights + numeric grading
     # bands (falls back to engine defaults + hardcoded scale when unassigned).
     template, ca_w, exam_w, bands = await _report_context(db, current_user.org_id, cls)
+    # Which subjects carry a Cambridge overlay in this section (R2b).
+    cambridge_subjects: set[str] = set()
+    if cls is not None and getattr(cls, "section_id", None):
+        cambridge_subjects = {
+            r.subject_id for r in (await db.execute(
+                select(ReportSubjectAssessment).where(
+                    ReportSubjectAssessment.org_id == current_user.org_id,
+                    ReportSubjectAssessment.section_id == cls.section_id,
+                    ReportSubjectAssessment.carries_cambridge == True,  # noqa: E712
+                )
+            )).scalars().all()
+        }
 
     query = select(Grade).where(Grade.student_id == student_id, Grade.org_id == current_user.org_id)
     if term:
@@ -1068,6 +1080,7 @@ async def get_report_card(
             "subject_id": sid, "subject_name": subj_names.get(sid),
             "ca_score": ca, "exam_score": exam, "total": total, "max_score": 100,
             "grade": _letter(total, bands), "remarks": remark, "teacher_name": teacher,
+            "cambridge": sid in cambridge_subjects,
         })
     subjects.sort(key=lambda s: (s["subject_name"] or "").lower())
 

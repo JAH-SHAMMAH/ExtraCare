@@ -22,13 +22,13 @@ from app.core.permissions import PermissionChecker
 from app.models.user import User, UserStatus
 from app.models.modules.platform import (
     AcademicSession, AcademicWeek, SchoolHouse, GradingBand,
-    SchoolSection, GradingScale, ReportTemplate,
+    SchoolSection, GradingScale, ReportTemplate, ReportSubjectAssessment,
     CustomFieldDefinition, CustomFieldValue,
     Poll, PollOption, PollVote,
     MailboxMessage, MailboxRecipient,
     MobileDevice, MobileAppConfig,
 )
-from app.models.modules.school import SchoolClass
+from app.models.modules.school import SchoolClass, Subject
 from app.schemas.platform import (
     SessionCreate, SessionUpdate, SessionResponse, CurrentSessionResponse,
     HouseCreate, HouseResponse, BandCreate, BandResponse,
@@ -40,6 +40,7 @@ from app.schemas.platform import (
     SectionCreate, SectionUpdate, SectionResponse,
     GradingScaleCreate, GradingScaleResponse, ScaleBandCreate,
     ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
+    SubjectAssessmentResponse, SubjectAssessmentUpdate, SetCambridgeAllRequest,
     SECTION_CURRICULA, ASSESSMENT_MODES, SCALE_TYPES,
 )
 from app.services.ledger import money  # Decimal helper for grading bands
@@ -521,9 +522,98 @@ async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_us
     ensure_template(secondary, "Secondary report", "hybrid", 40, 60, grading_scale)
     await db.flush()
 
+    # R2b: the hybrid sections carry the Cambridge overlay across ALL subjects (the
+    # school's confirmed blend). Idempotent upsert for every existing subject.
+    subjects = (await db.execute(select(Subject).where(Subject.org_id == org_id))).scalars().all()
+    if subjects:
+        existing_assess = {(a.section_id, a.subject_id): a for a in (await db.execute(
+            select(ReportSubjectAssessment).where(ReportSubjectAssessment.org_id == org_id))).scalars().all()}
+        for sec in (primary, secondary):
+            for subj in subjects:
+                a = existing_assess.get((sec.id, subj.id))
+                if not a:
+                    db.add(ReportSubjectAssessment(section_id=sec.id, subject_id=subj.id, carries_cambridge=True, org_id=org_id))
+                else:
+                    a.carries_cambridge = True
+        await db.flush()
+
     rows = (await db.execute(select(ReportTemplate).where(ReportTemplate.org_id == org_id))).scalars().all()
     secs, scls = await _section_and_scale_names(db, org_id, {t.section_id for t in rows}, {t.grading_scale_id for t in rows})
     return [_template_response(t, secs.get(t.section_id), scls.get(t.grading_scale_id)) for t in rows]
+
+
+# ── School Reports R2b: per-subject Cambridge overlay ─────────────────────────────
+
+async def _require_section(db, section_id, org_id) -> SchoolSection:
+    s = (await db.execute(select(SchoolSection).where(SchoolSection.id == section_id, SchoolSection.org_id == org_id))).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Section not found.")
+    return s
+
+
+@router.get("/sections/{section_id}/subjects", response_model=list[SubjectAssessmentResponse], dependencies=[_read])
+async def list_section_subjects(section_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Every org subject with its Cambridge-overlay flag for this section (rows that
+    don't exist yet default to carries_cambridge=false)."""
+    org_id = current_user.org_id
+    await _require_section(db, section_id, org_id)
+    subjects = (await db.execute(select(Subject).where(Subject.org_id == org_id).order_by(Subject.name))).scalars().all()
+    assessments = {a.subject_id: a for a in (await db.execute(
+        select(ReportSubjectAssessment).where(ReportSubjectAssessment.org_id == org_id, ReportSubjectAssessment.section_id == section_id)
+    )).scalars().all()}
+    out = []
+    for s in subjects:
+        a = assessments.get(s.id)
+        out.append(SubjectAssessmentResponse(
+            subject_id=s.id, subject_name=s.name,
+            carries_cambridge=bool(a.carries_cambridge) if a else False,
+            cambridge_scale_id=a.cambridge_scale_id if a else None,
+        ))
+    return out
+
+
+async def _upsert_assessment(db, org_id, section_id, subject_id, carries, scale_id):
+    a = (await db.execute(select(ReportSubjectAssessment).where(
+        ReportSubjectAssessment.org_id == org_id, ReportSubjectAssessment.section_id == section_id,
+        ReportSubjectAssessment.subject_id == subject_id,
+    ))).scalar_one_or_none()
+    if not a:
+        a = ReportSubjectAssessment(section_id=section_id, subject_id=subject_id, org_id=org_id)
+        db.add(a)
+    a.carries_cambridge = carries
+    a.cambridge_scale_id = scale_id
+    return a
+
+
+@router.patch("/sections/{section_id}/subjects/{subject_id}", response_model=SubjectAssessmentResponse, dependencies=[_write])
+async def set_section_subject(section_id: str, subject_id: str, payload: SubjectAssessmentUpdate,
+                              db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Toggle the Cambridge overlay for one subject in a section (upsert)."""
+    org_id = current_user.org_id
+    await _require_section(db, section_id, org_id)
+    subj = (await db.execute(select(Subject).where(Subject.id == subject_id, Subject.org_id == org_id))).scalar_one_or_none()
+    if not subj:
+        raise HTTPException(status_code=404, detail="Subject not found.")
+    a = await _upsert_assessment(db, org_id, section_id, subject_id, payload.carries_cambridge, payload.cambridge_scale_id)
+    await db.flush()
+    return SubjectAssessmentResponse(subject_id=subject_id, subject_name=subj.name,
+                                     carries_cambridge=a.carries_cambridge, cambridge_scale_id=a.cambridge_scale_id)
+
+
+@router.post("/sections/{section_id}/subjects/set-cambridge", response_model=list[SubjectAssessmentResponse], dependencies=[_write])
+async def set_all_subjects_cambridge(section_id: str, payload: SetCambridgeAllRequest,
+                                     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Apply the Cambridge overlay to EVERY org subject for this section in one call
+    ("all subjects carry Cambridge"). Upserts a row per subject."""
+    org_id = current_user.org_id
+    await _require_section(db, section_id, org_id)
+    subjects = (await db.execute(select(Subject).where(Subject.org_id == org_id).order_by(Subject.name))).scalars().all()
+    for s in subjects:
+        await _upsert_assessment(db, org_id, section_id, s.id, payload.carries_cambridge, payload.cambridge_scale_id)
+    await db.flush()
+    return [SubjectAssessmentResponse(subject_id=s.id, subject_name=s.name,
+                                      carries_cambridge=payload.carries_cambridge, cambridge_scale_id=payload.cambridge_scale_id)
+            for s in subjects]
 
 
 # ── Academic Weeks (calendar backbone) ────────────────────────────────────────
