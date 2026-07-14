@@ -7,7 +7,7 @@ import { getApiErrorMessage } from "@/lib/utils";
 
 // ── Students ─────────────────────────────────────────────────────────────────
 
-export function useStudents(params?: { page?: number; page_size?: number; search?: string; class_id?: string; status?: string }) {
+export function useStudents(params?: { page?: number; page_size?: number; search?: string; class_id?: string; section_id?: string; status?: string }) {
   return useQuery({
     queryKey: ["students", params],
     queryFn: () => schoolApi.students.list(params),

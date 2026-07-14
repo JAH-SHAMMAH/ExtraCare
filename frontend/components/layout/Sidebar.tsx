@@ -147,7 +147,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: FileText,
     items: [
       { href: "/dashboard/modules/school/school-setup?tab=reports", label: "Report Setup", icon: Settings2 },
-      { href: "/dashboard/modules/school/report-cards", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/report-cards?section=Nursery", label: "Reports View", icon: FileText },
       { href: "/dashboard/modules/school/exams", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
@@ -162,7 +162,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: FileText,
     items: [
       { href: "/dashboard/modules/school/school-setup?tab=reports", label: "Report Setup", icon: Settings2 },
-      { href: "/dashboard/modules/school/report-cards", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/report-cards?section=Primary", label: "Reports View", icon: FileText },
       { href: "/dashboard/modules/school/exams", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
@@ -176,7 +176,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: FileText,
     items: [
       { href: "/dashboard/modules/school/school-setup?tab=reports", label: "Report Setup", icon: Settings2 },
-      { href: "/dashboard/modules/school/report-cards", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/report-cards?section=Secondary", label: "Reports View", icon: FileText },
       { href: "/dashboard/modules/school/exams", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
@@ -457,6 +457,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentTab = searchParams.get("tab");
+  const currentSection = searchParams.get("section");
   const { user, org, activeRole, hasPermission } = useAuthStore();
   const logout = useLogout();
   const roleScope = moduleAllowedForOrg(org, "school") ? activeRole : "admin";
@@ -493,10 +494,14 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   const isActive = useCallback((href: string) => {
     const [base, query] = href.split("?");
     if (base !== activeHref) return false;
-    if (!query) return true;
-    const tab = new URLSearchParams(query).get("tab");
-    return !tab || (currentTab || "sessions") === tab;
-  }, [activeHref, currentTab]);
+    const params = new URLSearchParams(query || "");
+    const tab = params.get("tab");
+    if (tab) return (currentTab || "sessions") === tab;
+    // Report Cards: the base "Report Cards" desk + the three level views (?section=)
+    // share a base — match the section param so exactly one row highlights.
+    if (base.endsWith("/report-cards")) return (currentSection ?? "") === (params.get("section") ?? "");
+    return true;
+  }, [activeHref, currentTab, currentSection]);
 
   // Phase 7: build the visible core-nav list, filtered by permission (+ the
   // active view-role for personal pages). Depends on `user`/`org` so it

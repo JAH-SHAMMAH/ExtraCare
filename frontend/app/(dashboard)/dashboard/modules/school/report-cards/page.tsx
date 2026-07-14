@@ -1,39 +1,78 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { useStudents, useReportCard, useSaveReportMeta, useSaveDomainRatings } from "@/hooks/useSchool";
-import { useTermState, useGradingScales } from "@/hooks/usePlatform";
+import { useSearchParams } from "next/navigation";
+import { useStudents, useReportCard, useSaveReportMeta, useSaveDomainRatings, useClasses } from "@/hooks/useSchool";
+import { useTermState, useGradingScales, useSections } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn, getInitials } from "@/lib/utils";
-import { FileText, Search, Printer, Loader2, Pencil, X, ClipboardCheck } from "lucide-react";
+import { FileText, Search, Printer, Loader2, Pencil, X, ClipboardCheck, GraduationCap } from "lucide-react";
 import { PrintLetterhead } from "@/components/branding/Brand";
 import { TERMS, DEFAULT_TERM } from "@/lib/terms";
-import type { Student, ReportCardDomain } from "@/types";
+import type { Student, ReportCardDomain, SchoolClass, SchoolSection } from "@/types";
 
 export default function ReportCardsPage() {
+  const params = useSearchParams();
+  // R4: a level-scoped view when the sidebar links here as ?section=<Name>
+  // (Nursery / Primary / Secondary). Absent → the all-levels report desk.
+  const sectionName = params.get("section") || "";
   const [search, setSearch] = useState("");
+  const [classId, setClassId] = useState("");
   const [selectedStudent, setSelectedStudent] = useState("");
   const [term, setTerm] = useTermState(DEFAULT_TERM);
   const canWrite = useHasPermission("school:reports:write");
 
-  const { data: students, isLoading: studentsLoading } = useStudents({ search: search || undefined, page_size: 50 });
+  const { data: sections = [] } = useSections();
+  const section = useMemo(
+    () => sections.find((s: SchoolSection) => s.name.toLowerCase() === sectionName.toLowerCase()),
+    [sections, sectionName],
+  );
+  const scoped = !!sectionName;
+  // Classes belonging to this level (for the class sub-filter).
+  const { data: classesResp } = useClasses({ page_size: 100 });
+  const levelClasses = useMemo(
+    () => (classesResp?.items || []).filter((c: SchoolClass) => !section || c.section_id === section.id),
+    [classesResp, section],
+  );
+  // Reset the picked class/student when switching level.
+  useEffect(() => { setClassId(""); setSelectedStudent(""); }, [sectionName]);
+
+  const { data: students, isLoading: studentsLoading } = useStudents({
+    search: search || undefined,
+    section_id: scoped ? section?.id : undefined,
+    class_id: classId || undefined,
+    page_size: 50,
+  });
   const { data: reportCard, isLoading: rcLoading } = useReportCard(selectedStudent, term);
 
-  const items = students?.items || [];
+  // A scoped view can't resolve students until its section is known.
+  const items = scoped && !section ? [] : (students?.items || []);
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
       <div className="mb-8 no-print">
-        <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Education</span><span>/</span><span className="text-brand-600 font-semibold">Report Cards</span></nav>
-        <h1 className="text-2xl font-black text-slate-900 tracking-tight">Report Cards</h1>
-        <p className="text-slate-500 text-sm mt-0.5">View, complete and print student report cards.</p>
+        <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Education</span><span>/</span>{scoped && <><span>Reports</span><span>/</span></>}<span className="text-brand-600 font-semibold">{scoped ? `${sectionName} School Report` : "Report Cards"}</span></nav>
+        <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">{scoped && <GraduationCap size={22} className="text-brand-600" />}{scoped ? `${sectionName} School Report` : "Report Cards"}</h1>
+        <p className="text-slate-500 text-sm mt-0.5">{scoped ? `View, complete and print report cards for the ${sectionName} level.` : "View, complete and print student report cards."}</p>
       </div>
+
+      {scoped && !section && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800 no-print">
+          No managed section named <strong>{sectionName}</strong> yet. Create it under <span className="font-semibold">School Setup → Report Config</span> (or run the standard setup) so classes can be linked to this level.
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Student list */}
         <div className="no-print">
-          <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4">
+          <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 space-y-2">
             <div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search students..." className="input pl-9" /></div>
+            {scoped && (
+              <select value={classId} onChange={(e) => { setClassId(e.target.value); setSelectedStudent(""); }} className="input">
+                <option value="">All classes in {sectionName}</option>
+                {levelClasses.map((c: SchoolClass) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+              </select>
+            )}
           </div>
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden max-h-[600px] overflow-y-auto">
             {studentsLoading ? Array.from({ length: 8 }).map((_, i) => (<div key={i} className="px-4 py-3 border-b border-slate-50"><div className="h-4 bg-slate-100 rounded animate-pulse w-32" /></div>))
