@@ -20,7 +20,7 @@ Scoping:
     an admin/manager role.
 """
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -30,9 +30,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import get_current_active_user
 from app.models.user import User
-from app.models.modules.school import LibraryBook, LibraryLoan, LoanStatus, Student
+from app.models.modules.school import (
+    LibraryBook, LibraryLoan, LoanStatus, Student,
+    LibrarySettings, LibraryCategory, LibraryLocation, BookReview, ReviewStatus,
+)
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
+from app.schemas.library import (
+    LibrarySettingsResponse, LibrarySettingsUpdate,
+    LibraryCategoryCreate, LibraryCategoryResponse,
+    LibraryLocationCreate, LibraryLocationResponse,
+    ReviewCreate, ReviewModerate, ReviewResponse,
+)
+from sqlalchemy.exc import IntegrityError
 
 
 router = APIRouter(
@@ -366,20 +376,36 @@ async def issue_loan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    required = ("book_id", "borrower_user_id", "due_date")
+    required = ("book_id", "borrower_user_id")
     missing = [k for k in required if not str(payload.get(k) or "").strip()]
     if missing:
         raise HTTPException(422, detail=f"Missing required fields: {', '.join(missing)}")
-    try:
-        due_date = date.fromisoformat(str(payload["due_date"]))
-    except (TypeError, ValueError):
-        raise HTTPException(422, detail="due_date must be YYYY-MM-DD")
+    settings = await _get_or_create_library_settings(db, current_user.org_id)
+    # due_date defaults from the configured loan period when the caller omits it.
+    if str(payload.get("due_date") or "").strip():
+        try:
+            due_date = date.fromisoformat(str(payload["due_date"]))
+        except (TypeError, ValueError):
+            raise HTTPException(422, detail="due_date must be YYYY-MM-DD")
+    else:
+        due_date = date.today() + timedelta(days=settings.loan_period_days)
     if due_date < date.today():
         raise HTTPException(422, detail="due_date must be today or later")
 
     book = await _load_book_or_404(db, str(payload["book_id"]), current_user)
     if book.available_copies < 1:
         raise HTTPException(409, detail=f"No copies available for '{book.title}'")
+
+    # Enforce the borrowing limit (Library Setup "permissions").
+    active = (await db.execute(
+        select(func.count(LibraryLoan.id)).where(
+            LibraryLoan.org_id == current_user.org_id,
+            LibraryLoan.borrower_user_id == str(payload["borrower_user_id"]),
+            LibraryLoan.status == LoanStatus.BORROWED,
+        )
+    )).scalar_one() or 0
+    if active >= settings.max_books_per_user:
+        raise HTTPException(409, detail=f"Borrower already holds the maximum of {settings.max_books_per_user} book(s).")
 
     # Ensure the borrower is in-tenant. Looking up (and not trusting the id
     # blindly) protects against cross-tenant loan issuance via a crafted payload.
@@ -481,3 +507,165 @@ async def library_stats(
         "loans_out": int(loans_out),
         "overdue": int(overdue),
     }
+
+
+# ── Library Setup: settings + categories + locations ───────────────────────────────
+
+async def _get_or_create_library_settings(db, org_id) -> LibrarySettings:
+    s = (await db.execute(select(LibrarySettings).where(LibrarySettings.org_id == org_id))).scalar_one_or_none()
+    if not s:
+        s = LibrarySettings(org_id=org_id)
+        db.add(s)
+        await db.flush()
+    return s
+
+
+def _settings_dict(s: LibrarySettings) -> dict:
+    return {
+        "loan_period_days": s.loan_period_days, "max_books_per_user": s.max_books_per_user,
+        "allow_reviews": s.allow_reviews, "review_needs_approval": s.review_needs_approval, "org_id": s.org_id,
+    }
+
+
+@router.get("/settings", response_model=LibrarySettingsResponse, dependencies=[_can_read])
+async def get_library_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    return _settings_dict(await _get_or_create_library_settings(db, current_user.org_id))
+
+
+@router.put("/settings", response_model=LibrarySettingsResponse, dependencies=[_can_write])
+async def update_library_settings(payload: LibrarySettingsUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = await _get_or_create_library_settings(db, current_user.org_id)
+    for k, v in payload.model_dump(exclude_unset=True).items():
+        setattr(s, k, v)
+    await db.flush()
+    return _settings_dict(s)
+
+
+@router.get("/categories", response_model=list[LibraryCategoryResponse], dependencies=[_can_read])
+async def list_library_categories(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(LibraryCategory).where(
+        LibraryCategory.org_id == current_user.org_id).order_by(LibraryCategory.name))).scalars().all()
+    return [{"id": c.id, "name": c.name, "org_id": c.org_id} for c in rows]
+
+
+@router.post("/categories", response_model=LibraryCategoryResponse, status_code=201, dependencies=[_can_write])
+async def create_library_category(payload: LibraryCategoryCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = LibraryCategory(name=payload.name.strip(), org_id=current_user.org_id)
+    db.add(c)
+    try:
+        await db.flush()
+    except IntegrityError:
+        raise HTTPException(409, detail="A category with that name already exists.")
+    return {"id": c.id, "name": c.name, "org_id": c.org_id}
+
+
+@router.delete("/categories/{category_id}", status_code=204, dependencies=[_can_write])
+async def delete_library_category(category_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(LibraryCategory).where(
+        LibraryCategory.id == category_id, LibraryCategory.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(404, detail="Category not found.")
+    await db.delete(c)
+    await db.flush()
+
+
+@router.get("/locations", response_model=list[LibraryLocationResponse], dependencies=[_can_read])
+async def list_library_locations(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(LibraryLocation).where(
+        LibraryLocation.org_id == current_user.org_id).order_by(LibraryLocation.name))).scalars().all()
+    return [{"id": r.id, "name": r.name, "code": r.code, "org_id": r.org_id} for r in rows]
+
+
+@router.post("/locations", response_model=LibraryLocationResponse, status_code=201, dependencies=[_can_write])
+async def create_library_location(payload: LibraryLocationCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    loc = LibraryLocation(name=payload.name.strip(), code=(payload.code or None), org_id=current_user.org_id)
+    db.add(loc)
+    try:
+        await db.flush()
+    except IntegrityError:
+        raise HTTPException(409, detail="A location with that name already exists.")
+    return {"id": loc.id, "name": loc.name, "code": loc.code, "org_id": loc.org_id}
+
+
+@router.delete("/locations/{location_id}", status_code=204, dependencies=[_can_write])
+async def delete_library_location(location_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    loc = (await db.execute(select(LibraryLocation).where(
+        LibraryLocation.id == location_id, LibraryLocation.org_id == current_user.org_id))).scalar_one_or_none()
+    if not loc:
+        raise HTTPException(404, detail="Location not found.")
+    await db.delete(loc)
+    await db.flush()
+
+
+# ── Manage Reviews (moderated reader reviews) ──────────────────────────────────────
+
+async def _review_dict(db, r: BookReview, book_title: str | None = None, reviewer_name: str | None = None) -> dict:
+    return {
+        "id": r.id, "book_id": r.book_id, "book_title": book_title,
+        "reviewer_id": r.reviewer_id, "reviewer_name": reviewer_name, "rating": r.rating,
+        "comment": r.comment, "status": r.status.value if hasattr(r.status, "value") else r.status,
+        "created_at": r.created_at, "org_id": r.org_id,
+    }
+
+
+@router.get("/reviews", response_model=list[ReviewResponse], dependencies=[_can_read])
+async def list_reviews(
+    status: str | None = Query(default=None),
+    book_id: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Reviews for moderation (Manage Reviews). Non-admins only ever see approved
+    reviews (the public set); admins/librarians see every status for moderation."""
+    org_id = current_user.org_id
+    q = select(BookReview).where(BookReview.org_id == org_id)
+    if not _is_admin(current_user):
+        q = q.where(BookReview.status == ReviewStatus.APPROVED)
+    elif status in ("pending", "approved", "rejected"):
+        q = q.where(BookReview.status == ReviewStatus(status))
+    if book_id:
+        q = q.where(BookReview.book_id == book_id)
+    rows = (await db.execute(q.order_by(BookReview.created_at.desc()))).scalars().all()
+    books = {b.id: b.title for b in (await db.execute(select(LibraryBook).where(LibraryBook.id.in_({r.book_id for r in rows})))).scalars().all()} if rows else {}
+    names = {u.id: u.full_name for u in (await db.execute(select(User).where(User.id.in_({r.reviewer_id for r in rows if r.reviewer_id})))).scalars().all()} if rows else {}
+    return [await _review_dict(db, r, books.get(r.book_id), names.get(r.reviewer_id)) for r in rows]
+
+
+@router.post("/reviews", response_model=ReviewResponse, status_code=201, dependencies=[_can_read])
+async def create_review(payload: ReviewCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Any member with library read may submit a review. Auto-approves unless the
+    school requires moderation (Library Setup)."""
+    org_id = current_user.org_id
+    settings = await _get_or_create_library_settings(db, org_id)
+    if not settings.allow_reviews:
+        raise HTTPException(403, detail="Reviews are disabled for this library.")
+    book = await _load_book_or_404(db, payload.book_id, current_user)
+    status = ReviewStatus.PENDING if settings.review_needs_approval else ReviewStatus.APPROVED
+    r = BookReview(book_id=book.id, reviewer_id=current_user.id, rating=payload.rating,
+                   comment=(payload.comment or None), status=status, org_id=org_id)
+    db.add(r)
+    await db.flush()
+    return await _review_dict(db, r, book.title, current_user.full_name)
+
+
+@router.patch("/reviews/{review_id}", response_model=ReviewResponse, dependencies=[_can_write])
+async def moderate_review(review_id: str, payload: ReviewModerate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    if payload.status not in ("pending", "approved", "rejected"):
+        raise HTTPException(422, detail="status must be pending, approved or rejected.")
+    r = (await db.execute(select(BookReview).where(
+        BookReview.id == review_id, BookReview.org_id == current_user.org_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(404, detail="Review not found.")
+    r.status = ReviewStatus(payload.status)
+    await db.flush()
+    return await _review_dict(db, r)
+
+
+@router.delete("/reviews/{review_id}", status_code=204, dependencies=[_can_write])
+async def delete_review(review_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    r = (await db.execute(select(BookReview).where(
+        BookReview.id == review_id, BookReview.org_id == current_user.org_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(404, detail="Review not found.")
+    await db.delete(r)
+    await db.flush()
