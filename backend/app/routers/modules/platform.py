@@ -437,12 +437,12 @@ async def delete_template(template_id: str, db: AsyncSession = Depends(get_db), 
 
 @router.post("/report-config/bootstrap", response_model=list[ReportTemplateResponse], dependencies=[_write])
 async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    """One-click starting point: create the standard Nursery / Primary / Secondary
-    sections (British curriculum: Year 1–6 Primary, Year 7–12 Secondary), each with
-    its level aliases, PROVISIONAL grading scales + bands, and a template per
-    section — all flagged is_provisional so the school knows to replace the numbers.
-    Idempotent: skips anything already present. The numbers are placeholders, NOT
-    the school's locked constants."""
+    """One-click setup: create/refresh the Nursery / Primary / Secondary sections
+    (British curriculum: Year 1–6 Primary, Year 7–12 Secondary) with their level
+    aliases, the school's REAL grading scale + bands, and a template per section.
+    Idempotent + self-healing: re-running updates templates in place, so an earlier
+    provisional seed is replaced by the confirmed constants (one shared A–F scale;
+    CA/exam 40/60 for Primary + Secondary; EYFS descriptors for Nursery)."""
     org_id = current_user.org_id
     existing_secs = {s.name.casefold(): s for s in (await db.execute(select(SchoolSection).where(SchoolSection.org_id == org_id))).scalars().all()}
     existing_scales = {s.name.casefold(): s for s in (await db.execute(select(GradingScale).where(GradingScale.org_id == org_id))).scalars().all()}
@@ -462,22 +462,20 @@ async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_us
     primary = ensure_section("Primary", "hybrid", 1, ["YEAR 1", "YEAR 2", "YEAR 3", "YEAR 4", "YEAR 5", "YEAR 6"])
     secondary = ensure_section("Secondary", "hybrid", 2, ["YEAR 7", "YEAR 8", "YEAR 9", "YEAR 10", "YEAR 11", "YEAR 12"])
 
-    # PROVISIONAL placeholders — replace with the school's real boundaries.
+    # The school's CONFIRMED constants (2026-07-13): ONE shared 5-band A–F scale
+    # for both Primary and Secondary (70/60/50/45/40 → A/B/C/D/E, <40 F); CA/exam
+    # 40/60 both. EYFS descriptors for Nursery. Non-provisional — real numbers.
     scale_specs = [
-        ("Primary A–F (provisional)", "numeric", [
+        ("Grading Scale (A–F)", "numeric", [
             ("A", 70, 100, "Excellent"), ("B", 60, 69, "Very good"), ("C", 50, 59, "Good"),
             ("D", 45, 49, "Fair"), ("E", 40, 44, "Pass"), ("F", 0, 39, "Fail")]),
-        ("WAEC A1–F9 (provisional)", "numeric", [
-            ("A1", 75, 100, "Excellent"), ("B2", 70, 74, "Very good"), ("B3", 65, 69, "Good"),
-            ("C4", 60, 64, "Credit"), ("C5", 55, 59, "Credit"), ("C6", 50, 54, "Credit"),
-            ("D7", 45, 49, "Pass"), ("E8", 40, 44, "Pass"), ("F9", 0, 39, "Fail")]),
-        ("EYFS descriptors (provisional)", "descriptor", [
+        ("EYFS descriptors", "descriptor", [
             ("Emerging", None, None, None), ("Expected", None, None, None), ("Exceeding", None, None, None)]),
     ]
     new_scale_names = set()
     for name, stype, _bands in scale_specs:
         if name.casefold() not in existing_scales:
-            s = GradingScale(name=name, scale_type=stype, is_provisional=True, org_id=org_id)
+            s = GradingScale(name=name, scale_type=stype, is_provisional=False, org_id=org_id)
             db.add(s)
             existing_scales[name.casefold()] = s
             new_scale_names.add(name.casefold())
@@ -493,28 +491,34 @@ async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_us
                                    max_score=money(hi) if hi is not None else None,
                                    remark=remark, position=i, org_id=org_id))
     await db.flush()
-    primary_scale = existing_scales["primary a–f (provisional)".casefold()]
-    waec_scale = existing_scales["waec a1–f9 (provisional)".casefold()]
+    grading_scale = existing_scales["grading scale (a–f)".casefold()]
+
+    # Templates: one per section, UPDATED in place so a re-run replaces any earlier
+    # provisional seed with these real values. Primary + Secondary share the scale.
+    existing_templates = {t.section_id: t for t in (await db.execute(
+        select(ReportTemplate).where(ReportTemplate.org_id == org_id))).scalars().all()}
 
     def ensure_template(section, name, mode, ca, exam, scale):
-        return ReportTemplate(
-            section_id=section.id, name=name, assessment_mode=mode,
-            ca_weight=ca, exam_weight=exam, grading_scale_id=scale.id if scale else None,
-            show_cognitive_table=(mode != "descriptive"), show_position=(mode != "descriptive"),
-            show_attendance=True, show_affective=True, show_psychomotor=(mode == "descriptive"),
-            is_provisional=True, org_id=org_id,
-        )
+        t = existing_templates.get(section.id)
+        if not t:
+            t = ReportTemplate(section_id=section.id, name=name, org_id=org_id)
+            db.add(t)
+            existing_templates[section.id] = t
+        t.assessment_mode = mode
+        t.ca_weight = ca
+        t.exam_weight = exam
+        t.grading_scale_id = scale.id if scale else None
+        t.show_cognitive_table = (mode != "descriptive")
+        t.show_position = (mode != "descriptive")
+        t.show_attendance = True
+        t.show_affective = True
+        t.show_psychomotor = (mode == "descriptive")
+        t.is_provisional = False
+        return t
 
-    have_templates = {t.section_id for t in (await db.execute(select(ReportTemplate).where(ReportTemplate.org_id == org_id))).scalars().all()}
-    to_add = []
-    if nursery.id not in have_templates:
-        to_add.append(ensure_template(nursery, "Nursery (EYFS)", "descriptive", None, None, None))
-    if primary.id not in have_templates:
-        to_add.append(ensure_template(primary, "Primary report", "hybrid", 40, 60, primary_scale))
-    if secondary.id not in have_templates:
-        to_add.append(ensure_template(secondary, "Secondary report", "hybrid", 40, 60, waec_scale))
-    for t in to_add:
-        db.add(t)
+    ensure_template(nursery, "Nursery (EYFS)", "descriptive", None, None, None)
+    ensure_template(primary, "Primary report", "hybrid", 40, 60, grading_scale)
+    ensure_template(secondary, "Secondary report", "hybrid", 40, 60, grading_scale)
     await db.flush()
 
     rows = (await db.execute(select(ReportTemplate).where(ReportTemplate.org_id == org_id))).scalars().all()

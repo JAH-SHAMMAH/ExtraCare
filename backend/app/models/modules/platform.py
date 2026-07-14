@@ -222,6 +222,25 @@ class ReportTemplate(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class ReportSubjectAssessment(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Per-(section, subject) flag for the hybrid report (School Reports R2b): does
+    this subject carry a Cambridge assessment overlay in this section's report? The
+    Nigerian numeric marks are always shown; when ``carries_cambridge`` is set, a
+    Cambridge attainment (a descriptor, fed by the R3 strand domains) is layered on
+    top. One row per (section, subject)."""
+    __tablename__ = "report_subject_assessments"
+
+    section_id = Column(String(36), ForeignKey("school_sections.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False, index=True)
+    carries_cambridge = Column(Boolean, default=False, nullable=False)
+    cambridge_scale_id = Column(String(36), ForeignKey("grading_scales.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "section_id", "subject_id", name="uq_report_subject_assessment"),
+        Index("ix_report_subject_assess_section", "section_id"),
+    )
+
+
 # ── Custom Fields (EAV) ─────────────────────────────────────────────────────────
 
 class CustomFieldDefinition(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):

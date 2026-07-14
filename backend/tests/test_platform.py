@@ -317,9 +317,13 @@ async def test_bootstrap_report_config_is_idempotent(db, org):
     from app.routers.modules.platform import bootstrap_report_config, list_sections, list_scales
     admin = await _admin(db, org)
     first = await bootstrap_report_config(db=db, current_user=admin)
-    assert len(first) == 3 and all(t.is_provisional for t in first)
+    assert len(first) == 3 and all(not t.is_provisional for t in first)   # real, non-provisional
     modes = {t.assessment_mode for t in first}
     assert "descriptive" in modes and "hybrid" in modes   # Nursery EYFS + Primary/Sec hybrid
+    # Primary + Secondary share ONE grading scale, CA/exam 40/60.
+    hybrids = [t for t in first if t.assessment_mode == "hybrid"]
+    assert len({t.grading_scale_id for t in hybrids}) == 1
+    assert all(float(t.ca_weight) == 40 and float(t.exam_weight) == 60 for t in hybrids)
     # British-curriculum sections seeded with their level aliases (Primary, not Junior).
     sections = await list_sections(db=db, current_user=admin)
     primary = next(s for s in sections if s.name == "Primary")
@@ -331,11 +335,11 @@ async def test_bootstrap_report_config_is_idempotent(db, org):
     assert len(second) == 3
     assert len(await list_sections(db=db, current_user=admin)) == 3
     scales = await list_scales(db=db, current_user=admin)
-    # Seeded scales carry their bands (not orphaned): EYFS descriptors + WAEC 9-band.
+    # Seeded scales carry their bands (not orphaned): EYFS descriptors + one A–F 6-band.
     eyfs = next(s for s in scales if s.scale_type == "descriptor")
     assert {b.grade for b in eyfs.bands} == {"Emerging", "Expected", "Exceeding"}
-    waec = next(s for s in scales if "WAEC" in s.name)
-    assert len(waec.bands) == 9
+    af = next(s for s in scales if s.scale_type == "numeric")
+    assert {b.grade for b in af.bands} == {"A", "B", "C", "D", "E", "F"} and not af.is_provisional
 
 
 async def test_scale_replace_bands_locks_provisional(db, org):
