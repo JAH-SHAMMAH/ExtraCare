@@ -7,7 +7,7 @@ import { biometricApi, platformApi } from "@/lib/api";
 import type {
   BiometricDevice, BiometricEnrollment, UnmappedPunch, IngestSummary, DeviceToken,
   AcademicSession, AcademicWeek, SchoolHouse, GradingBand, CustomFieldDef, Poll,
-  SchoolSection, GradingScale, ReportTemplate, AutoMapResult,
+  SchoolSection, GradingScale, ReportTemplate, AutoMapResult, SubjectAssessment,
   MailboxMessage, MobileDevice, AppConfigItem, Paginated,
 } from "@/types";
 
@@ -97,7 +97,18 @@ export const useDeleteScale = m((id: string) => platformApi.gradingScales.remove
 export const useCreateTemplate = m((d) => platformApi.reportTemplates.create(d), ["report-templates"], "Template added.");
 export const useUpdateTemplate = m((v: { id: string; data: object }) => platformApi.reportTemplates.update(v.id, v.data), ["report-templates"], "Template updated.");
 export const useDeleteTemplate = m((id: string) => platformApi.reportTemplates.remove(id), ["report-templates"], "Removed.");
-export const useBootstrapReportConfig = m(() => platformApi.reportTemplates.bootstrap(), ["sections", "grading-scales", "report-templates"], "Standard report config created.");
+export const useBootstrapReportConfig = m(() => platformApi.reportTemplates.bootstrap(), ["sections", "grading-scales", "report-templates", "section-subjects"], "Standard report config created.");
+
+// R2b — per-section subject Cambridge overlay.
+export function useSectionSubjects(sectionId: string) {
+  return useQuery<SubjectAssessment[]>({
+    queryKey: ["section-subjects", sectionId],
+    queryFn: () => platformApi.sections.subjects(sectionId),
+    enabled: !!sectionId,
+  });
+}
+export const useSetSectionSubject = m((v: { section_id: string; subject_id: string; data: object }) => platformApi.sections.setSubject(v.section_id, v.subject_id, v.data), ["section-subjects"], "Updated.");
+export const useSetAllCambridge = m((v: { section_id: string; data: object }) => platformApi.sections.setAllCambridge(v.section_id, v.data), ["section-subjects"], "Applied to all subjects.");
 
 export function useAutoMapSections() {
   const qc = useQueryClient();

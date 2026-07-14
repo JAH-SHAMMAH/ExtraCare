@@ -4,9 +4,10 @@ import { useState } from "react";
 import {
   useSections, useReportTemplates, useUpdateTemplate,
   useGradingScales, useReplaceScaleBands, useBootstrapReportConfig,
+  useSectionSubjects, useSetSectionSubject, useSetAllCambridge,
 } from "@/hooks/usePlatform";
-import { Loader2, Trash2, Plus, Wand2, FileText, Save } from "lucide-react";
-import type { ReportTemplate, GradingScale } from "@/types";
+import { Loader2, Trash2, Plus, Wand2, FileText, Save, GraduationCap, ChevronDown } from "lucide-react";
+import type { ReportTemplate, GradingScale, SubjectAssessment } from "@/types";
 
 /**
  * School Reports R2 config — report templates + grading scales (per section).
@@ -92,7 +93,48 @@ function TemplateRow({ template, scales, canWrite }: { template: ReportTemplate;
         <div><label className="label">Exam weight</label><input type="number" value={form.exam_weight} onChange={(e) => setForm({ ...form, exam_weight: e.target.value })} className="input" disabled={!canWrite} placeholder="e.g. 60" /></div>
         <div><label className="label">Grading scale</label><select value={form.grading_scale_id} onChange={(e) => setForm({ ...form, grading_scale_id: e.target.value })} className="input" disabled={!canWrite}><option value="">— None —</option>{scales.filter((s) => s.scale_type === "numeric").map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
       </div>
+      {form.assessment_mode === "hybrid" && <CambridgeSubjects sectionId={template.section_id} canWrite={canWrite} />}
       {canWrite && <div className="flex justify-end mt-3"><button onClick={save} disabled={update.isPending} className="btn-secondary gap-2 text-xs py-1.5">{update.isPending ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save</button></div>}
+    </div>
+  );
+}
+
+function CambridgeSubjects({ sectionId, canWrite }: { sectionId: string; canWrite: boolean }) {
+  const [open, setOpen] = useState(false);
+  const { data: subjects = [], isLoading } = useSectionSubjects(open ? sectionId : "");
+  const setOne = useSetSectionSubject();
+  const setAll = useSetAllCambridge();
+  const onCount = subjects.filter((s) => s.carries_cambridge).length;
+
+  return (
+    <div className="mt-4 border-t border-slate-100 pt-3">
+      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-slate-900">
+        <GraduationCap size={14} className="text-indigo-600" /> Cambridge subjects {!open && subjects.length > 0 && <span className="text-slate-400 font-normal">({onCount}/{subjects.length})</span>}
+        <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="mt-3">
+          <p className="text-[11px] text-slate-400 mb-2">Which subjects carry the Cambridge overlay in this section&apos;s report. The Nigerian marks always show; a Cambridge attainment is layered on top for the ticked subjects.</p>
+          {canWrite && (
+            <div className="flex gap-2 mb-3">
+              <button onClick={() => setAll.mutate({ section_id: sectionId, data: { carries_cambridge: true } })} disabled={setAll.isPending} className="btn-secondary text-xs py-1">Enable all</button>
+              <button onClick={() => setAll.mutate({ section_id: sectionId, data: { carries_cambridge: false } })} disabled={setAll.isPending} className="btn-secondary text-xs py-1">Disable all</button>
+            </div>
+          )}
+          {isLoading ? <Loader2 size={16} className="animate-spin text-slate-400" /> : subjects.length === 0 ? (
+            <p className="text-xs text-slate-400">No subjects defined yet.</p>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5">
+              {subjects.map((s: SubjectAssessment) => (
+                <label key={s.subject_id} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                  <input type="checkbox" checked={s.carries_cambridge} disabled={!canWrite} onChange={(e) => setOne.mutate({ section_id: sectionId, subject_id: s.subject_id, data: { carries_cambridge: e.target.checked } })} className="rounded border-slate-300" />
+                  {s.subject_name}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

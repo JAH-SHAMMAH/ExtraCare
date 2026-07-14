@@ -2240,6 +2240,7 @@ export interface ReportTemplate {
   show_affective: boolean; show_psychomotor: boolean; is_provisional: boolean; org_id: string;
 }
 export interface AutoMapResult { linked: number; unassigned: string[]; }
+export interface SubjectAssessment { subject_id: string; subject_name: string | null; carries_cambridge: boolean; cambridge_scale_id: string | null; }
 
 export interface CustomFieldDef {
   id: string; entity_type: string; field_key: string; label: string; field_type: string;

@@ -1209,6 +1209,9 @@ export const platformApi = {
     update: (id: string, d: object) => api.patch(`/platform/sections/${id}`, d).then((r) => r.data),
     remove: (id: string) => api.delete(`/platform/sections/${id}`),
     autoMap: () => api.post("/platform/sections/auto-map").then((r) => r.data),
+    subjects: (id: string) => api.get(`/platform/sections/${id}/subjects`).then((r) => r.data),
+    setSubject: (id: string, subject_id: string, d: object) => api.patch(`/platform/sections/${id}/subjects/${subject_id}`, d).then((r) => r.data),
+    setAllCambridge: (id: string, d: object) => api.post(`/platform/sections/${id}/subjects/set-cambridge`, d).then((r) => r.data),
   },
   gradingScales: {
     list: () => api.get("/platform/grading-scales").then((r) => r.data),
