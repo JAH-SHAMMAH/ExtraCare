@@ -1,9 +1,9 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, or_, update as sa_update
 from sqlalchemy.exc import IntegrityError
-from datetime import date, time
+from datetime import date, time, timedelta
 
 from app.database import get_db
 from app.deps import get_current_active_user
@@ -12,6 +12,7 @@ from app.models.modules.school import (
     Student, SchoolClass, AttendanceRecord, Grade, Subject, Timetable,
     LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus, TeacherRating,
     GradeStatus, AttendanceSettings, AbsenceReason, StudentReport,
+    LessonPlanCategory, LessonPlannerSettings, LessonPlanSupervisor,
 )
 from app.models.modules.platform import (
     AcademicSession, SchoolSection, ReportTemplate, GradingBand, ReportSubjectAssessment,
@@ -34,6 +35,12 @@ from app.schemas.exam import ExamCreate, ExamUpdate, ExamResultRow, EXAM_TYPES, 
 from app.schemas.rating import RatingCreate
 from app.schemas.grade import GradePublish, ReportMetaUpdate
 from app.schemas.platform import DomainRatingsSet, DomainRatingResponse
+from app.schemas.lesson_planner import (
+    CategoryCreate, CategoryUpdate, CategoryResponse,
+    PlannerSettingsResponse, PlannerSettingsUpdate,
+    SupervisorCreate, SupervisorResponse,
+    CloneLessonsRequest, CloneLessonsResult,
+)
 
 logger = logging.getLogger("extracare.school")
 
@@ -2303,6 +2310,7 @@ def _lesson_dict(lp: LessonPlan, subject_name: str | None = None, class_name: st
         "materials": lp.materials,
         "homework": lp.homework,
         "notes": lp.notes,
+        "category_id": lp.category_id,
         "status": lp.status.value if hasattr(lp.status, "value") else lp.status,
         "created_at": lp.created_at.isoformat() if lp.created_at else None,
         "updated_at": lp.updated_at.isoformat() if lp.updated_at else None,
@@ -2411,10 +2419,16 @@ async def create_lesson(
     except (TypeError, ValueError):
         raise HTTPException(422, detail="lesson_date must be YYYY-MM-DD")
 
+    # Lesson Planner Setup flags (opt-in; defaults keep the current behaviour).
+    require_approval, default_duration, allow_backdated = await _planner_flags(db, current_user.org_id)
+    is_admin = _is_admin_role(current_user)
+    if not allow_backdated and not is_admin and lesson_date < date.today():
+        raise HTTPException(422, detail="Backdated lesson plans are not allowed.")
+
     # teacher_id always snapped to the current user unless an admin explicitly
     # plans on behalf of someone else. Prevents a teacher from spoofing plans
     # for another teacher via a crafted payload.
-    if _is_admin_role(current_user) and payload.get("teacher_id"):
+    if is_admin and payload.get("teacher_id"):
         teacher_id = str(payload["teacher_id"])
     else:
         teacher_id = current_user.id
@@ -2423,6 +2437,10 @@ async def create_lesson(
     raw_status = (payload.get("status") or "draft").lower()
     if raw_status not in ("draft", "published"):
         raise HTTPException(422, detail="status must be 'draft' or 'published'")
+    # When the school requires approval, a non-admin can only create drafts —
+    # a supervisor publishes (approves) via the Approve queue.
+    if require_approval and not is_admin:
+        raw_status = "draft"
 
     plan = LessonPlan(
         title=str(payload["title"]).strip(),
@@ -2431,12 +2449,13 @@ async def create_lesson(
         teacher_id=teacher_id,
         lesson_date=lesson_date,
         period=int(payload["period"]) if payload.get("period") not in (None, "") else None,
-        duration_minutes=int(payload.get("duration_minutes") or 45),
+        duration_minutes=int(payload.get("duration_minutes") or default_duration),
         objectives=(payload.get("objectives") or None),
         activities=(payload.get("activities") or None),
         materials=(payload.get("materials") or None),
         homework=(payload.get("homework") or None),
         notes=(payload.get("notes") or None),
+        category_id=(await _valid_category_id(db, current_user.org_id, payload.get("category_id"))),
         status=LessonPlanStatus(raw_status),
         org_id=current_user.org_id,
     )
@@ -2489,6 +2508,9 @@ async def update_lesson(
         if key in payload:
             setattr(plan, key, payload[key] if payload[key] not in ("",) else None)
 
+    if "category_id" in payload:
+        plan.category_id = await _valid_category_id(db, current_user.org_id, payload.get("category_id"))
+
     if "lesson_date" in payload:
         try:
             plan.lesson_date = date.fromisoformat(str(payload["lesson_date"]))
@@ -2518,6 +2540,11 @@ async def publish_lesson(
     current_user: User = Depends(get_current_active_user),
 ):
     plan = await _load_plan_or_404(db, plan_id, current_user)
+    # When approval is required, only a supervisor/admin may publish (= approve);
+    # a teacher's own publish is blocked so the plan routes through the queue.
+    require_approval, _dur, _bd = await _planner_flags(db, current_user.org_id)
+    if require_approval and not _is_admin_role(current_user):
+        raise HTTPException(403, detail="Publishing requires supervisor approval.")
     plan.status = LessonPlanStatus.PUBLISHED
     await db.flush()
     await log_action(
@@ -2545,3 +2572,208 @@ async def delete_lesson(
         resource_type="LessonPlan", resource_id=plan.id, resource_label=plan.title,
         severity="warning", request=request,
     )
+
+
+# ── Lesson Planner Setup: categories / settings / supervisors / clone ──────────────
+
+async def _valid_category_id(db, org_id, raw) -> str | None:
+    """Resolve a client-supplied category_id: '' / None → unset; otherwise it must
+    be a category in this org (never trust a foreign id across the tenant)."""
+    cid = (str(raw).strip() if raw not in (None, "") else "")
+    if not cid:
+        return None
+    exists = (await db.execute(select(LessonPlanCategory.id).where(
+        LessonPlanCategory.id == cid, LessonPlanCategory.org_id == org_id))).scalar_one_or_none()
+    if not exists:
+        raise HTTPException(status_code=422, detail="category_id not found in your organisation.")
+    return cid
+
+
+def _category_dict(c: LessonPlanCategory) -> dict:
+    return {"id": c.id, "name": c.name, "org_id": c.org_id}
+
+
+@router.get("/lessons/categories", response_model=list[CategoryResponse], dependencies=[_lessons_read])
+async def list_lesson_categories(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(
+        select(LessonPlanCategory).where(LessonPlanCategory.org_id == current_user.org_id).order_by(LessonPlanCategory.name)
+    )).scalars().all()
+    return [_category_dict(c) for c in rows]
+
+
+@router.post("/lessons/categories", response_model=CategoryResponse, status_code=201, dependencies=[_can_write])
+async def create_lesson_category(payload: CategoryCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = LessonPlanCategory(name=payload.name.strip(), org_id=current_user.org_id)
+    db.add(c)
+    try:
+        await db.flush()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="A category with that name already exists.")
+    return _category_dict(c)
+
+
+@router.patch("/lessons/categories/{category_id}", response_model=CategoryResponse, dependencies=[_can_write])
+async def update_lesson_category(category_id: str, payload: CategoryUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(LessonPlanCategory).where(
+        LessonPlanCategory.id == category_id, LessonPlanCategory.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Category not found.")
+    c.name = payload.name.strip()
+    try:
+        await db.flush()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="A category with that name already exists.")
+    return _category_dict(c)
+
+
+@router.delete("/lessons/categories/{category_id}", status_code=204, dependencies=[_can_write])
+async def delete_lesson_category(category_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(LessonPlanCategory).where(
+        LessonPlanCategory.id == category_id, LessonPlanCategory.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Category not found.")
+    # Detach plans first so a reference never dangles (SQLite FK enforcement is
+    # not guaranteed on; don't rely on ON DELETE SET NULL alone).
+    await db.execute(
+        sa_update(LessonPlan).where(LessonPlan.category_id == category_id, LessonPlan.org_id == current_user.org_id)
+        .values(category_id=None)
+    )
+    await db.delete(c)
+    await db.flush()
+
+
+async def _get_or_create_planner_settings(db, org_id) -> LessonPlannerSettings:
+    s = (await db.execute(select(LessonPlannerSettings).where(LessonPlannerSettings.org_id == org_id))).scalar_one_or_none()
+    if not s:
+        s = LessonPlannerSettings(org_id=org_id)
+        db.add(s)
+        await db.flush()
+    return s
+
+
+async def _planner_flags(db, org_id) -> tuple[bool, int, bool]:
+    """(require_approval, default_duration_minutes, allow_backdated) — read-only, no
+    side effects; falls back to defaults when a school hasn't configured settings."""
+    s = (await db.execute(select(LessonPlannerSettings).where(LessonPlannerSettings.org_id == org_id))).scalar_one_or_none()
+    if not s:
+        return (False, 45, True)
+    return (s.require_approval, s.default_duration_minutes, s.allow_backdated)
+
+
+def _planner_settings_dict(s: LessonPlannerSettings) -> dict:
+    return {
+        "require_approval": s.require_approval,
+        "default_duration_minutes": s.default_duration_minutes,
+        "allow_backdated": s.allow_backdated,
+        "org_id": s.org_id,
+    }
+
+
+@router.get("/lessons/settings", response_model=PlannerSettingsResponse, dependencies=[_lessons_read])
+async def get_planner_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = await _get_or_create_planner_settings(db, current_user.org_id)
+    return _planner_settings_dict(s)
+
+
+@router.put("/lessons/settings", response_model=PlannerSettingsResponse, dependencies=[_can_write])
+async def update_planner_settings(payload: PlannerSettingsUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = await _get_or_create_planner_settings(db, current_user.org_id)
+    for k, v in payload.model_dump(exclude_unset=True).items():
+        setattr(s, k, v)
+    await db.flush()
+    return _planner_settings_dict(s)
+
+
+@router.get("/lessons/supervisors", response_model=list[SupervisorResponse], dependencies=[_lessons_read])
+async def list_lesson_supervisors(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org_id = current_user.org_id
+    rows = (await db.execute(select(LessonPlanSupervisor).where(LessonPlanSupervisor.org_id == org_id))).scalars().all()
+    names = await _user_name_map(db, {r.supervisor_id for r in rows})
+    sec_ids = {r.section_id for r in rows if r.section_id}
+    sec_names = {}
+    if sec_ids:
+        for s in (await db.execute(select(SchoolSection).where(SchoolSection.org_id == org_id, SchoolSection.id.in_(sec_ids)))).scalars().all():
+            sec_names[s.id] = s.name
+    return [{
+        "id": r.id, "supervisor_id": r.supervisor_id, "supervisor_name": names.get(r.supervisor_id),
+        "section_id": r.section_id, "section_name": sec_names.get(r.section_id) if r.section_id else None,
+        "org_id": r.org_id,
+    } for r in rows]
+
+
+@router.post("/lessons/supervisors", response_model=SupervisorResponse, status_code=201, dependencies=[_can_write])
+async def add_lesson_supervisor(payload: SupervisorCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org_id = current_user.org_id
+    user = (await db.execute(select(User).where(User.id == payload.supervisor_id, User.org_id == org_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=422, detail="supervisor_id not found in your organisation.")
+    if payload.section_id:
+        sec = (await db.execute(select(SchoolSection).where(SchoolSection.id == payload.section_id, SchoolSection.org_id == org_id))).scalar_one_or_none()
+        if not sec:
+            raise HTTPException(status_code=422, detail="section_id not found in your organisation.")
+    row = LessonPlanSupervisor(supervisor_id=payload.supervisor_id, section_id=payload.section_id or None, org_id=org_id)
+    db.add(row)
+    try:
+        await db.flush()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="That supervisor is already assigned to this scope.")
+    sec_name = None
+    if row.section_id:
+        sec_name = (await db.execute(select(SchoolSection.name).where(SchoolSection.id == row.section_id))).scalar_one_or_none()
+    return {"id": row.id, "supervisor_id": row.supervisor_id, "supervisor_name": user.full_name,
+            "section_id": row.section_id, "section_name": sec_name, "org_id": row.org_id}
+
+
+@router.delete("/lessons/supervisors/{supervisor_row_id}", status_code=204, dependencies=[_can_write])
+async def remove_lesson_supervisor(supervisor_row_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    row = (await db.execute(select(LessonPlanSupervisor).where(
+        LessonPlanSupervisor.id == supervisor_row_id, LessonPlanSupervisor.org_id == current_user.org_id))).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Supervisor assignment not found.")
+    await db.delete(row)
+    await db.flush()
+
+
+@router.post("/lessons/clone", response_model=CloneLessonsResult, dependencies=[_can_write])
+async def clone_lessons(payload: CloneLessonsRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Copy plans dated in [source_start, source_end] to new drafts anchored at
+    target_start, preserving each plan's day-offset. Skips a target that already
+    exists (same class+subject+date+period). Non-admins clone only their own."""
+    if payload.source_end < payload.source_start:
+        raise HTTPException(status_code=422, detail="source_end must be on/after source_start.")
+    org_id = current_user.org_id
+    q = select(LessonPlan).where(
+        LessonPlan.org_id == org_id, LessonPlan.is_deleted == False,  # noqa: E712
+        LessonPlan.lesson_date >= payload.source_start, LessonPlan.lesson_date <= payload.source_end,
+    )
+    if payload.only_mine or not _is_admin_role(current_user):
+        q = q.where(LessonPlan.teacher_id == current_user.id)
+    sources = (await db.execute(q)).scalars().all()
+
+    # Existing target keys to skip (class, subject, date, period) in the target window.
+    span = (payload.source_end - payload.source_start).days
+    target_end = payload.target_start + timedelta(days=span)
+    existing = (await db.execute(select(LessonPlan).where(
+        LessonPlan.org_id == org_id, LessonPlan.is_deleted == False,  # noqa: E712
+        LessonPlan.lesson_date >= payload.target_start, LessonPlan.lesson_date <= target_end,
+    ))).scalars().all()
+    seen = {(e.class_id, e.subject_id, e.lesson_date, e.period) for e in existing}
+
+    cloned = skipped = 0
+    for p in sources:
+        new_date = payload.target_start + timedelta(days=(p.lesson_date - payload.source_start).days)
+        key = (p.class_id, p.subject_id, new_date, p.period)
+        if key in seen:
+            skipped += 1
+            continue
+        db.add(LessonPlan(
+            title=p.title, class_id=p.class_id, subject_id=p.subject_id, teacher_id=p.teacher_id,
+            lesson_date=new_date, period=p.period, duration_minutes=p.duration_minutes,
+            objectives=p.objectives, activities=p.activities, materials=p.materials,
+            homework=p.homework, notes=p.notes, category_id=p.category_id,
+            status=LessonPlanStatus.DRAFT, org_id=org_id,
+        ))
+        seen.add(key)
+        cloned += 1
+    await db.flush()
+    return {"cloned": cloned, "skipped": skipped}
