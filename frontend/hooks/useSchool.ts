@@ -712,6 +712,64 @@ export function useLibraryStats() {
   });
 }
 
+// ── Library Setup + Manage Reviews ───────────────────────────────────────────
+export interface LibrarySettings { loan_period_days: number; max_books_per_user: number; allow_reviews: boolean; review_needs_approval: boolean; org_id: string; }
+export interface LibraryCategory { id: string; name: string; org_id: string; }
+export interface LibraryLocation { id: string; name: string; code: string | null; org_id: string; }
+export interface BookReviewRow { id: string; book_id: string; book_title: string | null; reviewer_id: string | null; reviewer_name: string | null; rating: number; comment: string | null; status: string; created_at: string | null; org_id: string; }
+
+export function useLibrarySettings() {
+  return useQuery<LibrarySettings>({ queryKey: ["library", "settings"], queryFn: () => schoolApi.library.settings.get() });
+}
+export function useSaveLibrarySettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => schoolApi.library.settings.update(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["library", "settings"] }); toast.success("Settings saved."); },
+    onError: (e) => toast.error(getApiErrorMessage(e, "Failed to save settings.")),
+  });
+}
+export function useLibraryCategories() {
+  return useQuery<LibraryCategory[]>({ queryKey: ["library", "categories"], queryFn: () => schoolApi.library.categories.list() });
+}
+export function useLibraryLocations() {
+  return useQuery<LibraryLocation[]>({ queryKey: ["library", "locations"], queryFn: () => schoolApi.library.locations.list() });
+}
+function libMut<V>(fn: (v: V) => Promise<any>, key: string, ok: string) {
+  return () => {
+    const qc = useQueryClient();
+    return useMutation({
+      mutationFn: fn,
+      onSuccess: () => { qc.invalidateQueries({ queryKey: ["library", key] }); if (ok) toast.success(ok); },
+      onError: (e) => toast.error(getApiErrorMessage(e, "Action failed.")),
+    });
+  };
+}
+export const useCreateLibraryCategory = libMut((d: { name: string }) => schoolApi.library.categories.create(d), "categories", "Category added.");
+export const useDeleteLibraryCategory = libMut((id: string) => schoolApi.library.categories.remove(id), "categories", "Removed.");
+export const useCreateLibraryLocation = libMut((d: { name: string; code?: string }) => schoolApi.library.locations.create(d), "locations", "Location added.");
+export const useDeleteLibraryLocation = libMut((id: string) => schoolApi.library.locations.remove(id), "locations", "Removed.");
+
+export function useBookReviews(params?: { status?: string; book_id?: string }) {
+  return useQuery<BookReviewRow[]>({ queryKey: ["library", "reviews", params], queryFn: () => schoolApi.library.reviews.list(params) });
+}
+export function useModerateReview() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; status: string }) => schoolApi.library.reviews.moderate(v.id, v.status),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["library", "reviews"] }); toast.success("Review updated."); },
+    onError: (e) => toast.error(getApiErrorMessage(e, "Failed to update review.")),
+  });
+}
+export function useDeleteReview() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => schoolApi.library.reviews.remove(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["library", "reviews"] }); toast.success("Review removed."); },
+    onError: (e) => toast.error(getApiErrorMessage(e, "Failed to remove review.")),
+  });
+}
+
 export function useTeacherAverageRating(teacher_id: string) {
   return useQuery({
     queryKey: ["teacher-avg-rating", teacher_id],

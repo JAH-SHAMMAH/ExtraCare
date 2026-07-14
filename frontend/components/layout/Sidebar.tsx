@@ -357,7 +357,6 @@ const MODULE_SECTIONS: ModuleSection[] = [
     items: [
       { href: "/dashboard/modules/school/transport", label: "Transport", icon: Bus },
       { href: "/dashboard/modules/school/tuckshop", label: "Tuckshop", icon: ShoppingCart },
-      { href: "/dashboard/modules/school/library", label: "Library", icon: Library },
       { href: "/dashboard/modules/school/sms", label: "Bulk SMS", icon: MessageSquare },
       // Batch 6 (money features) — shipped: ledger-backed student money.
       { href: "/dashboard/modules/school/wallet", label: "Wallet Manager", icon: Wallet },
@@ -366,6 +365,24 @@ const MODULE_SECTIONS: ModuleSection[] = [
       // Visitor (safeguarding) → school_admin:read.
       { href: "/dashboard/modules/school/calendar", label: "Calendar & Planner", icon: Calendar },
       { href: "/dashboard/modules/school/visitor", label: "Visitor Management", icon: UserCheck },
+    ],
+  },
+  {
+    // Library — its own top-level module (Educare parity). Distinct routes per
+    // child (clean longest-prefix highlighting): Dashboard (stats + inventory),
+    // Manage Catalogue (book CRUD), Issue/Return (loans), User Dashboard
+    // (borrowers), Library Setup (settings/categories/locations), Manage Reviews.
+    key: "library",
+    requiredModule: "school",
+    label: "Library",
+    icon: Library,
+    items: [
+      { href: "/dashboard/modules/school/library", label: "Admin Dashboard", icon: BookOpen },
+      { href: "/dashboard/modules/school/library/catalogue", label: "Manage Catalogue", icon: BookMarked },
+      { href: "/dashboard/modules/school/library/loans", label: "Issue / Return Book", icon: ArrowLeftRight },
+      { href: "/dashboard/modules/school/library/users", label: "User Dashboard", icon: Users2 },
+      { href: "/dashboard/modules/school/library/setup", label: "Library Setup", icon: Settings2 },
+      { href: "/dashboard/modules/school/library/reviews", label: "Manage Reviews", icon: MessageSquare },
     ],
   },
   {

@@ -307,11 +307,31 @@ export const schoolApi = {
       list: (p?: { status?: "borrowed" | "returned" | "overdue"; borrower_user_id?: string; book_id?: string; page?: number; page_size?: number }) =>
         api.get("/library/loans", { params: p }).then((r) => r.data),
       mine: () => api.get("/library/loans/mine").then((r) => r.data),
-      issue: (data: { book_id: string; borrower_user_id: string; due_date: string; notes?: string }) =>
+      issue: (data: { book_id: string; borrower_user_id: string; due_date?: string; notes?: string }) =>
         api.post("/library/loans", data).then((r) => r.data),
       returnLoan: (id: string) => api.post(`/library/loans/${id}/return`).then((r) => r.data),
     },
     stats: () => api.get("/library/stats").then((r) => r.data),
+    settings: {
+      get: () => api.get("/library/settings").then((r) => r.data),
+      update: (data: object) => api.put("/library/settings", data).then((r) => r.data),
+    },
+    categories: {
+      list: () => api.get("/library/categories").then((r) => r.data),
+      create: (data: { name: string }) => api.post("/library/categories", data).then((r) => r.data),
+      remove: (id: string) => api.delete(`/library/categories/${id}`),
+    },
+    locations: {
+      list: () => api.get("/library/locations").then((r) => r.data),
+      create: (data: { name: string; code?: string }) => api.post("/library/locations", data).then((r) => r.data),
+      remove: (id: string) => api.delete(`/library/locations/${id}`),
+    },
+    reviews: {
+      list: (p?: { status?: string; book_id?: string }) => api.get("/library/reviews", { params: p }).then((r) => r.data),
+      create: (data: { book_id: string; rating: number; comment?: string }) => api.post("/library/reviews", data).then((r) => r.data),
+      moderate: (id: string, status: string) => api.patch(`/library/reviews/${id}`, { status }).then((r) => r.data),
+      remove: (id: string) => api.delete(`/library/reviews/${id}`),
+    },
   },
   // Lesson Planner (Phase 6.4). Teachers own their plans server-side; the
   // `mine` param is a convenience for admins to scope to their own view.
