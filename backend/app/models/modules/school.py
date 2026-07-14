@@ -471,6 +471,24 @@ class LessonPlanSupervisor(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class LessonPlanSchedule(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A recurring lesson-plan reminder (Lesson Planner Setup → Schedules). On its
+    due day/time it delivers ``subject``/``body`` to the audience as an in-app
+    Mailbox message (and an email when SMTP is configured). ``last_run_on`` makes
+    firing idempotent per day so a poller can call run-due safely on any cadence."""
+    __tablename__ = "lesson_plan_schedules"
+
+    subject = Column(String(200), nullable=False)       # the "email content"
+    body = Column(Text, nullable=True)
+    audience = Column(String(20), default="teachers", nullable=False)   # teachers | all_staff
+    frequency = Column(String(20), default="weekly", nullable=False)    # daily | weekly
+    days = Column(JSON, nullable=True)                  # [0..6] weekdays (Mon=0) for weekly
+    run_time = Column(Time, nullable=False)             # local time of day to fire
+    is_active = Column(Boolean, default=True, nullable=False)
+    last_run_on = Column(Date, nullable=True)           # date last dispatched (idempotency)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+
 class WeeklyReflection(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """Students log a short weekly reflection; teachers can comment."""
     __tablename__ = "weekly_reflections"
