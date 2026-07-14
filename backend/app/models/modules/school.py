@@ -418,6 +418,8 @@ class LessonPlan(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     homework = Column(Text, nullable=True)    # assigned tasks
     notes = Column(Text, nullable=True)       # private teacher notes
 
+    # Optional Lesson-Planner-Setup taxonomy label (Theory / Practical / …).
+    category_id = Column(String(36), ForeignKey("lesson_plan_categories.id", ondelete="SET NULL"), nullable=True, index=True)
     status = Column(Enum(LessonPlanStatus), default=LessonPlanStatus.DRAFT, nullable=False)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
@@ -426,6 +428,46 @@ class LessonPlan(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
         Index("ix_lesson_plans_teacher_date", "teacher_id", "lesson_date"),
         # "What lessons does this class have planned on day X?" — student view.
         Index("ix_lesson_plans_class_date", "class_id", "lesson_date"),
+    )
+
+
+class LessonPlanCategory(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A label for organising lesson plans (Theory / Practical / Revision …) —
+    Lesson Planner Setup taxonomy. Optional on a plan (LessonPlan.category_id)."""
+    __tablename__ = "lesson_plan_categories"
+
+    name = Column(String(100), nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "name", name="uq_lesson_plan_category_org_name"),
+    )
+
+
+class LessonPlannerSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Per-org lesson-planner configuration (Lesson Planner Setup → Settings).
+    One row per org. ``require_approval`` marks the workflow where a plan needs a
+    supervisor's approval (publish) rather than teacher self-publish."""
+    __tablename__ = "lesson_planner_settings"
+
+    require_approval = Column(Boolean, default=False, nullable=False)
+    default_duration_minutes = Column(Integer, default=45, nullable=False)
+    allow_backdated = Column(Boolean, default=True, nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
+
+
+class LessonPlanSupervisor(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Assigns a user as a lesson-plan supervisor, optionally scoped to a section
+    (level) — the reviewers who own the Approve queue. One row per (supervisor,
+    section); a null section means org-wide."""
+    __tablename__ = "lesson_plan_supervisors"
+
+    supervisor_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    section_id = Column(String(36), ForeignKey("school_sections.id", ondelete="CASCADE"), nullable=True, index=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "supervisor_id", "section_id", name="uq_lesson_plan_supervisor"),
     )
 
 
