@@ -101,7 +101,6 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/classes", label: "Classes", icon: School },
       { href: "/dashboard/modules/school/subjects", label: "Subjects", icon: BookMarked },
       { href: "/dashboard/modules/school/timetable", label: "Timetable", icon: Calendar },
-      { href: "/dashboard/modules/school/lessons", label: "Lesson Planner", icon: NotebookPen },
       { href: "/dashboard/modules/school/exams", label: "Exams & Results", icon: Award },
       { href: "/dashboard/modules/school/grades", label: "Gradebook", icon: BookOpen },
       { href: "/dashboard/modules/school/report-cards", label: "Report Cards", icon: FileText },
@@ -111,6 +110,22 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/subject-selection", label: "Subject Selection", icon: BookMarked },
       { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: FileText },
       { href: "/dashboard/modules/school/report-workflow", label: "Report Workflow", icon: FolderOpen },
+    ],
+  },
+  {
+    // Lesson Planner — its own top-level module (Educare parity). We ship the two
+    // children backed by real pages: the weekly authoring planner and a supervisor
+    // Approve queue (reuses the plan lifecycle — publish = approve). Educare's
+    // "Lesson Planner Setup" cluster (categories / week entries / email schedules /
+    // supervisor config / clone-across-sessions) has no supporting model here and is
+    // deliberately omitted rather than shipped as dead links.
+    key: "lesson-planner",
+    requiredModule: "school",
+    label: "Lesson Planner",
+    icon: NotebookPen,
+    items: [
+      { href: "/dashboard/modules/school/lessons", label: "Lesson Planner", icon: NotebookPen },
+      { href: "/dashboard/modules/school/lessons/approve", label: "Approve Lesson Plans", icon: ClipboardCheck },
     ],
   },
   {
