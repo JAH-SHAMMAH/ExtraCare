@@ -105,6 +105,7 @@ async def list_students(
     page_size: int = Query(default=25, ge=1, le=100),
     search: str | None = None,
     class_id: str | None = None,
+    section_id: str | None = None,  # managed report section (level) — filters via class
     status: str | None = None,  # active | inactive | (None/all)
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -120,6 +121,12 @@ async def list_students(
         )
     if class_id:
         query = query.where(Student.class_id == class_id)
+    if section_id:
+        # Students whose class belongs to this managed section (the level's report view).
+        query = query.where(Student.class_id.in_(
+            select(SchoolClass.id).where(
+                SchoolClass.org_id == current_user.org_id, SchoolClass.section_id == section_id)
+        ))
     # Roster filter — powers the Active / Inactive tabs. Anything other than the
     # two known values (incl. "all") is a no-op so the full roster is returned.
     if status == "active":
@@ -334,6 +341,7 @@ def _class_dict(c: SchoolClass, student_count: int, teacher_name: str | None) ->
         "name": c.name,
         "grade_level": c.level,
         "section": c.section,
+        "section_id": c.section_id,   # managed report section (level) link, if assigned
         "class_teacher_id": c.teacher_id,
         "class_teacher_name": teacher_name,
         "capacity": int(c.max_capacity or 0),

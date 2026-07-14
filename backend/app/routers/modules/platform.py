@@ -206,7 +206,10 @@ def _section_response(s: SchoolSection) -> SectionResponse:
                            aliases=s.level_aliases or [], org_id=s.org_id)
 
 
-@router.get("/sections", response_model=list[SectionResponse], dependencies=[_read])
+# Readable at the broad school:read (not just settings:read): sections are report
+# reference data the level report views + term-consuming forms resolve. Writes stay
+# settings:write. Mirrors the current-session resolver's broad-read rationale.
+@router.get("/sections", response_model=list[SectionResponse], dependencies=[_school_read])
 async def list_sections(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     rows = (await db.execute(
         select(SchoolSection).where(SchoolSection.org_id == current_user.org_id).order_by(SchoolSection.position, SchoolSection.name)

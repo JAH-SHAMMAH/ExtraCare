@@ -53,3 +53,33 @@ async def test_list_students_status_filter(db, org, teacher, school_class, stude
     every = await list_students(page=1, page_size=25, db=db, current_user=teacher)  # no filter → whole roster
     every_ids = {s["id"] for s in every["items"]}
     assert student.id in every_ids and inactive.id in every_ids
+
+
+async def test_list_students_section_filter_scopes_to_level(db, org, teacher, school_class, student):
+    """R4: section_id scopes the roster to students whose class belongs to that
+    managed section (the level's report view); the class response exposes the link."""
+    from app.routers.modules.platform import create_section
+    from app.routers.modules.school import update_class, list_classes
+    from app.schemas.platform import SectionCreate
+    from app.schemas.school_class import ClassUpdate
+    from app.models.modules.school import SchoolClass
+
+    sec = await create_section(SectionCreate(name="Primary", curriculum="hybrid"), db=db, current_user=teacher)
+    await update_class(school_class.id, ClassUpdate(section_id=sec.id), request=None, db=db, current_user=teacher)
+
+    # A second class NOT in the section, with its own student.
+    other_cls = SchoolClass(id=str(uuid.uuid4()), name="Other", level="Secondary", org_id=org.id)
+    db.add(other_cls)
+    other_stu = Student(id=str(uuid.uuid4()), student_id="S-OTH", first_name="Zed",
+                        last_name="X", class_id=other_cls.id, org_id=org.id, is_active=True)
+    db.add(other_stu)
+    await db.commit()
+
+    scoped = await list_students(page=1, page_size=25, section_id=sec.id, db=db, current_user=teacher)
+    ids = {s["id"] for s in scoped["items"]}
+    assert student.id in ids and other_stu.id not in ids
+
+    # _class_dict now carries the managed-section link (drives the frontend scoping).
+    classes = await list_classes(page=1, page_size=100, db=db, current_user=teacher)
+    linked = next(c for c in classes["items"] if c["id"] == school_class.id)
+    assert linked["section_id"] == sec.id
