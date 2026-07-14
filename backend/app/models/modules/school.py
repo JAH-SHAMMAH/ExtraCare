@@ -918,6 +918,69 @@ class LibraryLoan(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class LibrarySettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Per-org library configuration (Library Setup → General + borrowing rules).
+    One row per org. ``loan_period_days`` defaults a loan's due date; the borrowing
+    limits are the "permissions" (how many books a member may hold at once)."""
+    __tablename__ = "library_settings"
+
+    loan_period_days = Column(Integer, default=14, nullable=False)
+    max_books_per_user = Column(Integer, default=3, nullable=False)
+    allow_reviews = Column(Boolean, default=True, nullable=False)
+    review_needs_approval = Column(Boolean, default=True, nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
+
+
+class LibraryCategory(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A managed book category (Library Setup → Book Category). Feeds the catalogue
+    picklist; ``LibraryBook.category`` keeps its free-text value for back-compat."""
+    __tablename__ = "library_categories"
+
+    name = Column(String(80), nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "name", name="uq_library_category_org_name"),
+    )
+
+
+class LibraryLocation(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A managed shelf/location (Library Setup → Library Locations). Feeds the
+    catalogue's shelf picklist; ``LibraryBook.shelf_location`` stays free-text."""
+    __tablename__ = "library_locations"
+
+    name = Column(String(80), nullable=False)      # e.g. "Aisle A — Fiction"
+    code = Column(String(30), nullable=True)       # e.g. "A3"
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "name", name="uq_library_location_org_name"),
+    )
+
+
+class ReviewStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class BookReview(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A reader's review of a book (Library → Manage Reviews). Moderated: a review
+    is PENDING until a librarian approves it (only approved reviews are public)."""
+    __tablename__ = "book_reviews"
+
+    book_id = Column(String(36), ForeignKey("library_books.id", ondelete="CASCADE"), nullable=False, index=True)
+    reviewer_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    rating = Column(Integer, nullable=False)       # 1..5
+    comment = Column(Text, nullable=True)
+    status = Column(Enum(ReviewStatus), default=ReviewStatus.PENDING, nullable=False, index=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        Index("ix_book_reviews_book_status", "book_id", "status"),
+    )
+
+
 class TuckshopProduct(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     __tablename__ = "tuckshop_products"
 
