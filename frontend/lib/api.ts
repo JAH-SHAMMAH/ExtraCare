@@ -347,6 +347,14 @@ export const schoolApi = {
     },
     clone: (data: { source_start: string; source_end: string; target_start: string; only_mine?: boolean }) =>
       api.post("/school/lessons/clone", data).then((r) => r.data),
+    schedules: {
+      list: () => api.get("/school/lessons/schedules").then((r) => r.data),
+      create: (data: object) => api.post("/school/lessons/schedules", data).then((r) => r.data),
+      update: (id: string, data: object) => api.patch(`/school/lessons/schedules/${id}`, data).then((r) => r.data),
+      remove: (id: string) => api.delete(`/school/lessons/schedules/${id}`),
+      sendNow: (id: string) => api.post(`/school/lessons/schedules/${id}/send-now`).then((r) => r.data),
+      runDue: () => api.post("/school/lessons/schedules/run-due").then((r) => r.data),
+    },
   },
 };
 

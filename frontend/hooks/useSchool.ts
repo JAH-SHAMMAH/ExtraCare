@@ -545,6 +545,45 @@ export function useCloneLessons() {
   });
 }
 
+// Reminder schedules
+export interface LessonSchedule {
+  id: string; subject: string; body: string | null; audience: "teachers" | "all_staff" | string;
+  frequency: "daily" | "weekly" | string; days: number[] | null; run_time: string;
+  is_active: boolean; last_run_on: string | null; org_id: string;
+}
+export function useLessonSchedules() {
+  return useQuery<LessonSchedule[]>({ queryKey: ["school", "lesson-schedules"], queryFn: () => schoolApi.lessons.schedules.list() });
+}
+function schedMut<V>(fn: (v: V) => Promise<any>, ok: string) {
+  return () => {
+    const qc = useQueryClient();
+    return useMutation({
+      mutationFn: fn,
+      onSuccess: () => { qc.invalidateQueries({ queryKey: ["school", "lesson-schedules"] }); if (ok) toast.success(ok); },
+      onError: (e) => toast.error(getApiErrorMessage(e, "Action failed.")),
+    });
+  };
+}
+export const useCreateLessonSchedule = schedMut((d: object) => schoolApi.lessons.schedules.create(d), "Schedule created.");
+export const useUpdateLessonSchedule = schedMut((v: { id: string; data: object }) => schoolApi.lessons.schedules.update(v.id, v.data), "Schedule updated.");
+export const useDeleteLessonSchedule = schedMut((id: string) => schoolApi.lessons.schedules.remove(id), "Schedule removed.");
+export function useSendScheduleNow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => schoolApi.lessons.schedules.sendNow(id),
+    onSuccess: (res: any) => { qc.invalidateQueries({ queryKey: ["school", "lesson-schedules"] }); toast.success(`Sent to ${res?.recipients ?? 0} recipient(s).`); },
+    onError: (e) => toast.error(getApiErrorMessage(e, "Failed to send reminder.")),
+  });
+}
+export function useRunDueSchedules() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => schoolApi.lessons.schedules.runDue(),
+    onSuccess: (res: any) => { qc.invalidateQueries({ queryKey: ["school", "lesson-schedules"] }); toast.success(`${res?.dispatched ?? 0} schedule(s) fired to ${res?.recipients ?? 0} recipient(s).`); },
+    onError: (e) => toast.error(getApiErrorMessage(e, "Failed to run schedules.")),
+  });
+}
+
 // ── Library (Phase 6.5) ──────────────────────────────────────────────────────
 
 export interface LibraryBookRow {

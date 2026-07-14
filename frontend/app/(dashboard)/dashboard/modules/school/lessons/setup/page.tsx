@@ -7,22 +7,25 @@ import {
   useLessonPlannerSettings, useSaveLessonPlannerSettings,
   useLessonSupervisors, useAddLessonSupervisor, useRemoveLessonSupervisor,
   useCloneLessons, useTeachers,
-  type LessonCategory, type LessonSupervisor,
+  useLessonSchedules, useCreateLessonSchedule, useUpdateLessonSchedule, useDeleteLessonSchedule,
+  useSendScheduleNow, useRunDueSchedules,
+  type LessonCategory, type LessonSupervisor, type LessonSchedule,
 } from "@/hooks/useSchool";
 import { useWeeks, useGenerateWeeks, useDeleteWeek, useSections } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
 import {
   Settings2, Loader2, Plus, Trash2, Save, Pencil, X, Tag, CalendarRange,
-  SlidersHorizontal, UserCog, Copy, Check,
+  SlidersHorizontal, UserCog, Copy, Check, Mail, Send, Play,
 } from "lucide-react";
 import type { AcademicWeek, SchoolSection } from "@/types";
 
-type Tab = "categories" | "weeks" | "settings" | "supervisors" | "clone";
+type Tab = "categories" | "weeks" | "settings" | "supervisors" | "clone" | "schedules";
 const TABS: { key: Tab; label: string; icon: any }[] = [
   { key: "categories", label: "Lesson Plan Categories", icon: Tag },
   { key: "weeks", label: "Create Week Entries", icon: CalendarRange },
   { key: "settings", label: "Lesson Planner Settings", icon: SlidersHorizontal },
+  { key: "schedules", label: "Create Lesson Plan Schedules", icon: Mail },
   { key: "supervisors", label: "Lesson Plan Supervisor", icon: UserCog },
   { key: "clone", label: "Clone Lesson Plans", icon: Copy },
 ];
@@ -62,8 +65,116 @@ export default function LessonPlannerSetupPage() {
       {tab === "categories" && <CategoriesTab canWrite={canWrite} />}
       {tab === "weeks" && <WeekEntriesTab canWrite={canWrite} />}
       {tab === "settings" && <SettingsTab canWrite={canWrite} />}
+      {tab === "schedules" && <SchedulesTab canWrite={canWrite} />}
       {tab === "supervisors" && <SupervisorsTab canWrite={canWrite} />}
       {tab === "clone" && <CloneTab canWrite={canWrite} />}
+    </div>
+  );
+}
+
+// ── Schedules (recurring reminders → in-app Mailbox + email) ──────────────────
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function SchedulesTab({ canWrite }: { canWrite: boolean }) {
+  const { data: schedules = [], isLoading } = useLessonSchedules();
+  const create = useCreateLessonSchedule();
+  const del = useDeleteLessonSchedule();
+  const toggle = useUpdateLessonSchedule();
+  const sendNow = useSendScheduleNow();
+  const runDue = useRunDueSchedules();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState<{ subject: string; body: string; audience: string; frequency: string; days: number[]; run_time: string }>(
+    { subject: "", audience: "teachers", frequency: "weekly", body: "", days: [], run_time: "08:00" },
+  );
+
+  const toggleDay = (d: number) => setForm((f) => ({ ...f, days: f.days.includes(d) ? f.days.filter((x) => x !== d) : [...f.days, d] }));
+  const ready = form.subject.trim() && (form.frequency === "daily" || form.days.length > 0);
+  const submit = () => create.mutate(
+    { subject: form.subject.trim(), body: form.body || null, audience: form.audience, frequency: form.frequency, days: form.frequency === "weekly" ? form.days : null, run_time: form.run_time + ":00" },
+    { onSuccess: () => { setOpen(false); setForm({ subject: "", audience: "teachers", frequency: "weekly", body: "", days: [], run_time: "08:00" }); } },
+  );
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <p className="text-sm text-slate-500 max-w-2xl">Recurring reminders (e.g. &ldquo;submit your lesson plans&rdquo;). On the scheduled day/time each fires to the audience as an in-app message &mdash; and an email when the school&apos;s SMTP is configured. A poller can hit <span className="font-mono text-xs">run-due</span> on any cadence; firing is idempotent per day.</p>
+        {canWrite && (
+          <div className="flex gap-2 shrink-0">
+            <button onClick={() => runDue.mutate()} disabled={runDue.isPending} className="btn-secondary gap-1.5 text-xs">{runDue.isPending ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} Run due now</button>
+            <button onClick={() => setOpen((v) => !v)} className="btn-primary gap-1.5 text-xs">{open ? <X size={13} /> : <Plus size={13} />} Create Entry</button>
+          </div>
+        )}
+      </div>
+
+      {open && canWrite && (
+        <div className="bg-white rounded-xl border border-slate-200 p-4 mb-5 space-y-4">
+          <div><label className="label">Email content (subject)</label><input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="e.g. Reminder: submit next week's lesson plans" className="input" /></div>
+          <div><label className="label">Message (optional)</label><textarea value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} rows={2} className="input" /></div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div><label className="label">Type (audience)</label>
+              <select value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value })} className="input">
+                <option value="teachers">Teaching staff</option>
+                <option value="all_staff">All staff</option>
+              </select>
+            </div>
+            <div><label className="label">Mode</label>
+              <select value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value })} className="input">
+                <option value="weekly">Weekly</option>
+                <option value="daily">Daily</option>
+              </select>
+            </div>
+            <div><label className="label">Time</label><input type="time" value={form.run_time} onChange={(e) => setForm({ ...form, run_time: e.target.value })} className="input" /></div>
+          </div>
+          {form.frequency === "weekly" && (
+            <div>
+              <label className="label">Day(s)</label>
+              <div className="flex flex-wrap gap-1.5">
+                {WEEKDAYS.map((d, i) => (
+                  <button key={d} type="button" onClick={() => toggleDay(i)} className={cn("px-3 py-1.5 rounded-lg text-xs font-semibold border", form.days.includes(i) ? "bg-brand-50 text-brand-700 border-brand-300" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300")}>{d}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setOpen(false)} className="btn-secondary">Close / Go Back</button>
+            <button onClick={submit} disabled={!ready || create.isPending} className="btn-primary gap-2">{create.isPending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Submit</button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <table className="w-full text-left">
+          <thead><tr className="bg-slate-50/80 border-b border-slate-100">
+            {["Email Contents", "Type", "Mode", "Day(s)", "Time", "Active", ""].map((h) => <th key={h} className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-500 whitespace-nowrap">{h}</th>)}
+          </tr></thead>
+          <tbody className="divide-y divide-slate-50">
+            {isLoading ? <tr><td colSpan={7} className="px-4 py-8 text-center"><Loader2 className="animate-spin mx-auto text-slate-400" size={18} /></td></tr>
+              : schedules.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">No schedules yet.</td></tr>
+              : schedules.map((s: LessonSchedule) => (
+                <tr key={s.id} className="hover:bg-slate-50/50">
+                  <td className="px-4 py-2.5 text-sm font-medium text-slate-800 max-w-[240px] truncate">{s.subject}</td>
+                  <td className="px-4 py-2.5 text-sm text-slate-600">{s.audience === "all_staff" ? "All staff" : "Teaching staff"}</td>
+                  <td className="px-4 py-2.5 text-sm text-slate-600 capitalize">{s.frequency}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-500">{s.frequency === "weekly" ? (s.days || []).map((d) => WEEKDAYS[d]).join(", ") : "Every day"}</td>
+                  <td className="px-4 py-2.5 text-sm text-slate-600 tabular-nums">{(s.run_time || "").slice(0, 5)}</td>
+                  <td className="px-4 py-2.5">
+                    <button disabled={!canWrite || toggle.isPending} onClick={() => toggle.mutate({ id: s.id, data: { is_active: !s.is_active } })}
+                      className={cn("badge text-[10px]", s.is_active ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-500 border-slate-200")}>
+                      {s.is_active ? "Active" : "Paused"}
+                    </button>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center justify-end gap-1.5">
+                      {canWrite && <button onClick={() => sendNow.mutate(s.id)} disabled={sendNow.isPending} className="btn-secondary text-xs py-1 gap-1"><Send size={12} /> Send now</button>}
+                      {canWrite && <button onClick={() => del.mutate(s.id)} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={13} /></button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
