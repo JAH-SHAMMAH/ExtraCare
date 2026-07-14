@@ -241,6 +241,46 @@ class ReportSubjectAssessment(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class AssessmentDomain(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A non-cognitive / criterion-referenced assessment domain (School Reports R3).
+    One model carries them all, distinguished by ``domain_type``:
+      • eyfs_area / eyfs_goal — EYFS Areas of Learning + their Early Learning Goals
+        (area→goal nesting via parent_domain_id); Nursery's whole report.
+      • cambridge_strand — a Cambridge attainment strand under a subject
+        (parent_subject_id); the overlay on hybrid Junior/Secondary reports.
+      • psychomotor / affective — the Nigerian report's skill + behaviour domains.
+    Rated against ``rating_scale_id`` (a descriptor GradingScale)."""
+    __tablename__ = "assessment_domains"
+
+    section_id = Column(String(36), ForeignKey("school_sections.id", ondelete="CASCADE"), nullable=False, index=True)
+    domain_type = Column(String(20), nullable=False)  # eyfs_area | eyfs_goal | cambridge_strand | psychomotor | affective
+    name = Column(String(150), nullable=False)
+    parent_domain_id = Column(String(36), ForeignKey("assessment_domains.id", ondelete="CASCADE"), nullable=True, index=True)
+    parent_subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=True, index=True)
+    rating_scale_id = Column(String(36), ForeignKey("grading_scales.id", ondelete="SET NULL"), nullable=True)
+    position = Column(Integer, default=0, nullable=False)
+
+    __table_args__ = (
+        Index("ix_assessment_domains_org_section", "org_id", "section_id"),
+    )
+
+
+class StudentDomainRating(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A student's assessment against one domain for a term (School Reports R3)."""
+    __tablename__ = "student_domain_ratings"
+
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    term = Column(String(50), nullable=False)
+    domain_id = Column(String(36), ForeignKey("assessment_domains.id", ondelete="CASCADE"), nullable=False, index=True)
+    rating = Column(String(60), nullable=True)   # descriptor label (e.g. "Secure")
+    comment = Column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("student_id", "term", "domain_id", name="uq_student_domain_rating"),
+        Index("ix_student_domain_ratings_term", "org_id", "term"),
+    )
+
+
 # ── Custom Fields (EAV) ─────────────────────────────────────────────────────────
 
 class CustomFieldDefinition(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
