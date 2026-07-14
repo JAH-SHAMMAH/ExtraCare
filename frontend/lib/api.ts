@@ -329,6 +329,24 @@ export const schoolApi = {
     update: (id: string, data: object) => api.patch(`/school/lessons/${id}`, data).then((r) => r.data),
     publish: (id: string) => api.post(`/school/lessons/${id}/publish`).then((r) => r.data),
     remove: (id: string) => api.delete(`/school/lessons/${id}`),
+    // Lesson Planner Setup
+    categories: {
+      list: () => api.get("/school/lessons/categories").then((r) => r.data),
+      create: (data: { name: string }) => api.post("/school/lessons/categories", data).then((r) => r.data),
+      update: (id: string, data: { name: string }) => api.patch(`/school/lessons/categories/${id}`, data).then((r) => r.data),
+      remove: (id: string) => api.delete(`/school/lessons/categories/${id}`),
+    },
+    settings: {
+      get: () => api.get("/school/lessons/settings").then((r) => r.data),
+      update: (data: object) => api.put("/school/lessons/settings", data).then((r) => r.data),
+    },
+    supervisors: {
+      list: () => api.get("/school/lessons/supervisors").then((r) => r.data),
+      add: (data: { supervisor_id: string; section_id?: string | null }) => api.post("/school/lessons/supervisors", data).then((r) => r.data),
+      remove: (id: string) => api.delete(`/school/lessons/supervisors/${id}`),
+    },
+    clone: (data: { source_start: string; source_end: string; target_start: string; only_mine?: boolean }) =>
+      api.post("/school/lessons/clone", data).then((r) => r.data),
   },
 };
 

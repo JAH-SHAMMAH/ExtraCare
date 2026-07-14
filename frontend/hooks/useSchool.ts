@@ -478,6 +478,73 @@ export function useDeleteLessonPlan() {
   });
 }
 
+// ── Lesson Planner Setup (categories / settings / supervisors / clone) ────────
+
+export interface LessonCategory { id: string; name: string; org_id: string; }
+export interface LessonPlannerSettings { require_approval: boolean; default_duration_minutes: number; allow_backdated: boolean; org_id: string; }
+export interface LessonSupervisor { id: string; supervisor_id: string; supervisor_name: string | null; section_id: string | null; section_name: string | null; org_id: string; }
+
+export function useLessonCategories() {
+  return useQuery<LessonCategory[]>({ queryKey: ["school", "lesson-categories"], queryFn: () => schoolApi.lessons.categories.list() });
+}
+function lcMut<V>(fn: (v: V) => Promise<any>, ok: string) {
+  return () => {
+    const qc = useQueryClient();
+    return useMutation({
+      mutationFn: fn,
+      onSuccess: () => { qc.invalidateQueries({ queryKey: ["school", "lesson-categories"] }); qc.invalidateQueries({ queryKey: ["school", "lessons"] }); toast.success(ok); },
+      onError: (e) => toast.error(getApiErrorMessage(e, "Action failed.")),
+    });
+  };
+}
+export const useCreateLessonCategory = lcMut((d: { name: string }) => schoolApi.lessons.categories.create(d), "Category added.");
+export const useUpdateLessonCategory = lcMut((v: { id: string; name: string }) => schoolApi.lessons.categories.update(v.id, { name: v.name }), "Category updated.");
+export const useDeleteLessonCategory = lcMut((id: string) => schoolApi.lessons.categories.remove(id), "Category removed.");
+
+export function useLessonPlannerSettings() {
+  return useQuery<LessonPlannerSettings>({ queryKey: ["school", "lesson-settings"], queryFn: () => schoolApi.lessons.settings.get() });
+}
+export function useSaveLessonPlannerSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => schoolApi.lessons.settings.update(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["school", "lesson-settings"] }); toast.success("Settings saved."); },
+    onError: (e) => toast.error(getApiErrorMessage(e, "Failed to save settings.")),
+  });
+}
+
+export function useLessonSupervisors() {
+  return useQuery<LessonSupervisor[]>({ queryKey: ["school", "lesson-supervisors"], queryFn: () => schoolApi.lessons.supervisors.list() });
+}
+export function useAddLessonSupervisor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { supervisor_id: string; section_id?: string | null }) => schoolApi.lessons.supervisors.add(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["school", "lesson-supervisors"] }); toast.success("Supervisor assigned."); },
+    onError: (e) => toast.error(getApiErrorMessage(e, "Failed to assign supervisor.")),
+  });
+}
+export function useRemoveLessonSupervisor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => schoolApi.lessons.supervisors.remove(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["school", "lesson-supervisors"] }); toast.success("Supervisor removed."); },
+    onError: (e) => toast.error(getApiErrorMessage(e, "Failed to remove supervisor.")),
+  });
+}
+
+export function useCloneLessons() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { source_start: string; source_end: string; target_start: string; only_mine?: boolean }) => schoolApi.lessons.clone(data),
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ["school", "lessons"] });
+      toast.success(`Cloned ${res?.cloned ?? 0} plan(s)${res?.skipped ? `, skipped ${res.skipped}` : ""}.`);
+    },
+    onError: (e) => toast.error(getApiErrorMessage(e, "Failed to clone lesson plans.")),
+  });
+}
+
 // ── Library (Phase 6.5) ──────────────────────────────────────────────────────
 
 export interface LibraryBookRow {

@@ -125,6 +125,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: NotebookPen,
     items: [
       { href: "/dashboard/modules/school/lessons", label: "Lesson Planner", icon: NotebookPen },
+      { href: "/dashboard/modules/school/lessons/setup", label: "Lesson Planner Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/lessons/approve", label: "Approve Lesson Plans", icon: ClipboardCheck },
     ],
   },

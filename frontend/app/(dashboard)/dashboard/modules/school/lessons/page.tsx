@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import {
   useLessonPlans, useCreateLessonPlan, useUpdateLessonPlan,
-  usePublishLessonPlan, useDeleteLessonPlan,
+  usePublishLessonPlan, useDeleteLessonPlan, useLessonPlannerSettings,
   type LessonPlanRow,
 } from "@/hooks/useSchool";
 import { useMyContexts } from "@/hooks/useMyContexts";
@@ -276,6 +276,8 @@ function PlanDrawer({
 }) {
   const isEdit = state.mode === "edit";
   const existing = isEdit ? state.plan : null;
+  // Default a new plan's duration from the school's Lesson Planner Setup setting.
+  const { data: plannerSettings } = useLessonPlannerSettings();
 
   const [form, setForm] = useState(() => ({
     title: existing?.title ?? "",
@@ -285,7 +287,7 @@ function PlanDrawer({
       ?? ("prefillDate" in state ? state.prefillDate : undefined)
       ?? formatISO(new Date()),
     period: existing?.period ?? 1,
-    duration_minutes: existing?.duration_minutes ?? 45,
+    duration_minutes: existing?.duration_minutes ?? plannerSettings?.default_duration_minutes ?? 45,
     objectives: existing?.objectives ?? "",
     activities: existing?.activities ?? "",
     materials: existing?.materials ?? "",
