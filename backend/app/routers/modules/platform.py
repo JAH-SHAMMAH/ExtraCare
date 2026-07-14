@@ -23,6 +23,7 @@ from app.models.user import User, UserStatus
 from app.models.modules.platform import (
     AcademicSession, AcademicWeek, SchoolHouse, GradingBand,
     SchoolSection, GradingScale, ReportTemplate, ReportSubjectAssessment,
+    AssessmentDomain,
     CustomFieldDefinition, CustomFieldValue,
     Poll, PollOption, PollVote,
     MailboxMessage, MailboxRecipient,
@@ -41,6 +42,7 @@ from app.schemas.platform import (
     GradingScaleCreate, GradingScaleResponse, ScaleBandCreate,
     ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
     SubjectAssessmentResponse, SubjectAssessmentUpdate, SetCambridgeAllRequest,
+    DomainCreate, DomainUpdate, DomainResponse, DOMAIN_TYPES,
     SECTION_CURRICULA, ASSESSMENT_MODES, SCALE_TYPES,
 )
 from app.services.ledger import money  # Decimal helper for grading bands
@@ -614,6 +616,213 @@ async def set_all_subjects_cambridge(section_id: str, payload: SetCambridgeAllRe
     return [SubjectAssessmentResponse(subject_id=s.id, subject_name=s.name,
                                       carries_cambridge=payload.carries_cambridge, cambridge_scale_id=payload.cambridge_scale_id)
             for s in subjects]
+
+
+# ── School Reports R3: assessment domains (EYFS / skills / Cambridge strands) ──────
+
+async def _subject_name_map(db, org_id, ids) -> dict[str, str]:
+    ids = {i for i in ids if i}
+    if not ids:
+        return {}
+    rows = (await db.execute(select(Subject.id, Subject.name).where(Subject.org_id == org_id, Subject.id.in_(ids)))).all()
+    return {r.id: r.name for r in rows}
+
+
+def _domain_response(d: AssessmentDomain, subject_name: str | None = None) -> DomainResponse:
+    return DomainResponse(
+        id=d.id, section_id=d.section_id, domain_type=d.domain_type, name=d.name,
+        parent_domain_id=d.parent_domain_id, parent_subject_id=d.parent_subject_id,
+        subject_name=subject_name, rating_scale_id=d.rating_scale_id,
+        position=d.position, org_id=d.org_id,
+    )
+
+
+async def _require_domain(db, domain_id, org_id) -> AssessmentDomain:
+    d = (await db.execute(select(AssessmentDomain).where(
+        AssessmentDomain.id == domain_id, AssessmentDomain.org_id == org_id))).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Assessment domain not found.")
+    return d
+
+
+async def _validate_domain_refs(db, org_id, section_id, parent_domain_id, parent_subject_id, rating_scale_id):
+    """Every FK a domain points at must live in the same org (and, for a parent
+    domain, the same section) — never trust a client-supplied id across the tenant."""
+    if parent_domain_id:
+        p = (await db.execute(select(AssessmentDomain).where(
+            AssessmentDomain.id == parent_domain_id, AssessmentDomain.org_id == org_id))).scalar_one_or_none()
+        if not p or p.section_id != section_id:
+            raise HTTPException(status_code=422, detail="parent_domain_id not found in this section.")
+    if parent_subject_id:
+        s = (await db.execute(select(Subject).where(
+            Subject.id == parent_subject_id, Subject.org_id == org_id))).scalar_one_or_none()
+        if not s:
+            raise HTTPException(status_code=422, detail="parent_subject_id not found.")
+    if rating_scale_id:
+        sc = (await db.execute(select(GradingScale).where(
+            GradingScale.id == rating_scale_id, GradingScale.org_id == org_id))).scalar_one_or_none()
+        if not sc:
+            raise HTTPException(status_code=422, detail="rating_scale_id not found.")
+
+
+@router.get("/sections/{section_id}/domains", response_model=list[DomainResponse], dependencies=[_read])
+async def list_domains(section_id: str, domain_type: str | None = Query(default=None),
+                       db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """The assessment domains defined for a section (EYFS areas/goals, skills,
+    Cambridge strands), ordered for display."""
+    org_id = current_user.org_id
+    await _require_section(db, section_id, org_id)
+    q = select(AssessmentDomain).where(AssessmentDomain.org_id == org_id, AssessmentDomain.section_id == section_id)
+    if domain_type:
+        q = q.where(AssessmentDomain.domain_type == domain_type)
+    domains = (await db.execute(q.order_by(AssessmentDomain.position, AssessmentDomain.name))).scalars().all()
+    subj_names = await _subject_name_map(db, org_id, {d.parent_subject_id for d in domains})
+    return [_domain_response(d, subj_names.get(d.parent_subject_id)) for d in domains]
+
+
+@router.post("/sections/{section_id}/domains", response_model=DomainResponse, status_code=201, dependencies=[_write])
+async def create_domain(section_id: str, payload: DomainCreate,
+                        db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org_id = current_user.org_id
+    await _require_section(db, section_id, org_id)
+    if payload.domain_type not in DOMAIN_TYPES:
+        raise HTTPException(status_code=422, detail="Invalid domain_type.")
+    await _validate_domain_refs(db, org_id, section_id, payload.parent_domain_id, payload.parent_subject_id, payload.rating_scale_id)
+    d = AssessmentDomain(
+        section_id=section_id, domain_type=payload.domain_type, name=payload.name,
+        parent_domain_id=payload.parent_domain_id, parent_subject_id=payload.parent_subject_id,
+        rating_scale_id=payload.rating_scale_id, position=payload.position, org_id=org_id,
+    )
+    db.add(d)
+    await db.flush()
+    subj_names = await _subject_name_map(db, org_id, {d.parent_subject_id})
+    return _domain_response(d, subj_names.get(d.parent_subject_id))
+
+
+@router.patch("/domains/{domain_id}", response_model=DomainResponse, dependencies=[_write])
+async def update_domain(domain_id: str, payload: DomainUpdate,
+                        db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org_id = current_user.org_id
+    d = await _require_domain(db, domain_id, org_id)
+    data = payload.model_dump(exclude_unset=True)
+    # Re-validate any FK that's being (re)set, against the domain's own section.
+    await _validate_domain_refs(
+        db, org_id, d.section_id,
+        data.get("parent_domain_id", d.parent_domain_id) if "parent_domain_id" in data else None,
+        data.get("parent_subject_id", d.parent_subject_id) if "parent_subject_id" in data else None,
+        data.get("rating_scale_id", d.rating_scale_id) if "rating_scale_id" in data else None,
+    )
+    for k, v in data.items():
+        setattr(d, k, v)
+    await db.flush()
+    subj_names = await _subject_name_map(db, org_id, {d.parent_subject_id})
+    return _domain_response(d, subj_names.get(d.parent_subject_id))
+
+
+@router.delete("/domains/{domain_id}", status_code=204, dependencies=[_write])
+async def delete_domain(domain_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    d = await _require_domain(db, domain_id, current_user.org_id)
+    await db.delete(d)   # cascades to child goals + any student ratings
+    await db.flush()
+
+
+# Standard taxonomies the seed lays down. All EDITABLE afterwards — a starting
+# scaffold, never a locked constant (the school renames/prunes to taste).
+_EYFS_AREAS = [
+    ("Communication and Language", ["Listening, Attention and Understanding", "Speaking"]),
+    ("Physical Development", ["Gross Motor Skills", "Fine Motor Skills"]),
+    ("Personal, Social and Emotional Development", ["Self-Regulation", "Managing Self", "Building Relationships"]),
+    ("Literacy", ["Comprehension", "Word Reading", "Writing"]),
+    ("Mathematics", ["Number", "Numerical Patterns"]),
+    ("Understanding the World", ["Past and Present", "People, Culture and Communities", "The Natural World"]),
+    ("Expressive Arts and Design", ["Creating with Materials", "Being Imaginative and Expressive"]),
+]
+_PSYCHOMOTOR = ["Handwriting", "Drawing and Painting", "Sports and Games", "Handling of Tools", "Musical Skills", "Verbal Fluency", "Handling of Laboratory Equipment"]
+_AFFECTIVE = ["Punctuality", "Attendance", "Neatness", "Politeness", "Honesty", "Relationship with Others", "Attentiveness in Class", "Self-Control", "Leadership", "Cooperation"]
+
+
+@router.post("/sections/{section_id}/domains/seed", response_model=list[DomainResponse], dependencies=[_write])
+async def seed_domains(section_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Lay down the standard assessment domains for a section, curriculum-aware and
+    idempotent (never duplicates an existing name):
+      • eyfs → EYFS Areas of Learning + their Early Learning Goals.
+      • nigerian/hybrid → psychomotor (skills) + affective (character) domains.
+      • hybrid → one Cambridge attainment strand per subject that carries the overlay.
+    Everything seeded is editable data; descriptor rating scales are created
+    provisional (except EYFS's, a real published framework) so the school confirms
+    real labels before a report prints them."""
+    org_id = current_user.org_id
+    section = await _require_section(db, section_id, org_id)
+
+    # Descriptor rating scales (reuse by name, create bands only when new).
+    scales = {s.name.casefold(): s for s in (await db.execute(
+        select(GradingScale).where(GradingScale.org_id == org_id))).scalars().all()}
+
+    async def ensure_scale(name, labels, provisional):
+        s = scales.get(name.casefold())
+        if s:
+            return s
+        s = GradingScale(name=name, scale_type="descriptor", is_provisional=provisional, org_id=org_id)
+        db.add(s)
+        await db.flush()
+        for i, label in enumerate(labels):
+            db.add(GradingBand(scale_id=s.id, grade=label, position=i, org_id=org_id))
+        scales[name.casefold()] = s
+        return s
+
+    # Existing domains for idempotency: keyed (domain_type, name, parent_domain_id, parent_subject_id).
+    existing = (await db.execute(select(AssessmentDomain).where(
+        AssessmentDomain.org_id == org_id, AssessmentDomain.section_id == section_id))).scalars().all()
+    seen = {(d.domain_type, d.name.casefold(), d.parent_domain_id, d.parent_subject_id) for d in existing}
+
+    def add_domain(domain_type, name, scale, pos, parent_domain_id=None, parent_subject_id=None):
+        key = (domain_type, name.casefold(), parent_domain_id, parent_subject_id)
+        if key in seen:
+            return None
+        d = AssessmentDomain(section_id=section_id, domain_type=domain_type, name=name,
+                             parent_domain_id=parent_domain_id, parent_subject_id=parent_subject_id,
+                             rating_scale_id=scale.id if scale else None, position=pos, org_id=org_id)
+        db.add(d)
+        seen.add(key)
+        return d
+
+    curriculum = (section.curriculum or "nigerian").lower()
+
+    if curriculum == "eyfs":
+        eyfs_scale = await ensure_scale("EYFS descriptors", ["Emerging", "Expected", "Exceeding"], provisional=False)
+        for ai, (area, goals) in enumerate(_EYFS_AREAS):
+            area_dom = add_domain("eyfs_area", area, eyfs_scale, ai)
+            if area_dom is None:
+                # Area already exists — reuse it as the parent for any missing goals.
+                area_dom = next((d for d in existing if d.domain_type == "eyfs_area" and d.name.casefold() == area.casefold()), None)
+            if area_dom is not None:
+                await db.flush()   # ensure the area has an id before goals reference it
+                for gi, goal in enumerate(goals):
+                    add_domain("eyfs_goal", goal, eyfs_scale, gi, parent_domain_id=area_dom.id)
+    else:
+        skill_scale = await ensure_scale("Skills & behaviour (5-point)", ["Excellent", "Very Good", "Good", "Fair", "Poor"], provisional=True)
+        for i, name in enumerate(_PSYCHOMOTOR):
+            add_domain("psychomotor", name, skill_scale, i)
+        for i, name in enumerate(_AFFECTIVE):
+            add_domain("affective", name, skill_scale, i)
+        if curriculum == "hybrid":
+            camb_scale = await ensure_scale("Cambridge attainment", ["Working towards", "Meeting expectations", "Exceeding expectations"], provisional=True)
+            # One attainment strand per subject that carries the Cambridge overlay here.
+            carried = (await db.execute(select(ReportSubjectAssessment).where(
+                ReportSubjectAssessment.org_id == org_id, ReportSubjectAssessment.section_id == section_id,
+                ReportSubjectAssessment.carries_cambridge == True,  # noqa: E712
+            ))).scalars().all()
+            subj_names = await _subject_name_map(db, org_id, {a.subject_id for a in carried})
+            for i, a in enumerate(sorted(carried, key=lambda x: (subj_names.get(x.subject_id) or "").lower())):
+                sname = subj_names.get(a.subject_id) or "Subject"
+                add_domain("cambridge_strand", f"{sname} — Cambridge attainment", camb_scale, i, parent_subject_id=a.subject_id)
+
+    await db.flush()
+    domains = (await db.execute(select(AssessmentDomain).where(
+        AssessmentDomain.org_id == org_id, AssessmentDomain.section_id == section_id
+    ).order_by(AssessmentDomain.position, AssessmentDomain.name))).scalars().all()
+    subj_names = await _subject_name_map(db, org_id, {d.parent_subject_id for d in domains})
+    return [_domain_response(d, subj_names.get(d.parent_subject_id)) for d in domains]
 
 
 # ── Academic Weeks (calendar backbone) ────────────────────────────────────────

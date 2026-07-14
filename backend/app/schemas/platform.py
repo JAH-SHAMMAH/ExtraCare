@@ -342,6 +342,65 @@ class SetCambridgeAllRequest(BaseModel):
     cambridge_scale_id: Optional[str] = None
 
 
+# ── School Reports R3: assessment domains + student ratings ───────────────────────
+
+# eyfs_area / eyfs_goal — EYFS Areas of Learning + their Early Learning Goals
+# (Nursery). cambridge_strand — a Cambridge attainment strand under a subject
+# (hybrid overlay). psychomotor / affective — the Nigerian report's skills + character.
+DOMAIN_TYPES = {"eyfs_area", "eyfs_goal", "cambridge_strand", "psychomotor", "affective"}
+
+
+class DomainCreate(BaseModel):
+    domain_type: str
+    name: str = Field(min_length=1, max_length=150)
+    parent_domain_id: Optional[str] = None    # eyfs_goal → its area
+    parent_subject_id: Optional[str] = None   # cambridge_strand → its subject
+    rating_scale_id: Optional[str] = None
+    position: int = 0
+
+
+class DomainUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=150)
+    parent_domain_id: Optional[str] = None
+    parent_subject_id: Optional[str] = None
+    rating_scale_id: Optional[str] = None
+    position: Optional[int] = None
+
+
+class DomainResponse(BaseModel):
+    id: str
+    section_id: str
+    domain_type: str
+    name: str
+    parent_domain_id: Optional[str] = None
+    parent_subject_id: Optional[str] = None
+    subject_name: Optional[str] = None
+    rating_scale_id: Optional[str] = None
+    position: int = 0
+    org_id: str
+
+
+class DomainRatingItem(BaseModel):
+    domain_id: str
+    rating: Optional[str] = None    # descriptor label; empty rating+comment clears the row
+    comment: Optional[str] = None
+
+
+class DomainRatingsSet(BaseModel):
+    term: str = Field(min_length=1, max_length=50)
+    ratings: list[DomainRatingItem] = Field(default_factory=list)
+
+
+class DomainRatingResponse(BaseModel):
+    id: str
+    student_id: str
+    term: str
+    domain_id: str
+    rating: Optional[str] = None
+    comment: Optional[str] = None
+    org_id: str
+
+
 # ── Custom Fields ────────────────────────────────────────────────────────────────
 
 class FieldDefCreate(BaseModel):

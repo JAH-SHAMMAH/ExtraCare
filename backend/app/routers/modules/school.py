@@ -13,7 +13,10 @@ from app.models.modules.school import (
     LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus, TeacherRating,
     GradeStatus, AttendanceSettings, AbsenceReason, StudentReport,
 )
-from app.models.modules.platform import AcademicSession, SchoolSection, ReportTemplate, GradingBand, ReportSubjectAssessment
+from app.models.modules.platform import (
+    AcademicSession, SchoolSection, ReportTemplate, GradingBand, ReportSubjectAssessment,
+    AssessmentDomain, StudentDomainRating,
+)
 from app.schemas.attendance_config import (
     AttendanceSettingsResponse, AttendanceSettingsUpdate,
     AbsenceReasonResponse, AbsenceReasonCreate, AbsenceReasonUpdate,
@@ -30,6 +33,7 @@ from app.schemas.subject import SubjectCreate, SubjectUpdate
 from app.schemas.exam import ExamCreate, ExamUpdate, ExamResultRow, EXAM_TYPES, EXAM_STATUSES
 from app.schemas.rating import RatingCreate
 from app.schemas.grade import GradePublish, ReportMetaUpdate
+from app.schemas.platform import DomainRatingsSet, DomainRatingResponse
 
 logger = logging.getLogger("extracare.school")
 
@@ -1103,6 +1107,11 @@ async def get_report_card(
     if meta and meta.attendance_total is not None and meta.attendance_present is not None:
         absent = meta.attendance_total - meta.attendance_present
 
+    # R3: the section's assessment domains (EYFS areas/goals, skills, Cambridge
+    # strands) with this student's rating for the term. A flat list the UI groups by
+    # domain_type + parent; empty when the section defines no domains.
+    domains_out = await _report_domains(db, current_user.org_id, cls, student_id, term)
+
     return {
         "student_id": student_id,
         "student": {
@@ -1144,6 +1153,7 @@ async def get_report_card(
         "attendance_total": meta.attendance_total if meta else None,
         "attendance_absent": absent,
         "next_term_begins": meta.next_term_begins.isoformat() if meta and meta.next_term_begins else None,
+        "domains": domains_out,
     }
 
 
@@ -1195,6 +1205,129 @@ async def upsert_report_meta(
         "attendance_present": meta.attendance_present, "attendance_total": meta.attendance_total,
         "next_term_begins": meta.next_term_begins.isoformat() if meta.next_term_begins else None,
     }
+
+
+# ── School Reports R3: assessment-domain ratings (EYFS / skills / Cambridge) ───────
+
+async def _report_domains(db, org_id, cls, student_id, term):
+    """The section's assessment domains with this student's rating for the term —
+    the criterion-referenced / non-cognitive layer of the report card. Returns a
+    flat list (grouped client-side by domain_type + parent); empty when the class is
+    unassigned or its section defines no domains."""
+    if cls is None or not getattr(cls, "section_id", None):
+        return []
+    domains = (await db.execute(
+        select(AssessmentDomain).where(
+            AssessmentDomain.org_id == org_id, AssessmentDomain.section_id == cls.section_id,
+        ).order_by(AssessmentDomain.position, AssessmentDomain.name)
+    )).scalars().all()
+    if not domains:
+        return []
+    rq = select(StudentDomainRating).where(
+        StudentDomainRating.org_id == org_id, StudentDomainRating.student_id == student_id,
+        StudentDomainRating.domain_id.in_([d.id for d in domains]),
+    )
+    if term:
+        rq = rq.where(StudentDomainRating.term == term)
+    ratings = {r.domain_id: r for r in (await db.execute(rq)).scalars().all()}
+    subj_names = await _subject_names(db, org_id, {d.parent_subject_id for d in domains if d.parent_subject_id})
+    out = []
+    for d in domains:
+        r = ratings.get(d.id)
+        out.append({
+            "domain_id": d.id, "domain_type": d.domain_type, "name": d.name,
+            "parent_domain_id": d.parent_domain_id, "parent_subject_id": d.parent_subject_id,
+            "subject_name": subj_names.get(d.parent_subject_id) if d.parent_subject_id else None,
+            "rating_scale_id": d.rating_scale_id, "position": d.position,
+            "rating": r.rating if r else None, "comment": r.comment if r else None,
+        })
+    return out
+
+
+def _domain_rating_response(r: StudentDomainRating) -> DomainRatingResponse:
+    return DomainRatingResponse(
+        id=r.id, student_id=r.student_id, term=r.term, domain_id=r.domain_id,
+        rating=r.rating, comment=r.comment, org_id=r.org_id,
+    )
+
+
+@router.get("/students/{student_id}/domain-ratings", dependencies=[_reports_read])
+async def list_domain_ratings(
+    student_id: str,
+    term: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """A student's assessment-domain ratings for a term (the entry grid + report
+    source). Same visibility contract as the report card."""
+    await _ensure_student_visible(db, current_user, student_id)
+    rows = (await db.execute(
+        select(StudentDomainRating).where(
+            StudentDomainRating.org_id == current_user.org_id,
+            StudentDomainRating.student_id == student_id, StudentDomainRating.term == term,
+        )
+    )).scalars().all()
+    return [_domain_rating_response(r) for r in rows]
+
+
+@router.put("/students/{student_id}/domain-ratings", dependencies=[_reports_write])
+async def set_domain_ratings(
+    student_id: str,
+    payload: DomainRatingsSet,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Bulk upsert a student's domain ratings for a term (staff report authoring).
+    An item with empty rating AND comment clears that domain's row."""
+    org_id = current_user.org_id
+    student = (await db.execute(
+        select(Student).where(
+            Student.id == student_id, Student.org_id == org_id, Student.is_deleted == False,  # noqa: E712
+        )
+    )).scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="student not found in your organisation.")
+    term = payload.term
+    domain_ids = [i.domain_id for i in payload.ratings]
+    valid = {
+        d.id for d in (await db.execute(
+            select(AssessmentDomain).where(
+                AssessmentDomain.org_id == org_id, AssessmentDomain.id.in_(domain_ids),
+            )
+        )).scalars().all()
+    } if domain_ids else set()
+    bad = [i for i in domain_ids if i not in valid]
+    if bad:
+        raise HTTPException(status_code=422, detail="One or more domain_id values are not in your organisation.")
+    existing = {
+        r.domain_id: r for r in (await db.execute(
+            select(StudentDomainRating).where(
+                StudentDomainRating.org_id == org_id, StudentDomainRating.student_id == student_id,
+                StudentDomainRating.term == term, StudentDomainRating.domain_id.in_(domain_ids),
+            )
+        )).scalars().all()
+    } if domain_ids else {}
+    for item in payload.ratings:
+        rating = (item.rating or "").strip() or None
+        comment = (item.comment or "").strip() or None
+        r = existing.get(item.domain_id)
+        if rating is None and comment is None:
+            if r:
+                await db.delete(r)      # clear
+            continue
+        if not r:
+            r = StudentDomainRating(student_id=student_id, term=term, domain_id=item.domain_id, org_id=org_id)
+            db.add(r)
+        r.rating = rating
+        r.comment = comment
+    await db.flush()
+    rows = (await db.execute(
+        select(StudentDomainRating).where(
+            StudentDomainRating.org_id == org_id, StudentDomainRating.student_id == student_id,
+            StudentDomainRating.term == term,
+        )
+    )).scalars().all()
+    return [_domain_rating_response(r) for r in rows]
 
 
 def _student_dict(s: Student) -> dict:
