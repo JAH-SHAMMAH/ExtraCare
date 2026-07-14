@@ -288,6 +288,11 @@ export const schoolApi = {
       api.get("/school/grades/publish-status", { params }).then((r) => r.data),
     publish: (data: { term: string; status: "published" | "draft"; class_id?: string; exam_id?: string; subject_id?: string }) =>
       api.post("/school/grades/publish", data).then((r) => r.data),
+    // R3 assessment-domain ratings (EYFS / skills / Cambridge) per student+term.
+    domainRatings: (student_id: string, term: string) =>
+      api.get(`/school/students/${student_id}/domain-ratings`, { params: { term } }).then((r) => r.data),
+    saveDomainRatings: (student_id: string, data: { term: string; ratings: object[] }) =>
+      api.put(`/school/students/${student_id}/domain-ratings`, data).then((r) => r.data),
   },
   // Library (Phase 6.5). Routes live under /library/* — separate router.
   library: {
@@ -1212,6 +1217,14 @@ export const platformApi = {
     subjects: (id: string) => api.get(`/platform/sections/${id}/subjects`).then((r) => r.data),
     setSubject: (id: string, subject_id: string, d: object) => api.patch(`/platform/sections/${id}/subjects/${subject_id}`, d).then((r) => r.data),
     setAllCambridge: (id: string, d: object) => api.post(`/platform/sections/${id}/subjects/set-cambridge`, d).then((r) => r.data),
+    // R3 assessment domains (EYFS areas/goals, skills, Cambridge strands).
+    domains: (id: string) => api.get(`/platform/sections/${id}/domains`).then((r) => r.data),
+    seedDomains: (id: string) => api.post(`/platform/sections/${id}/domains/seed`).then((r) => r.data),
+    createDomain: (id: string, d: object) => api.post(`/platform/sections/${id}/domains`, d).then((r) => r.data),
+  },
+  domains: {
+    update: (id: string, d: object) => api.patch(`/platform/domains/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/domains/${id}`),
   },
   gradingScales: {
     list: () => api.get("/platform/grading-scales").then((r) => r.data),

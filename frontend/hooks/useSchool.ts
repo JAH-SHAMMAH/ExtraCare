@@ -650,3 +650,26 @@ export function useSaveReportMeta() {
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save report details."),
   });
 }
+
+// R3 assessment-domain ratings (EYFS / skills / Cambridge) per student + term.
+export function useDomainRatings(student_id: string, term: string) {
+  return useQuery({
+    queryKey: ["domain-ratings", student_id, term],
+    queryFn: () => schoolApi.grades.domainRatings(student_id, term),
+    enabled: !!student_id && !!term,
+  });
+}
+
+export function useSaveDomainRatings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ student_id, data }: { student_id: string; data: { term: string; ratings: object[] } }) =>
+      schoolApi.grades.saveDomainRatings(student_id, data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["domain-ratings", vars.student_id, vars.data.term] });
+      qc.invalidateQueries({ queryKey: ["report-card", vars.student_id, vars.data.term] });
+      toast.success("Assessment ratings saved.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save ratings."),
+  });
+}

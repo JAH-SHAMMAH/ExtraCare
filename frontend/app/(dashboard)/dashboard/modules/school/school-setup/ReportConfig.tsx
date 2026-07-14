@@ -5,9 +5,10 @@ import {
   useSections, useReportTemplates, useUpdateTemplate,
   useGradingScales, useReplaceScaleBands, useBootstrapReportConfig,
   useSectionSubjects, useSetSectionSubject, useSetAllCambridge,
+  useSectionDomains, useSeedDomains, useCreateDomain, useDeleteDomain,
 } from "@/hooks/usePlatform";
-import { Loader2, Trash2, Plus, Wand2, FileText, Save, GraduationCap, ChevronDown } from "lucide-react";
-import type { ReportTemplate, GradingScale, SubjectAssessment } from "@/types";
+import { Loader2, Trash2, Plus, Wand2, FileText, Save, GraduationCap, ChevronDown, ListChecks } from "lucide-react";
+import type { ReportTemplate, GradingScale, SubjectAssessment, AssessmentDomain } from "@/types";
 
 /**
  * School Reports R2 config — report templates + grading scales (per section).
@@ -94,6 +95,7 @@ function TemplateRow({ template, scales, canWrite }: { template: ReportTemplate;
         <div><label className="label">Grading scale</label><select value={form.grading_scale_id} onChange={(e) => setForm({ ...form, grading_scale_id: e.target.value })} className="input" disabled={!canWrite}><option value="">— None —</option>{scales.filter((s) => s.scale_type === "numeric").map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
       </div>
       {form.assessment_mode === "hybrid" && <CambridgeSubjects sectionId={template.section_id} canWrite={canWrite} />}
+      <AssessmentDomains sectionId={template.section_id} canWrite={canWrite} />
       {canWrite && <div className="flex justify-end mt-3"><button onClick={save} disabled={update.isPending} className="btn-secondary gap-2 text-xs py-1.5">{update.isPending ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save</button></div>}
     </div>
   );
@@ -131,6 +133,85 @@ function CambridgeSubjects({ sectionId, canWrite }: { sectionId: string; canWrit
                   {s.subject_name}
                 </label>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const DOMAIN_GROUPS: { type: string; label: string }[] = [
+  { type: "eyfs_area", label: "EYFS areas" },
+  { type: "eyfs_goal", label: "Early learning goals" },
+  { type: "psychomotor", label: "Psychomotor skills" },
+  { type: "affective", label: "Affective traits" },
+  { type: "cambridge_strand", label: "Cambridge strands" },
+];
+
+function AssessmentDomains({ sectionId, canWrite }: { sectionId: string; canWrite: boolean }) {
+  const [open, setOpen] = useState(false);
+  const { data: domains = [], isLoading } = useSectionDomains(open ? sectionId : "");
+  const seed = useSeedDomains();
+  const create = useCreateDomain();
+  const del = useDeleteDomain();
+  const [draft, setDraft] = useState({ domain_type: "affective", name: "" });
+
+  const add = () => {
+    if (!draft.name.trim()) return;
+    create.mutate({ section_id: sectionId, data: { domain_type: draft.domain_type, name: draft.name.trim() } },
+      { onSuccess: () => setDraft({ ...draft, name: "" }) });
+  };
+
+  return (
+    <div className="mt-4 border-t border-slate-100 pt-3">
+      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-slate-900">
+        <ListChecks size={14} className="text-emerald-600" /> Assessment domains {!open && domains.length > 0 && <span className="text-slate-400 font-normal">({domains.length})</span>}
+        <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="mt-3">
+          <p className="text-[11px] text-slate-400 mb-2">EYFS areas &amp; goals (Nursery), psychomotor/affective skills, and Cambridge strands rated on the report card. Seed the standard set for this section&apos;s curriculum, then edit to taste.</p>
+          {canWrite && (
+            <div className="flex gap-2 mb-3">
+              <button onClick={() => seed.mutate(sectionId)} disabled={seed.isPending} className="btn-secondary gap-1.5 text-xs py-1">
+                {seed.isPending ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />} Seed standard domains
+              </button>
+            </div>
+          )}
+          {isLoading ? <Loader2 size={16} className="animate-spin text-slate-400" /> : domains.length === 0 ? (
+            <p className="text-xs text-slate-400">No domains yet — seed the standard set or add one below.</p>
+          ) : (
+            <div className="space-y-3">
+              {DOMAIN_GROUPS.map((g) => {
+                const rows = domains.filter((d: AssessmentDomain) => d.domain_type === g.type);
+                if (!rows.length) return null;
+                return (
+                  <div key={g.type}>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">{g.label}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {rows.map((d: AssessmentDomain) => (
+                        <span key={d.id} className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-700">
+                          {d.subject_name ? `${d.subject_name}` : d.name}
+                          {canWrite && <button onClick={() => del.mutate(d.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={11} /></button>}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {canWrite && (
+            <div className="flex gap-2 mt-3">
+              <select value={draft.domain_type} onChange={(e) => setDraft({ ...draft, domain_type: e.target.value })} className="input w-40 text-xs">
+                <option value="affective">Affective trait</option>
+                <option value="psychomotor">Psychomotor skill</option>
+                <option value="eyfs_area">EYFS area</option>
+                <option value="eyfs_goal">Early learning goal</option>
+              </select>
+              <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Domain name" className="input flex-1 text-xs" />
+              <button onClick={add} disabled={create.isPending || !draft.name.trim()} className="btn-secondary gap-1 text-xs py-1"><Plus size={12} /> Add</button>
             </div>
           )}
         </div>

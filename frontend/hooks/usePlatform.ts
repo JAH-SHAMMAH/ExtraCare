@@ -8,6 +8,7 @@ import type {
   BiometricDevice, BiometricEnrollment, UnmappedPunch, IngestSummary, DeviceToken,
   AcademicSession, AcademicWeek, SchoolHouse, GradingBand, CustomFieldDef, Poll,
   SchoolSection, GradingScale, ReportTemplate, AutoMapResult, SubjectAssessment,
+  AssessmentDomain,
   MailboxMessage, MobileDevice, AppConfigItem, Paginated,
 } from "@/types";
 
@@ -109,6 +110,19 @@ export function useSectionSubjects(sectionId: string) {
 }
 export const useSetSectionSubject = m((v: { section_id: string; subject_id: string; data: object }) => platformApi.sections.setSubject(v.section_id, v.subject_id, v.data), ["section-subjects"], "Updated.");
 export const useSetAllCambridge = m((v: { section_id: string; data: object }) => platformApi.sections.setAllCambridge(v.section_id, v.data), ["section-subjects"], "Applied to all subjects.");
+
+// R3 — per-section assessment domains (EYFS areas/goals, skills, Cambridge strands).
+export function useSectionDomains(sectionId: string) {
+  return useQuery<AssessmentDomain[]>({
+    queryKey: ["section-domains", sectionId],
+    queryFn: () => platformApi.sections.domains(sectionId),
+    enabled: !!sectionId,
+  });
+}
+export const useSeedDomains = m((sectionId: string) => platformApi.sections.seedDomains(sectionId), ["section-domains"], "Standard domains created.");
+export const useCreateDomain = m((v: { section_id: string; data: object }) => platformApi.sections.createDomain(v.section_id, v.data), ["section-domains"], "Domain added.");
+export const useUpdateDomain = m((v: { id: string; data: object }) => platformApi.domains.update(v.id, v.data), ["section-domains"], "Domain updated.");
+export const useDeleteDomain = m((id: string) => platformApi.domains.remove(id), ["section-domains"], "Domain removed.");
 
 export function useAutoMapSections() {
   const qc = useQueryClient();

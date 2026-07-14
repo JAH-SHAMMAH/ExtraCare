@@ -1,14 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useStudents, useReportCard, useSaveReportMeta } from "@/hooks/useSchool";
-import { useTermState } from "@/hooks/usePlatform";
+import { useState, useEffect, useMemo } from "react";
+import { useStudents, useReportCard, useSaveReportMeta, useSaveDomainRatings } from "@/hooks/useSchool";
+import { useTermState, useGradingScales } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn, getInitials } from "@/lib/utils";
-import { FileText, Search, Printer, Loader2, Pencil, X } from "lucide-react";
+import { FileText, Search, Printer, Loader2, Pencil, X, ClipboardCheck } from "lucide-react";
 import { PrintLetterhead } from "@/components/branding/Brand";
 import { TERMS, DEFAULT_TERM } from "@/lib/terms";
-import type { Student } from "@/types";
+import type { Student, ReportCardDomain } from "@/types";
 
 export default function ReportCardsPage() {
   const [search, setSearch] = useState("");
@@ -73,20 +73,28 @@ export default function ReportCardsPage() {
 
 function ReportCardView({ card, term, studentId, canWrite }: { card: any; term: string; studentId: string; canWrite: boolean }) {
   const [editing, setEditing] = useState(false);
+  const [rating, setRating] = useState(false);
   const subjects: any[] = card.subjects || [];
+  const domains: ReportCardDomain[] = card.domains || [];
   const hasAttendance = card.attendance_total != null;
 
   return (
     <div>
       {/* Staff-only controls (never printed) */}
       {canWrite && (
-        <div className="flex justify-end mb-3 no-print">
-          <button onClick={() => setEditing((v) => !v)} className="btn-secondary gap-2 text-xs py-1.5">
+        <div className="flex justify-end gap-2 mb-3 no-print">
+          {domains.length > 0 && (
+            <button onClick={() => { setRating((v) => !v); setEditing(false); }} className="btn-secondary gap-2 text-xs py-1.5">
+              {rating ? <><X size={13} /> Close</> : <><ClipboardCheck size={13} /> Enter assessment ratings</>}
+            </button>
+          )}
+          <button onClick={() => { setEditing((v) => !v); setRating(false); }} className="btn-secondary gap-2 text-xs py-1.5">
             {editing ? <><X size={13} /> Close</> : <><Pencil size={13} /> Edit report details</>}
           </button>
         </div>
       )}
       {editing && canWrite && <ReportMetaForm card={card} term={term} studentId={studentId} onDone={() => setEditing(false)} />}
+      {rating && canWrite && <DomainRatingsForm domains={domains} term={term} studentId={studentId} onDone={() => setRating(false)} />}
 
       <PrintLetterhead title="Report Card" subtitle={`${card.term || term}${card.academic_year ? ` — ${card.academic_year}` : ""}`} />
 
@@ -126,6 +134,9 @@ function ReportCardView({ card, term, studentId, canWrite }: { card: any; term: 
           </tbody>
         </table>
       </div>
+
+      {/* Assessment domains (EYFS / skills / Cambridge) — R3 */}
+      <DomainReportBlock domains={domains} />
 
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-lg">
@@ -193,6 +204,156 @@ function ReportMetaForm({ card, term, studentId, onDone }: { card: any; term: st
       <div className="flex justify-end gap-3 mt-4">
         <button onClick={onDone} className="btn-secondary">Cancel</button>
         <button onClick={submit} disabled={save.isPending} className="btn-primary gap-2">{save.isPending && <Loader2 size={15} className="animate-spin" />}Save details</button>
+      </div>
+    </div>
+  );
+}
+
+// ── R3 assessment domains: partitioning shared by the printed block + entry form ──
+
+const SKILL_GROUPS: { type: string; label: string }[] = [
+  { type: "psychomotor", label: "Psychomotor Skills" },
+  { type: "affective", label: "Affective Traits" },
+];
+
+function partition(domains: ReportCardDomain[]) {
+  const byPos = (a: ReportCardDomain, b: ReportCardDomain) => a.position - b.position || a.name.localeCompare(b.name);
+  const areas = domains.filter((d) => d.domain_type === "eyfs_area").sort(byPos);
+  const goals = domains.filter((d) => d.domain_type === "eyfs_goal").sort(byPos);
+  const strands = domains.filter((d) => d.domain_type === "cambridge_strand").sort(byPos);
+  const skills = SKILL_GROUPS.map((g) => ({ ...g, rows: domains.filter((d) => d.domain_type === g.type).sort(byPos) })).filter((g) => g.rows.length);
+  const strandsBySubject: Record<string, ReportCardDomain[]> = {};
+  strands.forEach((s) => { const k = s.subject_name || "Cambridge"; (strandsBySubject[k] ||= []).push(s); });
+  return { areas, goals, strands, strandsBySubject, skills, any: domains.length > 0 };
+}
+
+function RatingRow({ name, rating }: { name: string; rating: string | null }) {
+  return (
+    <tr>
+      <td className="px-3 py-2 text-sm text-slate-700">{name}</td>
+      <td className="px-3 py-2 text-sm text-right">{rating ? <span className="badge bg-brand-50 text-brand-700 border-brand-200">{rating}</span> : <span className="text-slate-300">—</span>}</td>
+    </tr>
+  );
+}
+
+function DomainReportBlock({ domains }: { domains: ReportCardDomain[] }) {
+  const { areas, goals, strandsBySubject, skills, any } = partition(domains);
+  if (!any) return null;
+  return (
+    <div className="mb-5 space-y-5">
+      {/* EYFS Areas of Learning + Early Learning Goals */}
+      {areas.length > 0 && (
+        <div>
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Areas of Learning (EYFS)</h3>
+          <div className="space-y-3">
+            {areas.map((area) => {
+              const g = goals.filter((x) => x.parent_domain_id === area.domain_id);
+              return (
+                <div key={area.domain_id} className="border border-slate-100 rounded-lg overflow-hidden">
+                  <div className="bg-slate-50/80 px-3 py-2 text-sm font-semibold text-slate-800 flex items-center justify-between">
+                    <span>{area.name}</span>{area.rating && !g.length && <span className="badge bg-brand-50 text-brand-700 border-brand-200">{area.rating}</span>}
+                  </div>
+                  {g.length > 0 && (
+                    <table className="w-full"><tbody className="divide-y divide-slate-50">{g.map((goal) => <RatingRow key={goal.domain_id} name={goal.name} rating={goal.rating} />)}</tbody></table>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Cambridge attainment, grouped by subject */}
+      {Object.keys(strandsBySubject).length > 0 && (
+        <div>
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Cambridge Attainment</h3>
+          <div className="border border-slate-100 rounded-lg overflow-hidden">
+            <table className="w-full"><tbody className="divide-y divide-slate-50">
+              {Object.entries(strandsBySubject).map(([subject, rows]) => rows.map((s, i) => (
+                <RatingRow key={s.domain_id} name={i === 0 && rows.length > 1 ? `${subject}` : (rows.length > 1 ? s.name : subject)} rating={s.rating} />
+              )))}
+            </tbody></table>
+          </div>
+        </div>
+      )}
+
+      {/* Nigerian psychomotor + affective */}
+      {skills.map((g) => (
+        <div key={g.type}>
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">{g.label}</h3>
+          <div className="border border-slate-100 rounded-lg overflow-hidden">
+            <table className="w-full"><tbody className="divide-y divide-slate-50">{g.rows.map((r) => <RatingRow key={r.domain_id} name={r.name} rating={r.rating} />)}</tbody></table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DomainRatingsForm({ domains, term, studentId, onDone }: { domains: ReportCardDomain[]; term: string; studentId: string; onDone: () => void }) {
+  const save = useSaveDomainRatings();
+  const { data: scales = [] } = useGradingScales();
+  const scaleOptions = useMemo(() => {
+    const m = new Map<string, string[]>();
+    scales.forEach((s: any) => m.set(s.id, (s.bands || []).map((b: any) => b.grade)));
+    return m;
+  }, [scales]);
+
+  const seed = () => domains.map((d) => ({ domain_id: d.domain_id, rating: d.rating || "", comment: d.comment || "" }));
+  const [rows, setRows] = useState<{ domain_id: string; rating: string; comment: string }[]>(seed);
+  useEffect(() => { setRows(seed()); }, [studentId, term]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setRow = (id: string, patch: Partial<{ rating: string; comment: string }>) =>
+    setRows((rs) => rs.map((r) => (r.domain_id === id ? { ...r, ...patch } : r)));
+  const val = (id: string) => rows.find((r) => r.domain_id === id) || { rating: "", comment: "" };
+
+  const submit = () => save.mutate(
+    { student_id: studentId, data: { term, ratings: rows.map((r) => ({ domain_id: r.domain_id, rating: r.rating || null, comment: r.comment || null })) } },
+    { onSuccess: onDone },
+  );
+
+  const { areas, goals, strands, skills } = partition(domains);
+  const flat: { header: string; items: ReportCardDomain[] }[] = [];
+  areas.forEach((a) => flat.push({ header: a.name, items: goals.filter((g) => g.parent_domain_id === a.domain_id) || [] }));
+  // Areas with no goals are rated directly.
+  areas.filter((a) => !goals.some((g) => g.parent_domain_id === a.domain_id)).forEach((a) => { const grp = flat.find((f) => f.header === a.name); if (grp) grp.items = [a]; });
+  skills.forEach((g) => flat.push({ header: g.label, items: g.rows }));
+  if (strands.length) flat.push({ header: "Cambridge Attainment", items: strands });
+
+  return (
+    <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-5 no-print">
+      <h3 className="text-sm font-bold text-slate-800 mb-1">Assessment ratings — {term}</h3>
+      <p className="text-xs text-slate-500 mb-4">Rate each domain against the section&apos;s descriptor scale. Leave a domain blank to clear it.</p>
+      <div className="space-y-5 max-h-[460px] overflow-y-auto pr-1">
+        {flat.map((group) => (
+          <div key={group.header}>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">{group.header}</p>
+            <div className="space-y-2">
+              {group.items.map((d) => {
+                const opts = d.rating_scale_id ? scaleOptions.get(d.rating_scale_id) : undefined;
+                const v = val(d.domain_id);
+                return (
+                  <div key={d.domain_id} className="grid grid-cols-1 md:grid-cols-3 gap-2 items-center">
+                    <span className="text-sm text-slate-700 md:col-span-1">{d.name}</span>
+                    {opts && opts.length ? (
+                      <select value={v.rating} onChange={(e) => setRow(d.domain_id, { rating: e.target.value })} className="input">
+                        <option value="">— Not rated —</option>
+                        {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    ) : (
+                      <input value={v.rating} onChange={(e) => setRow(d.domain_id, { rating: e.target.value })} className="input" placeholder="Rating" />
+                    )}
+                    <input value={v.comment} onChange={(e) => setRow(d.domain_id, { comment: e.target.value })} className="input" placeholder="Comment (optional)" />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end gap-3 mt-4">
+        <button onClick={onDone} className="btn-secondary">Cancel</button>
+        <button onClick={submit} disabled={save.isPending} className="btn-primary gap-2">{save.isPending && <Loader2 size={15} className="animate-spin" />}Save ratings</button>
       </div>
     </div>
   );

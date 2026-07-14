@@ -2242,6 +2242,21 @@ export interface ReportTemplate {
 export interface AutoMapResult { linked: number; unassigned: string[]; }
 export interface SubjectAssessment { subject_id: string; subject_name: string | null; carries_cambridge: boolean; cambridge_scale_id: string | null; }
 
+// R3 assessment domains (EYFS areas/goals, skills, Cambridge strands) + ratings.
+export type DomainType = "eyfs_area" | "eyfs_goal" | "cambridge_strand" | "psychomotor" | "affective";
+export interface AssessmentDomain {
+  id: string; section_id: string; domain_type: DomainType | string; name: string;
+  parent_domain_id: string | null; parent_subject_id: string | null; subject_name: string | null;
+  rating_scale_id: string | null; position: number; org_id: string;
+}
+// A domain row on the report card = the domain + this student's rating for the term.
+export interface ReportCardDomain {
+  domain_id: string; domain_type: DomainType | string; name: string;
+  parent_domain_id: string | null; parent_subject_id: string | null; subject_name: string | null;
+  rating_scale_id: string | null; position: number; rating: string | null; comment: string | null;
+}
+export interface DomainRating { id: string; student_id: string; term: string; domain_id: string; rating: string | null; comment: string | null; org_id: string; }
+
 export interface CustomFieldDef {
   id: string; entity_type: string; field_key: string; label: string; field_type: string;
   options: string[] | null; required: boolean; created_at: string; org_id: string;
