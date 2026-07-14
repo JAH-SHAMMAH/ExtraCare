@@ -10,7 +10,7 @@ Proves the setup surface behind the tabs:
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, time, datetime
 
 import pytest
 from fastapi import HTTPException
@@ -19,17 +19,36 @@ from sqlalchemy import select
 from app.models.user import User, UserStatus
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.modules.school import LessonPlan
+from app.models.modules.platform import MailboxRecipient
 from app.routers.modules.school import (
     create_lesson, update_lesson, list_lessons, publish_lesson,
     list_lesson_categories, create_lesson_category, update_lesson_category, delete_lesson_category,
     get_planner_settings, update_planner_settings,
     list_lesson_supervisors, add_lesson_supervisor, remove_lesson_supervisor,
     clone_lessons, create_subject,
+    list_schedules, create_schedule, update_schedule, delete_schedule,
+    send_schedule_now, run_due_schedules,
 )
 from app.schemas.lesson_planner import (
     CategoryCreate, CategoryUpdate, PlannerSettingsUpdate, SupervisorCreate, CloneLessonsRequest,
+    ScheduleCreate, ScheduleUpdate,
 )
 from app.schemas.subject import SubjectCreate
+
+
+async def _user_with_role(db, org, slug) -> User:
+    u = User(id=str(uuid.uuid4()), email=f"{slug}-{uuid.uuid4().hex[:6]}@x.com",
+             full_name=slug.title(), status=UserStatus.ACTIVE, org_id=org.id)
+    role = Role(id=str(uuid.uuid4()), name=slug, slug=slug, permissions=[], org_id=org.id, is_system=False)
+    db.add(role)
+    u.roles = [role]
+    db.add(u)
+    await db.commit()
+    return u
+
+
+async def _recipient_ids(db, org):
+    return set((await db.execute(select(MailboxRecipient.recipient_id).where(MailboxRecipient.org_id == org.id))).scalars().all())
 
 
 pytestmark = pytest.mark.asyncio
@@ -187,3 +206,67 @@ async def test_default_duration_from_settings(db, org, school_class):
     await update_planner_settings(PlannerSettingsUpdate(default_duration_minutes=60), db=db, current_user=admin)
     plan = await _plan(db, admin, school_class.id, subj["id"], "2027-02-01", title="D")  # no duration passed
     assert plan["duration_minutes"] == 60
+
+
+# ── Reminder schedules ────────────────────────────────────────────────────────────
+
+async def test_schedule_crud_and_weekly_requires_days(db, org):
+    admin = await _admin(db, org)
+    # Weekly with no days is rejected.
+    with pytest.raises(HTTPException) as ei:
+        await create_schedule(ScheduleCreate(subject="Submit plans", frequency="weekly", days=[], run_time=time(8, 0)), db=db, current_user=admin)
+    assert ei.value.status_code == 422
+
+    s = await create_schedule(ScheduleCreate(subject="Submit plans", frequency="weekly", days=[4, 0, 4], run_time=time(8, 0)), db=db, current_user=admin)
+    assert s["days"] == [0, 4] and s["is_active"] is True   # deduped + sorted
+    listed = await list_schedules(db=db, current_user=admin)
+    assert any(x["id"] == s["id"] for x in listed)
+
+    upd = await update_schedule(s["id"], ScheduleUpdate(is_active=False, subject="Reminder"), db=db, current_user=admin)
+    assert upd["is_active"] is False and upd["subject"] == "Reminder"
+
+    await delete_schedule(s["id"], db=db, current_user=admin)
+    assert await list_schedules(db=db, current_user=admin) == []
+
+
+async def test_send_now_targets_teaching_staff_not_students(db, org):
+    admin = await _admin(db, org)              # sender (excluded from recipients)
+    teacher = await _user_with_role(db, org, "teacher")
+    student = await _user_with_role(db, org, "student")
+
+    s = await create_schedule(ScheduleCreate(subject="Plans due Friday", audience="teachers", frequency="daily", run_time=time(7, 0)), db=db, current_user=admin)
+    res = await send_schedule_now(s["id"], db=db, current_user=admin)
+    recips = await _recipient_ids(db, org)
+    # Teaching-staff audience reaches the teacher, never the student, never the sender.
+    assert teacher.id in recips and student.id not in recips and admin.id not in recips
+    assert res["dispatched"] == 1 and res["recipients"] == len(recips)
+
+
+async def test_all_staff_audience_includes_students(db, org):
+    admin = await _admin(db, org)
+    teacher = await _user_with_role(db, org, "teacher")
+    student = await _user_with_role(db, org, "student")
+    s = await create_schedule(ScheduleCreate(subject="Notice", audience="all_staff", frequency="daily", run_time=time(0, 0)), db=db, current_user=admin)
+    await send_schedule_now(s["id"], db=db, current_user=admin)
+    recips = await _recipient_ids(db, org)
+    assert {teacher.id, student.id} <= recips
+
+
+async def test_run_due_fires_only_due_and_is_idempotent(db, org):
+    admin = await _admin(db, org)
+    await _user_with_role(db, org, "teacher")
+    today = datetime.now().weekday()
+    # Due now: daily, time already passed today.
+    due = await create_schedule(ScheduleCreate(subject="Due", frequency="daily", run_time=time(0, 0)), db=db, current_user=admin)
+    # Not due: weekly on a different weekday.
+    await create_schedule(ScheduleCreate(subject="Other day", frequency="weekly", days=[(today + 1) % 7], run_time=time(0, 0)), db=db, current_user=admin)
+    # Not due: time-of-day still in the future.
+    await create_schedule(ScheduleCreate(subject="Later", frequency="daily", run_time=time(23, 59)), db=db, current_user=admin)
+
+    first = await run_due_schedules(db=db, current_user=admin)
+    assert first["dispatched"] == 1 and first["recipients"] >= 1
+    # Idempotent: the due one already ran today → nothing fires again.
+    second = await run_due_schedules(db=db, current_user=admin)
+    assert second["dispatched"] == 0
+    fetched = next(x for x in await list_schedules(db=db, current_user=admin) if x["id"] == due["id"])
+    assert fetched["last_run_on"] == date.today()

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, update as sa_update
 from sqlalchemy.exc import IntegrityError
-from datetime import date, time, timedelta
+from datetime import date, time, timedelta, datetime
 
 from app.database import get_db
 from app.deps import get_current_active_user
@@ -12,12 +12,14 @@ from app.models.modules.school import (
     Student, SchoolClass, AttendanceRecord, Grade, Subject, Timetable,
     LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus, TeacherRating,
     GradeStatus, AttendanceSettings, AbsenceReason, StudentReport,
-    LessonPlanCategory, LessonPlannerSettings, LessonPlanSupervisor,
+    LessonPlanCategory, LessonPlannerSettings, LessonPlanSupervisor, LessonPlanSchedule,
 )
 from app.models.modules.platform import (
     AcademicSession, SchoolSection, ReportTemplate, GradingBand, ReportSubjectAssessment,
-    AssessmentDomain, StudentDomainRating,
+    AssessmentDomain, StudentDomainRating, MailboxMessage, MailboxRecipient,
 )
+from app.models.role import Role, user_roles
+from app.services.email import email_configured, send_email
 from app.schemas.attendance_config import (
     AttendanceSettingsResponse, AttendanceSettingsUpdate,
     AbsenceReasonResponse, AbsenceReasonCreate, AbsenceReasonUpdate,
@@ -40,6 +42,8 @@ from app.schemas.lesson_planner import (
     PlannerSettingsResponse, PlannerSettingsUpdate,
     SupervisorCreate, SupervisorResponse,
     CloneLessonsRequest, CloneLessonsResult,
+    ScheduleCreate, ScheduleUpdate, ScheduleResponse, ScheduleRunResult,
+    SCHEDULE_AUDIENCES, SCHEDULE_FREQUENCIES,
 )
 
 logger = logging.getLogger("extracare.school")
@@ -2777,3 +2781,148 @@ async def clone_lessons(payload: CloneLessonsRequest, db: AsyncSession = Depends
         cloned += 1
     await db.flush()
     return {"cloned": cloned, "skipped": skipped}
+
+
+# ── Lesson Planner Setup: reminder schedules ───────────────────────────────────────
+
+def _schedule_dict(s: LessonPlanSchedule) -> dict:
+    return {
+        "id": s.id, "subject": s.subject, "body": s.body, "audience": s.audience,
+        "frequency": s.frequency, "days": s.days, "run_time": s.run_time,
+        "is_active": s.is_active, "last_run_on": s.last_run_on, "org_id": s.org_id,
+    }
+
+
+async def _schedule_recipient_ids(db, org_id: str, audience: str) -> list[str]:
+    """Resolve a schedule's audience to active user ids. ``all_staff`` = every active
+    user; ``teachers`` = active users holding a non-student/parent role (never send a
+    lesson-plan reminder to students or parents)."""
+    q = select(User.id).where(User.org_id == org_id, User.is_deleted == False, User.status == UserStatus.ACTIVE)  # noqa: E712
+    if audience == "teachers":
+        staff = select(user_roles.c.user_id).join(Role, Role.id == user_roles.c.role_id).where(
+            Role.org_id == org_id, Role.slug.notin_(("student", "parent")))
+        q = q.where(User.id.in_(staff))
+    return list((await db.execute(q)).scalars().all())
+
+
+async def _dispatch_schedule(db, org_id: str, sched: LessonPlanSchedule, sender_id: str | None) -> int:
+    """Deliver a schedule now: an in-app Mailbox message to the audience (+ a
+    best-effort email per recipient when SMTP is configured). Returns the recipient
+    count and stamps last_run_on so the daily fire is idempotent."""
+    recipient_ids = await _schedule_recipient_ids(db, org_id, sched.audience)
+    recipient_ids = [r for r in recipient_ids if r != sender_id]
+    if recipient_ids:
+        msg = MailboxMessage(subject=sched.subject, body=sched.body, sender_id=sender_id,
+                             audience="all_staff" if sched.audience == "all_staff" else "custom", org_id=org_id)
+        db.add(msg)
+        await db.flush()
+        for rid in recipient_ids:
+            db.add(MailboxRecipient(message_id=msg.id, recipient_id=rid, org_id=org_id))
+        # Best-effort email — only fires when SMTP is configured (never in tests).
+        if email_configured():
+            emails = (await db.execute(select(User.email).where(User.id.in_(recipient_ids), User.email.isnot(None)))).scalars().all()
+            for addr in emails:
+                try:
+                    send_email(to=addr, subject=sched.subject, body=sched.body or sched.subject)
+                except Exception:
+                    pass
+    sched.last_run_on = date.today()
+    await db.flush()
+    return len(recipient_ids)
+
+
+async def _load_schedule(db, schedule_id: str, org_id: str) -> LessonPlanSchedule:
+    s = (await db.execute(select(LessonPlanSchedule).where(
+        LessonPlanSchedule.id == schedule_id, LessonPlanSchedule.org_id == org_id))).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Schedule not found.")
+    return s
+
+
+def _validate_schedule(audience: str | None, frequency: str | None):
+    if audience is not None and audience not in SCHEDULE_AUDIENCES:
+        raise HTTPException(status_code=422, detail="audience must be 'teachers' or 'all_staff'.")
+    if frequency is not None and frequency not in SCHEDULE_FREQUENCIES:
+        raise HTTPException(status_code=422, detail="frequency must be 'daily' or 'weekly'.")
+
+
+@router.get("/lessons/schedules", response_model=list[ScheduleResponse], dependencies=[_lessons_read])
+async def list_schedules(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(LessonPlanSchedule).where(
+        LessonPlanSchedule.org_id == current_user.org_id).order_by(LessonPlanSchedule.created_at))).scalars().all()
+    return [_schedule_dict(s) for s in rows]
+
+
+@router.post("/lessons/schedules", response_model=ScheduleResponse, status_code=201, dependencies=[_can_write])
+async def create_schedule(payload: ScheduleCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    _validate_schedule(payload.audience, payload.frequency)
+    days = sorted({d for d in (payload.days or []) if 0 <= d <= 6})
+    if payload.frequency == "weekly" and not days:
+        raise HTTPException(status_code=422, detail="Select at least one day for a weekly schedule.")
+    s = LessonPlanSchedule(
+        subject=payload.subject.strip(), body=(payload.body or None), audience=payload.audience,
+        frequency=payload.frequency, days=(days or None), run_time=payload.run_time,
+        is_active=payload.is_active, org_id=current_user.org_id,
+    )
+    db.add(s)
+    await db.flush()
+    return _schedule_dict(s)
+
+
+@router.patch("/lessons/schedules/{schedule_id}", response_model=ScheduleResponse, dependencies=[_can_write])
+async def update_schedule(schedule_id: str, payload: ScheduleUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = await _load_schedule(db, schedule_id, current_user.org_id)
+    _validate_schedule(payload.audience, payload.frequency)
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("subject"):
+        data["subject"] = data["subject"].strip()
+    if "days" in data:
+        data["days"] = sorted({d for d in (data["days"] or []) if 0 <= d <= 6}) or None
+    for k, v in data.items():
+        setattr(s, k, v)
+    if (s.frequency == "weekly") and not s.days:
+        raise HTTPException(status_code=422, detail="Select at least one day for a weekly schedule.")
+    await db.flush()
+    return _schedule_dict(s)
+
+
+@router.delete("/lessons/schedules/{schedule_id}", status_code=204, dependencies=[_can_write])
+async def delete_schedule(schedule_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = await _load_schedule(db, schedule_id, current_user.org_id)
+    await db.delete(s)
+    await db.flush()
+
+
+@router.post("/lessons/schedules/{schedule_id}/send-now", response_model=ScheduleRunResult, dependencies=[_can_write])
+async def send_schedule_now(schedule_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Fire this reminder immediately (manual trigger), regardless of its cadence."""
+    s = await _load_schedule(db, schedule_id, current_user.org_id)
+    n = await _dispatch_schedule(db, current_user.org_id, s, current_user.id)
+    return {"dispatched": 1, "recipients": n}
+
+
+def _schedule_due(sched: LessonPlanSchedule, now: datetime) -> bool:
+    if not sched.is_active or sched.run_time is None:
+        return False
+    if sched.last_run_on == now.date():   # already fired today
+        return False
+    if now.time() < sched.run_time:       # not yet time-of-day
+        return False
+    if sched.frequency == "weekly":
+        return now.weekday() in (sched.days or [])
+    return True   # daily
+
+
+@router.post("/lessons/schedules/run-due", response_model=ScheduleRunResult, dependencies=[_can_write])
+async def run_due_schedules(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Fire every schedule that's due now (the cron/poller target). Idempotent per
+    day via last_run_on, so it's safe to call on any cadence."""
+    now = datetime.now()
+    rows = (await db.execute(select(LessonPlanSchedule).where(
+        LessonPlanSchedule.org_id == current_user.org_id, LessonPlanSchedule.is_active == True))).scalars().all()  # noqa: E712
+    dispatched = recipients = 0
+    for s in rows:
+        if _schedule_due(s, now):
+            recipients += await _dispatch_schedule(db, current_user.org_id, s, current_user.id)
+            dispatched += 1
+    return {"dispatched": dispatched, "recipients": recipients}

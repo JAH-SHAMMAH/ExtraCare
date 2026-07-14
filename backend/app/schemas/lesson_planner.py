@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, time
 from typing import Optional
 from pydantic import BaseModel, Field
 
@@ -69,3 +69,47 @@ class CloneLessonsRequest(BaseModel):
 class CloneLessonsResult(BaseModel):
     cloned: int
     skipped: int
+
+
+# ── Reminder schedules ────────────────────────────────────────────────────────
+
+SCHEDULE_AUDIENCES = {"teachers", "all_staff"}
+SCHEDULE_FREQUENCIES = {"daily", "weekly"}
+
+
+class ScheduleCreate(BaseModel):
+    subject: str = Field(min_length=1, max_length=200)   # the "email content"
+    body: Optional[str] = None
+    audience: str = "teachers"
+    frequency: str = "weekly"
+    days: Optional[list[int]] = None    # [0..6] weekdays (Mon=0) — required for weekly
+    run_time: time
+    is_active: bool = True
+
+
+class ScheduleUpdate(BaseModel):
+    subject: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    body: Optional[str] = None
+    audience: Optional[str] = None
+    frequency: Optional[str] = None
+    days: Optional[list[int]] = None
+    run_time: Optional[time] = None
+    is_active: Optional[bool] = None
+
+
+class ScheduleResponse(BaseModel):
+    id: str
+    subject: str
+    body: Optional[str] = None
+    audience: str
+    frequency: str
+    days: Optional[list[int]] = None
+    run_time: time
+    is_active: bool
+    last_run_on: Optional[date] = None
+    org_id: str
+
+
+class ScheduleRunResult(BaseModel):
+    dispatched: int      # number of schedules that fired
+    recipients: int      # total recipient deliveries created
