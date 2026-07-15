@@ -29,20 +29,20 @@ export default function CbtImportPage() {
     <div className="p-8 max-w-3xl mx-auto">
       <Link href="/dashboard/modules/school/cbt/question-bank" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 mb-4"><ArrowLeft size={13} /> Question Bank</Link>
       <h1 className="text-2xl font-black text-slate-900 tracking-tight mb-1">CBT Import</h1>
-      <p className="text-slate-500 text-sm mb-6">Bulk-import questions into the Question Bank from a CSV.</p>
+      <p className="text-slate-500 text-sm mb-6">Bulk-import questions into the Question Bank from a CSV, Excel, Word or PDF file.</p>
 
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 mb-5">
-          <p className="font-semibold text-slate-700 mb-1">CSV columns (case-insensitive):</p>
+          <p className="font-semibold text-slate-700 mb-1">Columns (case-insensitive):</p>
           <code className="text-[11px] break-words">question, type, subject, topic, difficulty, option_a…option_e, correct_answer, points</code>
-          <p className="mt-1.5 text-slate-400">Unknown subject / type / difficulty fall back to null / mcq / medium.</p>
+          <p className="mt-1.5 text-slate-400">Accepts <strong>.csv / .xlsx / .docx / .pdf</strong>. A Word or PDF file must contain a table whose first row is the column headers. Unknown subject / type / difficulty fall back to null / mcq / medium.</p>
         </div>
 
         {canWrite ? (
           <>
-            <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={onFile} />
+            <input ref={fileRef} type="file" accept=".csv,.xlsx,.docx,.pdf" className="hidden" onChange={onFile} />
             <button onClick={() => fileRef.current?.click()} disabled={imp.isPending} className="btn-primary gap-2">
-              {imp.isPending ? <Loader2 size={15} className="animate-spin" /> : <FileUp size={15} />} Choose CSV & import
+              {imp.isPending ? <Loader2 size={15} className="animate-spin" /> : <FileUp size={15} />} Choose file & import
             </button>
           </>
         ) : <p className="text-sm text-slate-400">You don&apos;t have permission to import.</p>}

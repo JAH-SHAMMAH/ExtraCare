@@ -302,6 +302,11 @@ export const schoolApi = {
       create: (data: object) => api.post("/library/books", data).then((r) => r.data),
       update: (id: string, data: object) => api.patch(`/library/books/${id}`, data).then((r) => r.data),
       remove: (id: string) => api.delete(`/library/books/${id}`),
+      import: (file: File) => {
+        const fd = new FormData();
+        fd.append("file", file);
+        return api.post("/library/books/import", fd, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data);
+      },
     },
     loans: {
       list: (p?: { status?: "borrowed" | "returned" | "overdue"; borrower_user_id?: string; book_id?: string; page?: number; page_size?: number }) =>

@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { Upload, FileText, Download, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { parseCSV, type ParsedFile, MAX_FILE_SIZE_BYTES, MAX_ROWS } from "@/lib/import/parsers";
+import { parseAnyFile, type ParsedFile, MAX_FILE_SIZE_BYTES, MAX_ROWS, IMPORT_ACCEPT } from "@/lib/import/parsers";
 import { autoMapHeaders } from "@/lib/import/validator";
 import { buildTemplateCSV, downloadCSV } from "@/lib/import/templates";
 import type { ImportPreset } from "@/lib/import/presets";
@@ -21,13 +21,13 @@ export function UploadStep<T>({ preset, onParsed }: UploadStepProps<T>) {
 
   const handleFile = async (file: File) => {
     setError(null);
-    if (!file.name.toLowerCase().endsWith(".csv")) {
-      setError("Only CSV files are supported. Export your Excel sheet as CSV and try again.");
+    if (!/\.(csv|xlsx|docx|pdf)$/i.test(file.name)) {
+      setError("Unsupported file type. Upload a CSV, Excel (.xlsx), Word (.docx) or PDF file.");
       return;
     }
     setIsParsing(true);
     try {
-      const parsed = await parseCSV(file);
+      const parsed = await parseAnyFile(file);
       const initialMapping = autoMapHeaders(parsed.headers, preset.columns);
       toast.success(`Parsed ${parsed.rows.length} rows from ${file.name}`);
       onParsed(parsed, initialMapping, file.name);
@@ -54,9 +54,9 @@ export function UploadStep<T>({ preset, onParsed }: UploadStepProps<T>) {
       <div className="max-w-2xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-base font-bold text-slate-800">Upload CSV File</h2>
+            <h2 className="text-base font-bold text-slate-800">Upload File</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Max {(MAX_FILE_SIZE_BYTES / 1024 / 1024)} MB · Max {MAX_ROWS.toLocaleString()} rows
+              CSV, Excel, Word or PDF · Max {(MAX_FILE_SIZE_BYTES / 1024 / 1024)} MB · Max {MAX_ROWS.toLocaleString()} rows
             </p>
           </div>
           <button onClick={handleDownloadTemplate} className="btn-secondary gap-2 text-xs">
@@ -77,7 +77,7 @@ export function UploadStep<T>({ preset, onParsed }: UploadStepProps<T>) {
           <input
             ref={inputRef}
             type="file"
-            accept=".csv,text/csv"
+            accept={IMPORT_ACCEPT}
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
@@ -91,9 +91,9 @@ export function UploadStep<T>({ preset, onParsed }: UploadStepProps<T>) {
             <Upload size={32} className="mx-auto text-slate-400" />
           )}
           <p className="mt-3 text-sm font-semibold text-slate-700">
-            {isParsing ? "Parsing file..." : "Drop your CSV file here, or click to browse"}
+            {isParsing ? "Parsing file..." : "Drop your file here, or click to browse"}
           </p>
-          <p className="text-xs text-slate-400 mt-1">.csv files only</p>
+          <p className="text-xs text-slate-400 mt-1">.csv, .xlsx, .docx or .pdf — Word/PDF need a table with a header row</p>
         </div>
 
         {error && (

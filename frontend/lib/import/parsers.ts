@@ -10,6 +10,36 @@ export interface ParsedFile {
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 export const MAX_ROWS = 5000;
 
+// File types the wizard accepts. CSV is parsed in-browser; the rest go to the
+// server (/imports/parse-file), which reads Excel sheets and Word/PDF tables.
+export const IMPORT_ACCEPT = ".csv,.xlsx,.docx,.pdf";
+
+/** Parse any supported file into a ParsedFile. CSV stays client-side (unchanged);
+ * Excel/Word/PDF are parsed server-side so no heavy parser ships in the bundle. */
+export async function parseAnyFile(file: File): Promise<ParsedFile> {
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    throw new Error(`File too large. Maximum size is ${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB.`);
+  }
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".csv")) return parseCSV(file);
+  if (!/\.(xlsx|docx|pdf)$/.test(name)) {
+    throw new Error("Unsupported file type. Upload a CSV, Excel (.xlsx), Word (.docx) or PDF file.");
+  }
+  const { api } = await import("@/lib/api");
+  const fd = new FormData();
+  fd.append("file", file);
+  let data: { headers: string[]; rows: Record<string, string>[]; warnings?: string[] };
+  try {
+    ({ data } = await api.post("/imports/parse-file", fd, { headers: { "Content-Type": "multipart/form-data" } }));
+  } catch (e: any) {
+    throw new Error(e?.response?.data?.detail || "Could not read that file.");
+  }
+  const rows = data.rows || [];
+  if (rows.length === 0) throw new Error("The file is empty or contains no valid rows.");
+  if (rows.length > MAX_ROWS) throw new Error(`Too many rows. Maximum is ${MAX_ROWS.toLocaleString()} per file.`);
+  return { headers: data.headers || [], rows, warnings: data.warnings || [] };
+}
+
 export async function parseCSV(file: File): Promise<ParsedFile> {
   if (file.size > MAX_FILE_SIZE_BYTES) {
     throw new Error(`File too large. Maximum size is ${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB.`);
