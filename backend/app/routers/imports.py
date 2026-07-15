@@ -6,13 +6,14 @@ and async background processing for large CSV files (5k-50k rows).
 import asyncio
 import time
 from datetime import datetime, timezone, date
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update
 
 from app.database import get_db, AsyncSessionLocal
 from app.deps import get_current_active_user
 from app.models.user import User
+from app.services.import_files import rows_from_upload
 from app.models.import_job import ImportJob, ImportStatus
 from app.models.modules.business import InventoryItem, FinanceTransaction, Employee, TransactionType
 from app.models.modules.school import Student
@@ -30,6 +31,31 @@ router = APIRouter(
 _can_read = Depends(PermissionChecker("imports:read"))
 _can_write = Depends(PermissionChecker("imports:write"))
 _can_rollback = Depends(PermissionChecker("imports:rollback"))
+
+_PARSE_MAX_ROWS = 5000
+
+
+@router.post("/parse-file", dependencies=[_can_write, Depends(rate_limit_auth("imports"))])
+async def parse_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Parse an uploaded CSV / Excel (.xlsx) / Word (.docx) / PDF into
+    ``{headers, rows}`` for the import wizard. Word/PDF must contain a table whose
+    first row is the column headers. (CSV is still parsed in the browser; this
+    endpoint serves the richer formats.) No data is written."""
+    content = await file.read()
+    try:
+        rows = rows_from_upload(file.filename or "", content)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if not rows:
+        raise HTTPException(status_code=422, detail="No rows found in the file.")
+    if len(rows) > _PARSE_MAX_ROWS:
+        raise HTTPException(status_code=422, detail=f"Too many rows. Maximum is {_PARSE_MAX_ROWS:,} per file.")
+    headers = list(rows[0].keys())
+    return {"headers": headers, "rows": rows, "warnings": []}
+
 
 # ── Entity model map for undo ────────────────────────────────────────────────
 

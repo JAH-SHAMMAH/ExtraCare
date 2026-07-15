@@ -45,6 +45,7 @@ from app.models.modules.school import (
     GradeStatus,
 )
 from app.services.grading import grade_letter
+from app.services.import_files import rows_from_upload
 from app.schemas.question_bank import BankItemCreate, BankItemUpdate, ComposeFromBank
 from app.schemas.cbt_ops import InterventionCreate, InterventionUpdate, CBTSettingsUpdate
 from app.schemas.school_experience import (
@@ -819,16 +820,17 @@ async def import_bank(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Bulk-import bank questions from a CSV. Columns (case-insensitive):
-    question, type, subject, topic, difficulty, option_a..option_e, correct_answer,
-    points. Unknown subject/type/difficulty fall back to null/mcq/medium."""
+    """Bulk-import bank questions from a CSV, Excel (.xlsx), Word (.docx) or PDF.
+    Word/PDF must contain a table whose first row is the column headers. Columns
+    (case-insensitive): question, type, subject, topic, difficulty,
+    option_a..option_e, correct_answer, points. Unknown subject/type/difficulty
+    fall back to null/mcq/medium."""
     org_id = current_user.org_id
     content = await file.read()
     try:
-        text = content.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        raise HTTPException(status_code=422, detail="File must be a UTF-8 CSV.")
-    reader = csv.DictReader(io.StringIO(text))
+        parsed = rows_from_upload(file.filename or "", content)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     subs = (await db.execute(
         select(Subject.id, Subject.name, Subject.code).where(Subject.org_id == org_id)
     )).all()
@@ -840,7 +842,7 @@ async def import_bank(
             lut[code.strip().lower()] = sid
     imported = 0
     errors: list[str] = []
-    for i, raw in enumerate(reader, start=2):
+    for i, raw in enumerate(parsed, start=2):
         row = {(k or "").strip().lower(): (v or "") for k, v in raw.items()}
         qtext = (row.get("question") or row.get("question_text") or "").strip()
         if not qtext:

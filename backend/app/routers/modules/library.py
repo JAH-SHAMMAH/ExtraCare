@@ -23,9 +23,11 @@ Scoping:
 from datetime import date, datetime, timezone, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.import_files import rows_from_upload
 
 from app.database import get_db
 from app.deps import get_current_active_user
@@ -669,3 +671,53 @@ async def delete_review(review_id: str, db: AsyncSession = Depends(get_db), curr
         raise HTTPException(404, detail="Review not found.")
     await db.delete(r)
     await db.flush()
+
+
+# ── Bulk import (CSV / Excel / Word / PDF) ─────────────────────────────────────────
+
+@router.post("/books/import", dependencies=[_can_write])
+async def import_books(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Bulk-import books from a CSV, Excel (.xlsx), Word (.docx) or PDF. Word/PDF
+    must contain a table whose first row is the column headers. Columns
+    (case-insensitive): title, author, isbn, category, publisher, publication_year,
+    shelf_location, total_copies, description. Rows missing title/author are skipped."""
+    content = await file.read()
+    try:
+        parsed = rows_from_upload(file.filename or "", content)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    imported = 0
+    errors: list[str] = []
+    for i, raw in enumerate(parsed, start=2):
+        row = {(k or "").strip().lower(): (v or "") for k, v in raw.items()}
+        title = (row.get("title") or "").strip()
+        author = (row.get("author") or "").strip()
+        if not title or not author:
+            errors.append(f"row {i}: missing title/author")
+            continue
+        try:
+            copies = max(int(float(row.get("total_copies") or 1)), 1)
+        except (ValueError, TypeError):
+            copies = 1
+        try:
+            year = int(float(row["publication_year"])) if (row.get("publication_year") or "").strip() else None
+        except (ValueError, TypeError):
+            year = None
+        db.add(LibraryBook(
+            title=title, author=author,
+            isbn=(row.get("isbn") or "").strip() or None,
+            category=(row.get("category") or "").strip() or None,
+            publisher=(row.get("publisher") or "").strip() or None,
+            publication_year=year,
+            shelf_location=(row.get("shelf_location") or row.get("shelf") or "").strip() or None,
+            total_copies=copies, available_copies=copies,
+            description=(row.get("description") or "").strip() or None,
+            org_id=current_user.org_id,
+        ))
+        imported += 1
+    await db.flush()
+    return {"imported": imported, "errors": errors[:20]}
