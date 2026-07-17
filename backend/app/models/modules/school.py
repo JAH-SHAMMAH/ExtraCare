@@ -169,6 +169,11 @@ class AttendanceSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
     __tablename__ = "attendance_settings"
 
     late_after_time = Column(Time, nullable=False)
+    # School Attendance Setup (Educare parity): the departure cutoff + notify toggles.
+    # A check-out at/after this local time is a LATE departure (monitor + logs).
+    max_departure_time = Column(Time, nullable=True)
+    notify_email = Column(Boolean, default=False, nullable=False)
+    notify_sms = Column(Boolean, default=False, nullable=False)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
 
 
