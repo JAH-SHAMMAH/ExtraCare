@@ -226,9 +226,6 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: HeartHandshake,
     items: [
       { href: "/dashboard/modules/school/behaviour", label: "Pastoral Care", icon: HeartHandshake },
-      { href: "/dashboard/modules/school/attendance", label: "Attendance", icon: ClipboardList },
-      { href: "/dashboard/modules/school/attendance/dashboard", label: "Attendance Insights", icon: BarChart3 },
-      { href: "/dashboard/modules/school/attendance/setup", label: "Attendance Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/clubs", label: "Clubs & Activities", icon: Users2 },
       { href: "/dashboard/modules/school/journals", label: "Photo Journals", icon: Camera },
       { href: "/dashboard/modules/school/remarks", label: "Weekly Remarks", icon: MessageCircle },
@@ -241,6 +238,22 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/hostel", label: "Hostel / Boarding", icon: BedDouble },
       { href: "/dashboard/modules/school/exeat", label: "Exeat Requests", icon: FileText },
       { href: "/dashboard/modules/school/mentor", label: "Mentor Reports", icon: UserCheck },
+    ],
+  },
+  {
+    // School Attendance — its own top-level module (Educare parity). Attendance
+    // Monitor is the live campus-presence view over the check-in/out event layer;
+    // Mark Attendance is our daily present/absent roster (kept — real extra);
+    // Dashboard = insights; Setup = cutoffs + notifications + reasons.
+    key: "school-attendance",
+    requiredModule: "school",
+    label: "School Attendance",
+    icon: ClipboardList,
+    items: [
+      { href: "/dashboard/modules/school/attendance/monitor", label: "Attendance Monitor", icon: Radio },
+      { href: "/dashboard/modules/school/attendance", label: "Mark Attendance", icon: ClipboardCheck },
+      { href: "/dashboard/modules/school/attendance/dashboard", label: "Attendance Dashboard", icon: BarChart3 },
+      { href: "/dashboard/modules/school/attendance/setup", label: "Attendance Setup", icon: Settings2 },
     ],
   },
   {

@@ -305,6 +305,36 @@ export function useMarkAttendance() {
   });
 }
 
+// ── Live Attendance Monitor ──────────────────────────────────────────────────
+export interface AttendanceMonitorCard { student_id: string; student_name: string; class_name: string | null; parent_name: string | null; check_in: string | null; check_out: string | null; }
+export interface AttendanceMonitor {
+  date: string; min_clock_in: string | null; max_departure: string | null; average_arrival: string | null;
+  checked_in: number; departed: number; remaining: number; late_arrivals: number; present_on_time: number;
+  late_departures: number; early_departures: number;
+  students_in_school: AttendanceMonitorCard[];
+  recent: Array<AttendanceMonitorCard & { type: "check_in" | "check_out"; late: boolean }>;
+  late_departures_log: AttendanceMonitorCard[];
+}
+export function useAttendanceMonitor(date?: string) {
+  return useQuery<AttendanceMonitor>({
+    queryKey: ["attendance-monitor", date],
+    queryFn: () => schoolApi.attendance.monitor(date),
+    refetchInterval: 30_000,   // live-ish refresh
+  });
+}
+export function useRecordAttendanceEvent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { student_id: string; event_type: "check_in" | "check_out"; notes?: string }) =>
+      schoolApi.attendance.recordEvent(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance-monitor"] });
+      toast.success("Recorded.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to record."),
+  });
+}
+
 // ── Attendance Setup (late cutoff + absence reasons) ─────────────────────────
 export function useAttendanceSettings() {
   return useQuery({ queryKey: ["attendance-settings"], queryFn: () => schoolApi.attendance.settings.get() });
@@ -313,7 +343,7 @@ export function useUpdateAttendanceSettings() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: object) => schoolApi.attendance.settings.update(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance-settings"] }); toast.success("Late cutoff saved."); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance-settings"] }); toast.success("Settings saved."); },
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save."),
   });
 }

@@ -8,7 +8,7 @@ import {
 } from "@/hooks/useSchool";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
-import { Clock, ListChecks, Plus, Loader2, ArrowLeft, Save, Trash2, ShieldCheck, ShieldAlert } from "lucide-react";
+import { Clock, ListChecks, Plus, Loader2, ArrowLeft, Save, Trash2, ShieldCheck, ShieldAlert, Mail, MessageSquare, LogOut } from "lucide-react";
 
 interface Reason { id: string; code: string; label: string; is_authorized: boolean; is_active: boolean; }
 
@@ -20,10 +20,10 @@ export default function AttendanceSetupPage() {
       <div className="mb-6">
         <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Attendance</span><span>/</span><span className="text-brand-600 font-semibold">Setup</span></nav>
         <h1 className="text-2xl font-black text-slate-900 tracking-tight">Attendance Setup</h1>
-        <p className="text-slate-500 text-sm mt-0.5">The late cutoff applied when check-ins are recorded, and the reason codes staff pick when marking an absence.</p>
+        <p className="text-slate-500 text-sm mt-0.5">Clock-in / departure cutoffs, guardian notifications, and the reason codes staff pick when marking an absence.</p>
       </div>
 
-      <LateCutoff canWrite={canWrite} />
+      <TimingsAndNotifications canWrite={canWrite} />
       <AbsenceReasons canWrite={canWrite} />
 
       {!canWrite && <p className="text-xs text-slate-400 mt-4 flex items-center gap-1"><ShieldAlert size={12} /> Editing attendance setup requires the settings:write capability.</p>}
@@ -31,27 +31,57 @@ export default function AttendanceSetupPage() {
   );
 }
 
-function LateCutoff({ canWrite }: { canWrite: boolean }) {
+function TimingsAndNotifications({ canWrite }: { canWrite: boolean }) {
   const { data, isLoading } = useAttendanceSettings();
   const save = useUpdateAttendanceSettings();
-  const [time, setTime] = useState("08:00");
+  const [form, setForm] = useState<{ late_after_time: string; max_departure_time: string; notify_email: boolean; notify_sms: boolean } | null>(null);
+  const current = form ?? (data ? {
+    late_after_time: data.late_after_time || "08:00",
+    max_departure_time: data.max_departure_time || "",
+    notify_email: !!data.notify_email,
+    notify_sms: !!data.notify_sms,
+  } : null);
 
-  useEffect(() => { if (data?.late_after_time) setTime(data.late_after_time); }, [data]);
+  if (isLoading || !current) return <section className="bg-white rounded-xl border border-slate-200 p-6 mb-5"><div className="h-9 w-40 bg-slate-100 rounded animate-pulse" /></section>;
+  const patch = (p: Partial<typeof current>) => setForm({ ...current, ...p });
 
   return (
-    <section className="bg-white rounded-xl border border-slate-200 p-6 mb-5">
-      <div className="flex items-center gap-2 mb-1"><Clock size={16} className="text-brand-600" /><h2 className="text-sm font-bold text-slate-800">Late cutoff</h2></div>
-      <p className="text-xs text-slate-500 mb-4">A check-in at or after this local time is recorded as <span className="font-semibold text-amber-700">Late</span>; earlier check-ins are Present.</p>
-      {isLoading ? (
-        <div className="h-9 w-40 bg-slate-100 rounded animate-pulse" />
-      ) : (
-        <div className="flex items-end gap-3">
-          <div><label className="label">Late after</label><input type="time" value={time} onChange={(e) => setTime(e.target.value)} disabled={!canWrite} className="input w-40" /></div>
-          {canWrite && (
-            <button onClick={() => save.mutate({ late_after_time: time })} disabled={save.isPending || time === data?.late_after_time} className="btn-primary gap-2">
-              {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save
-            </button>
-          )}
+    <section className="bg-white rounded-xl border border-slate-200 p-6 mb-5 space-y-5">
+      <div>
+        <div className="flex items-center gap-2 mb-3"><Clock size={16} className="text-brand-600" /><h2 className="text-sm font-bold text-slate-800">Clock-in &amp; departure cutoffs</h2></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="label">Min clock-in time</label>
+            <input type="time" value={current.late_after_time} onChange={(e) => patch({ late_after_time: e.target.value })} disabled={!canWrite} className="input w-40" />
+            <p className="text-[11px] text-slate-400 mt-1">Check-ins at/after this are tagged <span className="font-semibold text-amber-700">Late</span>.</p>
+          </div>
+          <div>
+            <label className="label flex items-center gap-1"><LogOut size={12} /> Max departure time</label>
+            <input type="time" value={current.max_departure_time} onChange={(e) => patch({ max_departure_time: e.target.value })} disabled={!canWrite} className="input w-40" />
+            <p className="text-[11px] text-slate-400 mt-1">Check-outs after this generate <span className="font-semibold text-rose-700">late departure</span> logs.</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-100 pt-4">
+        <h2 className="text-sm font-bold text-slate-800 mb-3">Guardian notifications</h2>
+        <div className="space-y-2">
+          <label className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2.5 cursor-pointer">
+            <span className="flex items-center gap-2 text-sm text-slate-700"><Mail size={14} className="text-slate-400" /> Notify by Email <span className="text-xs text-slate-400">— attendance events</span></span>
+            <input type="checkbox" checked={current.notify_email} disabled={!canWrite} onChange={(e) => patch({ notify_email: e.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+          </label>
+          <label className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2.5 cursor-pointer">
+            <span className="flex items-center gap-2 text-sm text-slate-700"><MessageSquare size={14} className="text-slate-400" /> Notify by SMS <span className="text-xs text-slate-400">— arrivals &amp; departures</span></span>
+            <input type="checkbox" checked={current.notify_sms} disabled={!canWrite} onChange={(e) => patch({ notify_sms: e.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+          </label>
+        </div>
+      </div>
+
+      {canWrite && (
+        <div className="flex justify-end">
+          <button onClick={() => save.mutate({ ...current, max_departure_time: current.max_departure_time || "" }, { onSuccess: () => setForm(null) })} disabled={save.isPending || !form} className="btn-primary gap-2">
+            {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save settings
+          </button>
         </div>
       )}
     </section>

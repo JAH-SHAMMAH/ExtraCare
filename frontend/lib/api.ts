@@ -257,6 +257,10 @@ export const schoolApi = {
       api.get("/school/attendance/summary", { params: { class_id, start_date, end_date } }).then((r) => r.data),
     studentHistory: (student_id: string, start_date?: string, end_date?: string) =>
       api.get(`/school/attendance/student/${student_id}`, { params: { start_date, end_date } }).then((r) => r.data),
+    // Live monitor + manual check-in/out live on the top-level /attendance event router.
+    monitor: (date?: string) => api.get("/attendance/monitor", { params: { date } }).then((r) => r.data),
+    recordEvent: (data: { student_id: string; event_type: "check_in" | "check_out"; notes?: string }) =>
+      api.post("/attendance/manual", data).then((r) => r.data),
     settings: {
       get: () => api.get("/school/attendance/settings").then((r) => r.data),
       update: (data: object) => api.put("/school/attendance/settings", data).then((r) => r.data),
