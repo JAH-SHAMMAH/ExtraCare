@@ -7,11 +7,17 @@ from pydantic import BaseModel, Field
 
 
 class AttendanceSettingsResponse(BaseModel):
-    late_after_time: str  # "HH:MM" local time; check-in at/after → LATE
+    late_after_time: str  # "HH:MM" local — check-in at/after → LATE (the "min clock-in")
+    max_departure_time: str | None = None  # "HH:MM" — check-out at/after → LATE departure
+    notify_email: bool = False
+    notify_sms: bool = False
 
 
 class AttendanceSettingsUpdate(BaseModel):
-    late_after_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")  # "HH:MM"
+    late_after_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")  # "HH:MM"
+    max_departure_time: str | None = Field(default=None, pattern=r"^(([01]\d|2[0-3]):[0-5]\d)?$")  # "HH:MM" or ""
+    notify_email: bool | None = None
+    notify_sms: bool | None = None
 
 
 class AbsenceReasonResponse(BaseModel):

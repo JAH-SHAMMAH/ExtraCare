@@ -30,9 +30,12 @@ from app.models.user import User
 from app.models.organization import Organization
 from app.models.modules.school import (
     AttendanceEvent,
+    AttendanceEventType,
     AttendanceRecord,
     AttendanceStatus,
+    AttendanceSettings,
     ParentGuardian,
+    SchoolClass,
     Student,
 )
 from app.core.tenant import require_role_module
@@ -338,3 +341,139 @@ async def monthly_summary(
         excused=counts.get(AttendanceStatus.EXCUSED, 0),
         days_recorded=days_recorded,
     )
+
+
+# ── Live monitor (School Attendance Monitor) ───────────────────────────────────────
+
+
+@router.get("/monitor", dependencies=[_can_read])
+async def live_monitor(
+    date: date_type | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Live campus presence for the day (Educare's Attendance Monitor): who is
+    checked in, who has departed, who remains on-site, arrival/departure timings,
+    a recent-activity feed, and the late-departure log — all derived from the
+    AttendanceEvent backbone. School-wide, so staff-only."""
+    org = await _load_org(db, current_user)
+    if not current_user.has_permission("school:students:read"):
+        raise HTTPException(status_code=403, detail="The live attendance monitor is staff-only.")
+    tz = getattr(org, "timezone", None)
+    target = date or _today_local(tz)
+    start_utc, end_utc = _local_day_bounds(target, tz)
+
+    settings = (await db.execute(
+        select(AttendanceSettings).where(AttendanceSettings.org_id == org.id))).scalar_one_or_none()
+    min_clock_in = settings.late_after_time if settings else None
+    max_departure = settings.max_departure_time if settings else None
+
+    events = (await db.execute(
+        select(AttendanceEvent).where(
+            AttendanceEvent.org_id == org.id,
+            AttendanceEvent.event_time >= start_utc,
+            AttendanceEvent.event_time < end_utc,
+        ).order_by(AttendanceEvent.event_time)
+    )).scalars().all()
+
+    first_in: dict[str, datetime] = {}
+    last_out: dict[str, datetime] = {}
+    for e in events:
+        if e.event_type == AttendanceEventType.CHECK_IN:
+            if e.student_id not in first_in or e.event_time < first_in[e.student_id]:
+                first_in[e.student_id] = e.event_time
+        else:
+            if e.student_id not in last_out or e.event_time > last_out[e.student_id]:
+                last_out[e.student_id] = e.event_time
+
+    # On-site = checked in and not departed since; departed = has a check-out at/after check-in.
+    in_school_ids = [sid for sid, fin in first_in.items() if sid not in last_out or last_out[sid] < fin]
+    departed_ids = {sid for sid in first_in if sid in last_out and last_out[sid] >= first_in[sid]}
+    departed_ids |= {sid for sid in last_out if sid not in first_in}   # check-out only
+
+    involved = set(first_in) | set(last_out)
+    students = {s.id: s for s in (await db.execute(
+        select(Student).where(Student.id.in_(involved)))).scalars().all()} if involved else {}
+    class_ids = {s.class_id for s in students.values() if s.class_id}
+    classes = {c.id: c.name for c in (await db.execute(
+        select(SchoolClass).where(SchoolClass.id.in_(class_ids)))).scalars().all()} if class_ids else {}
+    guardians: dict[str, str] = {}
+    if involved:
+        for sid, name in (await db.execute(
+            select(ParentGuardian.student_id, User.full_name)
+            .join(User, User.id == ParentGuardian.user_id)
+            .where(ParentGuardian.student_id.in_(involved), ParentGuardian.org_id == org.id)
+            .order_by(ParentGuardian.is_primary.desc())
+        )).all():
+            guardians.setdefault(sid, name)
+
+    def hm(dt):
+        return attendance_service.to_local(dt, tz).strftime("%H:%M") if dt else None
+
+    def late_arrival(sid):
+        fin = first_in.get(sid)
+        return bool(min_clock_in and fin and attendance_service.to_local(fin, tz).time() > min_clock_in)
+
+    def late_departure(sid):
+        lout = last_out.get(sid)
+        return bool(max_departure and lout and attendance_service.to_local(lout, tz).time() > max_departure)
+
+    def card(sid):
+        s = students.get(sid)
+        if not s:
+            return None
+        return {
+            "student_id": sid,
+            "student_name": f"{s.first_name} {s.last_name}".strip(),
+            "class_name": classes.get(s.class_id) if s.class_id else None,
+            "parent_name": guardians.get(sid),
+            "check_in": hm(first_in.get(sid)),
+            "check_out": hm(last_out.get(sid)),
+        }
+
+    checked_in = len(first_in)
+    departed = len(departed_ids)
+    late_arrivals = sum(1 for sid in first_in if late_arrival(sid))
+    late_dep_cards = [c for c in (card(sid) for sid in departed_ids if late_departure(sid)) if c]
+
+    arrival_minutes = []
+    for fin in first_in.values():
+        lt = attendance_service.to_local(fin, tz)
+        arrival_minutes.append(lt.hour * 60 + lt.minute)
+    avg_arrival = None
+    if arrival_minutes:
+        m = round(sum(arrival_minutes) / len(arrival_minutes))
+        avg_arrival = f"{m // 60:02d}:{m % 60:02d}"
+
+    recent = []
+    for e in sorted(events, key=lambda x: x.event_time, reverse=True)[:15]:
+        s = students.get(e.student_id)
+        if not s:
+            continue
+        is_out = e.event_type == AttendanceEventType.CHECK_OUT
+        recent.append({
+            "student_id": e.student_id,
+            "student_name": f"{s.first_name} {s.last_name}".strip(),
+            "class_name": classes.get(s.class_id) if s.class_id else None,
+            "type": "check_out" if is_out else "check_in",
+            "check_in": hm(first_in.get(e.student_id)),
+            "check_out": hm(last_out.get(e.student_id)),
+            "late": late_departure(e.student_id) if is_out else late_arrival(e.student_id),
+        })
+
+    return {
+        "date": target.isoformat(),
+        "min_clock_in": min_clock_in.strftime("%H:%M") if min_clock_in else None,
+        "max_departure": max_departure.strftime("%H:%M") if max_departure else None,
+        "average_arrival": avg_arrival,
+        "checked_in": checked_in,
+        "departed": departed,
+        "remaining": len(in_school_ids),
+        "late_arrivals": late_arrivals,
+        "present_on_time": max(checked_in - late_arrivals, 0),
+        "late_departures": len(late_dep_cards),
+        "early_departures": max(departed - len(late_dep_cards), 0),
+        "students_in_school": [c for c in (card(sid) for sid in in_school_ids) if c],
+        "recent": recent,
+        "late_departures_log": late_dep_cards,
+    }

@@ -772,10 +772,18 @@ def _reason_dict(r: AbsenceReason) -> AbsenceReasonResponse:
                                  is_authorized=r.is_authorized, is_active=r.is_active)
 
 
+def _attendance_settings_response(s: AttendanceSettings) -> AttendanceSettingsResponse:
+    return AttendanceSettingsResponse(
+        late_after_time=s.late_after_time.strftime("%H:%M"),
+        max_departure_time=s.max_departure_time.strftime("%H:%M") if s.max_departure_time else None,
+        notify_email=s.notify_email, notify_sms=s.notify_sms,
+    )
+
+
 @router.get("/attendance/settings", response_model=AttendanceSettingsResponse, dependencies=[_settings_read])
 async def get_attendance_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     s = await _get_or_create_attendance_settings(db, current_user.org_id)
-    return AttendanceSettingsResponse(late_after_time=s.late_after_time.strftime("%H:%M"))
+    return _attendance_settings_response(s)
 
 
 @router.put("/attendance/settings", response_model=AttendanceSettingsResponse, dependencies=[_settings_write])
@@ -784,15 +792,26 @@ async def update_attendance_settings(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     s = await _get_or_create_attendance_settings(db, current_user.org_id)
-    hh, mm = payload.late_after_time.split(":")
-    s.late_after_time = time(int(hh), int(mm))
+    if payload.late_after_time:
+        hh, mm = payload.late_after_time.split(":")
+        s.late_after_time = time(int(hh), int(mm))
+    if payload.max_departure_time is not None:
+        if payload.max_departure_time == "":
+            s.max_departure_time = None
+        else:
+            hh, mm = payload.max_departure_time.split(":")
+            s.max_departure_time = time(int(hh), int(mm))
+    if payload.notify_email is not None:
+        s.notify_email = payload.notify_email
+    if payload.notify_sms is not None:
+        s.notify_sms = payload.notify_sms
     await db.flush()
     await log_action(
         db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
         resource_type="AttendanceSettings", resource_id=s.id,
-        resource_label=f"late cutoff {payload.late_after_time}", request=request,
+        resource_label="attendance settings updated", request=request,
     )
-    return AttendanceSettingsResponse(late_after_time=s.late_after_time.strftime("%H:%M"))
+    return _attendance_settings_response(s)
 
 
 @router.get("/attendance/reasons", response_model=list[AbsenceReasonResponse], dependencies=[_attendance_read])
