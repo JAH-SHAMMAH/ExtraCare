@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useClasses, useCreateClass, useUpdateClass, useDeleteClass } from "@/hooks/useSchool";
+import { useClasses, useCreateClass, useUpdateClass, useDeleteClass, useYearGroups } from "@/hooks/useSchool";
 import { cn } from "@/lib/utils";
 import { Search, Plus, School, MoreVertical, Edit2, Trash2, X, Loader2, Users2 } from "lucide-react";
 import type { SchoolClass } from "@/types";
@@ -53,7 +53,7 @@ export default function ClassesPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div><label className="label">Class Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Year 7A" className="input" /></div>
-            <div><label className="label">Grade Level</label><input value={form.grade_level} onChange={(e) => setForm({ ...form, grade_level: e.target.value })} placeholder="e.g. Year 7" className="input" /></div>
+            <div><label className="label">Grade Level</label><input list="class-year-groups" value={form.grade_level} onChange={(e) => setForm({ ...form, grade_level: e.target.value })} placeholder="e.g. Year 7" className="input" /><YearGroupOptions /></div>
             <div><label className="label">Section</label><input value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })} placeholder="e.g. A" className="input" /></div>
             <div><label className="label">Capacity</label><input type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} className="input" /></div>
             <div><label className="label">Academic Year</label><input value={form.academic_year} onChange={(e) => setForm({ ...form, academic_year: e.target.value })} className="input" /></div>
@@ -108,5 +108,14 @@ export default function ClassesPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function YearGroupOptions() {
+  const { data: yearGroups = [] } = useYearGroups();
+  return (
+    <datalist id="class-year-groups">
+      {yearGroups.map((y) => <option key={y.id} value={y.name} />)}
+    </datalist>
   );
 }

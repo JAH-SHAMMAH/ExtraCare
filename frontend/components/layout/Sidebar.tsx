@@ -93,12 +93,24 @@ interface ModuleSection {
 // items their permissions allow.
 const MODULE_SECTIONS: ModuleSection[] = [
   {
+    // Classes/YearGroups — its own top-level module (Educare parity). Manage
+    // YearGroups is the ordered level taxonomy; Manage Class is the existing
+    // class management (moved out of Academics).
+    key: "classes-yeargroups",
+    requiredModule: "school",
+    label: "Classes/YearGroups",
+    icon: School,
+    items: [
+      { href: "/dashboard/modules/school/classes/year-groups", label: "Manage YearGroups", icon: GraduationCap },
+      { href: "/dashboard/modules/school/classes", label: "Manage Class", icon: School },
+    ],
+  },
+  {
     key: "academics",
     requiredModule: "school",
     label: "Academics",
     icon: GraduationCap,
     items: [
-      { href: "/dashboard/modules/school/classes", label: "Classes", icon: School },
       { href: "/dashboard/modules/school/subjects", label: "Subjects", icon: BookMarked },
       { href: "/dashboard/modules/school/timetable", label: "Timetable", icon: Calendar },
       { href: "/dashboard/modules/school/exams", label: "Exams & Results", icon: Award },

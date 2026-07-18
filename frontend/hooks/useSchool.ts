@@ -156,6 +156,26 @@ export function useDeleteClass() {
   });
 }
 
+// ── Year Groups (class-level taxonomy) ───────────────────────────────────────
+export interface YearGroup { id: string; name: string; short_code: string | null; category: string; position: number; is_mock: boolean; org_id: string; }
+export function useYearGroups() {
+  return useQuery<YearGroup[]>({ queryKey: ["year-groups"], queryFn: () => schoolApi.yearGroups.list() });
+}
+function ygMut<V>(fn: (v: V) => Promise<any>, ok: string) {
+  return () => {
+    const qc = useQueryClient();
+    return useMutation({
+      mutationFn: fn,
+      onSuccess: () => { qc.invalidateQueries({ queryKey: ["year-groups"] }); if (ok) toast.success(ok); },
+      onError: (e: any) => toast.error(e?.response?.data?.detail || "Action failed."),
+    });
+  };
+}
+export const useCreateYearGroup = ygMut((d: object) => schoolApi.yearGroups.create(d), "Year group added.");
+export const useUpdateYearGroup = ygMut((v: { id: string; data: object }) => schoolApi.yearGroups.update(v.id, v.data), "Year group updated.");
+export const useDeleteYearGroup = ygMut((id: string) => schoolApi.yearGroups.remove(id), "Year group removed.");
+export const useReorderYearGroups = ygMut((ids: string[]) => schoolApi.yearGroups.reorder(ids), "Order saved.");
+
 // ── Subjects ─────────────────────────────────────────────────────────────────
 
 export function useSubjects(params?: { page?: number; page_size?: number; search?: string }) {

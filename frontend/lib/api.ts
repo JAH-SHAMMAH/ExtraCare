@@ -234,6 +234,13 @@ export const schoolApi = {
     update: (id: string, data: object) => api.patch(`/school/classes/${id}`, data).then((r) => r.data),
     delete: (id: string) => api.delete(`/school/classes/${id}`),
   },
+  yearGroups: {
+    list: () => api.get("/school/year-groups").then((r) => r.data),
+    create: (data: object) => api.post("/school/year-groups", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/school/year-groups/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/school/year-groups/${id}`),
+    reorder: (ids: string[]) => api.post("/school/year-groups/reorder", { ids }).then((r) => r.data),
+  },
   subjects: {
     list: (p?: object) => api.get("/school/subjects", { params: p }).then((r) => r.data),
     get: (id: string) => api.get(`/school/subjects/${id}`).then((r) => r.data),
