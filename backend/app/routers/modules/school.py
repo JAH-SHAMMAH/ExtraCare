@@ -13,6 +13,7 @@ from app.models.modules.school import (
     LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus, TeacherRating,
     GradeStatus, AttendanceSettings, AbsenceReason, StudentReport,
     LessonPlanCategory, LessonPlannerSettings, LessonPlanSupervisor, LessonPlanSchedule,
+    YearGroup,
 )
 from app.models.modules.platform import (
     AcademicSession, SchoolSection, ReportTemplate, GradingBand, ReportSubjectAssessment,
@@ -44,6 +45,9 @@ from app.schemas.lesson_planner import (
     CloneLessonsRequest, CloneLessonsResult,
     ScheduleCreate, ScheduleUpdate, ScheduleResponse, ScheduleRunResult,
     SCHEDULE_AUDIENCES, SCHEDULE_FREQUENCIES,
+)
+from app.schemas.year_group import (
+    YearGroupCreate, YearGroupUpdate, YearGroupResponse, ReorderRequest,
 )
 
 logger = logging.getLogger("extracare.school")
@@ -2945,3 +2949,85 @@ async def run_due_schedules(db: AsyncSession = Depends(get_db), current_user: Us
             recipients += await _dispatch_schedule(db, current_user.org_id, s, current_user.id)
             dispatched += 1
     return {"dispatched": dispatched, "recipients": recipients}
+
+
+# ── Classes/YearGroups: Manage YearGroups (the class-level taxonomy) ────────────────
+
+def _year_group_dict(y: YearGroup) -> dict:
+    return {"id": y.id, "name": y.name, "short_code": y.short_code, "category": y.category,
+            "position": y.position, "is_mock": y.is_mock, "org_id": y.org_id}
+
+
+@router.get("/year-groups", response_model=list[YearGroupResponse], dependencies=[_can_read])
+async def list_year_groups(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(YearGroup).where(
+        YearGroup.org_id == current_user.org_id).order_by(YearGroup.position, YearGroup.name))).scalars().all()
+    return [_year_group_dict(y) for y in rows]
+
+
+@router.post("/year-groups", response_model=YearGroupResponse, status_code=201, dependencies=[_can_write])
+async def create_year_group(payload: YearGroupCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org_id = current_user.org_id
+    # Append to the end of the ordered list.
+    max_pos = (await db.execute(select(func.max(YearGroup.position)).where(YearGroup.org_id == org_id))).scalar()
+    y = YearGroup(
+        name=payload.name.strip(), short_code=(payload.short_code or "").strip() or None,
+        category=(payload.category or "active").strip().lower(), is_mock=payload.is_mock,
+        position=(max_pos + 1) if max_pos is not None else 0, org_id=org_id,
+    )
+    db.add(y)
+    try:
+        await db.flush()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="A year group with that name already exists.")
+    return _year_group_dict(y)
+
+
+async def _load_year_group(db, year_group_id, org_id) -> YearGroup:
+    y = (await db.execute(select(YearGroup).where(
+        YearGroup.id == year_group_id, YearGroup.org_id == org_id))).scalar_one_or_none()
+    if not y:
+        raise HTTPException(status_code=404, detail="Year group not found.")
+    return y
+
+
+@router.patch("/year-groups/{year_group_id}", response_model=YearGroupResponse, dependencies=[_can_write])
+async def update_year_group(year_group_id: str, payload: YearGroupUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    y = await _load_year_group(db, year_group_id, current_user.org_id)
+    data = payload.model_dump(exclude_unset=True)
+    if "name" in data and data["name"]:
+        data["name"] = data["name"].strip()
+    if "short_code" in data:
+        data["short_code"] = (data["short_code"] or "").strip() or None
+    if "category" in data and data["category"]:
+        data["category"] = data["category"].strip().lower()
+    for k, v in data.items():
+        setattr(y, k, v)
+    try:
+        await db.flush()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="A year group with that name already exists.")
+    return _year_group_dict(y)
+
+
+@router.delete("/year-groups/{year_group_id}", status_code=204, dependencies=[_can_write])
+async def delete_year_group(year_group_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    y = await _load_year_group(db, year_group_id, current_user.org_id)
+    await db.delete(y)   # classes keep their free-text `level`; no FK to break
+    await db.flush()
+
+
+@router.post("/year-groups/reorder", response_model=list[YearGroupResponse], dependencies=[_can_write])
+async def reorder_year_groups(payload: ReorderRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Persist a new display order: position = index in the supplied id list.
+    Ids not belonging to this org are ignored."""
+    org_id = current_user.org_id
+    rows = {y.id: y for y in (await db.execute(select(YearGroup).where(YearGroup.org_id == org_id))).scalars().all()}
+    for i, yid in enumerate(payload.ids):
+        y = rows.get(yid)
+        if y:
+            y.position = i
+    await db.flush()
+    ordered = (await db.execute(select(YearGroup).where(
+        YearGroup.org_id == org_id).order_by(YearGroup.position, YearGroup.name))).scalars().all()
+    return [_year_group_dict(y) for y in ordered]

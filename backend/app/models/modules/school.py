@@ -122,6 +122,26 @@ class SchoolClass(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class YearGroup(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A managed year group / level (Classes/YearGroups → Manage YearGroups). The
+    ordered taxonomy above classes — e.g. YEAR 7 … YEAR 12, plus non-teaching
+    groups (Alumni, Entrance Examination) distinguished by ``category``. Feeds the
+    class form's Grade-Level picklist; ``SchoolClass.level`` stays free-text."""
+    __tablename__ = "year_groups"
+
+    name = Column(String(80), nullable=False)
+    short_code = Column(String(20), nullable=True)      # e.g. "Y7", "PN"
+    category = Column(String(20), default="active", nullable=False)  # active | alumni | prospective
+    position = Column(Integer, default=0, nullable=False)
+    is_mock = Column(Boolean, default=False, nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "name", name="uq_year_group_org_name"),
+        Index("ix_year_groups_org", "org_id"),
+    )
+
+
 class Subject(Base, UUIDMixin, TimestampMixin, TenantMixin):
     __tablename__ = "subjects"
 
