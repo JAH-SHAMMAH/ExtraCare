@@ -229,6 +229,23 @@ async def test_list_teachers_excludes_other_users_and_other_orgs(db, org, teache
     assert "staff@example.com" not in emails
 
 
+async def test_list_teachers_counts_subject_titled_teachers(db, org, teacher):
+    """Regression: real teachers carry subject-specific titles ("Physics Teacher"),
+    not the bare "Teacher". They must count as teachers (job_title contains
+    'teacher'); non-teaching staff must not. Keeps the Teachers list + dashboard
+    counters in agreement."""
+    db.add_all([
+        User(id=str(uuid.uuid4()), email="phys@example.com", full_name="Phys T",
+             status=UserStatus.ACTIVE, org_id=org.id, job_title="Physics Teacher"),
+        User(id=str(uuid.uuid4()), email="acct@example.com", full_name="Acct",
+             status=UserStatus.ACTIVE, org_id=org.id, job_title="Accountant"),
+    ])
+    await db.commit()
+    emails = [t["email"] for t in (await list_teachers(page=1, page_size=50, search=None, db=db, current_user=teacher))["items"]]
+    assert "phys@example.com" in emails
+    assert "acct@example.com" not in emails
+
+
 async def test_update_teacher_changes_name_and_subjects(db, org, teacher):
     created = await create_teacher(
         data=TeacherCreate(first_name="Kay", last_name="L", email="kl@example.com"),

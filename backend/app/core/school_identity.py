@@ -17,6 +17,17 @@ from app.models.user import User
 from app.models.modules.school import Student, SchoolClass, Subject
 
 
+def teacher_identity_filter():
+    """SQLAlchemy condition selecting Users who are teachers, by the app's
+    convention: their ``job_title`` contains "teacher" (case-insensitive). This
+    matches the plain "Teacher" the create-teacher form assigns AND the
+    subject-specific titles real teachers carry ("Physics Teacher", "ICT
+    Teacher", …). Used by both the Teachers list and the dashboard counters so
+    they always agree. Non-teaching staff (Accountant, Principal, …) are excluded.
+    """
+    return User.job_title.ilike("%teacher%")
+
+
 async def resolve_linked_student_id(db: AsyncSession, user: User) -> str | None:
     if not user.email:
         return None

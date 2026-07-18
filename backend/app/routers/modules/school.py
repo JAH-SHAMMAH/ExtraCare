@@ -28,6 +28,7 @@ from app.schemas.attendance_config import (
 from app.services.attendance import default_late_after
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
+from app.core.school_identity import teacher_identity_filter
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
 from app.schemas.student import StudentCreate, StudentUpdate
@@ -2071,8 +2072,8 @@ def _teacher_dict(u: User) -> dict:
 def _teacher_query_base(org_id: str):
     return select(User).where(
         User.org_id == org_id,
-        User.is_deleted == False,
-        User.job_title == TEACHER_JOB_TITLE,
+        User.is_deleted == False,  # noqa: E712
+        teacher_identity_filter(),   # job_title contains "teacher" (incl. subject titles)
     )
 
 

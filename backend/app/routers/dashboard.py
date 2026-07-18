@@ -34,6 +34,7 @@ from app.models.sms import (
     SmsCampaign, SmsMessage, SmsCampaignStatus, SmsMessageStatus,
 )
 from app.core.tenant import require_role_module
+from app.core.school_identity import teacher_identity_filter
 from app.core.permissions import PermissionChecker
 from app.core.workspace import effective_modules_for_org, workspace_for
 
@@ -105,18 +106,15 @@ async def overview(
         select(func.count(SchoolClass.id)).where(SchoolClass.org_id == org_id)
     )).scalar_one() or 0
 
-    # ── Teachers: distinct users holding the 'teacher' role slug in this org.
-    # JOIN to user_roles → roles, COUNT DISTINCT to handle dual-role users.
+    # ── Teachers: users identified as teachers by the app's convention (job_title
+    # contains "teacher"). Matches the Teachers list exactly, and — unlike the old
+    # 'teacher' role-slug join — counts subject teachers ("Physics Teacher", …),
+    # who never carry that role in practice.
     teachers_count = (await db.execute(
-        select(func.count(func.distinct(User.id)))
-        .select_from(User)
-        .join(user_roles, user_roles.c.user_id == User.id)
-        .join(Role, Role.id == user_roles.c.role_id)
-        .where(
+        select(func.count(User.id)).where(
             User.org_id == org_id,
-            User.is_deleted == False,
-            Role.slug == "teacher",
-            Role.org_id == org_id,
+            User.is_deleted == False,  # noqa: E712
+            teacher_identity_filter(),
         )
     )).scalar_one() or 0
 
@@ -337,11 +335,9 @@ async def _school_workspace_cards(db: AsyncSession, org_id: str, today: date) ->
         )
     )).scalar() or 0)
     teachers = int((await db.execute(
-        select(func.count(func.distinct(User.id)))
-        .select_from(User)
-        .join(user_roles, user_roles.c.user_id == User.id)
-        .join(Role, Role.id == user_roles.c.role_id)
-        .where(User.org_id == org_id, User.is_deleted == False, Role.slug == "teacher", Role.org_id == org_id)
+        select(func.count(User.id)).where(
+            User.org_id == org_id, User.is_deleted == False, teacher_identity_filter(),  # noqa: E712
+        )
     )).scalar() or 0)
     return [
         {"label": "Active Students", "value": students, "sub": "Currently enrolled", "href": "/dashboard/modules/school/students"},
