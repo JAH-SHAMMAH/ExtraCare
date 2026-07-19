@@ -8,10 +8,11 @@ import { HrTabNav } from "@/components/hrm/HrTabNav";
 export default function HrmLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
-      <div className="px-8 pt-8 max-w-6xl mx-auto w-full">
-        <HrTabNav />
-      </div>
+      {/* HrTabNav renders its own positioning wrapper and hides itself on the
+          HR landing page (/dashboard/hrm) — Educare shows Quick Links there only. */}
+      <HrTabNav />
       {children}
     </div>
   );
 }
+

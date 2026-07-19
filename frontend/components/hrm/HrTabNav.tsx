@@ -106,6 +106,10 @@ export function HrTabNav() {
   const visibleItems = (t: Tab) => (t.items ?? []).filter((it) => has(it.perm) && (it.built || canWrite));
   const tabVisible = (t: Tab) => (t.href ? has(t.perm) : visibleItems(t).length > 0);
 
+  // Educare shows only the Quick Links on the HR landing page — the tab bar
+  // appears once you're inside a specific HR section, never on the dashboard.
+  if (pathname === "/dashboard/hrm") return null;
+
   const tabs = TABS.filter(tabVisible);
   if (tabs.length === 0) return null;
 
@@ -115,6 +119,7 @@ export function HrTabNav() {
   };
 
   return (
+    <div className="px-8 pt-8 max-w-6xl mx-auto w-full">
     <div className="bg-white border border-slate-200 rounded-xl mb-6 overflow-hidden">
       {/* Tab label row */}
       <div className="flex flex-wrap items-center gap-1 px-2 py-1.5 border-b border-slate-100">
@@ -164,6 +169,7 @@ export function HrTabNav() {
           </div>
         );
       })()}
+    </div>
     </div>
   );
 }
