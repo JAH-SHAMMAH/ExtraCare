@@ -4,12 +4,13 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   Clock, BookOpen, Calendar, CheckSquare, ArrowRight, GraduationCap,
-  FileText, MonitorCheck, Library,
+  FileText, MonitorCheck, Library, Newspaper,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { useMyContexts, type ContextSlot } from "@/hooks/useMyContexts";
 import { useDelayedFlag } from "@/hooks/useDelayedFlag";
 import { PageHeaderSkeleton, CardGridSkeleton } from "@/components/loading/Skeleton";
+import { NewsFeed } from "@/components/feed/NewsFeed";
 import { cn, getInitials } from "@/lib/utils";
 
 const DAYS_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -144,6 +145,15 @@ export function StudentHome() {
         <QuickTile href="/dashboard/modules/school/cbt" icon={MonitorCheck} label="CBT Tests" color="bg-indigo-500" />
         <QuickTile href="/dashboard/my-library" icon={Library} label="My Library" color="bg-rose-500" />
         <QuickTile href="/dashboard/my-timetable" icon={Calendar} label="My Timetable" color="bg-emerald-500" />
+      </div>
+
+      {/* School news feed — read-only; students see the same org-wide announcements. */}
+      <div className="mt-8">
+        <div className="flex items-center gap-2 mb-3">
+          <Newspaper size={16} className="text-indigo-600" />
+          <h2 className="text-sm font-bold text-slate-800">News Feed</h2>
+        </div>
+        <NewsFeed limit={20} showComposer={false} />
       </div>
     </div>
   );

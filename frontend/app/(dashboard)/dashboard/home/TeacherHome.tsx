@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   GraduationCap, Clock, BookOpen, Users as UsersIcon, CheckSquare, ArrowRight,
-  ClipboardList, Award, Calendar, NotebookPen,
+  ClipboardList, Award, Calendar, NotebookPen, Newspaper,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { useMyContexts } from "@/hooks/useMyContexts";
@@ -12,6 +12,7 @@ import { useDelayedFlag } from "@/hooks/useDelayedFlag";
 import {
   PageHeaderSkeleton, CardGridSkeleton, Skeleton,
 } from "@/components/loading/Skeleton";
+import { NewsFeed } from "@/components/feed/NewsFeed";
 import { cn } from "@/lib/utils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -157,6 +158,15 @@ export function TeacherHome() {
           }))}
           icon={GraduationCap}
         />
+      </div>
+
+      {/* School news feed — read-only; teachers see the same org-wide announcements. */}
+      <div className="mt-8">
+        <div className="flex items-center gap-2 mb-3">
+          <Newspaper size={16} className="text-indigo-600" />
+          <h2 className="text-sm font-bold text-slate-800">News Feed</h2>
+        </div>
+        <NewsFeed limit={20} showComposer={false} />
       </div>
     </div>
   );
