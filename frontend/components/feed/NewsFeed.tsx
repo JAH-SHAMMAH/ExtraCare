@@ -22,13 +22,13 @@ import type { FeedPost, UploadResponse } from "@/types";
  * composer + the post list (with its own loading / empty states). Callers own
  * the page chrome (header, width, background).
  */
-export function NewsFeed({ limit = 30 }: { limit?: number }) {
+export function NewsFeed({ limit = 30, showComposer = true }: { limit?: number; showComposer?: boolean }) {
   const { data: posts = [], isLoading } = usePosts(limit);
   const { user } = useAuthStore();
 
   return (
     <div className="space-y-4">
-      <Composer />
+      {showComposer && <Composer />}
       {isLoading ? (
         <div className="flex items-center justify-center py-10 text-slate-400">
           <Loader2 className="w-5 h-5 animate-spin" />

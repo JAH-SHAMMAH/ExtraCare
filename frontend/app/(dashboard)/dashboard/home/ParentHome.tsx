@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
-  ArrowRight, Calendar, BookOpen, GraduationCap, Award, Clock, AlertCircle,
+  ArrowRight, Calendar, BookOpen, GraduationCap, Award, Clock, AlertCircle, Newspaper,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { useMyContexts, type ParentChild } from "@/hooks/useMyContexts";
 import { useDelayedFlag } from "@/hooks/useDelayedFlag";
 import { PageHeaderSkeleton, CardGridSkeleton } from "@/components/loading/Skeleton";
+import { NewsFeed } from "@/components/feed/NewsFeed";
 import { cn, getInitials } from "@/lib/utils";
 
 export function ParentHome() {
@@ -60,6 +61,15 @@ export function ParentHome() {
         <QuickTile href="/dashboard/modules/school/fees" icon={Award} label="Fees" color="bg-amber-500" />
         <QuickTile href="/dashboard/modules/school/attendance" icon={Calendar} label="Attendance" color="bg-emerald-500" />
         <QuickTile href="/dashboard/modules/school/feedback" icon={BookOpen} label="Send Feedback" color="bg-indigo-500" />
+      </div>
+
+      {/* School news feed — the same org-wide announcements staff see. */}
+      <div className="mt-8">
+        <div className="flex items-center gap-2 mb-3">
+          <Newspaper size={16} className="text-indigo-600" />
+          <h2 className="text-sm font-bold text-slate-800">News Feed</h2>
+        </div>
+        <NewsFeed limit={20} showComposer={false} />
       </div>
     </div>
   );
