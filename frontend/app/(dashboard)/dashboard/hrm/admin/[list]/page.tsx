@@ -48,13 +48,14 @@ function ListManager({ meta, canWrite }: { meta: NonNullable<ReturnType<typeof a
   };
 
   const rows = data ?? [];
+  const section = meta.section ?? { label: "Admin", href: "/dashboard/hrm/admin" };
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
       <div className="mb-6">
         <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2">
           <span>HR Manager</span><span>/</span>
-          <Link href="/dashboard/hrm/admin" className="hover:text-brand-600">Admin</Link><span>/</span>
+          <Link href={section.href} className="hover:text-brand-600">{section.label}</Link><span>/</span>
           <span className="text-brand-600 font-semibold">{meta.label}</span>
         </nav>
         <h1 className="text-2xl font-black text-slate-900 tracking-tight">{meta.label}</h1>

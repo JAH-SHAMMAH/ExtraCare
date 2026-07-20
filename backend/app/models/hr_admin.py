@@ -36,6 +36,8 @@ HR_LIST_TYPES: dict[str, str] = {
     "pension_fund": "Pension Fund Administrators",
     "hr_operation": "HR Operations",
     "contributory_leave": "Contributory Leave Allowance",
+    # Phase 2 — Discipline config (surfaced under the Discipline tab, not Admin)
+    "disciplinary_type": "Disciplinary Types",
 }
 
 

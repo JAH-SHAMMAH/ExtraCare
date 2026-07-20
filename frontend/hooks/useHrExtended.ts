@@ -30,6 +30,8 @@ export const useDeleteApplicant = mut((id: string) => hrExtApi.applicants.remove
 
 // ── Disciplinary ──────────────────────────────────────────────────────────────
 export function useCases(status?: string) { return useQuery<any[]>({ queryKey: ["hr-cases", status], queryFn: () => hrExtApi.cases.list(status) }); }
+// Self-service: the caller's OWN disciplinary records (Discipline › My Actions).
+export function useMyCases() { return useQuery<any[]>({ queryKey: ["hr-my-cases"], queryFn: () => hrExtApi.cases.mine() }); }
 export const useCreateCase = mut((d) => hrExtApi.cases.create(d), ["hr-cases", "hr-stats"], "Case opened.");
 export const useUpdateCase = mut((v: { id: string; data: object }) => hrExtApi.cases.update(v.id, v.data), ["hr-cases", "hr-stats"], "Updated.");
 export const useDeleteCase = mut((id: string) => hrExtApi.cases.remove(id), ["hr-cases", "hr-stats"], "Removed.");

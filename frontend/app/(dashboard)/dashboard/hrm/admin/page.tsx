@@ -24,7 +24,7 @@ export default function HrAdminPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {HR_ADMIN_LISTS.map((l) => {
+        {HR_ADMIN_LISTS.filter((l) => !l.section).map((l) => {
           const count = countFor(l.type);
           return (
             <Link key={l.slug} href={`/dashboard/hrm/admin/${l.slug}`}

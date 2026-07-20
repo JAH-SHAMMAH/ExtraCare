@@ -1001,6 +1001,7 @@ export const hrExtApi = {
     create: (d: object) => api.post("/hr/disciplinary/cases", d).then((r) => r.data),
     update: (id: string, d: object) => api.patch(`/hr/disciplinary/cases/${id}`, d).then((r) => r.data),
     remove: (id: string) => api.delete(`/hr/disciplinary/cases/${id}`),
+    mine: () => api.get("/hr/disciplinary/my-cases").then((r) => r.data),
   },
   appointments: {
     list: (p?: { staff_user_id?: string; status?: string }) => api.get("/hr/appointments", { params: p }).then((r) => r.data),

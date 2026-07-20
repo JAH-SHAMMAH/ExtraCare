@@ -38,6 +38,9 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/hrm/leave", permission: "hr:read" },
   // Phase 4: Recruitment + Disciplinary — confidential HR admin (hr:write).
   { prefix: "/dashboard/hrm/recruitment", permission: "hr:write" },
+  // Self-service: a staff member's OWN disciplinary record (longest-prefix wins,
+  // so this hr:read route sits under the hr:write disciplinary parent).
+  { prefix: "/dashboard/hrm/disciplinary/my-actions", permission: "hr:read" },
   { prefix: "/dashboard/hrm/disciplinary", permission: "hr:write" },
   // Phase 4 Batch 2: Performance (hr:write); Access Control = role mgmt (roles:write, admin).
   { prefix: "/dashboard/hrm/performance", permission: "hr:write" },

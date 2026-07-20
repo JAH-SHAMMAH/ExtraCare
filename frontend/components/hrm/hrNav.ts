@@ -73,7 +73,8 @@ export const HR_TABS: HrTab[] = [
   {
     key: "discipline", label: "Discipline", icon: AlertTriangle, perm: R, items: [
       { label: "Disciplinary Cases", href: "/dashboard/hrm/disciplinary", perm: W, built: true },
-      { label: "My Actions", perm: R }, { label: "Disciplinary Types", perm: W },
+      { label: "My Actions", href: "/dashboard/hrm/disciplinary/my-actions", perm: R, built: true },
+      { label: "Disciplinary Types", href: "/dashboard/hrm/admin/disciplinary-types", perm: W, built: true },
     ],
   },
   {
@@ -108,9 +109,15 @@ export const HR_QUICK_LINKS: { key: string; label: string; icon: any }[] = [
 export const quickLinkTarget = (key: string) =>
   `/dashboard/hrm/section?open=${key === "documents" ? "admin" : key}`;
 
-// Phase-1 Admin managed lists — the single source mapping URL slug ↔ backend
-// list_type ↔ label, shared by the dynamic [list] page and its lookups.
-export const HR_ADMIN_LISTS: { slug: string; type: string; label: string; hint: string }[] = [
+// HR managed lists — the single source mapping URL slug ↔ backend list_type ↔
+// label, shared by the dynamic [list] page and its lookups. Most live under the
+// Admin tab; `section` marks a list that belongs to a different tab (e.g.
+// Disciplinary Types under Discipline) so the list page breadcrumbs correctly and
+// the Admin landing can exclude it.
+export type HrAdminList = { slug: string; type: string; label: string; hint: string; section?: { label: string; href: string } };
+const DISCIPLINE_SECTION = { label: "Discipline", href: "/dashboard/hrm/disciplinary" };
+
+export const HR_ADMIN_LISTS: HrAdminList[] = [
   // Phase 1 — Job cluster
   { slug: "job-titles", type: "job_title", label: "Job Titles", hint: "Positions staff can hold (e.g. Senior Teacher, Bursar)." },
   { slug: "job-categories", type: "job_category", label: "Job Categories", hint: "Groupings for job titles (e.g. Teaching, Admin, Support)." },
@@ -129,6 +136,8 @@ export const HR_ADMIN_LISTS: { slug: string; type: string; label: string; hint: 
   { slug: "pension-fund-administrators", type: "pension_fund", label: "Pension Fund Administrators", hint: "PFAs staff enrol with (e.g. Stanbic IBTC, ARM)." },
   { slug: "hr-operations", type: "hr_operation", label: "HR Operations", hint: "Named HR operational processes / checklists." },
   { slug: "contributory-leave-allowance", type: "contributory_leave", label: "Contributory Leave Allowance", hint: "Leave-allowance schemes staff contribute to." },
+  // Phase 2 — Discipline config (lives under the Discipline tab, not Admin)
+  { slug: "disciplinary-types", type: "disciplinary_type", label: "Disciplinary Types", hint: "Categories of disciplinary action (e.g. Verbal Warning, Suspension).", section: DISCIPLINE_SECTION },
 ];
 
 export const adminListBySlug = (slug: string) => HR_ADMIN_LISTS.find((l) => l.slug === slug);

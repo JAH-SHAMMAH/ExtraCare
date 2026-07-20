@@ -14,7 +14,7 @@ import {
   UserCog, ShoppingCart, Truck, Contact, HandshakeIcon,
   User, NotebookPen, MonitorCheck, HeartHandshake, MessageSquare,
   Camera, MessageCircle, Users as UsersIcon, UserCircle, Cake,
-  CalendarClock, Gavel, Newspaper, Radio, Library, Bus, ArrowLeftRight,
+  CalendarClock, Gavel, ShieldAlert, Newspaper, Radio, Library, Bus, ArrowLeftRight,
   FileQuestion, X, LifeBuoy, Settings2, KeyRound, Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -44,6 +44,7 @@ const CORE_NAV = [
   { href: "/dashboard/hrm", label: "HR Manager", icon: Briefcase },
   { href: "/dashboard/hrm/my-info", label: "My HRM Info", icon: UserCircle },
   { href: "/dashboard/hrm/leave", label: "My Leave", icon: CalendarClock },
+  { href: "/dashboard/hrm/disciplinary/my-actions", label: "My Actions", icon: ShieldAlert },
   { href: "/dashboard/hrm/leave/admin", label: "Leave Admin", icon: Gavel },
   { href: "/messenger", label: "Messenger", icon: MessageSquare },
   { href: "/news-feed", label: "News Feed", icon: Newspaper },

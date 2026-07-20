@@ -25,7 +25,7 @@ from app.models.hr_extended import JobOpening, Applicant, DisciplinaryCase, Staf
 from app.schemas.hr_extended import (
     JobOpeningCreate, JobOpeningUpdate, JobOpeningResponse,
     ApplicantCreate, ApplicantUpdate, ApplicantResponse,
-    DisciplinaryCreate, DisciplinaryUpdate, DisciplinaryResponse,
+    DisciplinaryCreate, DisciplinaryUpdate, DisciplinaryResponse, MyDisciplinaryResponse,
     HrExtendedStats,
     AppointmentCreate, AppointmentUpdate, AppointmentResponse, APPOINTMENT_TYPES,
 )
@@ -216,6 +216,30 @@ async def delete_case(case_id: str, db: AsyncSession = Depends(get_db), current_
     c.is_deleted = True
     c.deleted_at = datetime.now(timezone.utc)
     await db.flush()
+
+
+# ── Discipline: My Actions (self-service — a staff member's OWN cases) ─────────────
+# NOT gated hr:write: any authenticated staff may see disciplinary records raised
+# against THEM (never anyone else's — the query is pinned to current_user.id, so it
+# cannot leak). Educare surfaces disciplinary outcomes to the affected staff.
+
+@router.get("/disciplinary/my-cases", response_model=list[MyDisciplinaryResponse])
+async def list_my_cases(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(
+        select(DisciplinaryCase).where(
+            DisciplinaryCase.org_id == current_user.org_id,
+            DisciplinaryCase.staff_user_id == current_user.id,
+            DisciplinaryCase.is_deleted == False,  # noqa: E712
+        ).order_by(DisciplinaryCase.created_at.desc())
+    )).scalars().all()
+    return [
+        MyDisciplinaryResponse(
+            id=c.id, title=c.title, description=c.description, severity=c.severity,
+            status=c.status, action_taken=c.action_taken, incident_on=c.incident_on,
+            resolved_on=c.resolved_on, created_at=c.created_at,
+        )
+        for c in rows
+    ]
 
 
 # ── Stats (HR dashboard cards) ────────────────────────────────────────────────────

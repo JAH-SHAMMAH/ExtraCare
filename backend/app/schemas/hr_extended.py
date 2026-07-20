@@ -117,6 +117,21 @@ class DisciplinaryResponse(BaseModel):
     org_id: str
 
 
+class MyDisciplinaryResponse(BaseModel):
+    """Self-service view of one's OWN disciplinary record (Discipline › My Actions).
+    Deliberately omits reported_by — a staff member sees the action taken against
+    them, not who reported it."""
+    id: str
+    title: str
+    description: Optional[str]
+    severity: str
+    status: str
+    action_taken: Optional[str]
+    incident_on: Optional[date]
+    resolved_on: Optional[date]
+    created_at: datetime
+
+
 class HrExtendedStats(BaseModel):
     open_jobs: int
     total_applicants: int
