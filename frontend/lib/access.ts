@@ -45,6 +45,11 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // Phase 4 Batch 2: Performance (hr:write); Access Control = role mgmt (roles:write, admin).
   { prefix: "/dashboard/hrm/performance", permission: "hr:write" },
   { prefix: "/dashboard/hrm/access-control", permission: "roles:write" },
+  // Phase 2 Access Control: staff attendance. Admin clock log (hr:write) + a
+  // self-service "My Attendance" (hr:read) — longest-prefix keeps the staff route
+  // reachable under the hr:write parent.
+  { prefix: "/dashboard/hrm/attendance/my", permission: "hr:read" },
+  { prefix: "/dashboard/hrm/attendance", permission: "hr:write" },
   { prefix: "/dashboard/hrm", permission: "hr:write" },
 
   // ── School module (fine-grained per feature) ───────────────────────

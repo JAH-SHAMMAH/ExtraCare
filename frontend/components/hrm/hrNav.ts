@@ -79,7 +79,8 @@ export const HR_TABS: HrTab[] = [
   },
   {
     key: "access", label: "Access Control", icon: Fingerprint, perm: R, items: [
-      { label: "Clock in / Clock out Log", perm: W }, { label: "My Attendance Record", perm: R },
+      { label: "Clock in / Clock out Log", href: "/dashboard/hrm/attendance/log", perm: W, built: true },
+      { label: "My Attendance Record", href: "/dashboard/hrm/attendance/my", perm: R, built: true },
       { label: "Configuration", perm: W },
     ],
   },

@@ -1023,6 +1023,16 @@ export const hrAdminApi = {
   remove: (id: string) => api.delete(`/hr/admin/items/${id}`),
 };
 
+// ── HR Access Control — staff attendance (clock in/out) ───────────────────────────
+
+export const hrAttendanceApi = {
+  clock: (event_type: "clock_in" | "clock_out", note?: string) => api.post("/hr/attendance/clock", { event_type, note }).then((r) => r.data),
+  my: () => api.get("/hr/attendance/my").then((r) => r.data),
+  events: (p?: { staff_user_id?: string; from_date?: string; to_date?: string }) => api.get("/hr/attendance/events", { params: p }).then((r) => r.data),
+  addEvent: (d: object) => api.post("/hr/attendance/events", d).then((r) => r.data),
+  removeEvent: (id: string) => api.delete(`/hr/attendance/events/${id}`),
+};
+
 // ── Remita parent fee payments ───────────────────────────────────────────────────
 
 export const remitaApi = {
