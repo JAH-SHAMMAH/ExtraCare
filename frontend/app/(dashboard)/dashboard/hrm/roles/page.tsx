@@ -6,7 +6,7 @@ import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn, getInitials } from "@/lib/utils";
 import { ShieldCheck, Users as UsersIcon, ChevronDown, X, Loader2, AlertTriangle, Lock, Search } from "lucide-react";
 
-export default function AccessControlPage() {
+export default function RolesPermissionsPage() {
   const canWrite = useHasPermission("roles:write");
   const { data: rolesData, isLoading: rolesLoading } = useAvailableRoles();
   const [search, setSearch] = useState("");
@@ -16,8 +16,8 @@ export default function AccessControlPage() {
   return (
     <div className="p-8 max-w-5xl mx-auto">
       <div className="mb-6">
-        <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>HR Manager</span><span>/</span><span className="text-brand-600 font-semibold">Access Control</span></nav>
-        <h1 className="text-2xl font-black text-slate-900 tracking-tight">Access Control</h1>
+        <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>HR Manager</span><span>/</span><span className="text-brand-600 font-semibold">Roles &amp; Permissions</span></nav>
+        <h1 className="text-2xl font-black text-slate-900 tracking-tight">Roles &amp; Permissions</h1>
         <p className="text-slate-500 text-sm mt-0.5">Roles, their permissions, and who holds them.</p>
       </div>
 

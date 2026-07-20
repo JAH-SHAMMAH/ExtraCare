@@ -42,9 +42,10 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // so this hr:read route sits under the hr:write disciplinary parent).
   { prefix: "/dashboard/hrm/disciplinary/my-actions", permission: "hr:read" },
   { prefix: "/dashboard/hrm/disciplinary", permission: "hr:write" },
-  // Phase 4 Batch 2: Performance (hr:write); Access Control = role mgmt (roles:write, admin).
+  // Phase 4 Batch 2: Performance (hr:write); Roles & Permissions = role mgmt (roles:write).
+  // ("Access Control" now names the staff-attendance feature below, not this page.)
   { prefix: "/dashboard/hrm/performance", permission: "hr:write" },
-  { prefix: "/dashboard/hrm/access-control", permission: "roles:write" },
+  { prefix: "/dashboard/hrm/roles", permission: "roles:write" },
   // Phase 2 Access Control: staff attendance. Admin clock log (hr:write) + a
   // self-service "My Attendance" (hr:read) — longest-prefix keeps the staff route
   // reachable under the hr:write parent.
