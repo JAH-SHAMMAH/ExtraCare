@@ -22,7 +22,7 @@ const PIE_COLORS = ["#6366f1", "#ec4899", "#f59e0b", "#10b981", "#64748b"];
 export default function HrDashboardPage() {
   const { data: overview, isLoading: ovLoading } = useHrOverview();
   const { data: birthdays = [] } = useHrBirthdays();
-  const { data: leave } = useLeaveAnalytics();
+  const { data: leave, isLoading: leaveLoading } = useLeaveAnalytics();
   const { data: stats, isLoading: statsLoading } = useHrStats();
 
   return (
@@ -47,7 +47,7 @@ export default function HrDashboardPage() {
         <MetricCard label="Total Active Staff" value={overview?.total_active_staff} loading={ovLoading} icon={Users} />
         <MetricCard label="Jobs Opening" value={stats?.open_jobs} loading={statsLoading} icon={Briefcase} href="/dashboard/hrm/recruitment" />
         <MetricCard label="Disciplinary Cases" value={stats?.open_disciplinary} loading={statsLoading} icon={ShieldAlert} href="/dashboard/hrm/disciplinary" />
-        <MetricCard label="Leave Applications" value={leave?.pending_count ?? 0} loading={false} icon={CalendarClock} href="/dashboard/hrm/leave/admin" />
+        <MetricCard label="Leave Applications" value={leave?.pending_count} loading={leaveLoading} icon={CalendarClock} href="/dashboard/hrm/leave/admin" />
       </section>
 
       {/* Charts */}
@@ -224,7 +224,7 @@ function MetricCard({
         <span className="text-xs font-semibold uppercase tracking-wide">{label}</span>
       </div>
       <div className="text-2xl font-black text-slate-900">
-        {loading ? <span className="inline-block w-10 h-6 bg-slate-100 animate-pulse rounded" /> : (value ?? 0)}
+        {loading ? <span className="inline-block w-10 h-6 bg-slate-100 animate-pulse rounded" /> : (value ?? <span className="text-slate-300" title="Couldn’t load — check your connection or refresh">—</span>)}
       </div>
     </>
   );
