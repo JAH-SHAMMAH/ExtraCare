@@ -13,10 +13,12 @@ from sqlalchemy import Column, String, Text, Integer, Boolean, Index
 from app.models.base import Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin
 
 
-# The seven Phase-1 managed lists: slug/key → human label. The router validates
-# every ``list_type`` against this map, so an unknown list 404s rather than
-# silently creating an orphan category.
+# The HR admin managed lists: slug/key → human label. The router validates every
+# ``list_type`` against this map, so an unknown list 404s rather than silently
+# creating an orphan category. All share the one generic table (no migration to
+# add a list) — Phase 1 shipped the Job cluster; Phase 2 added the reference lists.
 HR_LIST_TYPES: dict[str, str] = {
+    # Phase 1 — Job cluster
     "job_title": "Job Titles",
     "job_category": "Job Categories",
     "pay_grade": "Pay Grades",
@@ -24,6 +26,16 @@ HR_LIST_TYPES: dict[str, str] = {
     "work_shift": "Work Shifts",
     "employment_status": "Employment Status",
     "working_tool": "Working Tools",
+    # Phase 2 — Admin reference lists
+    "competency": "Competency List",
+    "qual_skill": "Qualification — Skills",
+    "qual_education": "Qualification — Education",
+    "qual_license": "Qualification — Licenses",
+    "qual_language": "Qualification — Languages",
+    "qual_membership": "Qualification — Memberships",
+    "pension_fund": "Pension Fund Administrators",
+    "hr_operation": "HR Operations",
+    "contributory_leave": "Contributory Leave Allowance",
 }
 
 

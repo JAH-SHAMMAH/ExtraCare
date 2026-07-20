@@ -28,13 +28,18 @@ export const HR_TABS: HrTab[] = [
       { label: "Work Shifts", href: "/dashboard/hrm/admin/work-shifts", perm: W, built: true },
       { label: "Employment Status", href: "/dashboard/hrm/admin/employment-status", perm: W, built: true },
       { label: "Working Tools", href: "/dashboard/hrm/admin/working-tools", perm: W, built: true },
-      { label: "Organization Structure", perm: W },
-      { label: "Competency List", perm: W }, { label: "Qualification — Skills", perm: W },
-      { label: "Qualification — Education", perm: W }, { label: "Qualification — Licenses", perm: W },
-      { label: "Qualification — Languages", perm: W }, { label: "Qualification — Memberships", perm: W },
-      { label: "Staff Confirmation", perm: W }, { label: "HR Departments", perm: W },
-      { label: "HR Operations", perm: W }, { label: "Pension Fund Administrators", perm: W },
-      { label: "Contributory Leave Allowance", perm: W }, { label: "Documents", perm: W },
+      { label: "Competency List", href: "/dashboard/hrm/admin/competencies", perm: W, built: true },
+      { label: "Qualification — Skills", href: "/dashboard/hrm/admin/qualification-skills", perm: W, built: true },
+      { label: "Qualification — Education", href: "/dashboard/hrm/admin/qualification-education", perm: W, built: true },
+      { label: "Qualification — Licenses", href: "/dashboard/hrm/admin/qualification-licenses", perm: W, built: true },
+      { label: "Qualification — Languages", href: "/dashboard/hrm/admin/qualification-languages", perm: W, built: true },
+      { label: "Qualification — Memberships", href: "/dashboard/hrm/admin/qualification-memberships", perm: W, built: true },
+      { label: "Pension Fund Administrators", href: "/dashboard/hrm/admin/pension-fund-administrators", perm: W, built: true },
+      { label: "HR Operations", href: "/dashboard/hrm/admin/hr-operations", perm: W, built: true },
+      { label: "Contributory Leave Allowance", href: "/dashboard/hrm/admin/contributory-leave-allowance", perm: W, built: true },
+      // Deferred (need real modelling / wiring, not flat lists):
+      { label: "Organization Structure", perm: W }, { label: "Staff Confirmation", perm: W },
+      { label: "HR Departments", perm: W }, { label: "Documents", perm: W },
     ],
   },
   {
@@ -106,6 +111,7 @@ export const quickLinkTarget = (key: string) =>
 // Phase-1 Admin managed lists — the single source mapping URL slug ↔ backend
 // list_type ↔ label, shared by the dynamic [list] page and its lookups.
 export const HR_ADMIN_LISTS: { slug: string; type: string; label: string; hint: string }[] = [
+  // Phase 1 — Job cluster
   { slug: "job-titles", type: "job_title", label: "Job Titles", hint: "Positions staff can hold (e.g. Senior Teacher, Bursar)." },
   { slug: "job-categories", type: "job_category", label: "Job Categories", hint: "Groupings for job titles (e.g. Teaching, Admin, Support)." },
   { slug: "pay-grades", type: "pay_grade", label: "Pay Grades", hint: "Salary grade bands (e.g. Grade 8, TS3)." },
@@ -113,6 +119,16 @@ export const HR_ADMIN_LISTS: { slug: string; type: string; label: string; hint: 
   { slug: "work-shifts", type: "work_shift", label: "Work Shifts", hint: "Named work schedules (e.g. Morning, Boarding Duty)." },
   { slug: "employment-status", type: "employment_status", label: "Employment Status", hint: "Contract states (e.g. Probation, Confirmed, Contract)." },
   { slug: "working-tools", type: "working_tool", label: "Working Tools", hint: "Assets issued to staff (e.g. Laptop, ID Card)." },
+  // Phase 2 — Admin reference lists
+  { slug: "competencies", type: "competency", label: "Competency List", hint: "Skills & behaviours scored in appraisals (e.g. Communication, Leadership)." },
+  { slug: "qualification-skills", type: "qual_skill", label: "Qualification — Skills", hint: "Recognised staff skills (e.g. First Aid, Coaching)." },
+  { slug: "qualification-education", type: "qual_education", label: "Qualification — Education", hint: "Education levels / degrees (e.g. B.Ed, M.Sc)." },
+  { slug: "qualification-licenses", type: "qual_license", label: "Qualification — Licenses", hint: "Professional licences (e.g. TRCN, Driving)." },
+  { slug: "qualification-languages", type: "qual_language", label: "Qualification — Languages", hint: "Languages staff may speak (e.g. English, French)." },
+  { slug: "qualification-memberships", type: "qual_membership", label: "Qualification — Memberships", hint: "Professional bodies (e.g. CIPM, NUT)." },
+  { slug: "pension-fund-administrators", type: "pension_fund", label: "Pension Fund Administrators", hint: "PFAs staff enrol with (e.g. Stanbic IBTC, ARM)." },
+  { slug: "hr-operations", type: "hr_operation", label: "HR Operations", hint: "Named HR operational processes / checklists." },
+  { slug: "contributory-leave-allowance", type: "contributory_leave", label: "Contributory Leave Allowance", hint: "Leave-allowance schemes staff contribute to." },
 ];
 
 export const adminListBySlug = (slug: string) => HR_ADMIN_LISTS.find((l) => l.slug === slug);

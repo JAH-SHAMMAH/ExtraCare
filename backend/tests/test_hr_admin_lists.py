@@ -1,9 +1,10 @@
-"""Tests for HR Admin managed lists (Phase 1 — the 'Admin › Job' cluster).
+"""Tests for HR Admin managed lists (Phase 1 Job cluster + Phase 2 reference lists).
 
-One generic table (hr_managed_items) backs seven managed lists discriminated by
-`list_type`. Every endpoint is gated ``hr:write``. These prove CRUD, list-type
-validation, catalog counts and org isolation, plus that the hr:write gate
-excludes hr:read-only teachers/staff — exercising the exact PermissionChecker.
+One generic table (hr_managed_items) backs every managed list discriminated by
+`list_type` (see HR_LIST_TYPES). Every endpoint is gated ``hr:write``. These prove
+CRUD, list-type validation, catalog counts and org isolation, plus that the
+hr:write gate excludes hr:read-only teachers/staff — exercising the exact
+PermissionChecker. Adding a list type needs no migration and no new test.
 """
 from __future__ import annotations
 
@@ -68,7 +69,7 @@ async def test_unknown_list_type_404(db, org, teacher):
     assert exc2.value.status_code == 404
 
 
-async def test_all_seven_list_types_accepted(db, org, teacher):
+async def test_all_list_types_accepted(db, org, teacher):
     for lt in HR_LIST_TYPES:
         it = await create_item(lt, HrItemCreate(name=f"{lt} item"), db=db, current_user=teacher)
         assert it.list_type == lt
