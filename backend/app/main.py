@@ -21,6 +21,7 @@ from app.routers import fee_payments as fee_payments_router
 from app.routers import hr_extended as hr_extended_router
 from app.routers import hr_admin as hr_admin_router
 from app.routers import hr_attendance as hr_attendance_router
+from app.routers import hr_org as hr_org_router
 from app.routers import search as search_router
 from app.routers import upload as upload_router
 from app.routers.modules import (
@@ -370,6 +371,7 @@ app.include_router(fee_payments_router.router, prefix=API_V1)
 app.include_router(hr_extended_router.router, prefix=API_V1)
 app.include_router(hr_admin_router.router, prefix=API_V1)
 app.include_router(hr_attendance_router.router, prefix=API_V1)
+app.include_router(hr_org_router.router, prefix=API_V1)
 
 
 # ── Health Check ──────────────────────────────────────────────────────────────

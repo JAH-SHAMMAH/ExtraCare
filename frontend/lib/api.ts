@@ -1033,6 +1033,15 @@ export const hrAttendanceApi = {
   removeEvent: (id: string) => api.delete(`/hr/attendance/events/${id}`),
 };
 
+// ── HR Org Structure — org units (reporting hierarchy) ────────────────────────────
+
+export const hrOrgApi = {
+  list: () => api.get("/hr/org-units").then((r) => r.data),
+  create: (d: object) => api.post("/hr/org-units", d).then((r) => r.data),
+  update: (id: string, d: object) => api.patch(`/hr/org-units/${id}`, d).then((r) => r.data),
+  remove: (id: string) => api.delete(`/hr/org-units/${id}`),
+};
+
 // ── Remita parent fee payments ───────────────────────────────────────────────────
 
 export const remitaApi = {
