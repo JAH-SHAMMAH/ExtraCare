@@ -1,11 +1,13 @@
 "use client";
 
+import { useRef } from "react";
 import Link from "next/link";
 import {
   Users, UserCircle, Cake, Gavel,
   PieChart as PieChartIcon, Building2, BarChart3, CalendarClock,
-  Briefcase, ShieldAlert, Star, ShieldCheck,
+  Briefcase, ShieldAlert, Star, ShieldCheck, ChevronLeft, ChevronRight,
 } from "lucide-react";
+import { HR_QUICK_LINKS, quickLinkTarget } from "@/components/hrm/hrNav";
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -36,15 +38,9 @@ export default function HrDashboardPage() {
         <p className="text-slate-500 text-sm mt-0.5">People metrics, events, and quick actions — all live from your org.</p>
       </header>
 
-      {/* Quick Links */}
-      {/* Educare-parity Quick Links: Admin / PIM / Recruitment / Access Control / Performance */}
-      <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <QuickLink href="/dashboard/modules/school/staff" icon={Users} label="Admin" tint="bg-indigo-50 text-indigo-600" />
-        <QuickLink href="/dashboard/hrm/my-info" icon={UserCircle} label="PIM" tint="bg-sky-50 text-sky-600" />
-        <QuickLink href="/dashboard/hrm/recruitment" icon={Briefcase} label="Recruitment" tint="bg-amber-50 text-amber-600" />
-        <QuickLink href="/dashboard/hrm/access-control" icon={ShieldCheck} label="Access Control" tint="bg-teal-50 text-teal-600" />
-        <QuickLink href="/dashboard/hrm/performance" icon={Star} label="Performance" tint="bg-orange-50 text-orange-600" />
-      </section>
+      {/* Quick Links — all HR categories, horizontally scrollable (Educare parity).
+          Each card opens the section page with that tab's dropdown pre-expanded. */}
+      <QuickLinksRow />
 
       {/* Overview cards — Educare parity (Jobs Opening + Disciplinary now wired via /hr/stats) */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -185,17 +181,36 @@ export default function HrDashboardPage() {
 
 // ── Primitives ───────────────────────────────────────────────────────────────
 
-function QuickLink({ href, icon: Icon, label, tint }: { href: string; icon: any; label: string; tint: string }) {
+const QL_TINTS = [
+  "bg-indigo-50 text-indigo-600", "bg-sky-50 text-sky-600", "bg-amber-50 text-amber-600",
+  "bg-teal-50 text-teal-600", "bg-orange-50 text-orange-600", "bg-emerald-50 text-emerald-600",
+  "bg-purple-50 text-purple-600", "bg-rose-50 text-rose-600", "bg-slate-100 text-slate-600",
+];
+
+function QuickLinksRow() {
+  const ref = useRef<HTMLDivElement>(null);
+  const scroll = (dir: number) => ref.current?.scrollBy({ left: dir * 320, behavior: "smooth" });
   return (
-    <Link
-      href={href}
-      className="bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md transition-shadow flex items-center gap-3"
-    >
-      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${tint}`}>
-        <Icon className="w-5 h-5" />
+    <section>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-bold text-slate-800">Quick Links</h2>
+        <div className="flex gap-1">
+          <button onClick={() => scroll(-1)} aria-label="Scroll left" className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100"><ChevronLeft size={15} /></button>
+          <button onClick={() => scroll(1)} aria-label="Scroll right" className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100"><ChevronRight size={15} /></button>
+        </div>
       </div>
-      <span className="text-sm font-semibold text-slate-800">{label}</span>
-    </Link>
+      <div ref={ref} className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {HR_QUICK_LINKS.map((q, i) => (
+          <Link key={q.key} href={quickLinkTarget(q.key)}
+            className="shrink-0 w-44 bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md hover:border-brand-300 transition-all flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${QL_TINTS[i % QL_TINTS.length]}`}>
+              <q.icon className="w-5 h-5" />
+            </div>
+            <span className="text-sm font-semibold text-slate-800">{q.label}</span>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }
 
