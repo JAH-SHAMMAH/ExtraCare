@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, Loader2, Eye, EyeOff } from "lucide-react";
 import { useCreateUser } from "@/hooks/useUsers";
+import { useHrList } from "@/hooks/useHrAdmin";
 import { FormField } from "@/components/ui/FormField";
 import type { User } from "@/types";
 
@@ -25,7 +26,13 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPassword, setShowPassword] = useState(false);
-  
+
+  // Suggest the HR-managed Departments / Job Titles (still free-text, so existing
+  // values keep working). Empty + silent if the creator lacks hr:write.
+  const { data: departments } = useHrList("hr_department");
+  const { data: jobTitles } = useHrList("job_title");
+  const activeNames = (items?: { name: string; is_active: boolean }[]) => (items ?? []).filter((i) => i.is_active).map((i) => i.name);
+
   const { mutate: createUser, isPending } = useCreateUser();
 
   // Reset form when modal opens
@@ -222,6 +229,7 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
               <FormField label="Department" error={errors.department}>
                 <input
                   type="text"
+                  list="hr-departments-list"
                   value={formData.department}
                   onChange={(e) => {
                     setFormData((prev) => ({ ...prev, department: e.target.value }));
@@ -231,6 +239,9 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
                   className="input"
                   disabled={isPending}
                 />
+                <datalist id="hr-departments-list">
+                  {activeNames(departments).map((n) => <option key={n} value={n} />)}
+                </datalist>
               </FormField>
             </div>
 
@@ -238,6 +249,7 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
             <FormField label="Job Title" error={errors.job_title}>
               <input
                 type="text"
+                list="hr-job-titles-list"
                 value={formData.job_title}
                 onChange={(e) => {
                   setFormData((prev) => ({ ...prev, job_title: e.target.value }));
@@ -247,6 +259,9 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
                 className="input"
                 disabled={isPending}
               />
+              <datalist id="hr-job-titles-list">
+                {activeNames(jobTitles).map((n) => <option key={n} value={n} />)}
+              </datalist>
             </FormField>
 
             {/* Roles */}

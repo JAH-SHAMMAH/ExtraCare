@@ -37,9 +37,10 @@ export const HR_TABS: HrTab[] = [
       { label: "Pension Fund Administrators", href: "/dashboard/hrm/admin/pension-fund-administrators", perm: W, built: true },
       { label: "HR Operations", href: "/dashboard/hrm/admin/hr-operations", perm: W, built: true },
       { label: "Contributory Leave Allowance", href: "/dashboard/hrm/admin/contributory-leave-allowance", perm: W, built: true },
+      { label: "HR Departments", href: "/dashboard/hrm/admin/hr-departments", perm: W, built: true },
       // Deferred (need real modelling / wiring, not flat lists):
       { label: "Organization Structure", perm: W }, { label: "Staff Confirmation", perm: W },
-      { label: "HR Departments", perm: W }, { label: "Documents", perm: W },
+      { label: "Documents", perm: W },
     ],
   },
   {
@@ -137,6 +138,7 @@ export const HR_ADMIN_LISTS: HrAdminList[] = [
   { slug: "pension-fund-administrators", type: "pension_fund", label: "Pension Fund Administrators", hint: "PFAs staff enrol with (e.g. Stanbic IBTC, ARM)." },
   { slug: "hr-operations", type: "hr_operation", label: "HR Operations", hint: "Named HR operational processes / checklists." },
   { slug: "contributory-leave-allowance", type: "contributory_leave", label: "Contributory Leave Allowance", hint: "Leave-allowance schemes staff contribute to." },
+  { slug: "hr-departments", type: "hr_department", label: "HR Departments", hint: "Departments staff belong to (e.g. Academics, Administration). Suggested on the staff form." },
   // Phase 2 — Discipline config (lives under the Discipline tab, not Admin)
   { slug: "disciplinary-types", type: "disciplinary_type", label: "Disciplinary Types", hint: "Categories of disciplinary action (e.g. Verbal Warning, Suspension).", section: DISCIPLINE_SECTION },
 ];
