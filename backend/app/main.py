@@ -19,6 +19,7 @@ from app.routers import support as support_router
 from app.routers import remita as remita_router
 from app.routers import fee_payments as fee_payments_router
 from app.routers import hr_extended as hr_extended_router
+from app.routers import hr_admin as hr_admin_router
 from app.routers import search as search_router
 from app.routers import upload as upload_router
 from app.routers.modules import (
@@ -366,6 +367,7 @@ app.include_router(support_router.router, prefix=API_V1)
 app.include_router(remita_router.router, prefix=API_V1)
 app.include_router(fee_payments_router.router, prefix=API_V1)
 app.include_router(hr_extended_router.router, prefix=API_V1)
+app.include_router(hr_admin_router.router, prefix=API_V1)
 
 
 # ── Health Check ──────────────────────────────────────────────────────────────

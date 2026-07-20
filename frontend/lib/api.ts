@@ -1011,6 +1011,17 @@ export const hrExtApi = {
   stats: () => api.get("/hr/stats").then((r) => r.data),
 };
 
+// ── HR Admin managed lists (Phase 1 — Admin › Job cluster) ────────────────────────
+
+export const hrAdminApi = {
+  catalog: () => api.get("/hr/admin/lists").then((r) => r.data),
+  list: (listType: string, includeInactive = true) =>
+    api.get(`/hr/admin/lists/${listType}`, { params: { include_inactive: includeInactive } }).then((r) => r.data),
+  create: (listType: string, d: object) => api.post(`/hr/admin/lists/${listType}`, d).then((r) => r.data),
+  update: (id: string, d: object) => api.patch(`/hr/admin/items/${id}`, d).then((r) => r.data),
+  remove: (id: string) => api.delete(`/hr/admin/items/${id}`),
+};
+
 // ── Remita parent fee payments ───────────────────────────────────────────────────
 
 export const remitaApi = {

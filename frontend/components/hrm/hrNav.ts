@@ -21,10 +21,14 @@ export const HR_TABS: HrTab[] = [
   { key: "home", label: "Home", icon: Home, href: "/dashboard/hrm", perm: W },
   {
     key: "admin", label: "Admin", icon: Settings2, perm: W, items: [
-      { label: "Job Titles", perm: W }, { label: "Job Categories", perm: W },
-      { label: "Pay Grades", perm: W }, { label: "Salary Components", perm: W },
-      { label: "Work Shifts", perm: W }, { label: "Employment Status", perm: W },
-      { label: "Working Tools", perm: W }, { label: "Organization Structure", perm: W },
+      { label: "Job Titles", href: "/dashboard/hrm/admin/job-titles", perm: W, built: true },
+      { label: "Job Categories", href: "/dashboard/hrm/admin/job-categories", perm: W, built: true },
+      { label: "Pay Grades", href: "/dashboard/hrm/admin/pay-grades", perm: W, built: true },
+      { label: "Salary Components", href: "/dashboard/hrm/admin/salary-components", perm: W, built: true },
+      { label: "Work Shifts", href: "/dashboard/hrm/admin/work-shifts", perm: W, built: true },
+      { label: "Employment Status", href: "/dashboard/hrm/admin/employment-status", perm: W, built: true },
+      { label: "Working Tools", href: "/dashboard/hrm/admin/working-tools", perm: W, built: true },
+      { label: "Organization Structure", perm: W },
       { label: "Competency List", perm: W }, { label: "Qualification — Skills", perm: W },
       { label: "Qualification — Education", perm: W }, { label: "Qualification — Licenses", perm: W },
       { label: "Qualification — Languages", perm: W }, { label: "Qualification — Memberships", perm: W },
@@ -98,3 +102,17 @@ export const HR_QUICK_LINKS: { key: string; label: string; icon: any }[] = [
 // "Document & Templates" isn't its own tab — Documents lives under Admin.
 export const quickLinkTarget = (key: string) =>
   `/dashboard/hrm/section?open=${key === "documents" ? "admin" : key}`;
+
+// Phase-1 Admin managed lists — the single source mapping URL slug ↔ backend
+// list_type ↔ label, shared by the dynamic [list] page and its lookups.
+export const HR_ADMIN_LISTS: { slug: string; type: string; label: string; hint: string }[] = [
+  { slug: "job-titles", type: "job_title", label: "Job Titles", hint: "Positions staff can hold (e.g. Senior Teacher, Bursar)." },
+  { slug: "job-categories", type: "job_category", label: "Job Categories", hint: "Groupings for job titles (e.g. Teaching, Admin, Support)." },
+  { slug: "pay-grades", type: "pay_grade", label: "Pay Grades", hint: "Salary grade bands (e.g. Grade 8, TS3)." },
+  { slug: "salary-components", type: "salary_component", label: "Salary Components", hint: "Earnings & deductions (e.g. Basic, Housing, Tax)." },
+  { slug: "work-shifts", type: "work_shift", label: "Work Shifts", hint: "Named work schedules (e.g. Morning, Boarding Duty)." },
+  { slug: "employment-status", type: "employment_status", label: "Employment Status", hint: "Contract states (e.g. Probation, Confirmed, Contract)." },
+  { slug: "working-tools", type: "working_tool", label: "Working Tools", hint: "Assets issued to staff (e.g. Laptop, ID Card)." },
+];
+
+export const adminListBySlug = (slug: string) => HR_ADMIN_LISTS.find((l) => l.slug === slug);
