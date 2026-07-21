@@ -118,12 +118,27 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/exams", label: "Exams & Results", icon: Award },
       { href: "/dashboard/modules/school/grades", label: "Gradebook", icon: BookOpen },
       { href: "/dashboard/modules/school/report-cards", label: "Report Cards", icon: FileText },
-      { href: "/dashboard/modules/school/eclassroom", label: "eClassroom", icon: NotebookPen },
+      { href: "/dashboard/modules/school/eclassroom", label: "Classwork", icon: NotebookPen },
       // Batch 3 (Academic Records) — shipped. subject-selection → school:subjects:read;
       // mark-books → school:grades:read; report-workflow → school:reports:write.
       { href: "/dashboard/modules/school/subject-selection", label: "Subject Selection", icon: BookMarked },
       { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: FileText },
       { href: "/dashboard/modules/school/report-workflow", label: "Report Workflow", icon: FolderOpen },
+    ],
+  },
+  {
+    // eClassroom — virtual-classroom module (Educare parity), its own top-level
+    // section. Live Broadcast reuses the existing WebRTC live room. (The old
+    // "eClassroom" assignments feature was renamed "Classwork" under Academics.)
+    key: "eclassroom",
+    requiredModule: "school",
+    label: "eClassroom",
+    icon: Radio,
+    items: [
+      { href: "/dashboard/modules/eclassroom/setup", label: "eClassroom Setup", icon: Settings2 },
+      { href: "/dashboard/modules/eclassroom/programs", label: "Programs", icon: BookOpen },
+      { href: "/dashboard/modules/eclassroom/manage", label: "Admin Manage eClassrooms", icon: Calendar },
+      { href: "/dashboard/modules/eclassroom/broadcast", label: "Admin Live Broadcast", icon: Radio },
     ],
   },
   {

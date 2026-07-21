@@ -82,6 +82,9 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/fees", permission: "payments:read" },
   { prefix: "/dashboard/modules/school/ratings", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/eclassroom", permission: "school:classroom:read" },
+  // eClassroom (virtual classroom) — admin module, coarse school:write (excludes
+  // students, who hold only school:classroom:*). Matches the router gate.
+  { prefix: "/dashboard/modules/eclassroom", permission: "school:write" },
   // Question Bank holds correct answers — staff-only (school:read), stricter than
   // the cbt scope students hold to sit tests. Longer prefix wins over /cbt above.
   { prefix: "/dashboard/modules/school/cbt/question-bank", permission: "school:read" },

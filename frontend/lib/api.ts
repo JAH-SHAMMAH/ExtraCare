@@ -1433,6 +1433,27 @@ export const feedApi = {
   },
 };
 
+// ── eClassroom API ───────────────────────────────────────────────────────────
+
+export const eclassroomApi = {
+  settings: () => api.get("/eclassroom/settings").then((r) => r.data),
+  updateSettings: (d: object) => api.put("/eclassroom/settings", d).then((r) => r.data),
+  programs: {
+    list: (params?: { session_id?: string; section_id?: string; cbt_type?: string }) => api.get("/eclassroom/programs", { params }).then((r) => r.data),
+    create: (d: object) => api.post("/eclassroom/programs", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/eclassroom/programs/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/eclassroom/programs/${id}`),
+  },
+  schedules: {
+    list: (params?: { status?: string; year_group_id?: string; session_id?: string }) => api.get("/eclassroom/schedules", { params }).then((r) => r.data),
+    create: (d: object) => api.post("/eclassroom/schedules", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/eclassroom/schedules/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/eclassroom/schedules/${id}`),
+    goLive: (id: string) => api.post(`/eclassroom/schedules/${id}/go-live`).then((r) => r.data),
+    end: (id: string) => api.post(`/eclassroom/schedules/${id}/end`).then((r) => r.data),
+  },
+};
+
 // ── Livestream API ───────────────────────────────────────────────────────────
 
 export const liveApi = {

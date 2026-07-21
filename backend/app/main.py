@@ -53,6 +53,7 @@ from app.routers.modules import (
     facility as facility_router,
     biometric as biometric_router,
     platform as platform_router,
+    eclassroom as eclassroom_router,
 )
 
 settings = get_settings()
@@ -351,6 +352,7 @@ app.mount("/uploads", StaticFiles(directory=str(_upload_root)), name="uploads")
 # Each router pins require_module("school") so they only answer when the
 # tenant has the school module enabled.
 app.include_router(classroom.router, prefix=API_V1)
+app.include_router(eclassroom_router.router, prefix=API_V1)
 app.include_router(cbt.router, prefix=API_V1)
 app.include_router(behaviour.router, prefix=API_V1)
 app.include_router(feedback_router.router, prefix=API_V1)
