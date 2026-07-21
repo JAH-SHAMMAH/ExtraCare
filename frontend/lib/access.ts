@@ -35,6 +35,10 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // HR — self-service vs admin. Order doesn't matter (longest-prefix wins).
   { prefix: "/dashboard/hrm/my-info", permission: "hr:read" },
   { prefix: "/dashboard/hrm/leave/admin", permission: "hr:write" },
+  // Leave completion: Configure + Assign are admin (hr:write); Entitlements is
+  // self-service (inherits hr:read from /leave below). Longest-prefix wins.
+  { prefix: "/dashboard/hrm/leave/configure", permission: "hr:write" },
+  { prefix: "/dashboard/hrm/leave/assign", permission: "hr:write" },
   { prefix: "/dashboard/hrm/leave", permission: "hr:read" },
   // Phase 4: Recruitment + Disciplinary — confidential HR admin (hr:write).
   { prefix: "/dashboard/hrm/recruitment", permission: "hr:write" },

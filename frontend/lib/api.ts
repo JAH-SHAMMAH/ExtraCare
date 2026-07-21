@@ -763,6 +763,15 @@ export const leaveApi = {
   analytics: () => api.get("/leave/analytics").then((r) => r.data),
 };
 
+// ── Leave config / entitlements / assignment (HR Leave completion) ───────────────
+
+export const leaveConfigApi = {
+  policies: () => api.get("/leave/policies").then((r) => r.data),
+  updatePolicy: (leaveType: string, d: object) => api.put(`/leave/policies/${leaveType}`, d).then((r) => r.data),
+  entitlements: (userId?: string) => api.get("/leave/entitlements", { params: { user_id: userId } }).then((r) => r.data),
+  assign: (d: object) => api.post("/leave/assign", d).then((r) => r.data),
+};
+
 // ── Messenger API ────────────────────────────────────────────────────────────
 
 export const messengerApi = {

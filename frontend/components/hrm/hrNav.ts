@@ -57,7 +57,9 @@ export const HR_TABS: HrTab[] = [
       { label: "My Leave", href: "/dashboard/hrm/leave", perm: R, built: true },
       { label: "Leave List", href: "/dashboard/hrm/leave/admin", perm: W, built: true },
       { label: "Reports", href: "/dashboard/hrm/leave/admin", perm: W, built: true },
-      { label: "Entitlements", perm: R }, { label: "Assign Leave", perm: W }, { label: "Configure", perm: W },
+      { label: "Entitlements", href: "/dashboard/hrm/leave/entitlements", perm: R, built: true },
+      { label: "Assign Leave", href: "/dashboard/hrm/leave/assign", perm: W, built: true },
+      { label: "Configure", href: "/dashboard/hrm/leave/configure", perm: W, built: true },
     ],
   },
   {
