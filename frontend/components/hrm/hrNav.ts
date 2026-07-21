@@ -39,8 +39,9 @@ export const HR_TABS: HrTab[] = [
       { label: "Contributory Leave Allowance", href: "/dashboard/hrm/admin/contributory-leave-allowance", perm: W, built: true },
       { label: "HR Departments", href: "/dashboard/hrm/admin/hr-departments", perm: W, built: true },
       { label: "Organization Structure", href: "/dashboard/hrm/admin/org-structure", perm: W, built: true },
-      // Deferred (need real modelling / workflow, not flat lists):
-      { label: "Staff Confirmation", perm: W }, { label: "Documents", perm: W },
+      { label: "Documents", href: "/dashboard/hrm/admin/documents", perm: W, built: true },
+      // Deferred (needs a confirmation workflow, not a flat list):
+      { label: "Staff Confirmation", perm: W },
     ],
   },
   {

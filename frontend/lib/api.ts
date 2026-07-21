@@ -1065,6 +1065,15 @@ export const hrTrainingApi = {
   removeSession: (id: string) => api.delete(`/hr/training-sessions/${id}`),
 };
 
+// ── HR Documents & Templates ──────────────────────────────────────────────────────
+
+export const hrDocumentsApi = {
+  list: (category?: string) => api.get("/hr/documents", { params: { category } }).then((r) => r.data),
+  create: (d: object) => api.post("/hr/documents", d).then((r) => r.data),
+  update: (id: string, d: object) => api.patch(`/hr/documents/${id}`, d).then((r) => r.data),
+  remove: (id: string) => api.delete(`/hr/documents/${id}`),
+};
+
 // ── Remita parent fee payments ───────────────────────────────────────────────────
 
 export const remitaApi = {
