@@ -46,7 +46,7 @@ export const HR_TABS: HrTab[] = [
   },
   {
     key: "pim", label: "PIM", icon: Users2, perm: W, items: [
-      { label: "Employee List", href: "/dashboard/modules/school/staff", perm: W, built: true },
+      { label: "Employee List", href: "/dashboard/hrm/pim/employees", perm: W, built: true },
       { label: "Staff Transfer Log", perm: W }, { label: "Staff Account Numbers", perm: W },
       { label: "Staff Confirmation List", perm: W }, { label: "Configuration", perm: W },
     ],
