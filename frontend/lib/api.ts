@@ -1074,6 +1074,24 @@ export const hrDocumentsApi = {
   remove: (id: string) => api.delete(`/hr/documents/${id}`),
 };
 
+// ── HR PIM — Staff Account Numbers + Staff Transfer Log ───────────────────────────
+
+export const hrPimApi = {
+  accounts: (search?: string) => api.get("/hr/pim/accounts", { params: { search } }).then((r) => r.data),
+  updateAccount: (userId: string, d: object) => api.patch(`/hr/pim/accounts/${userId}`, d).then((r) => r.data),
+  transfers: (staffUserId?: string) => api.get("/hr/pim/transfers", { params: { staff_user_id: staffUserId } }).then((r) => r.data),
+  createTransfer: (d: object) => api.post("/hr/pim/transfers", d).then((r) => r.data),
+};
+
+// ── HR Staff Confirmation (probation → confirmed) ─────────────────────────────────
+
+export const hrConfirmationApi = {
+  list: (status?: string) => api.get("/hr/confirmations", { params: { status } }).then((r) => r.data),
+  start: (d: object) => api.post("/hr/confirmations", d).then((r) => r.data),
+  decide: (id: string, d: object) => api.patch(`/hr/confirmations/${id}/decide`, d).then((r) => r.data),
+  cancel: (id: string) => api.delete(`/hr/confirmations/${id}`),
+};
+
 // ── Remita parent fee payments ───────────────────────────────────────────────────
 
 export const remitaApi = {

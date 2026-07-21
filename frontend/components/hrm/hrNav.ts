@@ -40,15 +40,16 @@ export const HR_TABS: HrTab[] = [
       { label: "HR Departments", href: "/dashboard/hrm/admin/hr-departments", perm: W, built: true },
       { label: "Organization Structure", href: "/dashboard/hrm/admin/org-structure", perm: W, built: true },
       { label: "Documents", href: "/dashboard/hrm/admin/documents", perm: W, built: true },
-      // Deferred (needs a confirmation workflow, not a flat list):
-      { label: "Staff Confirmation", perm: W },
+      { label: "Staff Confirmation", href: "/dashboard/hrm/confirmations", perm: W, built: true },
     ],
   },
   {
     key: "pim", label: "PIM", icon: Users2, perm: W, items: [
       { label: "Employee List", href: "/dashboard/hrm/pim/employees", perm: W, built: true },
-      { label: "Staff Transfer Log", perm: W }, { label: "Staff Account Numbers", perm: W },
-      { label: "Staff Confirmation List", perm: W }, { label: "Configuration", perm: W },
+      { label: "Staff Transfer Log", href: "/dashboard/hrm/pim/transfers", perm: W, built: true },
+      { label: "Staff Account Numbers", href: "/dashboard/hrm/pim/accounts", perm: W, built: true },
+      { label: "Staff Confirmation List", href: "/dashboard/hrm/confirmations", perm: W, built: true },
+      { label: "Configuration", perm: W },
     ],
   },
   { key: "my-info", label: "My Info", icon: UserCircle, href: "/dashboard/hrm/my-info", perm: R },
@@ -73,7 +74,8 @@ export const HR_TABS: HrTab[] = [
   {
     key: "performance", label: "Performance", icon: Star, perm: W, items: [
       { label: "Appraisals", href: "/dashboard/hrm/performance", perm: W, built: true },
-      { label: "Appraisal Configuration", perm: W }, { label: "Competency Mappings", perm: W },
+      { label: "Appraisal Configuration", href: "/dashboard/hrm/performance/configuration", perm: W, built: true },
+      { label: "Competency Mappings", href: "/dashboard/hrm/performance/competencies", perm: W, built: true },
     ],
   },
   {
@@ -93,7 +95,7 @@ export const HR_TABS: HrTab[] = [
   {
     key: "recruitment", label: "Recruitment", icon: Briefcase, perm: W, items: [
       { label: "Vacancies", href: "/dashboard/hrm/recruitment", perm: W, built: true },
-      { label: "Configuration", perm: W },
+      { label: "Configuration", href: "/dashboard/hrm/recruitment/configuration", perm: W, built: true },
     ],
   },
 ];
@@ -124,6 +126,7 @@ export const quickLinkTarget = (key: string) =>
 export type HrAdminList = { slug: string; type: string; label: string; hint: string; section?: { label: string; href: string } };
 const DISCIPLINE_SECTION = { label: "Discipline", href: "/dashboard/hrm/disciplinary" };
 const TRAINING_SECTION = { label: "Training", href: "/dashboard/hrm/training" };
+const RECRUITMENT_SECTION = { label: "Recruitment", href: "/dashboard/hrm/recruitment" };
 
 export const HR_ADMIN_LISTS: HrAdminList[] = [
   // Phase 1 — Job cluster
@@ -149,6 +152,9 @@ export const HR_ADMIN_LISTS: HrAdminList[] = [
   { slug: "disciplinary-types", type: "disciplinary_type", label: "Disciplinary Types", hint: "Categories of disciplinary action (e.g. Verbal Warning, Suspension).", section: DISCIPLINE_SECTION },
   // Phase 2 — Training config (lives under the Training tab, not Admin)
   { slug: "training-categories", type: "training_category", label: "Training Categories", hint: "Categories for training programs (e.g. Compliance, Pedagogy).", section: TRAINING_SECTION },
+  // Phase 3 — Recruitment config (lives under the Recruitment tab, not Admin)
+  { slug: "recruitment-sources", type: "recruitment_source", label: "Application Sources", hint: "Where candidates come from (e.g. Referral, Website, Agency).", section: RECRUITMENT_SECTION },
+  { slug: "recruitment-stages", type: "recruitment_stage", label: "Interview Stages", hint: "Stages in your hiring pipeline (e.g. Screening, Interview, Offer).", section: RECRUITMENT_SECTION },
 ];
 
 export const adminListBySlug = (slug: string) => HR_ADMIN_LISTS.find((l) => l.slug === slug);

@@ -25,6 +25,8 @@ from app.routers import hr_org as hr_org_router
 from app.routers import leave_config as leave_config_router
 from app.routers import hr_training as hr_training_router
 from app.routers import hr_documents as hr_documents_router
+from app.routers import hr_pim as hr_pim_router
+from app.routers import hr_confirmation as hr_confirmation_router
 from app.routers import search as search_router
 from app.routers import upload as upload_router
 from app.routers.modules import (
@@ -329,6 +331,8 @@ app.include_router(leave_router.router, prefix=API_V1)
 app.include_router(leave_config_router.router, prefix=API_V1)
 app.include_router(hr_training_router.router, prefix=API_V1)
 app.include_router(hr_documents_router.router, prefix=API_V1)
+app.include_router(hr_pim_router.router, prefix=API_V1)
+app.include_router(hr_confirmation_router.router, prefix=API_V1)
 app.include_router(messenger_router.router, prefix=API_V1)
 app.include_router(feed_router.router, prefix=API_V1)
 app.include_router(live_router.router, prefix=API_V1)

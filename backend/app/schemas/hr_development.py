@@ -25,6 +25,7 @@ class CriterionCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     description: Optional[str] = None
     category: Optional[str] = None
+    competency: Optional[str] = Field(default=None, max_length=150)
     weight: int = Field(default=1, ge=1)
     max_score: int = Field(default=5, ge=1, le=100)
     position: int = 0
@@ -35,6 +36,7 @@ class CriterionUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=150)
     description: Optional[str] = None
     category: Optional[str] = None
+    competency: Optional[str] = Field(default=None, max_length=150)
     weight: Optional[int] = Field(default=None, ge=1)
     max_score: Optional[int] = Field(default=None, ge=1, le=100)
     position: Optional[int] = None
@@ -46,6 +48,7 @@ class CriterionResponse(_OrmBase):
     name: str
     description: Optional[str]
     category: Optional[str]
+    competency: Optional[str] = None
     weight: int
     max_score: int
     position: int

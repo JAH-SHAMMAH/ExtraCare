@@ -1106,6 +1106,7 @@ export interface AssessmentCriterion {
   name: string;
   description: string | null;
   category: string | null;
+  competency: string | null;
   weight: number;
   max_score: number;
   position: number;

@@ -170,6 +170,7 @@ class StaffAssessmentCriterion(Base, UUIDMixin, TimestampMixin, TenantMixin):
     name = Column(String(150), nullable=False)
     description = Column(Text, nullable=True)
     category = Column(String(80), nullable=True)            # grouping e.g. "Professionalism"
+    competency = Column(String(150), nullable=True)         # optional link to a Competency (Competency Mappings)
     weight = Column(Integer, default=1, nullable=False)     # relative weight in the average
     max_score = Column(Integer, default=5, nullable=False)  # rating scale top (1..max_score)
     position = Column(Integer, default=0, nullable=False)

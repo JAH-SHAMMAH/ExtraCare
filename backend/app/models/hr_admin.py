@@ -41,6 +41,9 @@ HR_LIST_TYPES: dict[str, str] = {
     "disciplinary_type": "Disciplinary Types",
     # Phase 2 — Training config (surfaced under the Training tab, not Admin)
     "training_category": "Training Categories",
+    # Phase 3 — Recruitment config (surfaced under the Recruitment tab, not Admin)
+    "recruitment_source": "Application Sources",
+    "recruitment_stage": "Interview Stages",
 }
 
 
