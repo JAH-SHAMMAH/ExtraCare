@@ -1051,6 +1051,20 @@ export const hrOrgApi = {
   remove: (id: string) => api.delete(`/hr/org-units/${id}`),
 };
 
+// ── HR Training — programs + sessions ─────────────────────────────────────────────
+
+export const hrTrainingApi = {
+  list: () => api.get("/hr/trainings").then((r) => r.data),
+  create: (d: object) => api.post("/hr/trainings", d).then((r) => r.data),
+  update: (id: string, d: object) => api.patch(`/hr/trainings/${id}`, d).then((r) => r.data),
+  remove: (id: string) => api.delete(`/hr/trainings/${id}`),
+  sessions: (trainingId: string) => api.get(`/hr/trainings/${trainingId}/sessions`).then((r) => r.data),
+  addSession: (trainingId: string, d: object) => api.post(`/hr/trainings/${trainingId}/sessions`, d).then((r) => r.data),
+  allSessions: () => api.get("/hr/training-sessions").then((r) => r.data),
+  updateSession: (id: string, d: object) => api.patch(`/hr/training-sessions/${id}`, d).then((r) => r.data),
+  removeSession: (id: string) => api.delete(`/hr/training-sessions/${id}`),
+};
+
 // ── Remita parent fee payments ───────────────────────────────────────────────────
 
 export const remitaApi = {

@@ -64,7 +64,9 @@ export const HR_TABS: HrTab[] = [
   },
   {
     key: "training", label: "Training", icon: GraduationCap, perm: W, items: [
-      { label: "Trainings", perm: W }, { label: "Sessions", perm: W }, { label: "Configuration", perm: W },
+      { label: "Trainings", href: "/dashboard/hrm/training", perm: W, built: true },
+      { label: "Sessions", href: "/dashboard/hrm/training/sessions", perm: W, built: true },
+      { label: "Configuration", href: "/dashboard/hrm/admin/training-categories", perm: W, built: true },
     ],
   },
   {
@@ -120,6 +122,7 @@ export const quickLinkTarget = (key: string) =>
 // the Admin landing can exclude it.
 export type HrAdminList = { slug: string; type: string; label: string; hint: string; section?: { label: string; href: string } };
 const DISCIPLINE_SECTION = { label: "Discipline", href: "/dashboard/hrm/disciplinary" };
+const TRAINING_SECTION = { label: "Training", href: "/dashboard/hrm/training" };
 
 export const HR_ADMIN_LISTS: HrAdminList[] = [
   // Phase 1 — Job cluster
@@ -143,6 +146,8 @@ export const HR_ADMIN_LISTS: HrAdminList[] = [
   { slug: "hr-departments", type: "hr_department", label: "HR Departments", hint: "Departments staff belong to (e.g. Academics, Administration). Suggested on the staff form." },
   // Phase 2 — Discipline config (lives under the Discipline tab, not Admin)
   { slug: "disciplinary-types", type: "disciplinary_type", label: "Disciplinary Types", hint: "Categories of disciplinary action (e.g. Verbal Warning, Suspension).", section: DISCIPLINE_SECTION },
+  // Phase 2 — Training config (lives under the Training tab, not Admin)
+  { slug: "training-categories", type: "training_category", label: "Training Categories", hint: "Categories for training programs (e.g. Compliance, Pedagogy).", section: TRAINING_SECTION },
 ];
 
 export const adminListBySlug = (slug: string) => HR_ADMIN_LISTS.find((l) => l.slug === slug);

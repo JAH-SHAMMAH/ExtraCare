@@ -49,6 +49,7 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // Phase 4 Batch 2: Performance (hr:write); Roles & Permissions = role mgmt (roles:write).
   // ("Access Control" now names the staff-attendance feature below, not this page.)
   { prefix: "/dashboard/hrm/performance", permission: "hr:write" },
+  { prefix: "/dashboard/hrm/training", permission: "hr:write" },
   { prefix: "/dashboard/hrm/roles", permission: "roles:write" },
   // Phase 2 Access Control: staff attendance. Admin clock log (hr:write) + a
   // self-service "My Attendance" (hr:read) — longest-prefix keeps the staff route
