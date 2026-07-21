@@ -15,6 +15,7 @@ ENDPOINTS:
 from __future__ import annotations
 
 from datetime import datetime, timezone, date, time
+from math import radians, sin, cos, asin, sqrt
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -24,12 +25,27 @@ from app.database import get_db
 from app.deps import get_current_active_user
 from app.core.permissions import PermissionChecker
 from app.models.user import User
-from app.models.hr_attendance import StaffAttendanceEvent, StaffClockType, StaffClockSource
-from app.schemas.hr_attendance import SelfClockCreate, AdminEventCreate, AttendanceEventResponse
+from app.models.hr_attendance import StaffAttendanceEvent, StaffClockType, StaffClockSource, StaffAttendanceSettings
+from app.schemas.hr_attendance import (
+    SelfClockCreate, AdminEventCreate, AttendanceEventResponse,
+    AttendanceSettingsResponse, AttendanceSettingsUpdate,
+)
 
 router = APIRouter(prefix="/hr", tags=["HR — Access Control"])
 
 _can_hr = Depends(PermissionChecker("hr:write"))
+
+
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle distance between two points, in metres."""
+    r = 6371000.0
+    dlat, dlng = radians(lat2 - lat1), radians(lng2 - lng1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlng / 2) ** 2
+    return 2 * r * asin(sqrt(a))
+
+
+async def _get_settings(db: AsyncSession, org_id: str) -> StaffAttendanceSettings | None:
+    return (await db.execute(select(StaffAttendanceSettings).where(StaffAttendanceSettings.org_id == org_id))).scalar_one_or_none()
 
 
 def _response(e: StaffAttendanceEvent, staff_name: str | None = None) -> AttendanceEventResponse:
@@ -46,6 +62,15 @@ def _response(e: StaffAttendanceEvent, staff_name: str | None = None) -> Attenda
 
 @router.post("/attendance/clock", response_model=AttendanceEventResponse, status_code=201)
 async def clock_self(payload: SelfClockCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    settings = await _get_settings(db, current_user.org_id)
+    # Geofence enforcement — only when enabled AND a centre + radius are configured.
+    if settings and settings.geofence_enabled and settings.geofence_lat is not None and settings.geofence_lng is not None and settings.geofence_radius_m:
+        if payload.lat is None or payload.lng is None:
+            raise HTTPException(status_code=422, detail="Location is required to clock in/out here.")
+        dist = _haversine_m(settings.geofence_lat, settings.geofence_lng, payload.lat, payload.lng)
+        if dist > settings.geofence_radius_m:
+            raise HTTPException(status_code=422, detail=f"You’re outside the permitted area (about {int(dist)} m away).")
+
     e = StaffAttendanceEvent(
         staff_user_id=current_user.id, org_id=current_user.org_id,
         event_type=payload.event_type, event_time=datetime.now(timezone.utc),
@@ -54,6 +79,39 @@ async def clock_self(payload: SelfClockCreate, db: AsyncSession = Depends(get_db
     db.add(e)
     await db.flush()
     return _response(e, current_user.full_name)
+
+
+# ── Configuration (Access Control › Configuration) ────────────────────────────
+
+def _settings_response(s: StaffAttendanceSettings | None) -> AttendanceSettingsResponse:
+    if not s:
+        return AttendanceSettingsResponse(
+            work_start_time=None, work_end_time=None, late_grace_minutes=0,
+            geofence_enabled=False, geofence_lat=None, geofence_lng=None, geofence_radius_m=None,
+        )
+    return AttendanceSettingsResponse(
+        work_start_time=s.work_start_time, work_end_time=s.work_end_time, late_grace_minutes=s.late_grace_minutes,
+        geofence_enabled=s.geofence_enabled, geofence_lat=s.geofence_lat, geofence_lng=s.geofence_lng,
+        geofence_radius_m=s.geofence_radius_m,
+    )
+
+
+@router.get("/attendance/settings", response_model=AttendanceSettingsResponse)
+async def get_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Readable by any staff — the clock UI needs work hours + geofence state."""
+    return _settings_response(await _get_settings(db, current_user.org_id))
+
+
+@router.put("/attendance/settings", response_model=AttendanceSettingsResponse, dependencies=[_can_hr])
+async def update_settings(payload: AttendanceSettingsUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = await _get_settings(db, current_user.org_id)
+    if not s:
+        s = StaffAttendanceSettings(org_id=current_user.org_id)
+        db.add(s)
+    for f, v in payload.model_dump().items():
+        setattr(s, f, v)
+    await db.flush()
+    return _settings_response(s)
 
 
 @router.get("/attendance/my", response_model=list[AttendanceEventResponse])

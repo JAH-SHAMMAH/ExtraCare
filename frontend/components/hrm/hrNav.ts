@@ -49,7 +49,6 @@ export const HR_TABS: HrTab[] = [
       { label: "Staff Transfer Log", href: "/dashboard/hrm/pim/transfers", perm: W, built: true },
       { label: "Staff Account Numbers", href: "/dashboard/hrm/pim/accounts", perm: W, built: true },
       { label: "Staff Confirmation List", href: "/dashboard/hrm/confirmations", perm: W, built: true },
-      { label: "Configuration", perm: W },
     ],
   },
   { key: "my-info", label: "My Info", icon: UserCircle, href: "/dashboard/hrm/my-info", perm: R },
@@ -89,7 +88,7 @@ export const HR_TABS: HrTab[] = [
     key: "access", label: "Access Control", icon: Fingerprint, perm: R, items: [
       { label: "Clock in / Clock out Log", href: "/dashboard/hrm/attendance/log", perm: W, built: true },
       { label: "My Attendance Record", href: "/dashboard/hrm/attendance/my", perm: R, built: true },
-      { label: "Configuration", perm: W },
+      { label: "Configuration", href: "/dashboard/hrm/attendance/configuration", perm: W, built: true },
     ],
   },
   {

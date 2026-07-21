@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import enum
 
-from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Index, Text
+from sqlalchemy import (
+    Column, String, DateTime, Time, Enum, ForeignKey, Index, Text, Integer, Boolean, Float, UniqueConstraint,
+)
 
 from app.models.base import Base, UUIDMixin, TimestampMixin, TenantMixin
 
@@ -43,3 +45,23 @@ class StaffAttendanceEvent(Base, UUIDMixin, TimestampMixin, TenantMixin):
     recorded_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # admin who added a manual event
 
     __table_args__ = (Index("ix_staff_attendance_org_staff_time", "org_id", "staff_user_id", "event_time"),)
+
+
+class StaffAttendanceSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """One row per org — staff clock configuration (Access Control › Configuration).
+
+    Work hours + a late-arrival grace period drive the "late" flag on clock-ins;
+    geofencing (a centre + radius) is enforced at self clock-in when enabled.
+    """
+    __tablename__ = "staff_attendance_settings"
+
+    work_start_time = Column(Time, nullable=True)          # e.g. 08:00
+    work_end_time = Column(Time, nullable=True)            # e.g. 16:00
+    late_grace_minutes = Column(Integer, nullable=False, default=0)   # minutes after start before "late"
+
+    geofence_enabled = Column(Boolean, nullable=False, default=False)
+    geofence_lat = Column(Float, nullable=True)
+    geofence_lng = Column(Float, nullable=True)
+    geofence_radius_m = Column(Integer, nullable=True)     # permitted radius, metres
+
+    __table_args__ = (UniqueConstraint("org_id", name="uq_staff_attendance_settings_org"),)

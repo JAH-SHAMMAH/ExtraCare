@@ -1,11 +1,20 @@
 "use client";
 
-import { useMyAttendance, useClock, type AttendanceEvent } from "@/hooks/useHrAttendance";
+import { useMyAttendance, useClock, useAttendanceSettings, type AttendanceEvent, type AttendanceSettings } from "@/hooks/useHrAttendance";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { LogIn, LogOut, Clock, AlertTriangle, CalendarDays } from "lucide-react";
 
 const dayKey = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+// A first clock-in is "late" if its local time is past work start + grace.
+function isLate(firstInISO: string | undefined, settings?: AttendanceSettings): boolean {
+  if (!firstInISO || !settings?.work_start_time) return false;
+  const [h, m] = settings.work_start_time.split(":").map(Number);
+  const d = new Date(firstInISO);
+  return d.getHours() * 60 + d.getMinutes() > h * 60 + m + (settings.late_grace_minutes || 0);
+}
 
 type Day = { label: string; firstIn?: string; lastOut?: string; count: number };
 
@@ -28,6 +37,7 @@ const hours = (a?: string, b?: string) =>
 
 export default function MyAttendancePage() {
   const { data, isLoading, isError, refetch } = useMyAttendance();
+  const { data: settings } = useAttendanceSettings();
   const clock = useClock();
   const events = data ?? [];
   const days = groupByDay(events);
@@ -35,6 +45,20 @@ export default function MyAttendancePage() {
   const today = dayKey(new Date().toISOString());
   const todayEvents = events.filter((e) => dayKey(e.event_time) === today);
   const clockedIn = todayEvents.length > 0 && todayEvents[0].event_type === "clock_in";
+
+  // When geofencing is on, attach the caller's coordinates so the server can verify.
+  const doClock = (event_type: "clock_in" | "clock_out") => {
+    if (settings?.geofence_enabled) {
+      if (!navigator.geolocation) { toast.error("Location isn’t available on this device."); return; }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => clock.mutate({ event_type, lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => toast.error("Location permission is required to clock in/out here."),
+        { enableHighAccuracy: true, timeout: 10000 },
+      );
+    } else {
+      clock.mutate({ event_type });
+    }
+  };
 
   return (
     <div className="p-8 max-w-3xl mx-auto">
@@ -54,9 +78,9 @@ export default function MyAttendancePage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => clock.mutate({ event_type: "clock_in" })} disabled={clock.isPending || clockedIn}
+          <button onClick={() => doClock("clock_in")} disabled={clock.isPending || clockedIn}
             className="btn-primary gap-1.5 disabled:opacity-40"><LogIn size={15} /> Clock In</button>
-          <button onClick={() => clock.mutate({ event_type: "clock_out" })} disabled={clock.isPending || !clockedIn}
+          <button onClick={() => doClock("clock_out")} disabled={clock.isPending || !clockedIn}
             className="btn-secondary gap-1.5 disabled:opacity-40"><LogOut size={15} /> Clock Out</button>
         </div>
       </div>
@@ -80,7 +104,10 @@ export default function MyAttendancePage() {
             <div key={d.label} className="flex items-center gap-3 px-5 py-3.5">
               <CalendarDays size={16} className="text-slate-300 shrink-0" />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-slate-800">{d.label}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-slate-800">{d.label}</p>
+                  {isLate(d.firstIn, settings) && <span className="badge bg-amber-50 text-amber-700 border-amber-200">Late</span>}
+                </div>
                 <p className="text-xs text-slate-400">
                   {d.firstIn ? `In ${hhmm(d.firstIn)}` : "—"}{d.lastOut ? ` · Out ${hhmm(d.lastOut)}` : ""}
                 </p>

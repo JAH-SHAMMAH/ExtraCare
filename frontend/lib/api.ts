@@ -1035,11 +1035,13 @@ export const hrAdminApi = {
 // ── HR Access Control — staff attendance (clock in/out) ───────────────────────────
 
 export const hrAttendanceApi = {
-  clock: (event_type: "clock_in" | "clock_out", note?: string) => api.post("/hr/attendance/clock", { event_type, note }).then((r) => r.data),
+  clock: (d: { event_type: "clock_in" | "clock_out"; note?: string; lat?: number; lng?: number }) => api.post("/hr/attendance/clock", d).then((r) => r.data),
   my: () => api.get("/hr/attendance/my").then((r) => r.data),
   events: (p?: { staff_user_id?: string; from_date?: string; to_date?: string }) => api.get("/hr/attendance/events", { params: p }).then((r) => r.data),
   addEvent: (d: object) => api.post("/hr/attendance/events", d).then((r) => r.data),
   removeEvent: (id: string) => api.delete(`/hr/attendance/events/${id}`),
+  settings: () => api.get("/hr/attendance/settings").then((r) => r.data),
+  updateSettings: (d: object) => api.put("/hr/attendance/settings", d).then((r) => r.data),
 };
 
 // ── HR Org Structure — org units (reporting hierarchy) ────────────────────────────

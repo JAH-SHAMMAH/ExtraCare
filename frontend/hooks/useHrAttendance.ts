@@ -18,13 +18,32 @@ export function useMyAttendance() {
 export function useClock() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { event_type: "clock_in" | "clock_out"; note?: string }) => hrAttendanceApi.clock(v.event_type, v.note),
+    mutationFn: (v: { event_type: "clock_in" | "clock_out"; note?: string; lat?: number; lng?: number }) => hrAttendanceApi.clock(v),
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: ["hr-my-attendance"] });
       qc.invalidateQueries({ queryKey: ["hr-attendance-log"] });
       toast.success(v.event_type === "clock_in" ? "Clocked in." : "Clocked out.");
     },
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Couldn’t record that."),
+  });
+}
+
+// ── Configuration ───────────────────────────────────────────────────────────
+export type AttendanceSettings = {
+  work_start_time: string | null; work_end_time: string | null; late_grace_minutes: number;
+  geofence_enabled: boolean; geofence_lat: number | null; geofence_lng: number | null; geofence_radius_m: number | null;
+};
+
+export function useAttendanceSettings() {
+  return useQuery<AttendanceSettings>({ queryKey: ["hr-attendance-settings"], queryFn: () => hrAttendanceApi.settings() });
+}
+
+export function useUpdateAttendanceSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (d: object) => hrAttendanceApi.updateSettings(d),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["hr-attendance-settings"] }); toast.success("Settings saved."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Couldn’t save."),
   });
 }
 
