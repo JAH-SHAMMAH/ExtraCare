@@ -28,12 +28,13 @@ from app.deps import get_current_active_user
 from app.core.tenant import require_module
 from app.core.permissions import PermissionChecker
 from app.models.user import User
-from app.models.modules.school import Student
+from app.models.modules.school import Student, SchoolClass
 from app.models.modules.finance import LedgerAccount, JournalEntry, JournalLine
-from app.models.modules.wallet import StudentWallet, WalletEntry, CooperativeMember, CoopEntry
+from app.models.modules.wallet import StudentWallet, WalletEntry, CooperativeMember, CoopEntry, WalletSettings
 from app.schemas.wallet import (
     WalletCreate, WalletUpdate, WalletResponse, WalletListResponse,
     WalletEntryResponse, WalletDetailResponse,
+    WalletSummaryResponse, WalletSettingsResponse, WalletSettingsUpdate,
     TopUpRequest, WithdrawRequest, SpendRequest,
     CoopMemberCreate, CoopMemberResponse, CoopMemberListResponse,
     CoopEntryResponse, CoopMemberDetailResponse, CoopMoveRequest,
@@ -91,6 +92,25 @@ async def _student_name(db: AsyncSession, org_id: str, student_id: str) -> str |
     return f"{r.first_name} {r.last_name}".strip() if r else None
 
 
+async def _student_meta(db: AsyncSession, org_id: str, student_id: str) -> dict:
+    """Parent-centric display fields for a wallet: the student's name, funding
+    guardian, and class — one query, LEFT-joined to the class."""
+    r = (await db.execute(
+        select(Student.first_name, Student.last_name, Student.guardian_name,
+               Student.guardian_phone, SchoolClass.name)
+        .outerjoin(SchoolClass, SchoolClass.id == Student.class_id)
+        .where(Student.id == student_id, Student.org_id == org_id)
+    )).first()
+    if not r:
+        return {"student_name": None, "guardian_name": None, "guardian_phone": None, "class_name": None}
+    return {
+        "student_name": f"{r.first_name} {r.last_name}".strip(),
+        "guardian_name": r.guardian_name,
+        "guardian_phone": r.guardian_phone,
+        "class_name": r[4],
+    }
+
+
 async def _wallet_balance(db: AsyncSession, org_id: str, student_id: str) -> Decimal:
     total = (await db.execute(
         select(func.coalesce(func.sum(WalletEntry.signed_amount), 0))
@@ -132,8 +152,10 @@ async def _liability_gl_balance(db: AsyncSession, org_id: str, account_id: str) 
 # ── Wallets ───────────────────────────────────────────────────────────────────
 
 async def _wallet_response(db, w: StudentWallet, org_id: str) -> WalletResponse:
+    meta = await _student_meta(db, org_id, w.student_id)
     return WalletResponse(
-        id=w.id, student_id=w.student_id, student_name=await _student_name(db, org_id, w.student_id),
+        id=w.id, student_id=w.student_id, student_name=meta["student_name"],
+        guardian_name=meta["guardian_name"], guardian_phone=meta["guardian_phone"], class_name=meta["class_name"],
         spend_limit_daily=float(w.spend_limit_daily) if w.spend_limit_daily is not None else None,
         is_active=w.is_active, balance=float(await _wallet_balance(db, org_id, w.student_id)),
         created_at=w.created_at, org_id=w.org_id,
@@ -164,7 +186,12 @@ async def create_wallet(payload: WalletCreate, db: AsyncSession = Depends(get_db
     s = (await db.execute(select(Student).where(Student.id == payload.student_id, Student.org_id == current_user.org_id, Student.is_deleted == False))).scalar_one_or_none()  # noqa: E712
     if not s:
         raise HTTPException(status_code=404, detail="student not found in your organisation.")
-    w = StudentWallet(student_id=s.id, spend_limit_daily=money(payload.spend_limit_daily) if payload.spend_limit_daily is not None else None,
+    # Default the daily spend limit from Wallet Settings when the creator omits it.
+    limit = payload.spend_limit_daily
+    if limit is None:
+        settings = await _get_or_create_wallet_settings(db, current_user.org_id)
+        limit = settings.default_daily_limit
+    w = StudentWallet(student_id=s.id, spend_limit_daily=money(limit) if limit is not None else None,
                       is_active=True, org_id=current_user.org_id)
     db.add(w)
     try:
@@ -221,6 +248,9 @@ async def _post_wallet_move(db, current_user, w: StudentWallet, kind: str, amoun
 async def topup_wallet(wallet_id: str, payload: TopUpRequest, request: Request = None,
                        db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     w = await _load_wallet(db, wallet_id, current_user.org_id)
+    settings = await _get_or_create_wallet_settings(db, current_user.org_id)
+    if not settings.allow_topup:
+        raise HTTPException(status_code=409, detail="Top-ups are disabled in Wallet Settings.")
     cash = await _require_account(db, current_user.org_id, payload.cash_account_id)
     float_acct = await _ensure_account(db, current_user.org_id, WALLET_FLOAT_CODE, "Student Wallet Float", "liability")
     amount = money(payload.amount)
@@ -298,6 +328,72 @@ async def wallet_reconciliation(db: AsyncSession = Depends(get_db), current_user
         subtotal += await _wallet_balance(db, current_user.org_id, sid)
     return ReconciliationResponse(control_account=f"{float_acct.code} {float_acct.name}",
                                   gl_balance=float(gl), subledger_total=float(subtotal), balanced=(gl == subtotal))
+
+
+# ── Wallet Manager: dashboard summary + settings ──────────────────────────────
+
+@router.get("/wallets-summary", response_model=WalletSummaryResponse, dependencies=[_fin_read])
+async def wallet_summary(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Org-wide roll-up for the Wallet Manager dashboard cards. Balances/totals
+    are derived over non-reversed entries only (consistent with per-wallet balance)."""
+    org_id = current_user.org_id
+    total_wallets = (await db.execute(select(func.count()).select_from(StudentWallet).where(StudentWallet.org_id == org_id))).scalar() or 0
+    active = (await db.execute(select(func.count()).select_from(StudentWallet).where(StudentWallet.org_id == org_id, StudentWallet.is_active == True))).scalar() or 0  # noqa: E712
+
+    async def _sum(*conds) -> Decimal:
+        total = (await db.execute(
+            select(func.coalesce(func.sum(WalletEntry.signed_amount), 0))
+            .select_from(WalletEntry).join(JournalEntry, JournalEntry.id == WalletEntry.journal_entry_id)
+            .where(WalletEntry.org_id == org_id, JournalEntry.reversed_at.is_(None), *conds)
+        )).scalar()
+        return money(total or 0)
+
+    balance = await _sum()
+    topped_up = await _sum(WalletEntry.kind == "top_up")
+    spent = await _sum(WalletEntry.kind == "spend")
+    return WalletSummaryResponse(
+        total_wallets=total_wallets, active_wallets=active, inactive_wallets=total_wallets - active,
+        total_balance=float(balance), total_topped_up=float(topped_up), total_spent=float(-spent),
+    )
+
+
+async def _get_or_create_wallet_settings(db: AsyncSession, org_id: str) -> WalletSettings:
+    s = (await db.execute(select(WalletSettings).where(WalletSettings.org_id == org_id))).scalar_one_or_none()
+    if not s:
+        s = WalletSettings(org_id=org_id)
+        db.add(s)
+        await db.flush()
+    return s
+
+
+def _wallet_settings_response(s: WalletSettings) -> WalletSettingsResponse:
+    return WalletSettingsResponse(
+        default_daily_limit=float(s.default_daily_limit) if s.default_daily_limit is not None else None,
+        low_balance_threshold=float(s.low_balance_threshold) if s.low_balance_threshold is not None else None,
+        notify_low_balance=s.notify_low_balance, allow_topup=s.allow_topup, org_id=s.org_id,
+    )
+
+
+@router.get("/wallet-settings", response_model=WalletSettingsResponse, dependencies=[_fin_read])
+async def get_wallet_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = await _get_or_create_wallet_settings(db, current_user.org_id)
+    return _wallet_settings_response(s)
+
+
+@router.put("/wallet-settings", response_model=WalletSettingsResponse, dependencies=[_fin_write])
+async def update_wallet_settings(payload: WalletSettingsUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = await _get_or_create_wallet_settings(db, current_user.org_id)
+    data = payload.model_dump(exclude_unset=True)
+    if "default_daily_limit" in data:
+        s.default_daily_limit = money(data["default_daily_limit"]) if data["default_daily_limit"] is not None else None
+    if "low_balance_threshold" in data:
+        s.low_balance_threshold = money(data["low_balance_threshold"]) if data["low_balance_threshold"] is not None else None
+    if "notify_low_balance" in data:
+        s.notify_low_balance = data["notify_low_balance"]
+    if "allow_topup" in data:
+        s.allow_topup = data["allow_topup"]
+    await db.flush()
+    return _wallet_settings_response(s)
 
 
 # ── Cooperative ───────────────────────────────────────────────────────────────

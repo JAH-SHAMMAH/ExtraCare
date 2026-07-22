@@ -174,6 +174,20 @@ const MODULE_SECTIONS: ModuleSection[] = [
     ],
   },
   {
+    // Wallet Manager — its own top-level module (Educare parity). Surfaces the
+    // ledger-backed student wallet as a parent-centric manager: dashboard cards,
+    // the wallet list (Add Credit / Details), and the org-wide settings tab.
+    key: "wallet-manager",
+    requiredModule: "school",
+    label: "Wallet Manager",
+    icon: Wallet,
+    items: [
+      { href: "/dashboard/modules/school/wallet", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/dashboard/modules/school/wallet/list", label: "Wallet List", icon: Wallet },
+      { href: "/dashboard/modules/school/wallet/settings", label: "Wallet Settings", icon: Settings2 },
+    ],
+  },
+  {
     // CBT — its own top-level module (Educare parity). These were already distinct
     // routes under Academics; grouped here. Educare children we have no page for
     // yet (Test Remark, Test Export, CBT Import, CBT Reset) are omitted, not dead-linked.
@@ -419,7 +433,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/tuckshop", label: "Tuckshop", icon: ShoppingCart },
       { href: "/dashboard/modules/school/sms", label: "Bulk SMS", icon: MessageSquare },
       // Batch 6 (money features) — shipped: ledger-backed student money.
-      { href: "/dashboard/modules/school/wallet", label: "Wallet Manager", icon: Wallet },
+      // Wallet Manager now lives in its own top-level section (see wallet-manager).
       { href: "/dashboard/modules/school/pocketmoney", label: "PocketMoney", icon: BadgeDollarSign },
       // Batch 6 (non-financial) — shipped. Calendar → school:read; Facility +
       // Visitor (safeguarding) → school_admin:read.

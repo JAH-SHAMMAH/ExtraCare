@@ -2069,10 +2069,30 @@ export interface StudentWallet {
   id: string;
   student_id: string;
   student_name: string | null;
+  guardian_name: string | null;
+  guardian_phone: string | null;
+  class_name: string | null;
   spend_limit_daily: number | null;
   is_active: boolean;
   balance: number;
   created_at: string;
+  org_id: string;
+}
+
+export interface WalletSummary {
+  total_wallets: number;
+  active_wallets: number;
+  inactive_wallets: number;
+  total_balance: number;
+  total_topped_up: number;
+  total_spent: number;
+}
+
+export interface WalletSettings {
+  default_daily_limit: number | null;
+  low_balance_threshold: number | null;
+  notify_low_balance: boolean;
+  allow_topup: boolean;
   org_id: string;
 }
 

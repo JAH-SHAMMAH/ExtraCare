@@ -1277,6 +1277,11 @@ export const walletApi = {
     spend: (id: string, data: object) => api.post(`/finance/wallets/${id}/spend`, data).then((r) => r.data),
     reverseEntry: (walletId: string, entryId: string) => api.post(`/finance/wallets/${walletId}/entries/${entryId}/reverse`).then((r) => r.data),
     reconciliation: () => api.get("/finance/wallets-reconciliation").then((r) => r.data),
+    summary: () => api.get("/finance/wallets-summary").then((r) => r.data),
+  },
+  settings: {
+    get: () => api.get("/finance/wallet-settings").then((r) => r.data),
+    update: (data: object) => api.put("/finance/wallet-settings", data).then((r) => r.data),
   },
   cooperative: {
     members: (p?: { page?: number; page_size?: number }) => api.get("/finance/cooperative/members", { params: p }).then((r) => r.data),

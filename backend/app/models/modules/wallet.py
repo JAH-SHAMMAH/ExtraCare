@@ -36,6 +36,19 @@ class StudentWallet(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class WalletSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Per-org Wallet Manager configuration (Wallet Manager → Settings). One row
+    per org. ``default_daily_limit`` is applied to a new wallet when the creator
+    doesn't set one; ``low_balance_threshold`` flags wallets running low."""
+    __tablename__ = "wallet_settings"
+
+    default_daily_limit = Column(Numeric(14, 2), nullable=True)      # None = unlimited by default
+    low_balance_threshold = Column(Numeric(14, 2), nullable=True)    # None = no low-balance flag
+    notify_low_balance = Column(Boolean, default=False, nullable=False)
+    allow_topup = Column(Boolean, default=True, nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
+
+
 class WalletEntry(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """Wallet subledger row. ``signed_amount`` is + for top-up, − for spend /
     withdrawal. Balance = Σ signed_amount where the linked GL entry isn't reversed."""

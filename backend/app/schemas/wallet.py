@@ -30,6 +30,10 @@ class WalletResponse(BaseModel):
     id: str
     student_id: str
     student_name: Optional[str]
+    # Parent-centric surface (Wallet Manager): the funding guardian shown per wallet.
+    guardian_name: Optional[str] = None
+    guardian_phone: Optional[str] = None
+    class_name: Optional[str] = None
     spend_limit_daily: Optional[float]
     is_active: bool
     balance: float          # derived
@@ -56,6 +60,31 @@ class WalletEntryResponse(BaseModel):
 
 class WalletDetailResponse(WalletResponse):
     entries: list[WalletEntryResponse]
+
+
+class WalletSummaryResponse(BaseModel):
+    """Wallet Manager dashboard cards — org-wide roll-up over non-reversed entries."""
+    total_wallets: int
+    active_wallets: int
+    inactive_wallets: int
+    total_balance: float
+    total_topped_up: float
+    total_spent: float
+
+
+class WalletSettingsResponse(BaseModel):
+    default_daily_limit: Optional[float] = None
+    low_balance_threshold: Optional[float] = None
+    notify_low_balance: bool = False
+    allow_topup: bool = True
+    org_id: str
+
+
+class WalletSettingsUpdate(BaseModel):
+    default_daily_limit: Optional[Decimal] = None
+    low_balance_threshold: Optional[Decimal] = None
+    notify_low_balance: Optional[bool] = None
+    allow_topup: Optional[bool] = None
 
 
 class TopUpRequest(BaseModel):

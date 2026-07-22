@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { walletApi } from "@/lib/api";
 import type {
   StudentWallet, WalletDetail, CooperativeMember, CoopMemberDetail, Reconciliation, Paginated,
+  WalletSummary, WalletSettings,
 } from "@/types";
 
 function inv(qc: ReturnType<typeof useQueryClient>, keys: string[]) {
@@ -21,6 +22,20 @@ export function useWallet(id: string | null) {
 }
 export function useWalletReconciliation() {
   return useQuery<Reconciliation>({ queryKey: ["wallets", "reconciliation"], queryFn: () => walletApi.wallets.reconciliation() });
+}
+export function useWalletSummary() {
+  return useQuery<WalletSummary>({ queryKey: ["wallets", "summary"], queryFn: () => walletApi.wallets.summary() });
+}
+export function useWalletSettings() {
+  return useQuery<WalletSettings>({ queryKey: ["wallets", "settings"], queryFn: () => walletApi.settings.get() });
+}
+export function useUpdateWalletSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => walletApi.settings.update(data),
+    onSuccess: () => { inv(qc, ["wallets"]); toast.success("Wallet settings saved."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save settings."),
+  });
 }
 export function useCreateWallet() {
   const qc = useQueryClient();
