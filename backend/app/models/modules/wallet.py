@@ -68,6 +68,58 @@ class WalletEntry(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+# ── Parent Wallet (family funding wallet — Wallet Manager) ──────────────────────
+# A parent-level wallet keyed by the parent-role User. Distinct from StudentWallet
+# (per-student PocketMoney): this is the family funding wallet a parent tops up and
+# that pays their children's invoices. DVA / virtual-account funding is deferred to
+# the Payment Gateways feature; today it funds via manual "Add Credit".
+
+class ParentWallet(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """One funding wallet per parent (a parent-role User). Children are the
+    students linked to that user via ParentGuardian. Holds no stored balance —
+    balance is derived from ParentWalletEntry over non-reversed journal entries."""
+    __tablename__ = "parent_wallets"
+
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    # DVA / virtual-account fields intentionally omitted until Payment Gateways lands.
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "user_id", name="uq_parent_wallets_org_user"),
+        Index("ix_parent_wallets_user_org", "user_id", "org_id"),
+    )
+
+
+class ParentWalletEntry(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Parent-wallet subledger. ``signed_amount`` + for credit (top-up), − for
+    debit (invoice payment / manual debit). Balance = Σ over non-reversed entries."""
+    __tablename__ = "parent_wallet_entries"
+
+    wallet_id = Column(String(36), ForeignKey("parent_wallets.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String(20), nullable=False)              # credit | debit
+    signed_amount = Column(Numeric(14, 2), nullable=False)  # +/−
+    journal_entry_id = Column(String(36), ForeignKey("journal_entries.id", ondelete="SET NULL"), nullable=True)
+    memo = Column(String(255), nullable=True)
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        Index("ix_parent_wallet_entries_wallet_org", "wallet_id", "org_id"),
+        Index("ix_parent_wallet_entries_user_org", "user_id", "org_id"),
+    )
+
+
+class ParentWalletSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Per-org Wallet Manager (parent wallet) configuration. Only the non-gateway
+    settings are modelled; DVA/BVN/virtual-account gateway settings are deferred
+    to the Payment Gateways feature."""
+    __tablename__ = "parent_wallet_settings"
+
+    auto_invoice_pay = Column(Boolean, default=False, nullable=False)   # auto-pay invoices from wallet balance
+    correspondent_email = Column(String(320), nullable=True)           # receives wallet-credit notifications
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
+
+
 class CooperativeMember(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A cooperative member. Their contributions are funds held on their behalf
     (a liability), not school income."""

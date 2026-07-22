@@ -2096,6 +2096,58 @@ export interface WalletSettings {
   org_id: string;
 }
 
+// ── Parent Wallet (Wallet Manager) ────────────────────────────────────────────
+
+export interface ParentWalletChild {
+  id: string;
+  name: string;
+  class_name: string | null;
+}
+
+export interface ParentWallet {
+  id: string;
+  user_id: string;
+  parent_name: string | null;
+  parent_email: string | null;
+  parent_phone: string | null;
+  is_active: boolean;
+  credit_total: number;
+  debit_total: number;
+  balance: number;
+  children: ParentWalletChild[];
+  created_at: string;
+  org_id: string;
+}
+
+export interface ParentWalletEntry {
+  id: string;
+  kind: string; // credit | debit
+  signed_amount: number;
+  memo: string | null;
+  journal_entry_id: string | null;
+  reversed: boolean;
+  created_at: string;
+}
+
+export interface ParentWalletDetail extends ParentWallet {
+  entries: ParentWalletEntry[];
+}
+
+export interface ParentWalletSummary {
+  total_credits: number;
+  today_credits: number;
+  total_debits: number;
+  today_debits: number;
+  cumulative_balance: number;
+  total_active_wallets: number;
+}
+
+export interface ParentWalletSettings {
+  auto_invoice_pay: boolean;
+  correspondent_email: string | null;
+  org_id: string;
+}
+
 export interface WalletEntry {
   id: string;
   kind: string;

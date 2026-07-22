@@ -87,6 +87,90 @@ class WalletSettingsUpdate(BaseModel):
     allow_topup: Optional[bool] = None
 
 
+# ── Parent Wallet (Wallet Manager) ────────────────────────────────────────────
+
+class ParentWalletChild(BaseModel):
+    id: str
+    name: str
+    class_name: Optional[str] = None
+
+
+class ParentWalletResponse(BaseModel):
+    id: str
+    user_id: str
+    parent_name: Optional[str]
+    parent_email: Optional[str]
+    parent_phone: Optional[str]
+    is_active: bool
+    credit_total: float          # Σ credits (derived)
+    debit_total: float           # Σ debits, positive (derived)
+    balance: float               # credit − debit (derived)
+    children: list[ParentWalletChild]
+    created_at: datetime
+    org_id: str
+
+
+class ParentWalletListResponse(BaseModel):
+    items: list[ParentWalletResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+class ParentWalletEntryResponse(BaseModel):
+    id: str
+    kind: str                    # credit | debit
+    signed_amount: float
+    memo: Optional[str]
+    journal_entry_id: Optional[str]
+    reversed: bool
+    created_at: datetime
+
+
+class ParentWalletDetailResponse(ParentWalletResponse):
+    entries: list[ParentWalletEntryResponse]
+
+
+class ParentWalletSummaryResponse(BaseModel):
+    """Wallet Manager dashboard cards."""
+    total_credits: float
+    today_credits: float
+    total_debits: float
+    today_debits: float
+    cumulative_balance: float
+    total_active_wallets: int
+
+
+class ParentWalletSettingsResponse(BaseModel):
+    auto_invoice_pay: bool = False
+    correspondent_email: Optional[str] = None
+    org_id: str
+
+
+class ParentWalletSettingsUpdate(BaseModel):
+    auto_invoice_pay: Optional[bool] = None
+    correspondent_email: Optional[str] = None
+
+
+class ParentCreditRequest(BaseModel):
+    amount: Decimal = Field(gt=0)
+    cash_account_id: str
+    txn_date: Optional[date] = None
+    memo: Optional[str] = None
+
+
+class ParentDebitRequest(BaseModel):
+    amount: Decimal = Field(gt=0)
+    cash_account_id: str
+    txn_date: Optional[date] = None
+    memo: Optional[str] = None
+
+
+class ParentWalletInitializeResponse(BaseModel):
+    created: int                 # how many new wallets were initialized
+    total_parents: int
+
+
 class TopUpRequest(BaseModel):
     amount: Decimal = Field(gt=0)
     cash_account_id: str

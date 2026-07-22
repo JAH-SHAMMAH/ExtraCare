@@ -6,6 +6,7 @@ import { walletApi } from "@/lib/api";
 import type {
   StudentWallet, WalletDetail, CooperativeMember, CoopMemberDetail, Reconciliation, Paginated,
   WalletSummary, WalletSettings,
+  ParentWallet, ParentWalletDetail, ParentWalletSummary, ParentWalletSettings,
 } from "@/types";
 
 function inv(qc: ReturnType<typeof useQueryClient>, keys: string[]) {
@@ -34,6 +35,53 @@ export function useUpdateWalletSettings() {
   return useMutation({
     mutationFn: (data: object) => walletApi.settings.update(data),
     onSuccess: () => { inv(qc, ["wallets"]); toast.success("Wallet settings saved."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save settings."),
+  });
+}
+
+// ── Parent Wallet (Wallet Manager) ────────────────────────────────────────────
+
+export function useParentWallets() {
+  return useQuery<Paginated<ParentWallet>>({ queryKey: ["parent-wallets"], queryFn: () => walletApi.parent.list({ page_size: 100 }) });
+}
+export function useParentWallet(id: string | null) {
+  return useQuery<ParentWalletDetail>({ queryKey: ["parent-wallets", id], queryFn: () => walletApi.parent.get(id as string), enabled: !!id });
+}
+export function useParentWalletSummary() {
+  return useQuery<ParentWalletSummary>({ queryKey: ["parent-wallets", "summary"], queryFn: () => walletApi.parent.summary() });
+}
+export function useParentWalletSettings() {
+  return useQuery<ParentWalletSettings>({ queryKey: ["parent-wallets", "settings"], queryFn: () => walletApi.parent.settings.get() });
+}
+export function useInitializeParentWallets() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => walletApi.parent.initialize(),
+    onSuccess: (r: any) => { inv(qc, ["parent-wallets"]); toast.success(r?.created ? `Initialized ${r.created} new wallet(s).` : "All parents already have wallets."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to initialize wallets."),
+  });
+}
+export function useAddParentCredit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => walletApi.parent.credit(id, data),
+    onSuccess: () => { inv(qc, ["parent-wallets", "journal"]); toast.success("Wallet credited."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to add credit."),
+  });
+}
+export function useParentDebit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => walletApi.parent.debit(id, data),
+    onSuccess: () => { inv(qc, ["parent-wallets", "journal"]); toast.success("Wallet debited."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to debit."),
+  });
+}
+export function useUpdateParentWalletSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => walletApi.parent.settings.update(data),
+    onSuccess: () => { inv(qc, ["parent-wallets"]); toast.success("Wallet settings saved."); },
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save settings."),
   });
 }

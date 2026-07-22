@@ -49,6 +49,7 @@ from app.routers.modules import (
     finance as finance_router,
     finance_ops as finance_ops_router,
     wallet as wallet_router,
+    parent_wallet as parent_wallet_router,
     operations as operations_router,
     facility as facility_router,
     biometric as biometric_router,
@@ -373,6 +374,7 @@ app.include_router(medical_router.router, prefix=API_V1)
 app.include_router(finance_router.router, prefix=API_V1)
 app.include_router(finance_ops_router.router, prefix=API_V1)
 app.include_router(wallet_router.router, prefix=API_V1)
+app.include_router(parent_wallet_router.router, prefix=API_V1)
 app.include_router(operations_router.router, prefix=API_V1)
 app.include_router(facility_router.router, prefix=API_V1)
 app.include_router(biometric_router.router, prefix=API_V1)

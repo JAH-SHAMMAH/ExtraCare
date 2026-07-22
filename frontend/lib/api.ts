@@ -1283,6 +1283,20 @@ export const walletApi = {
     get: () => api.get("/finance/wallet-settings").then((r) => r.data),
     update: (data: object) => api.put("/finance/wallet-settings", data).then((r) => r.data),
   },
+  parent: {
+    list: (p?: { page?: number; page_size?: number }) => api.get("/finance/parent-wallets", { params: p }).then((r) => r.data),
+    get: (id: string) => api.get(`/finance/parent-wallets/${id}`).then((r) => r.data),
+    create: (user_id: string) => api.post(`/finance/parent-wallets?user_id=${encodeURIComponent(user_id)}`).then((r) => r.data),
+    initialize: () => api.post("/finance/parent-wallets/initialize").then((r) => r.data),
+    credit: (id: string, data: object) => api.post(`/finance/parent-wallets/${id}/credit`, data).then((r) => r.data),
+    debit: (id: string, data: object) => api.post(`/finance/parent-wallets/${id}/debit`, data).then((r) => r.data),
+    summary: () => api.get("/finance/parent-wallets-summary").then((r) => r.data),
+    ledgerCsv: (id: string) => api.get(`/finance/parent-wallets/${id}/ledger.csv`, { responseType: "blob" }).then((r) => r.data),
+    settings: {
+      get: () => api.get("/finance/parent-wallet-settings").then((r) => r.data),
+      update: (data: object) => api.put("/finance/parent-wallet-settings", data).then((r) => r.data),
+    },
+  },
   cooperative: {
     members: (p?: { page?: number; page_size?: number }) => api.get("/finance/cooperative/members", { params: p }).then((r) => r.data),
     getMember: (id: string) => api.get(`/finance/cooperative/members/${id}`).then((r) => r.data),

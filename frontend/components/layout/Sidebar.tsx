@@ -174,17 +174,16 @@ const MODULE_SECTIONS: ModuleSection[] = [
     ],
   },
   {
-    // Wallet Manager — its own top-level module (Educare parity). Surfaces the
-    // ledger-backed student wallet as a parent-centric manager: dashboard cards,
-    // the wallet list (Add Credit / Details), and the org-wide settings tab.
+    // Wallet Manager — its own top-level module (Educare parity). A single child
+    // page with dashboard cards + WALLET LIST / WALLET SETTINGS tabs. This is the
+    // PARENT (family) funding wallet; per-student pocket money lives in PocketMoney
+    // Manager. DVA / virtual-account funding is deferred to Payment Gateways.
     key: "wallet-manager",
     requiredModule: "school",
     label: "Wallet Manager",
     icon: Wallet,
     items: [
-      { href: "/dashboard/modules/school/wallet", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/dashboard/modules/school/wallet/list", label: "Wallet List", icon: Wallet },
-      { href: "/dashboard/modules/school/wallet/settings", label: "Wallet Settings", icon: Settings2 },
+      { href: "/dashboard/modules/school/wallet", label: "Wallet Manager", icon: Wallet },
     ],
   },
   {
