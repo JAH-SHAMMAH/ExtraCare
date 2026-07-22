@@ -531,7 +531,7 @@ export function useDeleteLessonPlan() {
 // ── Lesson Planner Setup (categories / settings / supervisors / clone) ────────
 
 export interface LessonCategory { id: string; name: string; org_id: string; }
-export interface LessonPlannerSettings { require_approval: boolean; default_duration_minutes: number; allow_backdated: boolean; org_id: string; }
+export interface LessonPlannerSettings { require_approval: boolean; default_duration_minutes: number; allow_backdated: boolean; display_category_names: boolean; change_subject_topic: boolean; change_day_format: boolean; edit_lesson_plan: boolean; supervisor_signature: string | null; org_id: string; }
 export interface LessonSupervisor { id: string; supervisor_id: string; supervisor_name: string | null; section_id: string | null; section_name: string | null; org_id: string; }
 
 export function useLessonCategories() {

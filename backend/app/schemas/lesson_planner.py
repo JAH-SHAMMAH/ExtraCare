@@ -29,6 +29,11 @@ class PlannerSettingsResponse(BaseModel):
     require_approval: bool
     default_duration_minutes: int
     allow_backdated: bool
+    display_category_names: bool
+    change_subject_topic: bool
+    change_day_format: bool
+    edit_lesson_plan: bool
+    supervisor_signature: Optional[str] = None
     org_id: str
 
 
@@ -36,6 +41,11 @@ class PlannerSettingsUpdate(BaseModel):
     require_approval: Optional[bool] = None
     default_duration_minutes: Optional[int] = Field(default=None, ge=5, le=240)
     allow_backdated: Optional[bool] = None
+    display_category_names: Optional[bool] = None
+    change_subject_topic: Optional[bool] = None
+    change_day_format: Optional[bool] = None
+    edit_lesson_plan: Optional[bool] = None
+    supervisor_signature: Optional[str] = Field(default=None, max_length=500)
 
 
 # ── Supervisors ───────────────────────────────────────────────────────────────

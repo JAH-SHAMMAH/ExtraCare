@@ -478,6 +478,12 @@ class LessonPlannerSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
     require_approval = Column(Boolean, default=False, nullable=False)
     default_duration_minutes = Column(Integer, default=45, nullable=False)
     allow_backdated = Column(Boolean, default=True, nullable=False)
+    # Educare "Lesson Planner Settings" toggles + supervisor signature image.
+    display_category_names = Column(Boolean, default=True, nullable=False)
+    change_subject_topic = Column(Boolean, default=False, nullable=False)
+    change_day_format = Column(Boolean, default=False, nullable=False)
+    edit_lesson_plan = Column(Boolean, default=False, nullable=False)   # allow editing a PUBLISHED plan
+    supervisor_signature = Column(String(500), nullable=True)           # uploaded signature image URL
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
 
 

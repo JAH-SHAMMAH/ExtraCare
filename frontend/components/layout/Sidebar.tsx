@@ -159,12 +159,10 @@ const MODULE_SECTIONS: ModuleSection[] = [
     ],
   },
   {
-    // Lesson Planner — its own top-level module (Educare parity). We ship the two
-    // children backed by real pages: the weekly authoring planner and a supervisor
-    // Approve queue (reuses the plan lifecycle — publish = approve). Educare's
-    // "Lesson Planner Setup" cluster (categories / week entries / email schedules /
-    // supervisor config / clone-across-sessions) has no supporting model here and is
-    // deliberately omitted rather than shipped as dead links.
+    // Lesson Planner — its own top-level module (Educare parity), three children:
+    // the weekly authoring Planner, the full Setup cluster (Lesson Plan Categories /
+    // Create Week Entries / Settings / Create Schedules / Supervisor / Clone — all
+    // real tabs), and the supervisor Approve queue (publish = approve).
     key: "lesson-planner",
     requiredModule: "school",
     label: "Lesson Planner",

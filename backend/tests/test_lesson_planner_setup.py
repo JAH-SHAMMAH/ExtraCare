@@ -270,3 +270,44 @@ async def test_run_due_fires_only_due_and_is_idempotent(db, org):
     assert second["dispatched"] == 0
     fetched = next(x for x in await list_schedules(db=db, current_user=admin) if x["id"] == due["id"])
     assert fetched["last_run_on"] == date.today()
+
+
+# ── Educare settings fields + "Edit Lesson Plan" lock ─────────────────────────
+
+async def test_planner_settings_educare_fields(db, org):
+    admin = await _admin(db, org)
+    s = await get_planner_settings(db=db, current_user=admin)
+    # New Educare fields present with sensible defaults.
+    assert s["display_category_names"] is True and s["change_subject_topic"] is False
+    assert s["change_day_format"] is False and s["edit_lesson_plan"] is False and s["supervisor_signature"] is None
+
+    upd = await update_planner_settings(
+        PlannerSettingsUpdate(display_category_names=False, change_subject_topic=True, change_day_format=True,
+                              edit_lesson_plan=True, supervisor_signature="/uploads/o/documents/sig.png"),
+        db=db, current_user=admin,
+    )
+    assert upd["display_category_names"] is False and upd["change_subject_topic"] is True
+    assert upd["change_day_format"] is True and upd["edit_lesson_plan"] is True
+    assert upd["supervisor_signature"].endswith("sig.png")
+
+
+async def test_edit_lesson_plan_locks_published(db, org, school_class):
+    admin = await _admin(db, org)
+    subj = await _subject(db, admin)
+    plan = await _plan(db, admin, school_class.id, subj["id"], "2026-02-10")
+    await publish_lesson(plan["id"], request=None, db=db, current_user=admin)   # now published
+
+    # edit_lesson_plan defaults False → editing a published plan's CONTENT is refused.
+    with pytest.raises(HTTPException) as exc:
+        await update_lesson(plan["id"], payload={"title": "Changed"}, request=None, db=db, current_user=admin)
+    assert exc.value.status_code == 409
+
+    # Status-only change (unpublish) is still allowed.
+    unp = await update_lesson(plan["id"], payload={"status": "draft"}, request=None, db=db, current_user=admin)
+    assert unp["status"] == "draft"
+
+    # Enable the setting → content edits on a published plan now work.
+    await update_planner_settings(PlannerSettingsUpdate(edit_lesson_plan=True), db=db, current_user=admin)
+    await publish_lesson(plan["id"], request=None, db=db, current_user=admin)
+    ok = await update_lesson(plan["id"], payload={"title": "Now Editable"}, request=None, db=db, current_user=admin)
+    assert ok["title"] == "Now Editable"

@@ -2532,6 +2532,14 @@ async def update_lesson(
         "title", "class_id", "subject_id", "period", "duration_minutes",
         "objectives", "activities", "materials", "homework", "notes",
     }
+
+    # "Edit Lesson Plan" setting: when disabled, a PUBLISHED plan's content is
+    # locked (status-only changes — e.g. unpublish — still allowed).
+    content_keys = editable | {"category_id", "lesson_date"}
+    if plan.status == LessonPlanStatus.PUBLISHED and (content_keys & set(payload.keys())):
+        settings = await _get_or_create_planner_settings(db, current_user.org_id)
+        if not settings.edit_lesson_plan:
+            raise HTTPException(409, detail="Editing a published lesson plan is disabled. Enable 'Edit Lesson Plan' in Lesson Planner Settings.")
     for key in editable:
         if key in payload:
             setattr(plan, key, payload[key] if payload[key] not in ("",) else None)
@@ -2693,6 +2701,11 @@ def _planner_settings_dict(s: LessonPlannerSettings) -> dict:
         "require_approval": s.require_approval,
         "default_duration_minutes": s.default_duration_minutes,
         "allow_backdated": s.allow_backdated,
+        "display_category_names": s.display_category_names,
+        "change_subject_topic": s.change_subject_topic,
+        "change_day_format": s.change_day_format,
+        "edit_lesson_plan": s.edit_lesson_plan,
+        "supervisor_signature": s.supervisor_signature,
         "org_id": s.org_id,
     }
 

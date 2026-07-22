@@ -9,11 +9,13 @@ import {
   useCloneLessons, useTeachers,
   useLessonSchedules, useCreateLessonSchedule, useUpdateLessonSchedule, useDeleteLessonSchedule,
   useSendScheduleNow, useRunDueSchedules,
-  type LessonCategory, type LessonSupervisor, type LessonSchedule,
+  type LessonCategory, type LessonSupervisor, type LessonSchedule, type LessonPlannerSettings,
 } from "@/hooks/useSchool";
 import { useWeeks, useGenerateWeeks, useDeleteWeek, useSections } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
-import { cn } from "@/lib/utils";
+import { uploadApi } from "@/lib/api";
+import { toast } from "sonner";
+import { cn, resolveMediaUrl } from "@/lib/utils";
 import {
   Settings2, Loader2, Plus, Trash2, Save, Pencil, X, Tag, CalendarRange,
   SlidersHorizontal, UserCog, Copy, Check, Mail, Send, Play,
@@ -283,17 +285,61 @@ function WeekEntriesTab({ canWrite }: { canWrite: boolean }) {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
+const SETTING_TOGGLES: { key: "display_category_names" | "change_subject_topic" | "change_day_format" | "edit_lesson_plan"; label: string; hint: string }[] = [
+  { key: "display_category_names", label: "Display category names?", hint: "Show the lesson-plan category name on the plan." },
+  { key: "change_subject_topic", label: "Change Subject topic?", hint: "Let teachers change the subject topic on a plan." },
+  { key: "change_day_format", label: "Change Day Format?", hint: "Let teachers change the day format on a plan." },
+  { key: "edit_lesson_plan", label: "Edit Lesson Plan?", hint: "Allow editing a plan after it’s published." },
+];
+
 function SettingsTab({ canWrite }: { canWrite: boolean }) {
   const { data: settings, isLoading } = useLessonPlannerSettings();
   const save = useSaveLessonPlannerSettings();
-  const [form, setForm] = useState<{ require_approval: boolean; default_duration_minutes: number; allow_backdated: boolean } | null>(null);
+  const [form, setForm] = useState<LessonPlannerSettings | null>(null);
+  const [uploading, setUploading] = useState(false);
   const current = form ?? settings ?? null;
 
   if (isLoading || !current) return <div className="py-12 text-center"><Loader2 className="animate-spin mx-auto text-slate-400" /></div>;
-  const patch = (p: Partial<typeof current>) => setForm({ ...current, ...p });
+  const patch = (p: Partial<LessonPlannerSettings>) => setForm({ ...current, ...p });
+
+  const onSignature = async (file: File) => {
+    setUploading(true);
+    try { const res = await uploadApi.document(file, "lesson-planner-signature"); patch({ supervisor_signature: res.url }); }
+    catch { toast.error("Upload failed — try a PNG/JPG under 15 MB."); }
+    finally { setUploading(false); }
+  };
 
   return (
     <div className="max-w-xl space-y-4">
+      {/* Educare "Lesson Planner Settings" toggles */}
+      <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-50">
+        {SETTING_TOGGLES.map((t) => (
+          <div key={t.key} className="flex items-center justify-between px-4 py-3.5 gap-4">
+            <div><p className="text-sm font-semibold text-slate-800">{t.label}</p><p className="text-xs text-slate-500">{t.hint}</p></div>
+            <button onClick={() => canWrite && patch({ [t.key]: !current[t.key] } as any)} disabled={!canWrite}
+              className={cn("text-xs font-bold uppercase tracking-wide px-3 py-1.5 rounded-lg border shrink-0", current[t.key] ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-500 border-slate-200")}>
+              {current[t.key] ? (t.key === "display_category_names" ? "Yes" : "Enabled") : (t.key === "display_category_names" ? "No" : "Disabled")}
+            </button>
+          </div>
+        ))}
+        {/* Supervisor's Signature image */}
+        <div className="flex items-start justify-between px-4 py-3.5 gap-4">
+          <div><p className="text-sm font-semibold text-slate-800">Supervisor’s Signature</p><p className="text-xs text-slate-500">Shown on approved plans.</p></div>
+          <div className="text-right">
+            {current.supervisor_signature ? (
+              <img src={resolveMediaUrl(current.supervisor_signature)} alt="Signature" className="max-h-16 max-w-[160px] object-contain border border-slate-200 rounded ml-auto mb-1" />
+            ) : <div className="w-40 h-16 border border-dashed border-slate-200 rounded flex items-center justify-center text-[10px] text-slate-400 ml-auto mb-1">No signature</div>}
+            {canWrite && (
+              <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 cursor-pointer hover:underline">
+                {uploading ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Select image
+                <input type="file" className="hidden" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) onSignature(f); }} />
+              </label>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Workflow settings (approval / backdating / duration) */}
       <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-50">
         <label className="flex items-center justify-between px-4 py-3.5 cursor-pointer">
           <div><p className="text-sm font-semibold text-slate-800">Require approval</p><p className="text-xs text-slate-500">Plans need a supervisor to approve (publish) rather than teacher self-publish.</p></div>
