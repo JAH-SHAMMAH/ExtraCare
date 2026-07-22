@@ -1454,6 +1454,40 @@ export const eclassroomApi = {
   },
 };
 
+// ── Voting System API ────────────────────────────────────────────────────────
+
+export const votingApi = {
+  periods: {
+    list: () => api.get("/voting/periods").then((r) => r.data),
+    create: (d: object) => api.post("/voting/periods", d).then((r) => r.data),
+    extend: (id: string, d: object) => api.patch(`/voting/periods/${id}/extend`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/voting/periods/${id}`),
+  },
+  categories: {
+    list: () => api.get("/voting/categories").then((r) => r.data),
+    create: (d: object) => api.post("/voting/categories", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/voting/categories/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/voting/categories/${id}`),
+  },
+  sessions: {
+    list: (params?: { status?: string; session_id?: string }) => api.get("/voting/sessions", { params }).then((r) => r.data),
+    create: (d: object) => api.post("/voting/sessions", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/voting/sessions/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/voting/sessions/${id}`),
+    open: (id: string) => api.post(`/voting/sessions/${id}/open`).then((r) => r.data),
+    conduct: (id: string) => api.post(`/voting/sessions/${id}/conduct`).then((r) => r.data),
+    publish: (id: string) => api.post(`/voting/sessions/${id}/publish`).then((r) => r.data),
+    results: (id: string) => api.get(`/voting/sessions/${id}/results`).then((r) => r.data),
+    candidates: (id: string) => api.get(`/voting/sessions/${id}/candidates`).then((r) => r.data),
+    addCandidate: (id: string, d: object) => api.post(`/voting/sessions/${id}/candidates`, d).then((r) => r.data),
+  },
+  removeCandidate: (id: string) => api.delete(`/voting/candidates/${id}`),
+  open: () => api.get("/voting/open").then((r) => r.data),
+  ballot: (sessionId: string) => api.get(`/voting/sessions/${sessionId}/ballot`).then((r) => r.data),
+  vote: (sessionId: string, d: object) => api.post(`/voting/sessions/${sessionId}/vote`, d).then((r) => r.data),
+  myVotes: (sessionId: string) => api.get(`/voting/sessions/${sessionId}/my-votes`).then((r) => r.data),
+};
+
 // ── Livestream API ───────────────────────────────────────────────────────────
 
 export const liveApi = {

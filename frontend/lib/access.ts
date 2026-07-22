@@ -85,6 +85,10 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // eClassroom (virtual classroom) — admin module, coarse school:write (excludes
   // students, who hold only school:classroom:*). Matches the router gate.
   { prefix: "/dashboard/modules/eclassroom", permission: "school:write" },
+  // Voting System — admin children school:write; My Votes is voter-facing so
+  // eligible students (school:classroom:read) can reach it. Longest-prefix wins.
+  { prefix: "/dashboard/modules/voting/my-votes", permission: "school:classroom:read" },
+  { prefix: "/dashboard/modules/voting", permission: "school:write" },
   // Question Bank holds correct answers — staff-only (school:read), stricter than
   // the cbt scope students hold to sit tests. Longer prefix wins over /cbt above.
   { prefix: "/dashboard/modules/school/cbt/question-bank", permission: "school:read" },

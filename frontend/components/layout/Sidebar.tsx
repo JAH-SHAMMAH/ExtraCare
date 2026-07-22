@@ -142,6 +142,23 @@ const MODULE_SECTIONS: ModuleSection[] = [
     ],
   },
   {
+    // Voting System — staff-awards voting + rating (Educare parity), its own
+    // top-level section. Admin children are school:write; My Votes is voter-facing
+    // (school:classroom:read) so eligible students see it. (The old polls
+    // "Voting System" was renamed "Polls" under Administration.)
+    key: "voting-system",
+    requiredModule: "school",
+    label: "Voting System",
+    icon: Gavel,
+    items: [
+      { href: "/dashboard/modules/voting/rating-setup", label: "Rating Setup", icon: CalendarClock },
+      { href: "/dashboard/modules/voting/manage-rating", label: "Manage Rating", icon: BarChart3 },
+      { href: "/dashboard/modules/voting/setup", label: "Voting Setup", icon: Settings2 },
+      { href: "/dashboard/modules/voting/manage", label: "Manage Votes", icon: Gavel },
+      { href: "/dashboard/modules/voting/my-votes", label: "My Votes", icon: Star },
+    ],
+  },
+  {
     // Lesson Planner — its own top-level module (Educare parity). We ship the two
     // children backed by real pages: the weekly authoring planner and a supervisor
     // Approve queue (reuses the plan lifecycle — publish = approve). Educare's
@@ -505,7 +522,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: Settings2,
     items: [
       // Batch 7 (Administration & Platform) — shipped. All settings:read gated.
-      { href: "/dashboard/modules/school/voting", label: "Voting System", icon: Gavel },
+      { href: "/dashboard/modules/school/voting", label: "Polls", icon: Gavel },
       { href: "/dashboard/modules/school/mailbox", label: "Mailbox", icon: MessageSquare },
       { href: "/dashboard/modules/school/mobile", label: "Mobile Manager", icon: MonitorCheck },
     ],

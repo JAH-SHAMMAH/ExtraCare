@@ -65,7 +65,7 @@ async def init_db():
     """
     # Import all models so Base knows about them
     from app.models import user, organization, role, audit, import_job, hrm, leave, messenger, feed, live, support, hr_extended  # noqa
-    from app.models.modules import school, hospital, business, admissions, academics, pastoral, finance, wallet, operations, platform, remita, eclassroom  # noqa
+    from app.models.modules import school, hospital, business, admissions, academics, pastoral, finance, wallet, operations, platform, remita, eclassroom, voting  # noqa
 
     if settings.AUTO_CREATE_SCHEMA:
         async with engine.begin() as conn:

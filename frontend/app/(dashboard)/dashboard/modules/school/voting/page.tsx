@@ -20,8 +20,8 @@ export default function VotingPage() {
     <div className="p-8 max-w-5xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-end justify-between mb-6 gap-4">
         <div>
-          <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Administration</span><span>/</span><span className="text-brand-600 font-semibold">Voting System</span></nav>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Voting System</h1>
+          <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Administration</span><span>/</span><span className="text-brand-600 font-semibold">Polls</span></nav>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Polls</h1>
           <p className="text-slate-500 text-sm mt-0.5">Polls & elections. One vote per member; results are tallied live from votes.</p>
         </div>
         {canWrite && <button onClick={() => { reset(); setShow(true); }} className="btn-primary gap-2"><Plus size={15} /> New Poll</button>}
