@@ -49,6 +49,8 @@ class Student(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     admission_date = Column(Date, nullable=True)
     graduation_date = Column(Date, nullable=True)
     is_active = Column(Boolean, default=True)
+    withdrawal_date = Column(Date, nullable=True)          # set when withdrawn (Manage Withdrawal)
+    withdrawal_reason = Column(String(300), nullable=True)
 
     # Parent/Guardian — free-text fields kept for CSV imports + paper records.
     # The authoritative link for login/visibility is ParentGuardian below.

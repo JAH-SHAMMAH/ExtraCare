@@ -149,6 +149,8 @@ async def list_students(
         query = query.where(Student.is_active == True)  # noqa: E712
     elif status == "inactive":
         query = query.where(Student.is_active == False)  # noqa: E712
+    elif status == "withdrawn":
+        query = query.where(Student.is_active == False, Student.withdrawal_date.isnot(None))  # noqa: E712
 
     total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar()
     result = await db.execute(query.offset((page - 1) * page_size).limit(page_size))
@@ -291,6 +293,58 @@ async def update_student(
         resource_label=f"{student.first_name} {student.last_name}",
         new_values=updates, request=request,
     )
+    return _student_dict(student)
+
+
+async def _load_student_or_404(db: AsyncSession, student_id: str, org_id: str) -> Student:
+    s = (await db.execute(select(Student).where(
+        Student.id == student_id, Student.org_id == org_id, Student.is_deleted == False,  # noqa: E712
+    ))).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail=f"Student not found for id: {student_id}")
+    return s
+
+
+@router.post("/students/{id}/withdraw", dependencies=[_can_write])
+async def withdraw_student(
+    id: str, payload: dict, request: Request = None,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    """Withdraw a student — marks inactive and records the reason/date (Manage Withdrawal)."""
+    student = await _load_student_or_404(db, id, current_user.org_id)
+    if not student.is_active and student.withdrawal_date:
+        raise HTTPException(status_code=409, detail="Student is already withdrawn.")
+    raw_date = payload.get("effective_date")
+    try:
+        wdate = date.fromisoformat(str(raw_date)) if raw_date else date.today()
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="effective_date must be YYYY-MM-DD")
+    student.is_active = False
+    student.withdrawal_date = wdate
+    student.withdrawal_reason = (payload.get("reason") or "").strip() or None
+    await db.flush()
+    await log_action(db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+                     resource_type="Student", resource_id=student.id,
+                     resource_label=f"{student.first_name} {student.last_name}",
+                     new_values={"withdrawn": True, "reason": student.withdrawal_reason}, request=request)
+    return _student_dict(student)
+
+
+@router.post("/students/{id}/reactivate", dependencies=[_can_write])
+async def reactivate_student(
+    id: str, request: Request = None,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    """Reactivate an inactive/withdrawn student and clear the withdrawal record."""
+    student = await _load_student_or_404(db, id, current_user.org_id)
+    student.is_active = True
+    student.withdrawal_date = None
+    student.withdrawal_reason = None
+    await db.flush()
+    await log_action(db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+                     resource_type="Student", resource_id=student.id,
+                     resource_label=f"{student.first_name} {student.last_name}",
+                     new_values={"reactivated": True}, request=request)
     return _student_dict(student)
 
 
@@ -1382,6 +1436,8 @@ def _student_dict(s: Student) -> dict:
         "email": s.email,
         "class_id": s.class_id,
         "is_active": s.is_active,
+        "withdrawal_date": s.withdrawal_date.isoformat() if s.withdrawal_date else None,
+        "withdrawal_reason": s.withdrawal_reason,
         "created_at": s.created_at.isoformat() if s.created_at else None,
     }
 

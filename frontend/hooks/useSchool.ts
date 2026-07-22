@@ -58,6 +58,24 @@ export function useDeleteStudent() {
   });
 }
 
+export function useWithdrawStudent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => schoolApi.students.withdraw(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["students"] }); toast.success("Student withdrawn."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Couldn’t withdraw."),
+  });
+}
+
+export function useReactivateStudent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => schoolApi.students.reactivate(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["students"] }); toast.success("Student reactivated."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Couldn’t reactivate."),
+  });
+}
+
 // ── Teachers ─────────────────────────────────────────────────────────────────
 
 export function useTeachers(params?: { page?: number; page_size?: number; search?: string; department?: string }) {

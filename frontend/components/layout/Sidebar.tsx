@@ -14,7 +14,7 @@ import {
   UserCog, ShoppingCart, Truck, Contact, HandshakeIcon,
   User, NotebookPen, MonitorCheck, HeartHandshake, MessageSquare,
   Camera, MessageCircle, Users as UsersIcon, UserCircle, Cake,
-  CalendarClock, Gavel, ShieldAlert, Fingerprint, Newspaper, Radio, Library, Bus, ArrowLeftRight,
+  CalendarClock, Gavel, ShieldAlert, Fingerprint, Newspaper, Radio, Library, Bus, ArrowLeftRight, UserMinus, UserX,
   FileQuestion, X, LifeBuoy, Settings2, KeyRound, Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -250,6 +250,9 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: Users2,
     items: [
       { href: "/dashboard/modules/school/students", label: "Students", icon: Users2 },
+      { href: "/dashboard/modules/school/students/withdrawal", label: "Manage Withdrawal", icon: UserMinus },
+      { href: "/dashboard/modules/school/students/withdrawal-list", label: "Withdrawal List", icon: ClipboardList },
+      { href: "/dashboard/modules/school/students/inactive", label: "Manage Inactive Students", icon: UserX },
       // Batch 2 (Admissions & Enrollment) — shipped. Permissions from the access
       // map: admissions/entrance-exams → school:admissions:read; promotion/
       // transfer/pickup → school:students:write.

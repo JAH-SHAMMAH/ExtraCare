@@ -219,6 +219,8 @@ export const schoolApi = {
     create: (data: object) => api.post("/school/students", data).then((r) => r.data),
     update: (id: string, data: object) => api.patch(`/school/students/${id}`, data).then((r) => r.data),
     delete: (id: string) => api.delete(`/school/students/${id}`),
+    withdraw: (id: string, data: object) => api.post(`/school/students/${id}/withdraw`, data).then((r) => r.data),
+    reactivate: (id: string) => api.post(`/school/students/${id}/reactivate`).then((r) => r.data),
   },
   teachers: {
     list: (p?: object) => api.get("/school/teachers", { params: p }).then((r) => r.data),
