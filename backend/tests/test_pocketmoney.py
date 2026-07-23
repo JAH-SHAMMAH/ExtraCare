@@ -18,7 +18,7 @@ from app.models.modules.finance import LedgerAccount
 from app.routers.modules.wallet import (
     create_wallet, topup_wallet,
     list_pocketmoney_items, create_pocketmoney_item, update_pocketmoney_item, delete_pocketmoney_item,
-    list_pocketmoney_transactions, create_pocketmoney_transaction,
+    list_pocketmoney_transactions, create_pocketmoney_transaction, list_pocketmoney_students,
 )
 from app.schemas.wallet import (
     WalletCreate, TopUpRequest,
@@ -129,3 +129,59 @@ async def test_empty_transaction_rejected(db, org, student):
             request=None, db=db, current_user=admin,
         )
     assert exc.value.status_code == 422
+
+
+async def test_transaction_requires_a_target(db, org):
+    admin = await _admin(db, org)
+    income = await _acct(db, org, "4000", "Canteen", "income")
+    with pytest.raises(HTTPException) as exc:   # neither student_id nor wallet_id
+        await create_pocketmoney_transaction(
+            PocketMoneyTxnCreate(income_account_id=income.id, amount=10),
+            request=None, db=db, current_user=admin,
+        )
+    assert exc.value.status_code == 422
+
+
+async def test_transaction_by_student_id(db, org, student):
+    admin = await _admin(db, org)
+    cash = await _acct(db, org, "1000", "Cash", "asset")
+    income = await _acct(db, org, "4000", "Canteen", "income")
+    w = await create_wallet(WalletCreate(student_id=student.id), db=db, current_user=admin)
+    await topup_wallet(w.id, TopUpRequest(amount=200, cash_account_id=cash.id), request=None, db=db, current_user=admin)
+    # Target the STUDENT (not the wallet id) — resolves to the existing wallet.
+    txn = await create_pocketmoney_transaction(
+        PocketMoneyTxnCreate(student_id=student.id, income_account_id=income.id, amount=50),
+        request=None, db=db, current_user=admin,
+    )
+    assert txn.amount == 50.0 and txn.student_name == "Ada Okafor"
+
+
+# ── POCKET MONEY STUDENT LIST ────────────────────────────────────────────────────
+
+async def test_student_list_shows_parent_class_balance(db, org, student):
+    admin = await _admin(db, org)
+    cash = await _acct(db, org, "1000", "Cash", "asset")
+    student.guardian_name = "MR & MRS OKAFOR"
+    db.add(student)
+    await db.commit()
+    w = await create_wallet(WalletCreate(student_id=student.id), db=db, current_user=admin)
+    await topup_wallet(w.id, TopUpRequest(amount=300, cash_account_id=cash.id), request=None, db=db, current_user=admin)
+
+    res = await list_pocketmoney_students(page=1, page_size=50, search=None, db=db, current_user=admin)
+    assert res.total == 1
+    row = res.items[0]
+    assert row.student_name == "Ada Okafor"
+    assert row.parent_name == "MR & MRS OKAFOR"
+    assert row.class_name == "Year 10A"     # from the student fixture's class
+    assert row.balance == 300.0
+    assert row.wallet_id == w.id
+
+
+async def test_student_list_search_and_no_wallet_zero_balance(db, org, student):
+    admin = await _admin(db, org)
+    # student has no wallet → balance 0, wallet_id None, still listed.
+    res = await list_pocketmoney_students(page=1, page_size=50, search="Ada", db=db, current_user=admin)
+    assert res.total == 1 and res.items[0].balance == 0.0 and res.items[0].wallet_id is None
+    # A non-matching search returns nothing.
+    empty = await list_pocketmoney_students(page=1, page_size=50, search="Zzz", db=db, current_user=admin)
+    assert empty.total == 0

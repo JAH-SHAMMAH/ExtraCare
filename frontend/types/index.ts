@@ -2168,6 +2168,24 @@ export interface PocketMoneyTxn {
   created_at: string;
 }
 
+export interface PocketMoneyStudentRow {
+  student_id: string;
+  student_name: string;
+  parent_name: string | null;
+  class_name: string | null;
+  balance: number;
+  wallet_id: string | null;
+  is_active: boolean;
+}
+
+export interface PocketMoneyStudentList {
+  items: PocketMoneyStudentRow[];
+  total: number;
+  page: number;
+  page_size: number;
+  today_total: number;
+}
+
 export interface WalletEntry {
   id: string;
   kind: string;

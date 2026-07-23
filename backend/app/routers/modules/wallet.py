@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,6 +43,7 @@ from app.schemas.wallet import (
     ReconciliationResponse,
     PocketMoneyItemCreate, PocketMoneyItemUpdate, PocketMoneyItemResponse,
     PocketMoneyTxnCreate, PocketMoneyTxnResponse, PocketMoneyTxnListResponse,
+    PocketMoneyStudentRow, PocketMoneyStudentListResponse,
 )
 from app.services import ledger
 from app.services.ledger import money
@@ -473,12 +474,77 @@ async def list_pocketmoney_transactions(
     return PocketMoneyTxnListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
+@router.get("/pocketmoney-students", response_model=PocketMoneyStudentListResponse, dependencies=[_spend])
+async def list_pocketmoney_students(
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1, le=100),
+    search: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    """POCKET MONEY STUDENT LIST — active students with their parent, class, and
+    current pocket-money balance. Each row can start a New Transaction (the cart)."""
+    org_id = current_user.org_id
+    base = (select(Student.id, Student.first_name, Student.last_name, Student.guardian_name,
+                   SchoolClass.name, StudentWallet.id, StudentWallet.is_active)
+            .select_from(Student)
+            .outerjoin(SchoolClass, SchoolClass.id == Student.class_id)
+            .outerjoin(StudentWallet, (StudentWallet.student_id == Student.id) & (StudentWallet.org_id == org_id))
+            .where(Student.org_id == org_id, Student.is_deleted == False, Student.is_active == True))  # noqa: E712
+    if search and search.strip():
+        like = f"%{search.strip()}%"
+        base = base.where(or_(Student.first_name.ilike(like), Student.last_name.ilike(like), Student.student_id.ilike(like)))
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
+    rows = (await db.execute(
+        base.order_by(Student.first_name, Student.last_name).offset((page - 1) * page_size).limit(page_size)
+    )).all()
+    items = []
+    for sid, fn, ln, guardian, cname, wid, wactive in rows:
+        bal = float(await _wallet_balance(db, org_id, sid)) if wid else 0.0
+        items.append(PocketMoneyStudentRow(
+            student_id=sid, student_name=f"{fn} {ln}".strip(), parent_name=guardian, class_name=cname,
+            balance=bal, wallet_id=wid, is_active=bool(wactive) if wid is not None else True,
+        ))
+    # Total pocket-money spends posted today (org-wide).
+    today = datetime.now(timezone.utc).date()
+    today_sum = (await db.execute(
+        select(func.coalesce(func.sum(WalletEntry.signed_amount), 0))
+        .select_from(WalletEntry).join(JournalEntry, JournalEntry.id == WalletEntry.journal_entry_id)
+        .where(WalletEntry.org_id == org_id, WalletEntry.kind == "spend",
+               JournalEntry.reversed_at.is_(None), JournalEntry.entry_date == today)
+    )).scalar()
+    return PocketMoneyStudentListResponse(items=items, total=total, page=page, page_size=page_size,
+                                          today_total=float(-money(today_sum or 0)))
+
+
+async def _find_or_create_student_wallet(db, current_user, student_id: str) -> StudentWallet:
+    """Resolve a student's pocket-money wallet, creating it (with the org default
+    daily limit) on first use — so a New Transaction can target any student."""
+    w = (await db.execute(select(StudentWallet).where(
+        StudentWallet.student_id == student_id, StudentWallet.org_id == current_user.org_id))).scalar_one_or_none()
+    if w:
+        return w
+    s = (await db.execute(select(Student).where(
+        Student.id == student_id, Student.org_id == current_user.org_id, Student.is_deleted == False))).scalar_one_or_none()  # noqa: E712
+    if not s:
+        raise HTTPException(status_code=404, detail="student not found in your organisation.")
+    settings = await _get_or_create_wallet_settings(db, current_user.org_id)
+    w = StudentWallet(student_id=s.id, spend_limit_daily=settings.default_daily_limit, is_active=True, org_id=current_user.org_id)
+    db.add(w)
+    await db.flush()
+    return w
+
+
 @router.post("/pocketmoney-transactions", response_model=PocketMoneyTxnResponse, status_code=201, dependencies=[_spend])
 async def create_pocketmoney_transaction(payload: PocketMoneyTxnCreate, request: Request = None,
                                          db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """New Transaction — buy items (or a direct amount) → records a SPEND against the
-    student's wallet through the existing ledger path (no-overdraw + daily-limit guards)."""
-    w = await _load_wallet(db, payload.wallet_id, current_user.org_id)
+    student's wallet through the existing ledger path (no-overdraw + daily-limit guards).
+    Target a student directly (wallet auto-created) or an existing wallet."""
+    if payload.wallet_id:
+        w = await _load_wallet(db, payload.wallet_id, current_user.org_id)
+    elif payload.student_id:
+        w = await _find_or_create_student_wallet(db, current_user, payload.student_id)
+    else:
+        raise HTTPException(status_code=422, detail="Provide a student_id or wallet_id.")
     if not w.is_active:
         raise HTTPException(status_code=409, detail="Wallet is inactive.")
 

@@ -7,7 +7,7 @@ import type {
   StudentWallet, WalletDetail, CooperativeMember, CoopMemberDetail, Reconciliation, Paginated,
   WalletSummary, WalletSettings,
   ParentWallet, ParentWalletDetail, ParentWalletSummary, ParentWalletSettings,
-  PocketMoneyItem, PocketMoneyTxn,
+  PocketMoneyItem, PocketMoneyTxn, PocketMoneyStudentList,
 } from "@/types";
 
 function inv(qc: ReturnType<typeof useQueryClient>, keys: string[]) {
@@ -118,6 +118,12 @@ export function useDeletePMItem() {
 }
 export function usePocketMoneyTransactions() {
   return useQuery<Paginated<PocketMoneyTxn>>({ queryKey: ["pm-txns"], queryFn: () => walletApi.pocketmoney.transactions({ page_size: 100 }) });
+}
+export function usePocketMoneyStudents(params: { page: number; page_size: number; search?: string }) {
+  return useQuery<PocketMoneyStudentList>({
+    queryKey: ["pm-students", params.page, params.page_size, params.search ?? ""],
+    queryFn: () => walletApi.pocketmoney.students(params),
+  });
 }
 export function useCreatePMTransaction() {
   const qc = useQueryClient();

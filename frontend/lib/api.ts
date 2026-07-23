@@ -1304,6 +1304,7 @@ export const walletApi = {
     deleteItem: (id: string) => api.delete(`/finance/pocketmoney-items/${id}`),
     transactions: (p?: { page?: number; page_size?: number }) => api.get("/finance/pocketmoney-transactions", { params: p }).then((r) => r.data),
     createTransaction: (data: object) => api.post("/finance/pocketmoney-transactions", data).then((r) => r.data),
+    students: (p?: { page?: number; page_size?: number; search?: string }) => api.get("/finance/pocketmoney-students", { params: p }).then((r) => r.data),
   },
   cooperative: {
     members: (p?: { page?: number; page_size?: number }) => api.get("/finance/cooperative/members", { params: p }).then((r) => r.data),

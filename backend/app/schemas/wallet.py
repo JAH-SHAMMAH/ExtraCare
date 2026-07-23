@@ -199,12 +199,32 @@ class PocketMoneyTxnLine(BaseModel):
 
 
 class PocketMoneyTxnCreate(BaseModel):
-    wallet_id: str
+    # Target the student directly (wallet auto-created if missing) or an existing wallet.
+    student_id: Optional[str] = None
+    wallet_id: Optional[str] = None
     income_account_id: str
     lines: list[PocketMoneyTxnLine] = []     # itemised purchase
     amount: Optional[Decimal] = None         # or a direct amount (when no items)
     memo: Optional[str] = None
     txn_date: Optional[date] = None
+
+
+class PocketMoneyStudentRow(BaseModel):
+    student_id: str
+    student_name: str
+    parent_name: Optional[str]
+    class_name: Optional[str]
+    balance: float
+    wallet_id: Optional[str]      # null = no wallet yet (created on first transaction)
+    is_active: bool
+
+
+class PocketMoneyStudentListResponse(BaseModel):
+    items: list[PocketMoneyStudentRow]
+    total: int
+    page: int
+    page_size: int
+    today_total: float            # Σ pocket-money spends posted today (org-wide)
 
 
 class PocketMoneyTxnResponse(BaseModel):

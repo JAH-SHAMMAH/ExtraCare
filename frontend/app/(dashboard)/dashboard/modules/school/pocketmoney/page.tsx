@@ -74,16 +74,18 @@ export default function PocketMoneyPage() {
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto mb-8">
         <table className="w-full text-left">
-          <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Student", "Balance", "Daily limit", "Status", "Actions"].map((h) => <th key={h} className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>)}</tr></thead>
+          <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Student", "Parent", "Class", "Balance", "Daily limit", "Status", "Actions"].map((h) => <th key={h} className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-50">
             {isLoading ? (
-              Array.from({ length: 4 }).map((_, i) => <tr key={i}>{Array.from({ length: 5 }).map((_, j) => <td key={j} className="px-5 py-4"><div className="h-4 bg-slate-100 rounded animate-pulse w-20" /></td>)}</tr>)
+              Array.from({ length: 4 }).map((_, i) => <tr key={i}>{Array.from({ length: 7 }).map((_, j) => <td key={j} className="px-5 py-4"><div className="h-4 bg-slate-100 rounded animate-pulse w-20" /></td>)}</tr>)
             ) : isError ? (
-              <tr><td colSpan={5} className="py-14 text-center"><AlertTriangle size={28} className="mx-auto mb-3 text-amber-400" /><p className="text-sm font-semibold text-slate-600">Couldn’t load wallets.</p><button onClick={() => refetch()} className="mt-3 btn-secondary">Retry</button></td></tr>
+              <tr><td colSpan={7} className="py-14 text-center"><AlertTriangle size={28} className="mx-auto mb-3 text-amber-400" /><p className="text-sm font-semibold text-slate-600">Couldn’t load wallets.</p><button onClick={() => refetch()} className="mt-3 btn-secondary">Retry</button></td></tr>
             ) : rows.length > 0 ? (
               rows.map((w) => (
                 <tr key={w.id} className="hover:bg-slate-50/70">
                   <td className="px-5 py-4 text-sm font-medium text-slate-800">{w.student_name || w.student_id.slice(0, 8)}</td>
+                  <td className="px-5 py-4 text-sm text-slate-600">{w.guardian_name || <span className="text-slate-300">—</span>}</td>
+                  <td className="px-5 py-4 text-sm text-slate-600">{w.class_name || <span className="text-slate-300">—</span>}</td>
                   <td className="px-5 py-4 text-sm font-bold text-slate-900">{formatCurrency(w.balance)}</td>
                   <td className="px-5 py-4">
                     {canWrite ? (
@@ -100,7 +102,7 @@ export default function PocketMoneyPage() {
                 </tr>
               ))
             ) : (
-              <tr><td colSpan={5} className="py-16 text-center text-slate-400"><BadgeDollarSign size={36} className="mx-auto mb-3 opacity-40" /><p className="font-semibold">No wallets yet</p>{canWrite && <p className="text-sm mt-1">Create one with “New Wallet”.</p>}</td></tr>
+              <tr><td colSpan={7} className="py-16 text-center text-slate-400"><BadgeDollarSign size={36} className="mx-auto mb-3 opacity-40" /><p className="font-semibold">No wallets yet</p>{canWrite && <p className="text-sm mt-1">Create one with “New Wallet”.</p>}</td></tr>
             )}
           </tbody>
         </table>
