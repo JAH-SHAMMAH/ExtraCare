@@ -559,6 +559,39 @@ export interface ClubAssessmentRow {
   remarks: string | null;
 }
 
+// ── TimeTable module ──────────────────────────────────────────────────────────
+
+export interface TimetableSettings {
+  enable_even_odd_week: boolean;
+  enable_subject_grouping: boolean;
+  default_period_group_id: string | null;
+  subject_group_type: string | null;
+  week_start_day: string;
+  org_id: string;
+}
+
+export interface PeriodGroup {
+  id: string;
+  name: string;
+  year_group: string | null;
+  org_id: string;
+}
+
+export interface SubjectGroup {
+  id: string;
+  name: string;
+  year_group: string | null;
+  subject_ids: string[];
+  org_id: string;
+}
+
+export interface SchoolActivity {
+  id: string;
+  name: string;
+  color: string | null;
+  org_id: string;
+}
+
 export interface PhotoJournal {
   id: string;
   title: string;

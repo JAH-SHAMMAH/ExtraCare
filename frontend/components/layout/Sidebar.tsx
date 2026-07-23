@@ -11,7 +11,7 @@ import {
   FileText, Wallet, Clock, UserCheck, Award,
   BookMarked, School, Microscope, Pill, BedDouble, Activity,
   Receipt, BadgeDollarSign, FolderOpen, BarChart, Star,
-  UserCog, ShoppingCart, Truck, Contact, HandshakeIcon, UserPlus,
+  UserCog, ShoppingCart, Truck, Contact, HandshakeIcon, UserPlus, Palette,
   User, NotebookPen, MonitorCheck, HeartHandshake, MessageSquare,
   Camera, MessageCircle, Users as UsersIcon, UserCircle, Cake,
   CalendarClock, Gavel, ShieldAlert, Fingerprint, Newspaper, Radio, Library, Bus, ArrowLeftRight, UserMinus, UserX,
@@ -114,7 +114,6 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: GraduationCap,
     items: [
       { href: "/dashboard/modules/school/subjects", label: "Subjects", icon: BookMarked },
-      { href: "/dashboard/modules/school/timetable", label: "Timetable", icon: Calendar },
       { href: "/dashboard/modules/school/exams", label: "Exams & Results", icon: Award },
       { href: "/dashboard/modules/school/grades", label: "Gradebook", icon: BookOpen },
       { href: "/dashboard/modules/school/report-cards", label: "Report Cards", icon: FileText },
@@ -124,6 +123,20 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/subject-selection", label: "Subject Selection", icon: BookMarked },
       { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: FileText },
       { href: "/dashboard/modules/school/report-workflow", label: "Report Workflow", icon: FolderOpen },
+    ],
+  },
+  {
+    // TimeTable — its own top-level module (Educare parity). Setup (settings +
+    // subject/period groups), Manage Periods, Activities, Schedules, Time Tabler
+    // (beta), Curriculum, Subject Attendance. Manage Lesson Plans links to the
+    // existing Lesson Planner. Children are added per build batch.
+    key: "timetable",
+    requiredModule: "school",
+    label: "TimeTable",
+    icon: Calendar,
+    items: [
+      { href: "/dashboard/modules/school/timetable/setup", label: "TimeTable Setup", icon: Settings2 },
+      { href: "/dashboard/modules/school/timetable/activities", label: "Manage Activities", icon: Palette },
     ],
   },
   {

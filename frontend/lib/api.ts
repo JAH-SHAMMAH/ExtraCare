@@ -550,6 +550,31 @@ export const feedbackApi = {
   // via enrollmentApi. A standalone CRM store was removed (overlapped Admissions).
 };
 
+export const timetableApi = {
+  settings: {
+    get: () => api.get("/timetable/settings").then((r) => r.data),
+    update: (data: object) => api.put("/timetable/settings", data).then((r) => r.data),
+  },
+  periodGroups: {
+    list: () => api.get("/timetable/period-groups").then((r) => r.data),
+    create: (data: object) => api.post("/timetable/period-groups", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/timetable/period-groups/${id}`, data).then((r) => r.data),
+    delete: (id: string) => api.delete(`/timetable/period-groups/${id}`),
+  },
+  subjectGroups: {
+    list: () => api.get("/timetable/subject-groups").then((r) => r.data),
+    create: (data: object) => api.post("/timetable/subject-groups", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/timetable/subject-groups/${id}`, data).then((r) => r.data),
+    delete: (id: string) => api.delete(`/timetable/subject-groups/${id}`),
+  },
+  activities: {
+    list: () => api.get("/timetable/activities").then((r) => r.data),
+    create: (data: object) => api.post("/timetable/activities", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/timetable/activities/${id}`, data).then((r) => r.data),
+    delete: (id: string) => api.delete(`/timetable/activities/${id}`),
+  },
+};
+
 export const clubsApi = {
   list: (p?: object) => api.get("/clubs", { params: p }).then((r) => r.data),
   get: (id: string) => api.get(`/clubs/${id}`).then((r) => r.data),

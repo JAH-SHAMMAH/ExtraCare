@@ -363,6 +363,54 @@ class Timetable(Base, UUIDMixin, TimestampMixin, TenantMixin):
     school_class = relationship("SchoolClass", back_populates="timetables")
 
 
+# ── TimeTable module (Educare parity) ─────────────────────────────────────────
+# Its own section: Setup (settings + subject/period groups), Manage Periods,
+# Manage Activities, Manage Schedules, Time Tabler, Curriculum. Org-wide (the
+# single-school portal drops Educare's per-school scoping).
+
+class TimetableSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Per-org TimeTable configuration (TimeTable Setup → General Setup)."""
+    __tablename__ = "timetable_settings"
+
+    enable_even_odd_week = Column(Boolean, default=False, nullable=False)
+    enable_subject_grouping = Column(Boolean, default=False, nullable=False)
+    default_period_group_id = Column(String(36), ForeignKey("period_groups.id", ondelete="SET NULL"), nullable=True)
+    subject_group_type = Column(String(60), nullable=True)
+    week_start_day = Column(String(12), default="Monday", nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
+
+
+class PeriodGroup(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A named group of periods scoped to a year group / level (Period Group
+    Setup). Periods (the day/time rows) belong to a group."""
+    __tablename__ = "period_groups"
+
+    name = Column(String(100), nullable=False)                # e.g. "SECONDARY"
+    year_group = Column(String(60), nullable=True)            # e.g. "All Year Group" / "YEAR 7"
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+
+class SubjectGroup(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A named grouping of subjects for a year group (Subject Group Setup) —
+    e.g. option blocks. ``subject_ids`` is a JSON list of Subject ids."""
+    __tablename__ = "subject_groups"
+
+    name = Column(String(100), nullable=False)
+    year_group = Column(String(60), nullable=True)
+    subject_ids = Column(JSON, default=list)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+
+class SchoolActivity(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A colour-coded non-lesson activity used on the schedule grid (Manage
+    Activities) — e.g. Story Time, Water Play, Library Time."""
+    __tablename__ = "school_activities"
+
+    name = Column(String(120), nullable=False)
+    color = Column(String(20), nullable=True)                 # hex, e.g. "#22c55e"
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+
 # ── School Experience Layer ───────────────────────────────────────────────────
 #
 # Everything below powers the student/teacher-facing experience (eClassroom,
