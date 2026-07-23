@@ -906,6 +906,26 @@ class ClubEnrollmentDeadline(Base, UUIDMixin, TimestampMixin, TenantMixin):
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 
+class ClubAssessment(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A student's club assessment for a term (Clubs → Club Assessment). Graded
+    against a ClubGrade band; one row per club + student + session/term."""
+    __tablename__ = "club_assessments"
+
+    club_id = Column(String(36), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False, index=True)
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    academic_year = Column(String(20), nullable=True)
+    term = Column(String(40), nullable=True)
+    grade_id = Column(String(36), ForeignKey("club_grades.id", ondelete="SET NULL"), nullable=True)
+    remarks = Column(Text, nullable=True)
+    assessed_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "club_id", "student_id", "academic_year", "term", name="uq_club_assessment"),
+        Index("ix_club_assessments_club_org", "club_id", "org_id"),
+    )
+
+
 # ── Photo Journals ───────────────────────────────────────────────────────────
 
 

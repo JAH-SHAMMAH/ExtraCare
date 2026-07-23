@@ -550,6 +550,15 @@ export interface ClubEnrollCandidate {
   status: string | null;
 }
 
+export interface ClubAssessmentRow {
+  student_id: string;
+  student_name: string | null;
+  current_class: string | null;
+  grade_id: string | null;
+  grade_letter: string | null;
+  remarks: string | null;
+}
+
 export interface PhotoJournal {
   id: string;
   title: string;

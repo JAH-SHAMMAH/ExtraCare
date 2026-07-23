@@ -565,6 +565,10 @@ export const clubsApi = {
   updateMembership: (id: string, data: object) => api.patch(`/clubs/memberships/${id}`, data).then((r) => r.data),
   enrollmentCandidates: (id: string, p?: { academic_year?: string; term?: string; class_id?: string }) => api.get(`/clubs/${id}/enrollment-candidates`, { params: p }).then((r) => r.data),
   enroll: (id: string, data: object) => api.post(`/clubs/${id}/enroll`, data).then((r) => r.data),
+  assessments: {
+    get: (id: string, p?: { academic_year?: string; term?: string }) => api.get(`/clubs/${id}/assessments`, { params: p }).then((r) => r.data),
+    save: (id: string, data: object) => api.post(`/clubs/${id}/assessments`, data).then((r) => r.data),
+  },
   // Manage Clubs
   settings: {
     get: () => api.get("/clubs/settings").then((r) => r.data),

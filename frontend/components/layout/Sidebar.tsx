@@ -325,7 +325,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/clubs", label: "Manage Clubs", icon: Users2 },
       { href: "/dashboard/modules/school/clubs/membership", label: "Membership List", icon: ClipboardList },
       { href: "/dashboard/modules/school/clubs/enrollment", label: "Club Enrollment", icon: UserPlus },
-      // Club Assessment lands in the next batch.
+      { href: "/dashboard/modules/school/clubs/assessment", label: "Club Assessment", icon: Award },
     ],
   },
   {

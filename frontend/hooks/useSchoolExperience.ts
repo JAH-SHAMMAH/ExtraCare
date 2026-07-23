@@ -921,3 +921,21 @@ export function useUnenrollMembership() {
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to remove."),
   });
 }
+
+// ── Club Assessment ───────────────────────────────────────────────────────────
+
+export function useClubAssessments(clubId: string | null, params: { academic_year?: string; term?: string }) {
+  return useQuery({
+    queryKey: ["club-assessments", clubId, params.academic_year, params.term],
+    queryFn: () => clubsApi.assessments.get(clubId as string, params),
+    enabled: !!clubId,
+  });
+}
+export function useSaveClubAssessments() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => clubsApi.assessments.save(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["club-assessments"] }); toast.success("Assessment saved."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save assessment."),
+  });
+}

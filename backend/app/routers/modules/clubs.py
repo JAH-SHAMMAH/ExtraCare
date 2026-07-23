@@ -19,7 +19,7 @@ from app.deps import get_current_active_user
 from app.models.user import User
 from app.models.modules.school import (
     Club, ClubMembership, Student, SchoolClass,
-    ClubSettings, ClubGrade, ClubCoordinator, ClubEnrollmentDeadline,
+    ClubSettings, ClubGrade, ClubCoordinator, ClubEnrollmentDeadline, ClubAssessment,
 )
 from app.schemas.school_experience import (
     ClubCreate,
@@ -42,6 +42,8 @@ from app.schemas.school_experience import (
     ClubEnrollRequest,
     ClubEnrollResult,
     ClubEnrollCandidate,
+    ClubAssessmentRow,
+    ClubAssessmentSave,
 )
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
@@ -471,6 +473,81 @@ async def enroll_students(
         active_count += 1
     await db.flush()
     return ClubEnrollResult(enrolled=enrolled, skipped=skipped).model_dump()
+
+
+# ── Club Assessment ───────────────────────────────────────────────────────────
+
+@router.get("/{club_id}/assessments", dependencies=[_can_read])
+async def list_club_assessments(
+    club_id: str,
+    academic_year: str | None = None,
+    term: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """The club's approved members for the term, each with their current grade
+    (against a ClubGrade band) + remarks — the grading grid."""
+    org_id = current_user.org_id
+    await _get_club_or_404(db, club_id, org_id)
+    mq = (select(ClubMembership.student_id, Student.first_name, Student.last_name, SchoolClass.name)
+          .join(Student, Student.id == ClubMembership.student_id)
+          .outerjoin(SchoolClass, SchoolClass.id == Student.class_id)
+          .where(ClubMembership.club_id == club_id, ClubMembership.org_id == org_id, ClubMembership.status == "approved"))
+    if academic_year:
+        mq = mq.where(ClubMembership.academic_year == academic_year)
+    if term:
+        mq = mq.where(ClubMembership.term == term)
+    members = (await db.execute(mq.order_by(Student.first_name))).all()
+
+    aq = (select(ClubAssessment, ClubGrade.grade_letter)
+          .outerjoin(ClubGrade, ClubGrade.id == ClubAssessment.grade_id)
+          .where(ClubAssessment.club_id == club_id, ClubAssessment.org_id == org_id))
+    if academic_year:
+        aq = aq.where(ClubAssessment.academic_year == academic_year)
+    if term:
+        aq = aq.where(ClubAssessment.term == term)
+    by_student = {a.student_id: (a, letter) for a, letter in (await db.execute(aq)).all()}
+
+    items = []
+    for sid, fn, ln, cname in members:
+        a, letter = by_student.get(sid, (None, None))
+        items.append(ClubAssessmentRow(
+            student_id=sid, student_name=f"{fn} {ln}".strip(), current_class=cname,
+            grade_id=a.grade_id if a else None, grade_letter=letter, remarks=a.remarks if a else None,
+        ).model_dump())
+    return {"items": items}
+
+
+@router.post("/{club_id}/assessments", dependencies=[_can_write])
+async def save_club_assessments(
+    club_id: str, payload: ClubAssessmentSave,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    """Upsert grades for the club's members (one row per club + student + term)."""
+    org_id = current_user.org_id
+    await _get_club_or_404(db, club_id, org_id)
+    saved = 0
+    for e in payload.entries:
+        if e.grade_id:
+            g = (await db.execute(select(ClubGrade).where(ClubGrade.id == e.grade_id, ClubGrade.org_id == org_id))).scalar_one_or_none()
+            if not g:
+                raise HTTPException(status_code=404, detail="Grade not found in your organisation.")
+        existing = (await db.execute(select(ClubAssessment).where(
+            ClubAssessment.club_id == club_id, ClubAssessment.student_id == e.student_id, ClubAssessment.org_id == org_id,
+            ClubAssessment.academic_year == payload.academic_year, ClubAssessment.term == payload.term))).scalar_one_or_none()
+        if existing:
+            existing.grade_id = e.grade_id
+            existing.remarks = e.remarks
+            existing.assessed_by = current_user.id
+        else:
+            db.add(ClubAssessment(
+                club_id=club_id, student_id=e.student_id, org_id=org_id,
+                academic_year=payload.academic_year, term=payload.term,
+                grade_id=e.grade_id, remarks=e.remarks, assessed_by=current_user.id,
+            ))
+        saved += 1
+    await db.flush()
+    return {"saved": saved}
 
 
 @router.post("/{club_id}/join", status_code=201, dependencies=[_can_write])

@@ -454,6 +454,29 @@ class ClubEnrollCandidate(BaseModel):
     status: Optional[str] = None
 
 
+# ── Club Assessment ───────────────────────────────────────────────────────────
+
+class ClubAssessmentRow(BaseModel):
+    student_id: str
+    student_name: Optional[str]
+    current_class: Optional[str]
+    grade_id: Optional[str] = None
+    grade_letter: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+class ClubAssessmentEntry(BaseModel):
+    student_id: str
+    grade_id: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+class ClubAssessmentSave(BaseModel):
+    academic_year: Optional[str] = None
+    term: Optional[str] = None
+    entries: list[ClubAssessmentEntry]
+
+
 # ── Journals & Remarks ───────────────────────────────────────────────────────
 
 
