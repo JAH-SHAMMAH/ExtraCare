@@ -139,6 +139,11 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/timetable/periods", label: "Manage Periods", icon: Clock },
       { href: "/dashboard/modules/school/timetable/activities", label: "Manage Activities", icon: Palette },
       { href: "/dashboard/modules/school/timetable/schedules", label: "Manage Schedules", icon: CalendarRange },
+      { href: "/dashboard/modules/school/timetable/tabler", label: "Time Tabler", icon: CalendarClock },
+      // Manage Lesson Plans reuses the existing Lesson Planner module (no duplicate).
+      { href: "/dashboard/modules/school/lessons", label: "Manage Lesson Plans", icon: NotebookPen },
+      { href: "/dashboard/modules/school/timetable/curriculum", label: "Manage Curriculum", icon: BookMarked },
+      { href: "/dashboard/modules/school/timetable/subject-attendance", label: "View Subject Student Attendance", icon: ClipboardCheck },
     ],
   },
   {

@@ -3,7 +3,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { timetableApi } from "@/lib/api";
-import type { TimetableSettings, PeriodGroup, SubjectGroup, SchoolActivity, Period, PeriodSchedule } from "@/types";
+import type {
+  TimetableSettings, PeriodGroup, SubjectGroup, SchoolActivity, Period, PeriodSchedule,
+  Curriculum, TimetableJob, SubjectAttendanceRow,
+} from "@/types";
 
 function mut<V>(fn: (v: V) => Promise<any>, keys: string[], ok: string) {
   return function useM() {
@@ -69,3 +72,36 @@ export function useSchedules(params: { period_group_id: string | null; academic_
 }
 export const useUpsertSchedule = mut<object>((d) => timetableApi.schedules.upsert(d), ["tt-schedules"], "Schedule saved.");
 export const useDeleteSchedule = mut<string>((id) => timetableApi.schedules.delete(id), ["tt-schedules"], "Removed.");
+
+// ── Curriculum ──────────────────────────────────────────────────────────────────
+export function useCurriculum(params: { class_id?: string; subject_id?: string; academic_year?: string }) {
+  return useQuery<{ items: Curriculum[] }>({ queryKey: ["tt-curriculum", params.class_id, params.subject_id, params.academic_year], queryFn: () => timetableApi.curriculum.list(params) });
+}
+export const useCreateCurriculum = mut<object>((d) => timetableApi.curriculum.create(d), ["tt-curriculum"], "Curriculum added.");
+export const useUpdateCurriculum = mut<{ id: string; data: object }>((v) => timetableApi.curriculum.update(v.id, v.data), ["tt-curriculum"], "Updated.");
+export const useDeleteCurriculum = mut<string>((id) => timetableApi.curriculum.delete(id), ["tt-curriculum"], "Removed.");
+
+// ── Time Tabler ─────────────────────────────────────────────────────────────────
+export function useTimetableJobs() {
+  return useQuery<{ items: TimetableJob[] }>({ queryKey: ["tt-jobs"], queryFn: () => timetableApi.timetabler.list() });
+}
+export const useCreateTimetableJob = mut<object>((d) => timetableApi.timetabler.create(d), ["tt-jobs"], "Timetable created.");
+export const useDeleteTimetableJob = mut<string>((id) => timetableApi.timetabler.delete(id), ["tt-jobs"], "Removed.");
+export function useGenerateTimetable() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => timetableApi.timetabler.generate(id),
+    onSuccess: (r: any) => { qc.invalidateQueries({ queryKey: ["tt-jobs"] }); qc.invalidateQueries({ queryKey: ["tt-schedules"] });
+      r?.status === "processed" ? toast.success(`Generated ${r.created} schedule(s).`) : toast.error("Generation failed — check periods, subjects, and classes exist."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to generate."),
+  });
+}
+
+// ── Subject attendance ──────────────────────────────────────────────────────────
+export function useSubjectAttendance(params: { class_id: string | null; start_date?: string; end_date?: string }) {
+  return useQuery<{ items: SubjectAttendanceRow[]; days: number }>({
+    queryKey: ["tt-subject-attendance", params.class_id, params.start_date, params.end_date],
+    queryFn: () => timetableApi.subjectAttendance({ class_id: params.class_id as string, start_date: params.start_date, end_date: params.end_date }),
+    enabled: !!params.class_id,
+  });
+}

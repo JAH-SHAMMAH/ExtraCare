@@ -585,6 +585,20 @@ export const timetableApi = {
     upsert: (data: object) => api.post("/timetable/schedules", data).then((r) => r.data),
     delete: (id: string) => api.delete(`/timetable/schedules/${id}`),
   },
+  curriculum: {
+    list: (p?: { class_id?: string; subject_id?: string; academic_year?: string }) => api.get("/timetable/curriculum", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/timetable/curriculum", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/timetable/curriculum/${id}`, data).then((r) => r.data),
+    delete: (id: string) => api.delete(`/timetable/curriculum/${id}`),
+  },
+  timetabler: {
+    list: () => api.get("/timetable/timetabler").then((r) => r.data),
+    create: (data: object) => api.post("/timetable/timetabler", data).then((r) => r.data),
+    delete: (id: string) => api.delete(`/timetable/timetabler/${id}`),
+    generate: (id: string) => api.post(`/timetable/timetabler/${id}/generate`).then((r) => r.data),
+  },
+  subjectAttendance: (p: { class_id: string; start_date?: string; end_date?: string }) =>
+    api.get("/timetable/subject-attendance", { params: p }).then((r) => r.data),
 };
 
 export const clubsApi = {

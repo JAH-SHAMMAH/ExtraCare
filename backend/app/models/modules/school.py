@@ -447,6 +447,31 @@ class PeriodSchedule(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class Curriculum(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A curriculum document/entry for a class + subject (Manage Curriculum)."""
+    __tablename__ = "curriculums"
+
+    class_id = Column(String(36), ForeignKey("school_classes.id", ondelete="CASCADE"), nullable=True, index=True)
+    subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True)
+    name = Column(String(200), nullable=False)
+    file_url = Column(String(500), nullable=True)          # uploaded document / photo
+    academic_year = Column(String(20), nullable=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+
+class TimetableJob(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A Time Tabler generation job (beta auto-timetabler). Status tracks the
+    simplified round-robin fill: draft → processed (or failed)."""
+    __tablename__ = "timetable_jobs"
+
+    title = Column(String(200), nullable=False)
+    period_group_id = Column(String(36), ForeignKey("period_groups.id", ondelete="SET NULL"), nullable=True)
+    academic_year = Column(String(20), nullable=True)
+    period_type = Column(String(60), nullable=True)         # label, e.g. "SECONDARY"
+    status = Column(String(20), default="draft", nullable=False)  # draft | processed | failed
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+
 # ── School Experience Layer ───────────────────────────────────────────────────
 #
 # Everything below powers the student/teacher-facing experience (eClassroom,

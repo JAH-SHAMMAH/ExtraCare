@@ -615,6 +615,38 @@ export interface PeriodSchedule {
   academic_year: string | null;
 }
 
+export interface Curriculum {
+  id: string;
+  class_id: string | null;
+  subject_id: string | null;
+  subject_name: string | null;
+  name: string;
+  file_url: string | null;
+  academic_year: string | null;
+  org_id: string;
+}
+
+export interface TimetableJob {
+  id: string;
+  title: string;
+  period_group_id: string | null;
+  academic_year: string | null;
+  period_type: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  org_id: string;
+}
+
+export interface SubjectAttendanceRow {
+  student_id: string;
+  student_name: string;
+  present: number;
+  absent: number;
+  late: number;
+  total: number;
+}
+
 export interface PhotoJournal {
   id: string;
   title: string;

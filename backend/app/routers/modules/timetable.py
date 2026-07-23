@@ -7,8 +7,10 @@ schedules, curriculum, and the Time Tabler are added in later batches. Org-wide
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -18,7 +20,8 @@ from app.core.permissions import PermissionChecker
 from app.models.user import User
 from app.models.modules.school import (
     TimetableSettings, PeriodGroup, SubjectGroup, SchoolActivity,
-    Period, PeriodSchedule, Subject,
+    Period, PeriodSchedule, Subject, Curriculum, TimetableJob,
+    Student, AttendanceRecord, AttendanceStatus,
 )
 from app.schemas.timetable import (
     TimetableSettingsResponse, TimetableSettingsUpdate,
@@ -28,6 +31,9 @@ from app.schemas.timetable import (
     PeriodCreate, PeriodUpdate, PeriodResponse,
     PeriodGenerateRequest, PeriodGenerateResult,
     PeriodScheduleCreate, PeriodScheduleResponse,
+    CurriculumCreate, CurriculumUpdate, CurriculumResponse,
+    TimetableJobCreate, TimetableJobResponse, TimetableGenerateResult,
+    SubjectAttendanceRow, SubjectAttendanceResponse,
 )
 
 router = APIRouter(
@@ -325,3 +331,171 @@ async def delete_schedule(schedule_id: str, db: AsyncSession = Depends(get_db), 
     if not s:
         raise HTTPException(status_code=404, detail="Schedule not found.")
     await db.delete(s)
+
+
+# ── Curriculum (Manage Curriculum) ────────────────────────────────────────────
+
+def _curriculum_dict(c: Curriculum, subject_name: str | None) -> dict:
+    d = CurriculumResponse.model_validate(c).model_dump()
+    d["subject_name"] = subject_name
+    return d
+
+
+@router.get("/curriculum", dependencies=[_can_read])
+async def list_curriculum(class_id: str | None = None, subject_id: str | None = None, academic_year: str | None = None,
+                          db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = (select(Curriculum, Subject.name).outerjoin(Subject, Subject.id == Curriculum.subject_id)
+         .where(Curriculum.org_id == current_user.org_id))
+    if class_id:
+        q = q.where(Curriculum.class_id == class_id)
+    if subject_id:
+        q = q.where(Curriculum.subject_id == subject_id)
+    if academic_year:
+        q = q.where(Curriculum.academic_year == academic_year)
+    rows = (await db.execute(q.order_by(Curriculum.name))).all()
+    return {"items": [_curriculum_dict(c, sname) for c, sname in rows]}
+
+
+@router.post("/curriculum", status_code=201, dependencies=[_can_write])
+async def create_curriculum(payload: CurriculumCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = Curriculum(**payload.model_dump(), org_id=current_user.org_id)
+    db.add(c)
+    await db.flush()
+    sname = None
+    if c.subject_id:
+        sname = (await db.execute(select(Subject.name).where(Subject.id == c.subject_id))).scalar_one_or_none()
+    return _curriculum_dict(c, sname)
+
+
+@router.patch("/curriculum/{curriculum_id}", dependencies=[_can_write])
+async def update_curriculum(curriculum_id: str, payload: CurriculumUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(Curriculum).where(Curriculum.id == curriculum_id, Curriculum.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Curriculum not found.")
+    for k, v in payload.model_dump(exclude_unset=True).items():
+        setattr(c, k, v)
+    await db.flush()
+    sname = None
+    if c.subject_id:
+        sname = (await db.execute(select(Subject.name).where(Subject.id == c.subject_id))).scalar_one_or_none()
+    return _curriculum_dict(c, sname)
+
+
+@router.delete("/curriculum/{curriculum_id}", status_code=204, dependencies=[_can_write])
+async def delete_curriculum(curriculum_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(Curriculum).where(Curriculum.id == curriculum_id, Curriculum.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Curriculum not found.")
+    await db.delete(c)
+
+
+# ── Time Tabler (beta auto-generator) ─────────────────────────────────────────
+
+@router.get("/timetabler", dependencies=[_can_read])
+async def list_timetable_jobs(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(TimetableJob).where(TimetableJob.org_id == current_user.org_id).order_by(TimetableJob.created_at.desc()))).scalars().all()
+    return {"items": [TimetableJobResponse.model_validate(j).model_dump() for j in rows]}
+
+
+@router.post("/timetabler", status_code=201, dependencies=[_can_write])
+async def create_timetable_job(payload: TimetableJobCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    j = TimetableJob(**payload.model_dump(), status="draft", org_id=current_user.org_id)
+    db.add(j)
+    await db.flush()
+    return TimetableJobResponse.model_validate(j).model_dump()
+
+
+@router.delete("/timetabler/{job_id}", status_code=204, dependencies=[_can_write])
+async def delete_timetable_job(job_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    j = (await db.execute(select(TimetableJob).where(TimetableJob.id == job_id, TimetableJob.org_id == current_user.org_id))).scalar_one_or_none()
+    if not j:
+        raise HTTPException(status_code=404, detail="Timetable job not found.")
+    await db.delete(j)
+
+
+@router.post("/timetabler/{job_id}/generate", response_model=TimetableGenerateResult, dependencies=[_can_write])
+async def generate_timetable(job_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Simplified (beta) auto-fill: round-robin the org's active subjects into each
+    class's LESSON periods for the job's period group. Not a clash optimiser."""
+    from app.models.modules.school import SchoolClass
+    org_id = current_user.org_id
+    job = (await db.execute(select(TimetableJob).where(TimetableJob.id == job_id, TimetableJob.org_id == org_id))).scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Timetable job not found.")
+
+    lessons = subjects = classes = []
+    if job.period_group_id:
+        lq = select(Period).where(Period.period_group_id == job.period_group_id, Period.org_id == org_id, Period.period_type == "LESSON")
+        if job.academic_year:
+            lq = lq.where(Period.academic_year == job.academic_year)
+        lessons = (await db.execute(lq.order_by(Period.day_of_week, Period.sort_order))).scalars().all()
+        subjects = (await db.execute(select(Subject).where(Subject.org_id == org_id, Subject.is_active == True))).scalars().all()  # noqa: E712
+        classes = (await db.execute(select(SchoolClass).where(SchoolClass.org_id == org_id))).scalars().all()
+
+    if not (lessons and subjects and classes):
+        job.status = "failed"
+        await db.flush()
+        return TimetableGenerateResult(status="failed", created=0)
+
+    period_ids = [p.id for p in lessons]
+    existing = (await db.execute(select(PeriodSchedule).where(
+        PeriodSchedule.period_id.in_(period_ids), PeriodSchedule.org_id == org_id))).scalars().all()
+    for s in existing:
+        await db.delete(s)
+    await db.flush()
+
+    created = 0
+    for cls in classes:
+        for i, period in enumerate(lessons):
+            subj = subjects[i % len(subjects)]
+            db.add(PeriodSchedule(period_id=period.id, class_id=cls.id, subject_id=subj.id,
+                                  teacher_id=subj.teacher_id, academic_year=job.academic_year, org_id=org_id))
+            created += 1
+    job.status = "processed"
+    await db.flush()
+    return TimetableGenerateResult(status="processed", created=created)
+
+
+# ── View Subject Student Attendance (filtered history over attendance) ─────────
+
+@router.get("/subject-attendance", response_model=SubjectAttendanceResponse, dependencies=[_can_read])
+async def subject_student_attendance(
+    class_id: str,
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    """A per-student attendance roll-up for a class over a date range. (We capture
+    class/day attendance, not per-lesson; the subject is an informational filter.)"""
+    org_id = current_user.org_id
+    students = (await db.execute(
+        select(Student.id, Student.first_name, Student.last_name)
+        .where(Student.class_id == class_id, Student.org_id == org_id, Student.is_deleted == False)  # noqa: E712
+        .order_by(Student.first_name)
+    )).all()
+
+    aq = (select(AttendanceRecord.student_id, AttendanceRecord.status, func.count(AttendanceRecord.id))
+          .where(AttendanceRecord.class_id == class_id, AttendanceRecord.org_id == org_id))
+    if start_date:
+        aq = aq.where(AttendanceRecord.date >= start_date)
+    if end_date:
+        aq = aq.where(AttendanceRecord.date <= end_date)
+    counts: dict[str, dict[str, int]] = {}
+    for sid, status, n in (await db.execute(aq.group_by(AttendanceRecord.student_id, AttendanceRecord.status))).all():
+        key = status.value if isinstance(status, AttendanceStatus) else str(status)
+        counts.setdefault(sid, {})[key] = n
+
+    dq = select(func.count(func.distinct(AttendanceRecord.date))).where(AttendanceRecord.class_id == class_id, AttendanceRecord.org_id == org_id)
+    if start_date:
+        dq = dq.where(AttendanceRecord.date >= start_date)
+    if end_date:
+        dq = dq.where(AttendanceRecord.date <= end_date)
+    days = (await db.execute(dq)).scalar() or 0
+
+    items = []
+    for sid, fn, ln in students:
+        c = counts.get(sid, {})
+        p, a, l = c.get("present", 0), c.get("absent", 0), c.get("late", 0)
+        items.append(SubjectAttendanceRow(student_id=sid, student_name=f"{fn} {ln}".strip(),
+                                          present=p, absent=a, late=l, total=p + a + l))
+    return SubjectAttendanceResponse(items=items, days=days)

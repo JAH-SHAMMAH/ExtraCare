@@ -163,3 +163,74 @@ class PeriodScheduleResponse(BaseModel):
     teacher_id: Optional[str] = None
     teacher_name: Optional[str] = None
     academic_year: Optional[str] = None
+
+
+# ── Curriculum ────────────────────────────────────────────────────────────────
+
+class CurriculumCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    class_id: Optional[str] = None
+    subject_id: Optional[str] = None
+    file_url: Optional[str] = None
+    academic_year: Optional[str] = None
+
+
+class CurriculumUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    class_id: Optional[str] = None
+    subject_id: Optional[str] = None
+    file_url: Optional[str] = None
+    academic_year: Optional[str] = None
+
+
+class CurriculumResponse(_Orm):
+    id: str
+    class_id: Optional[str]
+    subject_id: Optional[str]
+    subject_name: Optional[str] = None
+    name: str
+    file_url: Optional[str]
+    academic_year: Optional[str]
+    org_id: str
+
+
+# ── Time Tabler ───────────────────────────────────────────────────────────────
+
+class TimetableJobCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    period_group_id: Optional[str] = None
+    academic_year: Optional[str] = None
+    period_type: Optional[str] = None
+
+
+class TimetableJobResponse(_Orm):
+    id: str
+    title: str
+    period_group_id: Optional[str]
+    academic_year: Optional[str]
+    period_type: Optional[str]
+    status: str
+    created_at: object
+    updated_at: object
+    org_id: str
+
+
+class TimetableGenerateResult(BaseModel):
+    status: str
+    created: int
+
+
+# ── Subject attendance (filtered view) ────────────────────────────────────────
+
+class SubjectAttendanceRow(BaseModel):
+    student_id: str
+    student_name: str
+    present: int
+    absent: int
+    late: int
+    total: int
+
+
+class SubjectAttendanceResponse(BaseModel):
+    items: list[SubjectAttendanceRow]
+    days: int
