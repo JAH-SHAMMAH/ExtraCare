@@ -556,10 +556,15 @@ export const clubsApi = {
   create: (data: object) => api.post("/clubs", data).then((r) => r.data),
   update: (id: string, data: object) => api.patch(`/clubs/${id}`, data).then((r) => r.data),
   delete: (id: string) => api.delete(`/clubs/${id}`),
-  members: (id: string) => api.get(`/clubs/${id}/members`).then((r) => r.data),
+  members: (id: string, p?: { academic_year?: string; term?: string }) => api.get(`/clubs/${id}/members`, { params: p }).then((r) => r.data),
   join: (id: string, data: { student_id: string; role?: string }) =>
     api.post(`/clubs/${id}/join`, data).then((r) => r.data),
   leave: (membership_id: string) => api.delete(`/clubs/memberships/${membership_id}`),
+  // Membership List + Enrollment
+  membershipSummary: (p?: { academic_year?: string; term?: string }) => api.get("/clubs/membership-summary", { params: p }).then((r) => r.data),
+  updateMembership: (id: string, data: object) => api.patch(`/clubs/memberships/${id}`, data).then((r) => r.data),
+  enrollmentCandidates: (id: string, p?: { academic_year?: string; term?: string; class_id?: string }) => api.get(`/clubs/${id}/enrollment-candidates`, { params: p }).then((r) => r.data),
+  enroll: (id: string, data: object) => api.post(`/clubs/${id}/enroll`, data).then((r) => r.data),
   // Manage Clubs
   settings: {
     get: () => api.get("/clubs/settings").then((r) => r.data),

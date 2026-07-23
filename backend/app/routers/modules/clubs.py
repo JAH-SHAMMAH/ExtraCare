@@ -18,7 +18,7 @@ from app.database import get_db
 from app.deps import get_current_active_user
 from app.models.user import User
 from app.models.modules.school import (
-    Club, ClubMembership, Student,
+    Club, ClubMembership, Student, SchoolClass,
     ClubSettings, ClubGrade, ClubCoordinator, ClubEnrollmentDeadline,
 )
 from app.schemas.school_experience import (
@@ -36,6 +36,12 @@ from app.schemas.school_experience import (
     ClubCoordinatorResponse,
     ClubDeadlineCreate,
     ClubDeadlineResponse,
+    ClubAccountRow,
+    ClubMemberDetailResponse,
+    ClubMembershipStatusUpdate,
+    ClubEnrollRequest,
+    ClubEnrollResult,
+    ClubEnrollCandidate,
 )
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
@@ -247,6 +253,45 @@ async def delete_club_deadline(deadline_id: str, db: AsyncSession = Depends(get_
     await db.delete(d)
 
 
+# ── Membership List: per-term club account list ───────────────────────────────
+
+@router.get("/membership-summary", dependencies=[_can_read])
+async def club_membership_summary(
+    academic_year: str | None = None,
+    term: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """CLUB ACCOUNT LIST — every club with its active / inactive (withheld) /
+    pending member counts for the selected session + term."""
+    org_id = current_user.org_id
+    clubs = (await db.execute(
+        select(Club).where(Club.org_id == org_id, Club.is_deleted == False).order_by(Club.name)  # noqa: E712
+    )).scalars().all()
+
+    mq = select(ClubMembership.club_id, ClubMembership.status, func.count(ClubMembership.id)).where(ClubMembership.org_id == org_id)
+    if academic_year:
+        mq = mq.where(ClubMembership.academic_year == academic_year)
+    if term:
+        mq = mq.where(ClubMembership.term == term)
+    mq = mq.group_by(ClubMembership.club_id, ClubMembership.status)
+    counts: dict[str, dict[str, int]] = {}
+    for cid, status, n in (await db.execute(mq)).all():
+        counts.setdefault(cid, {})[status] = n
+
+    items = []
+    for c in clubs:
+        cc = counts.get(c.id, {})
+        items.append(ClubAccountRow(
+            club_id=c.id, club_name=c.name, term=term,
+            club_status="ACTIVE" if c.is_active else "INACTIVE",
+            active_members=cc.get("approved", 0),
+            inactive_members=cc.get("withheld", 0),
+            pending_requests=cc.get("pending", 0),
+        ).model_dump())
+    return {"items": items}
+
+
 @router.get("/{club_id}", dependencies=[_can_read])
 async def get_club(
     club_id: str,
@@ -289,19 +334,143 @@ async def delete_club(
 @router.get("/{club_id}/members", dependencies=[_can_read])
 async def list_members(
     club_id: str,
+    academic_year: str | None = None,
+    term: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    await _get_club_or_404(db, club_id, current_user.org_id)
-    result = await db.execute(
-        select(ClubMembership).where(
-            ClubMembership.club_id == club_id,
-            ClubMembership.org_id == current_user.org_id,
-            ClubMembership.is_active == True,
-        )
-    )
-    members = result.scalars().all()
-    return {"items": [ClubMembershipResponse.model_validate(m).model_dump() for m in members]}
+    """Member list for a club (optionally scoped to a session + term), enriched
+    with the student's name and current class."""
+    club = await _get_club_or_404(db, club_id, current_user.org_id)
+    q = (select(ClubMembership, Student.first_name, Student.last_name, SchoolClass.name)
+         .join(Student, Student.id == ClubMembership.student_id)
+         .outerjoin(SchoolClass, SchoolClass.id == Student.class_id)
+         .where(ClubMembership.club_id == club_id, ClubMembership.org_id == current_user.org_id))
+    if academic_year:
+        q = q.where(ClubMembership.academic_year == academic_year)
+    if term:
+        q = q.where(ClubMembership.term == term)
+    rows = (await db.execute(q.order_by(Student.first_name))).all()
+    items = [ClubMemberDetailResponse(
+        id=m.id, student_id=m.student_id, student_name=f"{fn} {ln}".strip(), current_class=cname,
+        club_id=club_id, club_name=club.name, status=m.status, academic_year=m.academic_year, term=m.term,
+    ).model_dump() for m, fn, ln, cname in rows]
+    return {"items": items}
+
+
+@router.patch("/memberships/{membership_id}", dependencies=[_can_write])
+async def update_membership_status(
+    membership_id: str, payload: ClubMembershipStatusUpdate,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    if payload.status not in {"pending", "approved", "withheld"}:
+        raise HTTPException(status_code=422, detail="status must be pending, approved, or withheld.")
+    m = (await db.execute(select(ClubMembership).where(
+        ClubMembership.id == membership_id, ClubMembership.org_id == current_user.org_id))).scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="Membership not found.")
+    m.status = payload.status
+    m.is_active = payload.status == "approved"
+    await db.flush()
+    return {"id": m.id, "status": m.status}
+
+
+@router.get("/{club_id}/enrollment-candidates", dependencies=[_can_read])
+async def enrollment_candidates(
+    club_id: str,
+    academic_year: str | None = None,
+    term: str | None = None,
+    class_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Students eligible to be assigned to a club, each with their current
+    enrolment state for the selected term."""
+    org_id = current_user.org_id
+    await _get_club_or_404(db, club_id, org_id)
+    sq = (select(Student.id, Student.first_name, Student.last_name, SchoolClass.name)
+          .outerjoin(SchoolClass, SchoolClass.id == Student.class_id)
+          .where(Student.org_id == org_id, Student.is_deleted == False, Student.is_active == True))  # noqa: E712
+    if class_id:
+        sq = sq.where(Student.class_id == class_id)
+    students = (await db.execute(sq.order_by(Student.first_name))).all()
+
+    mq = select(ClubMembership).where(ClubMembership.club_id == club_id, ClubMembership.org_id == org_id)
+    if academic_year:
+        mq = mq.where(ClubMembership.academic_year == academic_year)
+    if term:
+        mq = mq.where(ClubMembership.term == term)
+    by_student = {m.student_id: m for m in (await db.execute(mq)).scalars().all()}
+
+    items = []
+    for sid, fn, ln, cname in students:
+        m = by_student.get(sid)
+        items.append(ClubEnrollCandidate(
+            student_id=sid, student_name=f"{fn} {ln}".strip(), current_class=cname,
+            membership_id=m.id if m else None, status=m.status if m else None,
+        ).model_dump())
+    return {"items": items}
+
+
+@router.post("/{club_id}/enroll", dependencies=[_can_write])
+async def enroll_students(
+    club_id: str, payload: ClubEnrollRequest,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    """Assign students to a club for a term. Respects the club capacity and the
+    per-student club limit; new members are approved automatically when the org
+    has auto-approve on, otherwise they land as pending requests."""
+    org_id = current_user.org_id
+    club = await _get_club_or_404(db, club_id, org_id)
+    settings = await _get_or_create_club_settings(db, org_id)
+    default_status = "approved" if settings.auto_approve else "pending"
+
+    # Current active member count for capacity checks (this term).
+    def _term_scope(q):
+        if payload.academic_year:
+            q = q.where(ClubMembership.academic_year == payload.academic_year)
+        if payload.term:
+            q = q.where(ClubMembership.term == payload.term)
+        return q
+
+    active_count = (await db.execute(_term_scope(
+        select(func.count(ClubMembership.id)).where(
+            ClubMembership.club_id == club_id, ClubMembership.org_id == org_id,
+            ClubMembership.status != "withheld")))).scalar() or 0
+
+    enrolled = skipped = 0
+    for sid in payload.student_ids:
+        student = (await db.execute(select(Student).where(Student.id == sid, Student.org_id == org_id))).scalar_one_or_none()
+        if not student:
+            skipped += 1
+            continue
+        # Already a member for this club + term?
+        dup = (await db.execute(_term_scope(select(ClubMembership).where(
+            ClubMembership.club_id == club_id, ClubMembership.student_id == sid, ClubMembership.org_id == org_id)))).scalar_one_or_none()
+        if dup:
+            skipped += 1
+            continue
+        # Capacity.
+        if club.max_members and active_count >= club.max_members:
+            skipped += 1
+            continue
+        # Per-student club limit for the term.
+        student_clubs = (await db.execute(_term_scope(
+            select(func.count(ClubMembership.id)).where(
+                ClubMembership.student_id == sid, ClubMembership.org_id == org_id,
+                ClubMembership.status != "withheld")))).scalar() or 0
+        if settings.club_limit and student_clubs >= settings.club_limit:
+            skipped += 1
+            continue
+        db.add(ClubMembership(
+            club_id=club_id, student_id=sid, org_id=org_id, role="member",
+            status=default_status, is_active=(default_status == "approved"),
+            academic_year=payload.academic_year, term=payload.term,
+        ))
+        enrolled += 1
+        active_count += 1
+    await db.flush()
+    return ClubEnrollResult(enrolled=enrolled, skipped=skipped).model_dump()
 
 
 @router.post("/{club_id}/join", status_code=201, dependencies=[_can_write])

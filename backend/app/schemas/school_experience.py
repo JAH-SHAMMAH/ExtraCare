@@ -407,6 +407,53 @@ class ClubDeadlineResponse(_OrmBase):
     org_id: str
 
 
+# ── Membership List + Club Enrollment ─────────────────────────────────────────
+
+class ClubAccountRow(BaseModel):
+    club_id: str
+    club_name: str
+    term: Optional[str] = None
+    club_status: str            # ACTIVE | INACTIVE
+    active_members: int
+    inactive_members: int
+    pending_requests: int
+
+
+class ClubMemberDetailResponse(BaseModel):
+    id: str                     # membership id
+    student_id: str
+    student_name: Optional[str]
+    current_class: Optional[str]
+    club_id: str
+    club_name: Optional[str]
+    status: str
+    academic_year: Optional[str]
+    term: Optional[str]
+
+
+class ClubMembershipStatusUpdate(BaseModel):
+    status: str                 # pending | approved | withheld
+
+
+class ClubEnrollRequest(BaseModel):
+    student_ids: list[str]
+    academic_year: Optional[str] = None
+    term: Optional[str] = None
+
+
+class ClubEnrollResult(BaseModel):
+    enrolled: int
+    skipped: int
+
+
+class ClubEnrollCandidate(BaseModel):
+    student_id: str
+    student_name: str
+    current_class: Optional[str]
+    membership_id: Optional[str] = None    # set when already enrolled for the term
+    status: Optional[str] = None
+
+
 # ── Journals & Remarks ───────────────────────────────────────────────────────
 
 

@@ -881,3 +881,43 @@ export function useDeleteClubDeadline() {
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to remove deadline."),
   });
 }
+
+// ── Club Membership List + Enrollment ─────────────────────────────────────────
+
+export function useClubMembershipSummary(params: { academic_year?: string; term?: string }) {
+  return useQuery({ queryKey: ["club-membership-summary", params.academic_year, params.term], queryFn: () => clubsApi.membershipSummary(params) });
+}
+export function useClubMembersByTerm(clubId: string | null, params: { academic_year?: string; term?: string }) {
+  return useQuery({ queryKey: ["club-members", clubId, params.academic_year, params.term], queryFn: () => clubsApi.members(clubId as string, params), enabled: !!clubId });
+}
+export function useUpdateMembershipStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) => clubsApi.updateMembership(id, { status }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["club-members"] }); qc.invalidateQueries({ queryKey: ["club-membership-summary"] }); toast.success("Membership updated."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update membership."),
+  });
+}
+export function useEnrollmentCandidates(clubId: string | null, params: { academic_year?: string; term?: string; class_id?: string }) {
+  return useQuery({
+    queryKey: ["club-enroll-candidates", clubId, params.academic_year, params.term, params.class_id],
+    queryFn: () => clubsApi.enrollmentCandidates(clubId as string, params),
+    enabled: !!clubId,
+  });
+}
+export function useEnrollStudents() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => clubsApi.enroll(id, data),
+    onSuccess: (r: any) => { qc.invalidateQueries({ queryKey: ["club-enroll-candidates"] }); qc.invalidateQueries({ queryKey: ["club-membership-summary"] }); toast.success(`Enrolled ${r?.enrolled ?? 0} student(s)${r?.skipped ? `, ${r.skipped} skipped` : ""}.`); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to enroll."),
+  });
+}
+export function useUnenrollMembership() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (membershipId: string) => clubsApi.leave(membershipId),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["club-enroll-candidates"] }); qc.invalidateQueries({ queryKey: ["club-membership-summary"] }); toast.success("Removed from club."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to remove."),
+  });
+}

@@ -11,7 +11,7 @@ import {
   FileText, Wallet, Clock, UserCheck, Award,
   BookMarked, School, Microscope, Pill, BedDouble, Activity,
   Receipt, BadgeDollarSign, FolderOpen, BarChart, Star,
-  UserCog, ShoppingCart, Truck, Contact, HandshakeIcon,
+  UserCog, ShoppingCart, Truck, Contact, HandshakeIcon, UserPlus,
   User, NotebookPen, MonitorCheck, HeartHandshake, MessageSquare,
   Camera, MessageCircle, Users as UsersIcon, UserCircle, Cake,
   CalendarClock, Gavel, ShieldAlert, Fingerprint, Newspaper, Radio, Library, Bus, ArrowLeftRight, UserMinus, UserX,
@@ -323,7 +323,9 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: Users2,
     items: [
       { href: "/dashboard/modules/school/clubs", label: "Manage Clubs", icon: Users2 },
-      // Membership List / Club Enrollment / Club Assessment land in the next batches.
+      { href: "/dashboard/modules/school/clubs/membership", label: "Membership List", icon: ClipboardList },
+      { href: "/dashboard/modules/school/clubs/enrollment", label: "Club Enrollment", icon: UserPlus },
+      // Club Assessment lands in the next batch.
     ],
   },
   {

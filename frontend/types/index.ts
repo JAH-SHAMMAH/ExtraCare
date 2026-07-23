@@ -520,6 +520,36 @@ export interface ClubDeadline {
   org_id: string;
 }
 
+export interface ClubAccountRow {
+  club_id: string;
+  club_name: string;
+  term: string | null;
+  club_status: string;
+  active_members: number;
+  inactive_members: number;
+  pending_requests: number;
+}
+
+export interface ClubMemberDetail {
+  id: string;
+  student_id: string;
+  student_name: string | null;
+  current_class: string | null;
+  club_id: string;
+  club_name: string | null;
+  status: string;
+  academic_year: string | null;
+  term: string | null;
+}
+
+export interface ClubEnrollCandidate {
+  student_id: string;
+  student_name: string;
+  current_class: string | null;
+  membership_id: string | null;
+  status: string | null;
+}
+
 export interface PhotoJournal {
   id: string;
   title: string;

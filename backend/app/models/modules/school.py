@@ -852,6 +852,10 @@ class ClubMembership(Base, UUIDMixin, TimestampMixin, TenantMixin):
     joined_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     role = Column(String(50), default="member")  # member, president, secretary
     is_active = Column(Boolean, default=True)
+    # Term-scoped enrolment + approval workflow (Educare Membership List).
+    status = Column(String(20), default="approved", nullable=False)  # pending | approved | withheld
+    academic_year = Column(String(20), nullable=True)                # e.g. "2025/2026"
+    term = Column(String(40), nullable=True)                         # e.g. "SPRING"
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 
