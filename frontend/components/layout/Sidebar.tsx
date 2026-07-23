@@ -187,6 +187,20 @@ const MODULE_SECTIONS: ModuleSection[] = [
     ],
   },
   {
+    // PocketMoney Manager — its own top-level module (Educare parity). Student-level
+    // pocket money on the existing ledger-backed StudentWallet: the wallet overview,
+    // the purchasable item catalogue, and the New Transaction (itemised spend).
+    key: "pocketmoney-manager",
+    requiredModule: "school",
+    label: "PocketMoney Manager",
+    icon: BadgeDollarSign,
+    items: [
+      { href: "/dashboard/modules/school/pocketmoney", label: "PocketMoney", icon: BadgeDollarSign },
+      { href: "/dashboard/modules/school/pocketmoney/items", label: "PocketMoney Items", icon: ShoppingCart },
+      { href: "/dashboard/modules/school/pocketmoney/new", label: "New Transaction", icon: Receipt },
+    ],
+  },
+  {
     // CBT — its own top-level module (Educare parity). These were already distinct
     // routes under Academics; grouped here. Educare children we have no page for
     // yet (Test Remark, Test Export, CBT Import, CBT Reset) are omitted, not dead-linked.
@@ -432,8 +446,8 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/tuckshop", label: "Tuckshop", icon: ShoppingCart },
       { href: "/dashboard/modules/school/sms", label: "Bulk SMS", icon: MessageSquare },
       // Batch 6 (money features) — shipped: ledger-backed student money.
-      // Wallet Manager now lives in its own top-level section (see wallet-manager).
-      { href: "/dashboard/modules/school/pocketmoney", label: "PocketMoney", icon: BadgeDollarSign },
+      // Wallet Manager + PocketMoney now live in their own top-level sections
+      // (see wallet-manager / pocketmoney-manager).
       // Batch 6 (non-financial) — shipped. Calendar → school:read; Facility +
       // Visitor (safeguarding) → school_admin:read.
       { href: "/dashboard/modules/school/calendar", label: "Calendar & Planner", icon: Calendar },

@@ -7,6 +7,7 @@ import type {
   StudentWallet, WalletDetail, CooperativeMember, CoopMemberDetail, Reconciliation, Paginated,
   WalletSummary, WalletSettings,
   ParentWallet, ParentWalletDetail, ParentWalletSummary, ParentWalletSettings,
+  PocketMoneyItem, PocketMoneyTxn,
 } from "@/types";
 
 function inv(qc: ReturnType<typeof useQueryClient>, keys: string[]) {
@@ -83,6 +84,47 @@ export function useUpdateParentWalletSettings() {
     mutationFn: (data: object) => walletApi.parent.settings.update(data),
     onSuccess: () => { inv(qc, ["parent-wallets"]); toast.success("Wallet settings saved."); },
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save settings."),
+  });
+}
+
+// ── PocketMoney Manager ───────────────────────────────────────────────────────
+
+export function usePocketMoneyItems(activeOnly = false) {
+  return useQuery<PocketMoneyItem[]>({ queryKey: ["pm-items", activeOnly], queryFn: () => walletApi.pocketmoney.items(activeOnly) });
+}
+export function useCreatePMItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => walletApi.pocketmoney.createItem(data),
+    onSuccess: () => { inv(qc, ["pm-items"]); toast.success("Item added."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to add item."),
+  });
+}
+export function useUpdatePMItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => walletApi.pocketmoney.updateItem(id, data),
+    onSuccess: () => { inv(qc, ["pm-items"]); toast.success("Item updated."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update item."),
+  });
+}
+export function useDeletePMItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => walletApi.pocketmoney.deleteItem(id),
+    onSuccess: () => { inv(qc, ["pm-items"]); toast.success("Item removed."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to remove item."),
+  });
+}
+export function usePocketMoneyTransactions() {
+  return useQuery<Paginated<PocketMoneyTxn>>({ queryKey: ["pm-txns"], queryFn: () => walletApi.pocketmoney.transactions({ page_size: 100 }) });
+}
+export function useCreatePMTransaction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => walletApi.pocketmoney.createTransaction(data),
+    onSuccess: () => { inv(qc, ["pm-txns", "wallets"]); toast.success("Transaction recorded."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to record transaction."),
   });
 }
 export function useCreateWallet() {

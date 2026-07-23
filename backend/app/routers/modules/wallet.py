@@ -30,7 +30,9 @@ from app.core.permissions import PermissionChecker
 from app.models.user import User
 from app.models.modules.school import Student, SchoolClass
 from app.models.modules.finance import LedgerAccount, JournalEntry, JournalLine
-from app.models.modules.wallet import StudentWallet, WalletEntry, CooperativeMember, CoopEntry, WalletSettings
+from app.models.modules.wallet import (
+    StudentWallet, WalletEntry, CooperativeMember, CoopEntry, WalletSettings, PocketMoneyItem,
+)
 from app.schemas.wallet import (
     WalletCreate, WalletUpdate, WalletResponse, WalletListResponse,
     WalletEntryResponse, WalletDetailResponse,
@@ -39,6 +41,8 @@ from app.schemas.wallet import (
     CoopMemberCreate, CoopMemberResponse, CoopMemberListResponse,
     CoopEntryResponse, CoopMemberDetailResponse, CoopMoveRequest,
     ReconciliationResponse,
+    PocketMoneyItemCreate, PocketMoneyItemUpdate, PocketMoneyItemResponse,
+    PocketMoneyTxnCreate, PocketMoneyTxnResponse, PocketMoneyTxnListResponse,
 )
 from app.services import ledger
 from app.services.ledger import money
@@ -394,6 +398,121 @@ async def update_wallet_settings(payload: WalletSettingsUpdate, db: AsyncSession
         s.allow_topup = data["allow_topup"]
     await db.flush()
     return _wallet_settings_response(s)
+
+
+# ── PocketMoney Manager (item catalogue + itemised spend transactions) ─────────
+
+def _pm_item_response(i: PocketMoneyItem) -> PocketMoneyItemResponse:
+    return PocketMoneyItemResponse(id=i.id, name=i.name, unit_price=float(i.unit_price), is_active=i.is_active, org_id=i.org_id)
+
+
+@router.get("/pocketmoney-items", response_model=list[PocketMoneyItemResponse], dependencies=[_fin_read])
+async def list_pocketmoney_items(active_only: bool = Query(default=False),
+                                 db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = select(PocketMoneyItem).where(PocketMoneyItem.org_id == current_user.org_id)
+    if active_only:
+        q = q.where(PocketMoneyItem.is_active == True)  # noqa: E712
+    rows = (await db.execute(q.order_by(PocketMoneyItem.name))).scalars().all()
+    return [_pm_item_response(i) for i in rows]
+
+
+@router.post("/pocketmoney-items", response_model=PocketMoneyItemResponse, status_code=201, dependencies=[_fin_write])
+async def create_pocketmoney_item(payload: PocketMoneyItemCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    i = PocketMoneyItem(name=payload.name.strip(), unit_price=money(payload.unit_price), is_active=payload.is_active, org_id=current_user.org_id)
+    db.add(i)
+    await db.flush()
+    return _pm_item_response(i)
+
+
+async def _load_pm_item(db, item_id, org_id) -> PocketMoneyItem:
+    i = (await db.execute(select(PocketMoneyItem).where(PocketMoneyItem.id == item_id, PocketMoneyItem.org_id == org_id))).scalar_one_or_none()
+    if not i:
+        raise HTTPException(status_code=404, detail="Item not found.")
+    return i
+
+
+@router.patch("/pocketmoney-items/{item_id}", response_model=PocketMoneyItemResponse, dependencies=[_fin_write])
+async def update_pocketmoney_item(item_id: str, payload: PocketMoneyItemUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    i = await _load_pm_item(db, item_id, current_user.org_id)
+    data = payload.model_dump(exclude_unset=True)
+    if "name" in data and data["name"]:
+        i.name = data["name"].strip()
+    if "unit_price" in data and data["unit_price"] is not None:
+        i.unit_price = money(data["unit_price"])
+    if "is_active" in data:
+        i.is_active = data["is_active"]
+    await db.flush()
+    return _pm_item_response(i)
+
+
+@router.delete("/pocketmoney-items/{item_id}", status_code=204, dependencies=[_fin_write])
+async def delete_pocketmoney_item(item_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    i = await _load_pm_item(db, item_id, current_user.org_id)
+    await db.delete(i)
+    await db.flush()
+
+
+@router.get("/pocketmoney-transactions", response_model=PocketMoneyTxnListResponse, dependencies=[_fin_read])
+async def list_pocketmoney_transactions(
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    """Pocket-money spend transactions — the SPEND subledger of the student wallets."""
+    org_id = current_user.org_id
+    base = (select(WalletEntry, JournalEntry.reversed_at, Student.first_name, Student.last_name)
+            .outerjoin(JournalEntry, JournalEntry.id == WalletEntry.journal_entry_id)
+            .outerjoin(Student, Student.id == WalletEntry.student_id)
+            .where(WalletEntry.org_id == org_id, WalletEntry.kind == "spend"))
+    total = (await db.execute(select(func.count()).select_from(
+        select(WalletEntry.id).where(WalletEntry.org_id == org_id, WalletEntry.kind == "spend").subquery()))).scalar() or 0
+    rows = (await db.execute(base.order_by(WalletEntry.created_at.desc()).offset((page - 1) * page_size).limit(page_size))).all()
+    items = [PocketMoneyTxnResponse(
+        id=e.id, student_name=(f"{fn} {ln}".strip() if fn else None), amount=float(-e.signed_amount),
+        memo=e.memo, journal_entry_id=e.journal_entry_id, reversed=rev is not None, created_at=e.created_at,
+    ) for e, rev, fn, ln in rows]
+    return PocketMoneyTxnListResponse(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.post("/pocketmoney-transactions", response_model=PocketMoneyTxnResponse, status_code=201, dependencies=[_spend])
+async def create_pocketmoney_transaction(payload: PocketMoneyTxnCreate, request: Request = None,
+                                         db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """New Transaction — buy items (or a direct amount) → records a SPEND against the
+    student's wallet through the existing ledger path (no-overdraw + daily-limit guards)."""
+    w = await _load_wallet(db, payload.wallet_id, current_user.org_id)
+    if not w.is_active:
+        raise HTTPException(status_code=409, detail="Wallet is inactive.")
+
+    # Resolve amount + memo from items, or fall back to a direct amount.
+    amount = money(0)
+    memo_parts: list[str] = []
+    if payload.lines:
+        for line in payload.lines:
+            item = await _load_pm_item(db, line.item_id, current_user.org_id)
+            amount += money(item.unit_price) * line.qty
+            memo_parts.append(f"{item.name} x{line.qty}")
+    elif payload.amount is not None:
+        amount = money(payload.amount)
+    if amount <= 0:
+        raise HTTPException(status_code=422, detail="Transaction amount must be greater than zero.")
+
+    entry_date = payload.txn_date or datetime.now(timezone.utc).date()
+    if amount > await _wallet_balance(db, current_user.org_id, w.student_id):
+        raise HTTPException(status_code=422, detail="Insufficient wallet balance.")   # no-overdraw
+    if w.spend_limit_daily is not None:
+        spent = await _spent_on(db, current_user.org_id, w.student_id, entry_date)
+        if spent + amount > money(w.spend_limit_daily):
+            raise HTTPException(status_code=422, detail=f"Daily spend limit reached ({money(w.spend_limit_daily)}).")
+
+    income = await _require_account(db, current_user.org_id, payload.income_account_id, must_type="income")
+    float_acct = await _ensure_account(db, current_user.org_id, WALLET_FLOAT_CODE, "Student Wallet Float", "liability")
+    memo = payload.memo or (", ".join(memo_parts) if memo_parts else "PocketMoney purchase")
+    we = await _post_wallet_move(db, current_user, w, "spend", amount,
+                                 [{"account_id": float_acct.id, "debit": amount, "credit": 0, "description": "PocketMoney spend"},
+                                  {"account_id": income.id, "debit": 0, "credit": amount, "description": memo}],
+                                 entry_date, memo, request)
+    name = await _student_name(db, current_user.org_id, w.student_id)
+    return PocketMoneyTxnResponse(id=we.id, student_name=name, amount=float(amount), memo=memo,
+                                  journal_entry_id=we.journal_entry_id, reversed=False, created_at=we.created_at)
 
 
 # ── Cooperative ───────────────────────────────────────────────────────────────

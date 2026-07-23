@@ -120,6 +120,21 @@ class ParentWalletSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
 
 
+class PocketMoneyItem(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A purchasable pocket-money item (canteen/tuck-shop catalogue). Used to
+    compose a New Transaction — buying items records a SPEND against the student's
+    StudentWallet through the existing ledger-backed spend path."""
+    __tablename__ = "pocket_money_items"
+
+    name = Column(String(150), nullable=False)
+    unit_price = Column(Numeric(14, 2), nullable=False, default=0)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    __table_args__ = (
+        Index("ix_pocket_money_items_org", "org_id"),
+    )
+
+
 class CooperativeMember(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A cooperative member. Their contributions are funds held on their behalf
     (a liability), not school income."""

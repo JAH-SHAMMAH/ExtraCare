@@ -171,6 +171,59 @@ class ParentWalletInitializeResponse(BaseModel):
     total_parents: int
 
 
+# ── PocketMoney Manager ───────────────────────────────────────────────────────
+
+class PocketMoneyItemCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+    unit_price: Decimal = Field(ge=0)
+    is_active: bool = True
+
+
+class PocketMoneyItemUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=150)
+    unit_price: Optional[Decimal] = Field(default=None, ge=0)
+    is_active: Optional[bool] = None
+
+
+class PocketMoneyItemResponse(BaseModel):
+    id: str
+    name: str
+    unit_price: float
+    is_active: bool
+    org_id: str
+
+
+class PocketMoneyTxnLine(BaseModel):
+    item_id: str
+    qty: int = Field(gt=0)
+
+
+class PocketMoneyTxnCreate(BaseModel):
+    wallet_id: str
+    income_account_id: str
+    lines: list[PocketMoneyTxnLine] = []     # itemised purchase
+    amount: Optional[Decimal] = None         # or a direct amount (when no items)
+    memo: Optional[str] = None
+    txn_date: Optional[date] = None
+
+
+class PocketMoneyTxnResponse(BaseModel):
+    id: str                      # the wallet entry id
+    student_name: Optional[str]
+    amount: float                # positive spend amount
+    memo: Optional[str]
+    journal_entry_id: Optional[str]
+    reversed: bool
+    created_at: datetime
+
+
+class PocketMoneyTxnListResponse(BaseModel):
+    items: list[PocketMoneyTxnResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 class TopUpRequest(BaseModel):
     amount: Decimal = Field(gt=0)
     cash_account_id: str

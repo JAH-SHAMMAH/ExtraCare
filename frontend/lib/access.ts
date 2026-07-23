@@ -173,6 +173,8 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // spend surface → the dedicated wallet:spend scope (till staff + finance roles).
   { prefix: "/dashboard/modules/school/wallet", permission: "payments:write" },
   { prefix: "/dashboard/modules/school/pocketmoney", permission: "wallet:spend" },
+  // Managing the item catalogue is an admin action (create/price items).
+  { prefix: "/dashboard/modules/school/pocketmoney/items", permission: "payments:write" },
   { prefix: "/dashboard/modules/school/cooperative", permission: "payments:write" },
 
   // ── Batch 6 non-financial ──────────────────────────────────────────────

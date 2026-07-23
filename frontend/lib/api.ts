@@ -1297,6 +1297,14 @@ export const walletApi = {
       update: (data: object) => api.put("/finance/parent-wallet-settings", data).then((r) => r.data),
     },
   },
+  pocketmoney: {
+    items: (active_only?: boolean) => api.get("/finance/pocketmoney-items", { params: active_only ? { active_only: true } : undefined }).then((r) => r.data),
+    createItem: (data: object) => api.post("/finance/pocketmoney-items", data).then((r) => r.data),
+    updateItem: (id: string, data: object) => api.patch(`/finance/pocketmoney-items/${id}`, data).then((r) => r.data),
+    deleteItem: (id: string) => api.delete(`/finance/pocketmoney-items/${id}`),
+    transactions: (p?: { page?: number; page_size?: number }) => api.get("/finance/pocketmoney-transactions", { params: p }).then((r) => r.data),
+    createTransaction: (data: object) => api.post("/finance/pocketmoney-transactions", data).then((r) => r.data),
+  },
   cooperative: {
     members: (p?: { page?: number; page_size?: number }) => api.get("/finance/cooperative/members", { params: p }).then((r) => r.data),
     getMember: (id: string) => api.get(`/finance/cooperative/members/${id}`).then((r) => r.data),

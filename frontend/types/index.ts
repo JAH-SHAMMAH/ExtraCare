@@ -2148,6 +2148,26 @@ export interface ParentWalletSettings {
   org_id: string;
 }
 
+// ── PocketMoney Manager ───────────────────────────────────────────────────────
+
+export interface PocketMoneyItem {
+  id: string;
+  name: string;
+  unit_price: number;
+  is_active: boolean;
+  org_id: string;
+}
+
+export interface PocketMoneyTxn {
+  id: string;
+  student_name: string | null;
+  amount: number;
+  memo: string | null;
+  journal_entry_id: string | null;
+  reversed: boolean;
+  created_at: string;
+}
+
 export interface WalletEntry {
   id: string;
   kind: string;
