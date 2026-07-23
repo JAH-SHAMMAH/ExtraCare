@@ -344,6 +344,69 @@ class ClubMembershipResponse(_OrmBase):
     is_active: bool
 
 
+# ── Manage Clubs: settings / grades / coordinators / deadlines ────────────────
+
+class ClubSettingsResponse(_OrmBase):
+    club_limit: int
+    auto_approve: bool
+    term_based_activities: bool
+    org_id: str
+
+
+class ClubSettingsUpdate(BaseModel):
+    club_limit: Optional[int] = Field(default=None, ge=1)
+    auto_approve: Optional[bool] = None
+    term_based_activities: Optional[bool] = None
+
+
+class ClubGradeCreate(BaseModel):
+    grade_letter: str = Field(min_length=1, max_length=10)
+    grade_point: Optional[float] = None
+    remarks: Optional[str] = None
+
+
+class ClubGradeUpdate(BaseModel):
+    grade_letter: Optional[str] = Field(default=None, min_length=1, max_length=10)
+    grade_point: Optional[float] = None
+    remarks: Optional[str] = None
+
+
+class ClubGradeResponse(_OrmBase):
+    id: str
+    grade_letter: str
+    grade_point: Optional[float]
+    remarks: Optional[str]
+    org_id: str
+
+
+class ClubCoordinatorCreate(BaseModel):
+    coordinator_id: str
+    club_id: str
+
+
+class ClubCoordinatorResponse(_OrmBase):
+    id: str
+    coordinator_id: str
+    coordinator_name: Optional[str] = None
+    club_id: str
+    club_name: Optional[str] = None
+    org_id: str
+
+
+class ClubDeadlineCreate(BaseModel):
+    academic_year: Optional[str] = None
+    term: str = Field(min_length=1, max_length=40)
+    deadline: date
+
+
+class ClubDeadlineResponse(_OrmBase):
+    id: str
+    academic_year: Optional[str]
+    term: str
+    deadline: date
+    org_id: str
+
+
 # ── Journals & Remarks ───────────────────────────────────────────────────────
 
 

@@ -300,7 +300,6 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: HeartHandshake,
     items: [
       { href: "/dashboard/modules/school/behaviour", label: "Pastoral Care", icon: HeartHandshake },
-      { href: "/dashboard/modules/school/clubs", label: "Clubs & Activities", icon: Users2 },
       { href: "/dashboard/modules/school/journals", label: "Photo Journals", icon: Camera },
       { href: "/dashboard/modules/school/remarks", label: "Weekly Remarks", icon: MessageCircle },
       // Batch 3 — shipped. Merit & Awards (conduct points + academic awards),
@@ -312,6 +311,19 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/hostel", label: "Hostel / Boarding", icon: BedDouble },
       { href: "/dashboard/modules/school/exeat", label: "Exeat Requests", icon: FileText },
       { href: "/dashboard/modules/school/mentor", label: "Mentor Reports", icon: UserCheck },
+    ],
+  },
+  {
+    // Clubs — its own top-level module (Educare parity). Manage Clubs (clubs +
+    // grades + coordinators + deadlines), Membership List, Club Enrollment, and
+    // Club Assessment. Gated school:clubs:read/write.
+    key: "clubs",
+    requiredModule: "school",
+    label: "Clubs",
+    icon: Users2,
+    items: [
+      { href: "/dashboard/modules/school/clubs", label: "Manage Clubs", icon: Users2 },
+      // Membership List / Club Enrollment / Club Assessment land in the next batches.
     ],
   },
   {

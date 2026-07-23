@@ -802,3 +802,82 @@ export function useStudentAttendanceHistory(student_id: string, start_date?: str
     enabled: !!student_id,
   });
 }
+
+// ── Manage Clubs (settings / grades / coordinators / deadlines) ───────────────
+
+export function useClubSettings() {
+  return useQuery({ queryKey: ["club-settings"], queryFn: () => clubsApi.settings.get() });
+}
+export function useUpdateClubSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => clubsApi.settings.update(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["club-settings"] }); toast.success("Club settings saved."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save settings."),
+  });
+}
+export function useClubGrades() {
+  return useQuery({ queryKey: ["club-grades"], queryFn: () => clubsApi.grades.list() });
+}
+export function useCreateClubGrade() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => clubsApi.grades.create(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["club-grades"] }); toast.success("Grade added."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to add grade."),
+  });
+}
+export function useUpdateClubGrade() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => clubsApi.grades.update(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["club-grades"] }); toast.success("Grade updated."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update grade."),
+  });
+}
+export function useDeleteClubGrade() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => clubsApi.grades.delete(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["club-grades"] }); toast.success("Grade removed."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to remove grade."),
+  });
+}
+export function useClubCoordinators() {
+  return useQuery({ queryKey: ["club-coordinators"], queryFn: () => clubsApi.coordinators.list() });
+}
+export function useCreateClubCoordinator() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => clubsApi.coordinators.create(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["club-coordinators"] }); toast.success("Coordinator assigned."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to assign coordinator."),
+  });
+}
+export function useDeleteClubCoordinator() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => clubsApi.coordinators.delete(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["club-coordinators"] }); toast.success("Coordinator removed."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to remove coordinator."),
+  });
+}
+export function useClubDeadlines() {
+  return useQuery({ queryKey: ["club-deadlines"], queryFn: () => clubsApi.deadlines.list() });
+}
+export function useCreateClubDeadline() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => clubsApi.deadlines.create(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["club-deadlines"] }); toast.success("Deadline added."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to add deadline."),
+  });
+}
+export function useDeleteClubDeadline() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => clubsApi.deadlines.delete(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["club-deadlines"] }); toast.success("Deadline removed."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to remove deadline."),
+  });
+}

@@ -488,6 +488,38 @@ export interface ClubMembership {
   is_active: boolean;
 }
 
+export interface ClubSettings {
+  club_limit: number;
+  auto_approve: boolean;
+  term_based_activities: boolean;
+  org_id: string;
+}
+
+export interface ClubGrade {
+  id: string;
+  grade_letter: string;
+  grade_point: number | null;
+  remarks: string | null;
+  org_id: string;
+}
+
+export interface ClubCoordinator {
+  id: string;
+  coordinator_id: string;
+  coordinator_name: string | null;
+  club_id: string;
+  club_name: string | null;
+  org_id: string;
+}
+
+export interface ClubDeadline {
+  id: string;
+  academic_year: string | null;
+  term: string;
+  deadline: string;
+  org_id: string;
+}
+
 export interface PhotoJournal {
   id: string;
   title: string;

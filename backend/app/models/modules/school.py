@@ -855,6 +855,53 @@ class ClubMembership(Base, UUIDMixin, TimestampMixin, TenantMixin):
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 
+# ── Clubs: management (settings, grades, coordinators, deadlines) ──────────────
+# Educare "Manage Clubs" tabs. All org-scoped; the session/term string comes from
+# AcademicSession (name + term).
+
+class ClubSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Per-org Clubs configuration (Manage Clubs → Club List header)."""
+    __tablename__ = "club_settings"
+
+    club_limit = Column(Integer, default=3, nullable=False)          # max clubs a student may join
+    auto_approve = Column(Boolean, default=False, nullable=False)    # approve enrolments automatically
+    term_based_activities = Column(Boolean, default=False, nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
+
+
+class ClubGrade(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A club-assessment grade band (Manage Clubs → Club Grade)."""
+    __tablename__ = "club_grades"
+
+    grade_letter = Column(String(10), nullable=False)   # e.g. "A"
+    grade_point = Column(Float, nullable=True)          # e.g. 5.0
+    remarks = Column(String(200), nullable=True)        # e.g. "Excellent"
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+
+class ClubCoordinator(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A staff coordinator assigned to a club (Manage Clubs → Club Coordinator)."""
+    __tablename__ = "club_coordinators"
+
+    coordinator_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    club_id = Column(String(36), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False, index=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "coordinator_id", "club_id", name="uq_club_coordinator"),
+    )
+
+
+class ClubEnrollmentDeadline(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """The enrolment deadline for a term (Manage Clubs → Enrollment Deadline)."""
+    __tablename__ = "club_enrollment_deadlines"
+
+    academic_year = Column(String(20), nullable=True)   # e.g. "2025/2026"
+    term = Column(String(40), nullable=False)           # e.g. "SPRING" / "Term 2"
+    deadline = Column(Date, nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+
 # ── Photo Journals ───────────────────────────────────────────────────────────
 
 

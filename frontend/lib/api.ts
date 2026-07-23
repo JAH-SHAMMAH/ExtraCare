@@ -560,6 +560,27 @@ export const clubsApi = {
   join: (id: string, data: { student_id: string; role?: string }) =>
     api.post(`/clubs/${id}/join`, data).then((r) => r.data),
   leave: (membership_id: string) => api.delete(`/clubs/memberships/${membership_id}`),
+  // Manage Clubs
+  settings: {
+    get: () => api.get("/clubs/settings").then((r) => r.data),
+    update: (data: object) => api.put("/clubs/settings", data).then((r) => r.data),
+  },
+  grades: {
+    list: () => api.get("/clubs/grades").then((r) => r.data),
+    create: (data: object) => api.post("/clubs/grades", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/clubs/grades/${id}`, data).then((r) => r.data),
+    delete: (id: string) => api.delete(`/clubs/grades/${id}`),
+  },
+  coordinators: {
+    list: () => api.get("/clubs/coordinators").then((r) => r.data),
+    create: (data: object) => api.post("/clubs/coordinators", data).then((r) => r.data),
+    delete: (id: string) => api.delete(`/clubs/coordinators/${id}`),
+  },
+  deadlines: {
+    list: () => api.get("/clubs/deadlines").then((r) => r.data),
+    create: (data: object) => api.post("/clubs/deadlines", data).then((r) => r.data),
+    delete: (id: string) => api.delete(`/clubs/deadlines/${id}`),
+  },
 };
 
 // Bulk SMS (Phase 6.6). Admin-only on the backend; the UI hides the nav
