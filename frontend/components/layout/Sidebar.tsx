@@ -11,7 +11,7 @@ import {
   FileText, Wallet, Clock, UserCheck, Award,
   BookMarked, School, Microscope, Pill, BedDouble, Activity,
   Receipt, BadgeDollarSign, FolderOpen, BarChart, Star,
-  UserCog, ShoppingCart, Truck, Contact, HandshakeIcon, UserPlus, Palette,
+  UserCog, ShoppingCart, Truck, Contact, HandshakeIcon, UserPlus, Palette, CalendarRange,
   User, NotebookPen, MonitorCheck, HeartHandshake, MessageSquare,
   Camera, MessageCircle, Users as UsersIcon, UserCircle, Cake,
   CalendarClock, Gavel, ShieldAlert, Fingerprint, Newspaper, Radio, Library, Bus, ArrowLeftRight, UserMinus, UserX,
@@ -136,7 +136,9 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: Calendar,
     items: [
       { href: "/dashboard/modules/school/timetable/setup", label: "TimeTable Setup", icon: Settings2 },
+      { href: "/dashboard/modules/school/timetable/periods", label: "Manage Periods", icon: Clock },
       { href: "/dashboard/modules/school/timetable/activities", label: "Manage Activities", icon: Palette },
+      { href: "/dashboard/modules/school/timetable/schedules", label: "Manage Schedules", icon: CalendarRange },
     ],
   },
   {

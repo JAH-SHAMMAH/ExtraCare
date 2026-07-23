@@ -592,6 +592,29 @@ export interface SchoolActivity {
   org_id: string;
 }
 
+export interface Period {
+  id: string;
+  period_group_id: string;
+  academic_year: string | null;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  period_type: string;
+  sort_order: number;
+  org_id: string;
+}
+
+export interface PeriodSchedule {
+  id: string;
+  period_id: string;
+  class_id: string;
+  subject_id: string;
+  subject_name: string | null;
+  teacher_id: string | null;
+  teacher_name: string | null;
+  academic_year: string | null;
+}
+
 export interface PhotoJournal {
   id: string;
   title: string;

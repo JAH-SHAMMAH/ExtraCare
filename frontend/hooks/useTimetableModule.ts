@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { timetableApi } from "@/lib/api";
-import type { TimetableSettings, PeriodGroup, SubjectGroup, SchoolActivity } from "@/types";
+import type { TimetableSettings, PeriodGroup, SubjectGroup, SchoolActivity, Period, PeriodSchedule } from "@/types";
 
 function mut<V>(fn: (v: V) => Promise<any>, keys: string[], ok: string) {
   return function useM() {
@@ -45,3 +45,27 @@ export function useActivities() {
 export const useCreateActivity = mut<object>((d) => timetableApi.activities.create(d), ["tt-activities"], "Activity added.");
 export const useUpdateActivity = mut<{ id: string; data: object }>((v) => timetableApi.activities.update(v.id, v.data), ["tt-activities"], "Updated.");
 export const useDeleteActivity = mut<string>((id) => timetableApi.activities.delete(id), ["tt-activities"], "Removed.");
+
+// ── Periods ─────────────────────────────────────────────────────────────────────
+export function usePeriods(params: { period_group_id: string | null; academic_year?: string }) {
+  return useQuery<{ items: Period[] }>({
+    queryKey: ["tt-periods", params.period_group_id, params.academic_year],
+    queryFn: () => timetableApi.periods.list({ period_group_id: params.period_group_id as string, academic_year: params.academic_year }),
+    enabled: !!params.period_group_id,
+  });
+}
+export const useCreatePeriod = mut<object>((d) => timetableApi.periods.create(d), ["tt-periods"], "Period added.");
+export const useUpdatePeriod = mut<{ id: string; data: object }>((v) => timetableApi.periods.update(v.id, v.data), ["tt-periods"], "Updated.");
+export const useDeletePeriod = mut<string>((id) => timetableApi.periods.delete(id), ["tt-periods"], "Removed.");
+export const useGeneratePeriods = mut<object>((d) => timetableApi.periods.generate(d), ["tt-periods"], "Periods generated.");
+
+// ── Schedules ───────────────────────────────────────────────────────────────────
+export function useSchedules(params: { period_group_id: string | null; academic_year?: string }) {
+  return useQuery<{ items: PeriodSchedule[] }>({
+    queryKey: ["tt-schedules", params.period_group_id, params.academic_year],
+    queryFn: () => timetableApi.schedules.list({ period_group_id: params.period_group_id as string, academic_year: params.academic_year }),
+    enabled: !!params.period_group_id,
+  });
+}
+export const useUpsertSchedule = mut<object>((d) => timetableApi.schedules.upsert(d), ["tt-schedules"], "Schedule saved.");
+export const useDeleteSchedule = mut<string>((id) => timetableApi.schedules.delete(id), ["tt-schedules"], "Removed.");

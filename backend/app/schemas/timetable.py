@@ -89,3 +89,77 @@ class SchoolActivityResponse(_Orm):
     name: str
     color: Optional[str]
     org_id: str
+
+
+# ── Periods ───────────────────────────────────────────────────────────────────
+
+class PeriodCreate(BaseModel):
+    period_group_id: str
+    academic_year: Optional[str] = None
+    day_of_week: int = Field(ge=0, le=6)
+    start_time: str
+    end_time: str
+    period_type: str = "LESSON"
+    sort_order: int = 0
+
+
+class PeriodUpdate(BaseModel):
+    day_of_week: Optional[int] = Field(default=None, ge=0, le=6)
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    period_type: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class PeriodResponse(_Orm):
+    id: str
+    period_group_id: str
+    academic_year: Optional[str]
+    day_of_week: int
+    start_time: str
+    end_time: str
+    period_type: str
+    sort_order: int
+    org_id: str
+
+
+class NonLessonPeriod(BaseModel):
+    name: str                       # e.g. "SHORT BREAK", "RECESS"
+    after_period: int = Field(ge=0)  # insert after this many lesson periods
+    minutes: int = Field(gt=0)
+
+
+class PeriodGenerateRequest(BaseModel):
+    period_group_id: str
+    academic_year: Optional[str] = None
+    days: list[int] = Field(min_length=1)         # 0=Mon .. 6=Sun
+    periods_per_day: int = Field(gt=0, le=20)
+    start_time: str                                # "07:45"
+    minutes_per_period: int = Field(gt=0, le=240)
+    non_lesson: list[NonLessonPeriod] = []
+    replace_existing: bool = True                  # clear the group's periods first
+
+
+class PeriodGenerateResult(BaseModel):
+    created: int
+
+
+# ── Schedules ─────────────────────────────────────────────────────────────────
+
+class PeriodScheduleCreate(BaseModel):
+    period_id: str
+    class_id: str
+    subject_id: str
+    teacher_id: Optional[str] = None
+    academic_year: Optional[str] = None
+
+
+class PeriodScheduleResponse(BaseModel):
+    id: str
+    period_id: str
+    class_id: str
+    subject_id: str
+    subject_name: Optional[str] = None
+    teacher_id: Optional[str] = None
+    teacher_name: Optional[str] = None
+    academic_year: Optional[str] = None

@@ -573,6 +573,18 @@ export const timetableApi = {
     update: (id: string, data: object) => api.patch(`/timetable/activities/${id}`, data).then((r) => r.data),
     delete: (id: string) => api.delete(`/timetable/activities/${id}`),
   },
+  periods: {
+    list: (p: { period_group_id: string; academic_year?: string }) => api.get("/timetable/periods", { params: p }).then((r) => r.data),
+    create: (data: object) => api.post("/timetable/periods", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/timetable/periods/${id}`, data).then((r) => r.data),
+    delete: (id: string) => api.delete(`/timetable/periods/${id}`),
+    generate: (data: object) => api.post("/timetable/periods/generate", data).then((r) => r.data),
+  },
+  schedules: {
+    list: (p: { period_group_id: string; academic_year?: string }) => api.get("/timetable/schedules", { params: p }).then((r) => r.data),
+    upsert: (data: object) => api.post("/timetable/schedules", data).then((r) => r.data),
+    delete: (id: string) => api.delete(`/timetable/schedules/${id}`),
+  },
 };
 
 export const clubsApi = {

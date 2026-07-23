@@ -411,6 +411,42 @@ class SchoolActivity(Base, UUIDMixin, TimestampMixin, TenantMixin):
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 
+class Period(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A time slot in a period group's day (Manage Periods). LESSON periods hold
+    schedules; non-lesson periods (ASSEMBLY / BREAK / RECESS …) are shown as bands."""
+    __tablename__ = "periods"
+
+    period_group_id = Column(String(36), ForeignKey("period_groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    academic_year = Column(String(20), nullable=True)         # session, e.g. "2025/2026"
+    day_of_week = Column(Integer, nullable=False)             # 0=Mon .. 6=Sun
+    start_time = Column(String(10), nullable=False)           # "07:45"
+    end_time = Column(String(10), nullable=False)             # "08:00"
+    period_type = Column(String(40), default="LESSON", nullable=False)  # LESSON | ASSEMBLY | BREAK | RECESS | ...
+    sort_order = Column(Integer, default=0, nullable=False)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        Index("ix_periods_group_org", "period_group_id", "org_id"),
+    )
+
+
+class PeriodSchedule(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A subject+teacher placed in a period for a class (Manage Schedules grid)."""
+    __tablename__ = "period_schedules"
+
+    period_id = Column(String(36), ForeignKey("periods.id", ondelete="CASCADE"), nullable=False, index=True)
+    class_id = Column(String(36), ForeignKey("school_classes.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False)
+    teacher_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    academic_year = Column(String(20), nullable=True)
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "period_id", "class_id", name="uq_period_schedule"),
+        Index("ix_period_schedules_class_org", "class_id", "org_id"),
+    )
+
+
 # ── School Experience Layer ───────────────────────────────────────────────────
 #
 # Everything below powers the student/teacher-facing experience (eClassroom,
