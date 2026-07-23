@@ -53,6 +53,7 @@ from app.schemas.finance import (
     FinanceSettingsUpdate, FinanceSettingsResponse,
     PaymentGatewayCreate, PaymentGatewayUpdate, PaymentGatewayResponse, GATEWAY_MODES, GATEWAY_PROVIDERS,
     ACCOUNT_TYPES,
+    BroadViewDashboard, BroadViewDistItem, BroadViewBank,
 )
 from app.services import ledger
 from app.services.ledger import money
@@ -413,6 +414,78 @@ async def financial_statements(
         liabilities=float(liabilities),
         equity=float(equity),
         balance_sheet_balanced=(assets == liabilities + equity + net_income),
+    )
+
+
+# ── Broad View: finance reporting dashboard ─────────────────────────────────────
+# Gated payments:WRITE (org-wide financials) — same bar as /statements; a read
+# gate would leak the school's whole P&L to parents (who hold payments:read).
+
+@router.get("/broad-view/dashboard", response_model=BroadViewDashboard, dependencies=[_fin_write])
+async def broad_view_dashboard(
+    session: str | None = Query(default=None),
+    term: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Report Dashboard: invoice/payment/debt cards, revenue distribution by
+    income head, and each bank's CURRENT balance (its cash ledger account)."""
+    org_id = current_user.org_id
+
+    # Fee records → revenue / paid / debt + full/part counts.
+    fq = select(StudentFeeRecord).where(StudentFeeRecord.org_id == org_id, StudentFeeRecord.is_deleted == False)  # noqa: E712
+    if session:
+        fq = fq.where(StudentFeeRecord.session_year == session)
+    if term:
+        fq = fq.where(StudentFeeRecord.term == term)
+    records = (await db.execute(fq)).scalars().all()
+    total_revenue = sum((money(r.total_fee) for r in records), money(0))
+    total_debt = sum((money(r.outstanding_balance) for r in records), money(0))
+    full_payments = sum(1 for r in records if r.payment_status == "paid")
+    part_payments = sum(1 for r in records if r.payment_status == "partial")
+    total_full_payment = sum((money(r.paid_amount) for r in records if r.payment_status == "paid"), money(0))
+    total_part_payment = sum((money(r.paid_amount) for r in records if r.payment_status == "partial"), money(0))
+
+    invoices = (await db.execute(select(func.count()).select_from(Invoice).where(
+        Invoice.org_id == org_id, Invoice.is_deleted == False, Invoice.status != "void"))).scalar() or 0  # noqa: E712
+
+    # Ledger sums per account (income distribution + bank cash balances).
+    sums = {aid: (money(d or 0), money(c or 0)) for aid, d, c in (await db.execute(
+        select(JournalLine.account_id, func.sum(JournalLine.debit), func.sum(JournalLine.credit))
+        .join(JournalEntry, JournalEntry.id == JournalLine.entry_id)
+        .where(JournalEntry.org_id == org_id).group_by(JournalLine.account_id)
+    )).all()}
+
+    accounts = (await db.execute(select(LedgerAccount).where(
+        LedgerAccount.org_id == org_id, LedgerAccount.is_deleted == False))).scalars().all()  # noqa: E712
+    distribution: list[BroadViewDistItem] = []
+    for a in accounts:
+        if a.type != "income":
+            continue
+        d, c = sums.get(a.id, (money(0), money(0)))
+        amt = c - d                       # income is credit-normal
+        if amt:
+            distribution.append(BroadViewDistItem(head=a.name, amount=float(amt)))
+    distribution.sort(key=lambda x: x.amount, reverse=True)
+
+    banks = (await db.execute(select(BankAccount).where(
+        BankAccount.org_id == org_id, BankAccount.is_deleted == False, BankAccount.is_active == True))).scalars().all()  # noqa: E712
+    # The primary bank falls back to the org's default cash account when unlinked.
+    settings = (await db.execute(select(OrgFinanceSettings).where(OrgFinanceSettings.org_id == org_id))).scalar_one_or_none()
+    default_cash = settings.default_cash_account_id if settings else None
+    bank_items: list[BroadViewBank] = []
+    for b in banks:
+        acct_id = b.ledger_account_id or (default_cash if b.is_primary else None)
+        d, c = sums.get(acct_id, (money(0), money(0))) if acct_id else (money(0), money(0))
+        bal = d - c                       # cash is an asset (debit-normal) → current balance
+        bank_items.append(BroadViewBank(id=b.id, bank_name=b.bank_name, account_name=b.account_name,
+                                        account_number=b.account_number, balance=float(bal)))
+
+    return BroadViewDashboard(
+        invoices=invoices, full_payments=full_payments, part_payments=part_payments, bank_accounts=len(banks),
+        total_revenue=float(total_revenue), total_full_payment=float(total_full_payment),
+        total_part_payment=float(total_part_payment), total_debt=float(total_debt),
+        distribution=distribution, banks=bank_items, session=session, term=term,
     )
 
 
@@ -2207,7 +2280,8 @@ async def create_bank_account(
     b = BankAccount(
         bank_name=payload.bank_name, account_name=payload.account_name, account_number=payload.account_number,
         bank_code=payload.bank_code, account_type=payload.account_type, purpose=payload.purpose,
-        is_primary=make_primary, is_active=payload.is_active, notes=payload.notes, org_id=current_user.org_id,
+        is_primary=make_primary, is_active=payload.is_active, notes=payload.notes,
+        ledger_account_id=payload.ledger_account_id, org_id=current_user.org_id,
     )
     db.add(b)
     await db.flush()

@@ -1,87 +1,126 @@
 "use client";
 
-import { useMemo } from "react";
-import { useStatements, useInvoices, usePayrollRuns, useCashTxns } from "@/hooks/useFinance";
-import { cn, formatDate } from "@/lib/utils";
-import { TrendingUp, Receipt, BadgeDollarSign, Wallet, AlertTriangle } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useBroadViewDashboard } from "@/hooks/useFinance";
+import { useSessions } from "@/hooks/usePlatform";
+import { cn, formatCurrency } from "@/lib/utils";
+import {
+  Receipt, CheckCircle2, Layers, Landmark, TrendingUp, ArrowDownLeft, ArrowUpRight,
+  AlertOctagon, Loader2, AlertTriangle, BarChart3, Building2,
+} from "lucide-react";
 
-const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const TABS = [
+  "Report Dashboard", "Invoice Items Report", "Students Ledger", "All Transactions Log",
+  "Payment Refs", "Audit Report", "Online Transactions Log", "Account Head Summary",
+  "Termly Summary", "Discount Log", "Wallet Log", "Admission Form Pay Log",
+];
 
-export default function FinanceOverviewPage() {
-  const { data: stmt, isLoading: sl, isError: se, refetch } = useStatements();
-  const { data: invoices } = useInvoices();
-  const { data: payroll } = usePayrollRuns();
-  const { data: cash } = useCashTxns();
+function Card({ icon: Icon, label, value, tint }: { icon: any; label: string; value: string; tint: string }) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-center justify-between">
+      <div className={cn("w-11 h-11 rounded-xl flex items-center justify-center shrink-0", tint)}><Icon size={20} /></div>
+      <div className="text-right min-w-0">
+        <p className="text-xl font-black text-slate-900 truncate">{value}</p>
+        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
+      </div>
+    </div>
+  );
+}
 
-  const inv = useMemo(() => {
-    const items = invoices?.items ?? [];
-    const by = (s: string) => items.filter((i) => i.status === s);
-    const outstanding = by("posted").reduce((s, i) => s + Number(i.total), 0);
-    return { total: items.length, draft: by("draft").length, posted: by("posted").length, paid: by("paid").length, outstanding };
-  }, [invoices]);
+export default function BroadViewPage() {
+  const { data: sessions } = useSessions();
+  const sessionNames = useMemo(() => Array.from(new Set((sessions ?? []).map((s: any) => s.name))), [sessions]);
+  const [session, setSession] = useState("");
+  const [term, setTerm] = useState("");
+  const termsFor = useMemo(() => Array.from(new Set((sessions ?? []).filter((s: any) => s.name === session).map((s: any) => s.term).filter(Boolean))), [sessions, session]);
+  const [tab, setTab] = useState("Report Dashboard");
 
-  const payrollTotal = useMemo(() => (payroll?.items ?? []).reduce((s, r) => s + Number(r.total_net), 0), [payroll]);
+  const { data, isLoading, isError, refetch } = useBroadViewDashboard({ session: session || undefined, term: term || undefined });
+  const d: any = data;
+  const maxDist = Math.max(1, ...((d?.distribution ?? []).map((x: any) => Math.abs(x.amount))));
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
       <div className="mb-6">
         <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Finance</span><span>/</span><span className="text-brand-600 font-semibold">Broad View</span></nav>
         <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">Broad View <span className="text-[9px] font-bold uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">beta</span></h1>
-        <p className="text-slate-500 text-sm mt-0.5">A consolidated snapshot across the ledger, invoicing and payroll.</p>
+        <p className="text-slate-500 text-sm mt-0.5">Consolidated finance reporting — invoices, payments, revenue distribution and live bank balances.</p>
       </div>
 
-      {se ? (
-        <div className="bg-white rounded-xl border border-slate-200 py-14 text-center"><AlertTriangle size={28} className="mx-auto mb-3 text-amber-400" /><p className="text-sm font-semibold text-slate-600">Couldn’t load the overview.</p><button onClick={() => refetch()} className="mt-3 btn-secondary">Retry</button></div>
+      {/* Session / Term */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 mb-5 flex flex-wrap gap-4 items-end max-w-lg">
+        <div className="flex-1 min-w-[140px]"><label className="label">Select Session</label><select value={session} onChange={(e) => { setSession(e.target.value); setTerm(""); }} className="input"><option value="">All Sessions</option>{sessionNames.map((n) => <option key={n} value={n}>{n}</option>)}</select></div>
+        <div className="flex-1 min-w-[140px]"><label className="label">Term</label><select value={term} onChange={(e) => setTerm(e.target.value)} className="input"><option value="">All Terms</option>{termsFor.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex items-center gap-x-4 gap-y-1 border-b border-slate-200 mb-6 flex-wrap">
+        {TABS.map((t) => (
+          <button key={t} onClick={() => setTab(t)} className={cn("py-2.5 text-xs font-bold uppercase tracking-wide border-b-2 -mb-px whitespace-nowrap", tab === t ? "border-brand-600 text-brand-700" : "border-transparent text-slate-400 hover:text-slate-600")}>{t}</button>
+        ))}
+      </div>
+
+      {tab !== "Report Dashboard" ? (
+        <div className="bg-white rounded-xl border border-slate-200 py-16 text-center text-slate-400">
+          <BarChart3 size={30} className="mx-auto mb-3 opacity-40" />
+          <p className="font-semibold text-slate-500">{tab}</p>
+          <p className="text-xs mt-1">This report is coming in the next update.</p>
+        </div>
+      ) : isError ? (
+        <div className="bg-white rounded-xl border border-slate-200 py-14 text-center"><AlertTriangle size={28} className="mx-auto mb-3 text-amber-400" /><p className="text-sm font-semibold text-slate-600">Couldn’t load the dashboard.</p><button onClick={() => refetch()} className="mt-3 btn-secondary">Retry</button></div>
+      ) : isLoading || !d ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-20 bg-slate-100 rounded-xl animate-pulse" />)}</div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <Stat icon={TrendingUp} label="Net Income" value={sl ? null : fmt(stmt?.net_income ?? 0)} accent="from-emerald-500 to-teal-600" />
-            <Stat icon={Wallet} label="Total Assets" value={sl ? null : fmt(stmt?.assets ?? 0)} accent="from-blue-500 to-indigo-600" />
-            <Stat icon={Receipt} label="Outstanding Invoices" value={fmt(inv.outstanding)} accent="from-rose-500 to-pink-600" />
-            <Stat icon={BadgeDollarSign} label="Payroll (net, all runs)" value={fmt(payrollTotal)} accent="from-fuchsia-500 to-purple-600" />
+          {/* Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            <Card icon={Receipt} label="Invoices" value={String(d.invoices)} tint="bg-indigo-50 text-indigo-600" />
+            <Card icon={CheckCircle2} label="Full Payments" value={String(d.full_payments)} tint="bg-emerald-50 text-emerald-600" />
+            <Card icon={Layers} label="Part Payments" value={String(d.part_payments)} tint="bg-amber-50 text-amber-600" />
+            <Card icon={Landmark} label="Bank Accounts" value={String(d.bank_accounts)} tint="bg-sky-50 text-sky-600" />
+            <Card icon={TrendingUp} label="Total Revenue" value={formatCurrency(d.total_revenue)} tint="bg-yellow-50 text-yellow-600" />
+            <Card icon={ArrowDownLeft} label="Total Full Payment" value={formatCurrency(d.total_full_payment)} tint="bg-emerald-50 text-emerald-600" />
+            <Card icon={ArrowUpRight} label="Total Part Payment" value={formatCurrency(d.total_part_payment)} tint="bg-teal-50 text-teal-600" />
+            <Card icon={AlertOctagon} label="Total Debt" value={formatCurrency(d.total_debt)} tint="bg-rose-50 text-rose-600" />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <h2 className="text-sm font-bold text-slate-800 mb-4">Invoices</h2>
-              <div className="grid grid-cols-4 gap-2 text-center">
-                {[["Draft", inv.draft, "text-slate-500"], ["Posted", inv.posted, "text-blue-600"], ["Paid", inv.paid, "text-emerald-600"], ["Total", inv.total, "text-slate-800"]].map(([l, v, c]) => (
-                  <div key={l as string}><p className={cn("text-xl font-black", c as string)}>{v as number}</p><p className="text-[10px] font-bold uppercase text-slate-400">{l as string}</p></div>
+          {/* Transaction Distribution */}
+          <div className="bg-white rounded-xl border border-slate-200 p-6 mb-4">
+            <h3 className="text-sm font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2"><BarChart3 size={15} /> Transaction Distribution {session && <span className="text-slate-300">· {session}</span>}</h3>
+            {(d.distribution ?? []).length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-8">No posted revenue yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {d.distribution.map((x: any) => (
+                  <div key={x.head} className="flex items-center gap-3">
+                    <span className="text-xs font-semibold text-slate-600 w-40 truncate shrink-0">{x.head}</span>
+                    <div className="flex-1 h-6 bg-slate-100 rounded overflow-hidden"><div className="h-full bg-brand-500 rounded" style={{ width: `${Math.max(2, (Math.abs(x.amount) / maxDist) * 100)}%` }} /></div>
+                    <span className="text-xs font-bold text-slate-700 w-28 text-right shrink-0">{formatCurrency(x.amount)}</span>
+                  </div>
                 ))}
               </div>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <h2 className="text-sm font-bold text-slate-800 mb-4">Recent cash movements</h2>
-              {(cash?.items ?? []).length === 0 ? (
-                <p className="text-sm text-slate-400 py-6 text-center">No cash transactions yet.</p>
-              ) : (
-                <div className="divide-y divide-slate-50">
-                  {(cash?.items ?? []).slice(0, 5).map((t: any) => (
-                    <div key={t.id} className="flex items-center justify-between py-2">
-                      <span className="text-sm text-slate-600 truncate">{t.memo || t.type}</span>
-                      <span className={cn("text-sm font-semibold", t.type === "receipt" ? "text-emerald-600" : "text-rose-600")}>{t.type === "receipt" ? "+" : "−"}{fmt(Number(t.amount))}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
           </div>
 
-          {!sl && stmt && (
-            <p className="text-xs text-slate-400 mt-4">Ledger {stmt.balanced ? "balanced ✓" : "out of balance — review journal"}. Figures derive live from posted entries.</p>
-          )}
+          {/* Bank Account Statements */}
+          <div className="bg-white rounded-xl border border-slate-200 p-6">
+            <div className="mb-4"><h3 className="text-sm font-black uppercase tracking-widest text-slate-400 flex items-center gap-2"><Building2 size={15} /> Bank Account Statements</h3><p className="text-xs text-slate-400 mt-0.5">Current balance in each bank as of today</p></div>
+            {(d.banks ?? []).length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-8">No bank accounts. Add them under Account Numbers and link each to its cash ledger account.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {d.banks.map((b: any) => (
+                  <div key={b.id} className="rounded-xl border border-slate-200 p-4">
+                    <p className="text-lg font-black text-slate-900">{formatCurrency(b.balance)}</p>
+                    <p className="text-sm font-semibold text-slate-600 mt-1">{b.bank_name}</p>
+                    <p className="text-xs text-slate-400">{b.account_number}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </>
       )}
-    </div>
-  );
-}
-
-function Stat({ icon: Icon, label, value, accent }: { icon: any; label: string; value: string | null; accent: string }) {
-  return (
-    <div className={`rounded-xl p-5 text-white bg-gradient-to-br ${accent}`}>
-      <Icon size={18} className="opacity-80 mb-2" />
-      {value === null ? <div className="h-7 w-24 bg-white/30 rounded animate-pulse" /> : <p className="text-2xl font-black">{value}</p>}
-      <p className="text-xs font-semibold opacity-90 mt-1">{label}</p>
     </div>
   );
 }

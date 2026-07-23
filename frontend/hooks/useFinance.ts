@@ -749,3 +749,11 @@ export function useDeletePickup() {
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to delete."),
   });
 }
+
+// ── Broad View ────────────────────────────────────────────────────────────────
+export function useBroadViewDashboard(params: { session?: string; term?: string }) {
+  return useQuery({
+    queryKey: ["broad-view-dashboard", params.session, params.term],
+    queryFn: () => financeApi.broadView.dashboard(params),
+  });
+}

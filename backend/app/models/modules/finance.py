@@ -490,6 +490,10 @@ class BankAccount(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin)
     is_primary = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     notes = Column(Text, nullable=True)
+    # The cash ledger account this bank maps to — its CURRENT balance is derived
+    # from this account (Σ debit − Σ credit). Optional; the primary bank falls back
+    # to OrgFinanceSettings.default_cash_account_id.
+    ledger_account_id = Column(String(36), ForeignKey("ledger_accounts.id", ondelete="SET NULL"), nullable=True)
 
     __table_args__ = (Index("ix_bank_accounts_org", "org_id"),)
 

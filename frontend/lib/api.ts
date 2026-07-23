@@ -1214,6 +1214,9 @@ export const financeApi = {
     reverse: (id: string) => api.post(`/finance/journal/${id}/reverse`).then((r) => r.data),
   },
   statements: (p?: { as_of?: string }) => api.get("/finance/statements", { params: p }).then((r) => r.data),
+  broadView: {
+    dashboard: (p?: { session?: string; term?: string }) => api.get("/finance/broad-view/dashboard", { params: p }).then((r) => r.data),
+  },
   invoices: {
     list: (p?: { status?: string; page?: number; page_size?: number }) => api.get("/finance/invoices", { params: p }).then((r) => r.data),
     get: (id: string) => api.get(`/finance/invoices/${id}`).then((r) => r.data),

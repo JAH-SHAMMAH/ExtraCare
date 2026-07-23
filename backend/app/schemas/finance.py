@@ -549,6 +549,7 @@ class BankAccountCreate(BaseModel):
     is_primary: bool = False
     is_active: bool = True
     notes: Optional[str] = None
+    ledger_account_id: Optional[str] = None
 
 
 class BankAccountUpdate(BaseModel):
@@ -561,6 +562,7 @@ class BankAccountUpdate(BaseModel):
     is_primary: Optional[bool] = None
     is_active: Optional[bool] = None
     notes: Optional[str] = None
+    ledger_account_id: Optional[str] = None
 
 
 class BankAccountResponse(BaseModel):
@@ -574,6 +576,8 @@ class BankAccountResponse(BaseModel):
     is_primary: bool
     is_active: bool
     notes: Optional[str]
+    ledger_account_id: Optional[str] = None
+    balance: Optional[float] = None       # current balance (derived from the cash ledger account)
     created_at: datetime
     org_id: str
 
@@ -663,3 +667,33 @@ class PaymentGatewayResponse(BaseModel):
     is_active: bool
     created_at: datetime
     org_id: str
+
+
+# ── Broad View (finance reporting hub) ────────────────────────────────────────
+
+class BroadViewDistItem(BaseModel):
+    head: str
+    amount: float
+
+
+class BroadViewBank(BaseModel):
+    id: str
+    bank_name: str
+    account_name: str
+    account_number: str
+    balance: float
+
+
+class BroadViewDashboard(BaseModel):
+    invoices: int
+    full_payments: int
+    part_payments: int
+    bank_accounts: int
+    total_revenue: float
+    total_full_payment: float
+    total_part_payment: float
+    total_debt: float
+    distribution: list[BroadViewDistItem]
+    banks: list[BroadViewBank]
+    session: Optional[str] = None
+    term: Optional[str] = None
