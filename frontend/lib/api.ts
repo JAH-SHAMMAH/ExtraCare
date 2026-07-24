@@ -1220,6 +1220,10 @@ export const financeApi = {
     termlySummary: (p?: { session?: string; term?: string }) => api.get("/finance/broad-view/termly-summary", { params: p }).then((r) => r.data),
     discountLog: () => api.get("/finance/broad-view/discount-log").then((r) => r.data),
     walletLog: () => api.get("/finance/broad-view/wallet-log").then((r) => r.data),
+    invoiceItemsReport: () => api.get("/finance/broad-view/invoice-items-report").then((r) => r.data),
+    studentsLedger: (p?: { session?: string; term?: string }) => api.get("/finance/broad-view/students-ledger", { params: p }).then((r) => r.data),
+    allTransactionsLog: () => api.get("/finance/broad-view/all-transactions-log").then((r) => r.data),
+    auditReport: (p?: { status?: string }) => api.get("/finance/broad-view/audit-report", { params: p }).then((r) => r.data),
   },
   invoices: {
     list: (p?: { status?: string; page?: number; page_size?: number }) => api.get("/finance/invoices", { params: p }).then((r) => r.data),

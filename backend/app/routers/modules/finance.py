@@ -56,6 +56,8 @@ from app.schemas.finance import (
     BroadViewDashboard, BroadViewDistItem, BroadViewBank,
     AccountHeadSummary, AccountHeadRow, TermlySummary, TermlyFeeRow,
     DiscountLog, DiscountLogRow, WalletLog, WalletLogRow,
+    InvoiceItemsReport, InvoiceItemRow, StudentsLedger, StudentLedgerRow,
+    TransactionsLog, TransactionLogRow, AuditReport, AuditInvoiceRow,
 )
 from app.models.modules.wallet import ParentWallet, ParentWalletEntry
 from app.services import ledger
@@ -568,6 +570,107 @@ async def broad_view_wallet_log(db: AsyncSession = Depends(get_db), current_user
         total_debit += debit
         items.append(WalletLogRow(id=e.id, wallet_name=name, memo=e.memo, credit=float(credit), debit=float(debit), created_at=e.created_at))
     return WalletLog(items=items, total_credit=float(total_credit), total_debit=float(total_debit))
+
+
+@router.get("/broad-view/invoice-items-report", response_model=InvoiceItemsReport, dependencies=[_fin_write])
+async def broad_view_invoice_items(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Invoiced items rolled up by description: quantity, amount, occurrences."""
+    org_id = current_user.org_id
+    rows = (await db.execute(
+        select(InvoiceLine.description, InvoiceLine.quantity, InvoiceLine.amount)
+        .join(Invoice, Invoice.id == InvoiceLine.invoice_id)
+        .where(Invoice.org_id == org_id, Invoice.is_deleted == False, Invoice.status != "void")  # noqa: E712
+    )).all()
+    agg: dict[str, dict] = {}
+    for desc, qty, amount in rows:
+        a = agg.setdefault(desc, {"qty": money(0), "amount": money(0), "count": 0})
+        a["qty"] += money(qty or 0)
+        a["amount"] += money(amount or 0)
+        a["count"] += 1
+    items = [InvoiceItemRow(description=d, total_qty=float(v["qty"]), total_amount=float(v["amount"]), count=v["count"])
+             for d, v in agg.items()]
+    items.sort(key=lambda x: x.total_amount, reverse=True)
+    return InvoiceItemsReport(items=items, total_amount=float(sum((money(v["amount"]) for v in agg.values()), money(0))))
+
+
+@router.get("/broad-view/students-ledger", response_model=StudentsLedger, dependencies=[_fin_write])
+async def broad_view_students_ledger(session: str | None = Query(default=None), term: str | None = Query(default=None),
+                                     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Per-student invoiced / paid / balance from the fee records."""
+    org_id = current_user.org_id
+    q = select(StudentFeeRecord).where(StudentFeeRecord.org_id == org_id, StudentFeeRecord.is_deleted == False)  # noqa: E712
+    if session:
+        q = q.where(StudentFeeRecord.session_year == session)
+    if term:
+        q = q.where(StudentFeeRecord.term == term)
+    records = (await db.execute(q)).scalars().all()
+    agg: dict[str, dict] = {}
+    for r in records:
+        a = agg.setdefault(r.student_id, {"inv": money(0), "paid": money(0), "bal": money(0)})
+        a["inv"] += money(r.total_fee)
+        a["paid"] += money(r.paid_amount)
+        a["bal"] += money(r.outstanding_balance)
+    # Resolve names + class.
+    sids = list(agg.keys())
+    names: dict[str, tuple] = {}
+    if sids:
+        for sid, fn, ln, cname in (await db.execute(
+            select(Student.id, Student.first_name, Student.last_name, SchoolClass.name)
+            .outerjoin(SchoolClass, SchoolClass.id == Student.class_id)
+            .where(Student.id.in_(sids), Student.org_id == org_id)
+        )).all():
+            names[sid] = (f"{fn} {ln}".strip(), cname)
+    items = [StudentLedgerRow(
+        student_id=sid, student_name=names.get(sid, (None, None))[0], current_class=names.get(sid, (None, None))[1],
+        total_invoiced=float(v["inv"]), total_paid=float(v["paid"]), balance=float(v["bal"]),
+    ) for sid, v in agg.items()]
+    items.sort(key=lambda x: x.balance, reverse=True)
+    return StudentsLedger(
+        items=items,
+        total_invoiced=float(sum((money(v["inv"]) for v in agg.values()), money(0))),
+        total_paid=float(sum((money(v["paid"]) for v in agg.values()), money(0))),
+        total_balance=float(sum((money(v["bal"]) for v in agg.values()), money(0))),
+    )
+
+
+@router.get("/broad-view/all-transactions-log", response_model=TransactionsLog, dependencies=[_fin_write])
+async def broad_view_transactions_log(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Recent journal entries with their posted total."""
+    org_id = current_user.org_id
+    entries = (await db.execute(
+        select(JournalEntry).where(JournalEntry.org_id == org_id)
+        .order_by(JournalEntry.entry_date.desc(), JournalEntry.created_at.desc()).limit(200)
+    )).scalars().all()
+    ids = [e.id for e in entries]
+    totals: dict[str, Decimal] = {}
+    if ids:
+        for eid, tot in (await db.execute(
+            select(JournalLine.entry_id, func.coalesce(func.sum(JournalLine.debit), 0))
+            .where(JournalLine.entry_id.in_(ids), JournalLine.org_id == org_id).group_by(JournalLine.entry_id)
+        )).all():
+            totals[eid] = money(tot or 0)
+    items = [TransactionLogRow(id=e.id, entry_date=e.entry_date, memo=e.memo, source=e.source,
+                               status="reversed" if e.reversed_at else "posted",
+                               total=float(totals.get(e.id, money(0))), reversed=e.reversed_at is not None)
+             for e in entries]
+    return TransactionsLog(items=items)
+
+
+@router.get("/broad-view/audit-report", response_model=AuditReport, dependencies=[_fin_write])
+async def broad_view_audit_report(status: str | None = Query(default=None),
+                                  db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Invoice audit: transaction count, total / paid / unpaid amounts + the list."""
+    org_id = current_user.org_id
+    q = select(Invoice).where(Invoice.org_id == org_id, Invoice.is_deleted == False, Invoice.status != "void")  # noqa: E712
+    if status:
+        q = q.where(Invoice.status == status)
+    invoices = (await db.execute(q.order_by(Invoice.invoice_date.desc()))).scalars().all()
+    total_amount = sum((money(i.total) for i in invoices), money(0))
+    total_paid = sum((money(i.total) for i in invoices if i.status == "paid"), money(0))
+    items = [AuditInvoiceRow(id=i.id, number=i.number, customer_name=i.customer_name, total=float(i.total),
+                             status=i.status, invoice_date=i.invoice_date) for i in invoices[:200]]
+    return AuditReport(total_transactions=len(invoices), total_amount=float(total_amount),
+                       total_paid=float(total_paid), total_unpaid=float(total_amount - total_paid), items=items)
 
 
 # ── Finance Reports (read-only, period-scoped) ──────────────────────────────────

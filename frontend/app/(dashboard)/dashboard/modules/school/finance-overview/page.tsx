@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useBroadViewDashboard, useAccountHeadSummary, useTermlySummary, useDiscountLog, useWalletLog } from "@/hooks/useFinance";
+import { useBroadViewDashboard, useAccountHeadSummary, useTermlySummary, useDiscountLog, useWalletLog, useInvoiceItemsReport, useStudentsLedger, useAllTransactionsLog, useAuditReport } from "@/hooks/useFinance";
 import { useSessions } from "@/hooks/usePlatform";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
@@ -115,6 +115,107 @@ function WalletTab() {
   );
 }
 
+function InvoiceItemsTab() {
+  const { data, isLoading } = useInvoiceItemsReport(true);
+  const rows = data?.items ?? [];
+  return (
+    <>
+      <TabTable headers={["SN", "Item", "Qty", "Amount", "Occurrences"]}>
+        {isLoading ? <tr><td colSpan={5} className="px-5 py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></td></tr>
+        : rows.length ? rows.map((r: any, i: number) => (
+          <tr key={r.description} className="hover:bg-slate-50/70">
+            <td className="px-5 py-3 text-sm text-slate-500">{i + 1}</td>
+            <td className="px-5 py-3 text-sm font-semibold text-slate-800">{r.description}</td>
+            <td className="px-5 py-3 text-sm text-slate-600">{r.total_qty}</td>
+            <td className="px-5 py-3 text-sm font-semibold text-slate-800">{formatCurrency(r.total_amount)}</td>
+            <td className="px-5 py-3 text-sm text-slate-500">{r.count}</td>
+          </tr>
+        )) : <tr><td colSpan={5} className="py-14 text-center text-slate-400 font-semibold">No invoiced items</td></tr>}
+      </TabTable>
+      {data && <p className="text-right text-sm font-bold text-slate-800 mt-3">Total: {formatCurrency(data.total_amount)}</p>}
+    </>
+  );
+}
+
+function StudentsLedgerTab({ session, term }: { session: string; term: string }) {
+  const { data, isLoading } = useStudentsLedger({ session: session || undefined, term: term || undefined }, true);
+  const rows = data?.items ?? [];
+  return (
+    <>
+      {data && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-lg font-black text-slate-900">{formatCurrency(data.total_invoiced)}</p><p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Total Invoiced</p></div>
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4"><p className="text-lg font-black text-emerald-700">{formatCurrency(data.total_paid)}</p><p className="text-[11px] font-bold uppercase tracking-widest text-emerald-500">Total Paid</p></div>
+          <div className="rounded-xl border border-rose-100 bg-rose-50 p-4"><p className="text-lg font-black text-rose-700">{formatCurrency(data.total_balance)}</p><p className="text-[11px] font-bold uppercase tracking-widest text-rose-500">Total Balance</p></div>
+        </div>
+      )}
+      <TabTable headers={["SN", "Student", "Class", "Invoiced", "Paid", "Balance"]}>
+        {isLoading ? <tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></td></tr>
+        : rows.length ? rows.map((r: any, i: number) => (
+          <tr key={r.student_id} className="hover:bg-slate-50/70">
+            <td className="px-5 py-3 text-sm text-slate-500">{i + 1}</td>
+            <td className="px-5 py-3 text-sm font-semibold text-slate-800">{r.student_name || "—"}</td>
+            <td className="px-5 py-3 text-sm text-slate-600">{r.current_class || "—"}</td>
+            <td className="px-5 py-3 text-sm text-slate-700">{formatCurrency(r.total_invoiced)}</td>
+            <td className="px-5 py-3 text-sm font-semibold text-emerald-600">{formatCurrency(r.total_paid)}</td>
+            <td className="px-5 py-3 text-sm font-semibold text-rose-600">{formatCurrency(r.balance)}</td>
+          </tr>
+        )) : <tr><td colSpan={6} className="py-14 text-center text-slate-400 font-semibold">No fee records</td></tr>}
+      </TabTable>
+    </>
+  );
+}
+
+function TransactionsLogTab() {
+  const { data, isLoading } = useAllTransactionsLog(true);
+  const rows = data?.items ?? [];
+  return (
+    <TabTable headers={["SN", "Date", "Source", "Description", "Amount", "Status"]}>
+      {isLoading ? <tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></td></tr>
+      : rows.length ? rows.map((r: any, i: number) => (
+        <tr key={r.id} className={cn("hover:bg-slate-50/70", r.reversed && "opacity-50")}>
+          <td className="px-5 py-3 text-sm text-slate-500">{i + 1}</td>
+          <td className="px-5 py-3 text-sm text-slate-600 whitespace-nowrap">{fmtDate(r.entry_date)}</td>
+          <td className="px-5 py-3 text-sm text-slate-600 capitalize">{r.source}</td>
+          <td className="px-5 py-3 text-sm text-slate-500">{r.memo || "—"}</td>
+          <td className="px-5 py-3 text-sm font-semibold text-slate-800">{formatCurrency(r.total)}</td>
+          <td className="px-5 py-3"><span className={cn("badge capitalize", r.status === "posted" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-500 border-slate-200")}>{r.status}</span></td>
+        </tr>
+      )) : <tr><td colSpan={6} className="py-14 text-center text-slate-400 font-semibold">No transactions</td></tr>}
+    </TabTable>
+  );
+}
+
+function AuditReportTab() {
+  const { data, isLoading } = useAuditReport(true);
+  const rows = data?.items ?? [];
+  return (
+    <>
+      {data && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-lg font-black text-slate-900">{data.total_transactions}</p><p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Transactions</p></div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-lg font-black text-slate-900">{formatCurrency(data.total_amount)}</p><p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Total Amount</p></div>
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4"><p className="text-lg font-black text-emerald-700">{formatCurrency(data.total_paid)}</p><p className="text-[11px] font-bold uppercase tracking-widest text-emerald-500">Total Paid</p></div>
+          <div className="rounded-xl border border-rose-100 bg-rose-50 p-4"><p className="text-lg font-black text-rose-700">{formatCurrency(data.total_unpaid)}</p><p className="text-[11px] font-bold uppercase tracking-widest text-rose-500">Total Unpaid</p></div>
+        </div>
+      )}
+      <TabTable headers={["SN", "Invoice #", "Customer", "Amount", "Status", "Date"]}>
+        {isLoading ? <tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></td></tr>
+        : rows.length ? rows.map((r: any, i: number) => (
+          <tr key={r.id} className="hover:bg-slate-50/70">
+            <td className="px-5 py-3 text-sm text-slate-500">{i + 1}</td>
+            <td className="px-5 py-3 text-sm font-semibold text-slate-800">{r.number}</td>
+            <td className="px-5 py-3 text-sm text-slate-600">{r.customer_name}</td>
+            <td className="px-5 py-3 text-sm font-semibold text-slate-800">{formatCurrency(r.total)}</td>
+            <td className="px-5 py-3"><span className={cn("badge capitalize", r.status === "paid" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200")}>{r.status}</span></td>
+            <td className="px-5 py-3 text-sm text-slate-500 whitespace-nowrap">{fmtDate(r.invoice_date)}</td>
+          </tr>
+        )) : <tr><td colSpan={6} className="py-14 text-center text-slate-400 font-semibold">No invoices</td></tr>}
+      </TabTable>
+    </>
+  );
+}
+
 const TABS = [
   "Report Dashboard", "Invoice Items Report", "Students Ledger", "All Transactions Log",
   "Payment Refs", "Audit Report", "Online Transactions Log", "Account Head Summary",
@@ -174,6 +275,14 @@ export default function BroadViewPage() {
         <DiscountTab />
       ) : tab === "Wallet Log" ? (
         <WalletTab />
+      ) : tab === "Invoice Items Report" ? (
+        <InvoiceItemsTab />
+      ) : tab === "Students Ledger" ? (
+        <StudentsLedgerTab session={session} term={term} />
+      ) : tab === "All Transactions Log" ? (
+        <TransactionsLogTab />
+      ) : tab === "Audit Report" ? (
+        <AuditReportTab />
       ) : tab !== "Report Dashboard" ? (
         <div className="bg-white rounded-xl border border-slate-200 py-16 text-center text-slate-400">
           <BarChart3 size={30} className="mx-auto mb-3 opacity-40" />

@@ -769,3 +769,15 @@ export function useDiscountLog(enabled: boolean) {
 export function useWalletLog(enabled: boolean) {
   return useQuery({ queryKey: ["bv-wallet-log"], queryFn: () => financeApi.broadView.walletLog(), enabled });
 }
+export function useInvoiceItemsReport(enabled: boolean) {
+  return useQuery({ queryKey: ["bv-invoice-items"], queryFn: () => financeApi.broadView.invoiceItemsReport(), enabled });
+}
+export function useStudentsLedger(params: { session?: string; term?: string }, enabled: boolean) {
+  return useQuery({ queryKey: ["bv-students-ledger", params.session, params.term], queryFn: () => financeApi.broadView.studentsLedger(params), enabled });
+}
+export function useAllTransactionsLog(enabled: boolean) {
+  return useQuery({ queryKey: ["bv-txn-log"], queryFn: () => financeApi.broadView.allTransactionsLog(), enabled });
+}
+export function useAuditReport(enabled: boolean) {
+  return useQuery({ queryKey: ["bv-audit"], queryFn: () => financeApi.broadView.auditReport(), enabled });
+}

@@ -754,3 +754,64 @@ class WalletLog(BaseModel):
     items: list[WalletLogRow]
     total_credit: float
     total_debit: float
+
+
+# ── Broad View: report tabs (batch 3) ─────────────────────────────────────────
+
+class InvoiceItemRow(BaseModel):
+    description: str
+    total_qty: float
+    total_amount: float
+    count: int
+
+
+class InvoiceItemsReport(BaseModel):
+    items: list[InvoiceItemRow]
+    total_amount: float
+
+
+class StudentLedgerRow(BaseModel):
+    student_id: str
+    student_name: Optional[str]
+    current_class: Optional[str]
+    total_invoiced: float
+    total_paid: float
+    balance: float
+
+
+class StudentsLedger(BaseModel):
+    items: list[StudentLedgerRow]
+    total_invoiced: float
+    total_paid: float
+    total_balance: float
+
+
+class TransactionLogRow(BaseModel):
+    id: str
+    entry_date: date
+    memo: Optional[str]
+    source: str
+    status: str
+    total: float
+    reversed: bool
+
+
+class TransactionsLog(BaseModel):
+    items: list[TransactionLogRow]
+
+
+class AuditInvoiceRow(BaseModel):
+    id: str
+    number: str
+    customer_name: str
+    total: float
+    status: str
+    invoice_date: Optional[date]
+
+
+class AuditReport(BaseModel):
+    total_transactions: int
+    total_amount: float
+    total_paid: float
+    total_unpaid: float
+    items: list[AuditInvoiceRow]

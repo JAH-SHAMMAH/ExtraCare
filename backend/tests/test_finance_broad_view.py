@@ -10,11 +10,12 @@ import pytest
 
 from app.models.user import User, UserStatus
 from app.models.payment import StudentFeeRecord
-from app.models.modules.finance import LedgerAccount, BankAccount, Invoice, InvoiceLine, FeeDiscount
+from app.models.modules.finance import LedgerAccount, BankAccount, Invoice, InvoiceLine, FeeDiscount, JournalEntry, JournalLine
 from app.models.modules.wallet import ParentWallet, ParentWalletEntry
 from app.routers.modules.finance import (
     broad_view_dashboard, broad_view_account_head_summary, broad_view_termly_summary,
     broad_view_discount_log, broad_view_wallet_log,
+    broad_view_invoice_items, broad_view_students_ledger, broad_view_transactions_log, broad_view_audit_report,
 )
 from app.services import ledger
 
@@ -149,3 +150,65 @@ async def test_wallet_log(db, org):
     assert len(res.items) == 2
     assert res.total_credit == 500.0 and res.total_debit == 120.0
     assert all(r.wallet_name == "Mrs Parent" for r in res.items)
+
+
+# ── Batch 3 tabs ──────────────────────────────────────────────────────────────
+
+async def test_invoice_items_report(db, org):
+    admin = await _admin(db, org)
+    income = await _acct(db, org, "4000", "School Fees", "income")
+    inv = Invoice(id=str(uuid.uuid4()), number="INV-1", customer_name="Ada", total=Decimal(700), status="paid", org_id=org.id)
+    db.add(inv)
+    await db.flush()
+    db.add(InvoiceLine(id=str(uuid.uuid4()), invoice_id=inv.id, description="Tuition", quantity=Decimal(2),
+                       unit_price=Decimal(300), amount=Decimal(600), income_account_id=income.id, org_id=org.id))
+    db.add(InvoiceLine(id=str(uuid.uuid4()), invoice_id=inv.id, description="Books", quantity=Decimal(1),
+                       unit_price=Decimal(100), amount=Decimal(100), income_account_id=income.id, org_id=org.id))
+    await db.commit()
+    res = await broad_view_invoice_items(db=db, current_user=admin)
+    by = {r.description: r for r in res.items}
+    assert by["Tuition"].total_qty == 2.0 and by["Tuition"].total_amount == 600.0
+    assert res.total_amount == 700.0
+
+
+async def test_students_ledger(db, org, student):
+    admin = await _admin(db, org)
+    fr = StudentFeeRecord(id=str(uuid.uuid4()), org_id=org.id, student_id=student.id, term="term1_2026",
+                          session_year="2026", tuition_fee=Decimal(1000), total_fee=Decimal(1000),
+                          paid_amount=Decimal(400), outstanding_balance=Decimal(600), payment_status="part")
+    db.add(fr)
+    await db.commit()
+    res = await broad_view_students_ledger(session="2026", term=None, db=db, current_user=admin)
+    assert len(res.items) == 1
+    row = res.items[0]
+    assert row.student_name == "Ada Okafor" and row.current_class == "Year 10A"
+    assert row.total_invoiced == 1000.0 and row.total_paid == 400.0 and row.balance == 600.0
+    assert res.total_balance == 600.0
+
+
+async def test_all_transactions_log(db, org):
+    admin = await _admin(db, org)
+    cash = await _acct(db, org, "1000", "Cash", "asset")
+    income = await _acct(db, org, "4000", "Fees", "income")
+    e = JournalEntry(id=str(uuid.uuid4()), entry_date=date(2026, 5, 1), memo="Fee receipt", source="manual", status="posted", org_id=org.id)
+    db.add(e)
+    await db.flush()
+    db.add(JournalLine(id=str(uuid.uuid4()), entry_id=e.id, account_id=cash.id, debit=Decimal(500), credit=Decimal(0), org_id=org.id))
+    db.add(JournalLine(id=str(uuid.uuid4()), entry_id=e.id, account_id=income.id, debit=Decimal(0), credit=Decimal(500), org_id=org.id))
+    await db.commit()
+    res = await broad_view_transactions_log(db=db, current_user=admin)
+    assert len(res.items) == 1
+    assert res.items[0].total == 500.0 and res.items[0].status == "posted" and res.items[0].memo == "Fee receipt"
+
+
+async def test_audit_report(db, org):
+    admin = await _admin(db, org)
+    db.add(Invoice(id=str(uuid.uuid4()), number="INV-1", customer_name="A", total=Decimal(1000), status="paid", invoice_date=date(2026, 5, 1), org_id=org.id))
+    db.add(Invoice(id=str(uuid.uuid4()), number="INV-2", customer_name="B", total=Decimal(400), status="posted", invoice_date=date(2026, 5, 2), org_id=org.id))
+    await db.commit()
+    res = await broad_view_audit_report(status=None, db=db, current_user=admin)
+    assert res.total_transactions == 2 and res.total_amount == 1400.0
+    assert res.total_paid == 1000.0 and res.total_unpaid == 400.0
+    # Status filter.
+    paid = await broad_view_audit_report(status="paid", db=db, current_user=admin)
+    assert paid.total_transactions == 1
