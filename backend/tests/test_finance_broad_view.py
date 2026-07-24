@@ -10,8 +10,12 @@ import pytest
 
 from app.models.user import User, UserStatus
 from app.models.payment import StudentFeeRecord
-from app.models.modules.finance import LedgerAccount, BankAccount, Invoice
-from app.routers.modules.finance import broad_view_dashboard
+from app.models.modules.finance import LedgerAccount, BankAccount, Invoice, InvoiceLine, FeeDiscount
+from app.models.modules.wallet import ParentWallet, ParentWalletEntry
+from app.routers.modules.finance import (
+    broad_view_dashboard, broad_view_account_head_summary, broad_view_termly_summary,
+    broad_view_discount_log, broad_view_wallet_log,
+)
 from app.services import ledger
 
 
@@ -86,3 +90,62 @@ async def test_broad_view_session_filter(db, org, student):
     # Non-matching session → excluded.
     r2 = await broad_view_dashboard(session="2099", term=None, db=db, current_user=admin)
     assert r2.total_revenue == 0.0
+
+
+# ── Batch 2 tabs ──────────────────────────────────────────────────────────────
+
+async def test_account_head_summary(db, org):
+    admin = await _admin(db, org)
+    income = await _acct(db, org, "4000", "School Fees", "income")
+    inv = Invoice(id=str(uuid.uuid4()), number="INV-1", customer_name="Ada", total=Decimal(500), status="paid", org_id=org.id)
+    db.add(inv)
+    await db.flush()
+    db.add(InvoiceLine(id=str(uuid.uuid4()), invoice_id=inv.id, description="Term fees", quantity=Decimal(1),
+                       unit_price=Decimal(500), amount=Decimal(500), income_account_id=income.id, org_id=org.id))
+    await db.commit()
+
+    res = await broad_view_account_head_summary(db=db, current_user=admin)
+    row = next(r for r in res.items if r.account_name == "School Fees")
+    assert row.total_invoice == 1 and row.total_receipt == 1
+    assert row.invoice_charge == 500.0 and row.amount_paid == 500.0
+
+
+async def test_termly_summary(db, org, student):
+    admin = await _admin(db, org)
+    fr = StudentFeeRecord(id=str(uuid.uuid4()), org_id=org.id, student_id=student.id, term="term1_2026",
+                          session_year="2026", tuition_fee=Decimal(1000), exam_fee=Decimal(200),
+                          total_fee=Decimal(1200), paid_amount=Decimal(0), outstanding_balance=Decimal(1200), payment_status="unpaid")
+    db.add(fr)
+    await db.commit()
+    res = await broad_view_termly_summary(session="2026", term="term1_2026", db=db, current_user=admin)
+    by = {r.fee: r.amount for r in res.items}
+    assert by["Tuition"] == 1000.0 and by["Exam"] == 200.0 and res.total == 1200.0
+
+
+async def test_discount_log(db, org, student):
+    admin = await _admin(db, org)
+    db.add(FeeDiscount(id=str(uuid.uuid4()), org_id=org.id, student_id=student.id, student_name="Ada Okafor",
+                       discount_type="fixed", value=Decimal(100), amount=Decimal(100), reason="sibling", status="approved"))
+    await db.commit()
+    res = await broad_view_discount_log(db=db, current_user=admin)
+    assert len(res.items) == 1 and res.items[0].student_name == "Ada Okafor"
+    assert res.items[0].amount == 100.0 and res.total_discount == 100.0
+
+
+async def test_wallet_log(db, org):
+    admin = await _admin(db, org)
+    parent = User(id=str(uuid.uuid4()), email=f"p-{uuid.uuid4().hex[:6]}@example.com", full_name="Mrs Parent",
+                  status=UserStatus.ACTIVE, org_id=org.id)
+    db.add(parent)
+    await db.flush()
+    w = ParentWallet(id=str(uuid.uuid4()), user_id=parent.id, is_active=True, org_id=org.id)
+    db.add(w)
+    await db.flush()
+    db.add(ParentWalletEntry(id=str(uuid.uuid4()), wallet_id=w.id, user_id=parent.id, kind="credit", signed_amount=Decimal(500), org_id=org.id))
+    db.add(ParentWalletEntry(id=str(uuid.uuid4()), wallet_id=w.id, user_id=parent.id, kind="debit", signed_amount=Decimal(-120), org_id=org.id))
+    await db.commit()
+
+    res = await broad_view_wallet_log(db=db, current_user=admin)
+    assert len(res.items) == 2
+    assert res.total_credit == 500.0 and res.total_debit == 120.0
+    assert all(r.wallet_name == "Mrs Parent" for r in res.items)

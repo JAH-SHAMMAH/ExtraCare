@@ -697,3 +697,60 @@ class BroadViewDashboard(BaseModel):
     banks: list[BroadViewBank]
     session: Optional[str] = None
     term: Optional[str] = None
+
+
+# ── Broad View: report tabs ───────────────────────────────────────────────────
+
+class AccountHeadRow(BaseModel):
+    account_name: str
+    total_invoice: int
+    total_receipt: int
+    invoice_charge: float
+    amount_paid: float
+
+
+class AccountHeadSummary(BaseModel):
+    items: list[AccountHeadRow]
+
+
+class TermlyFeeRow(BaseModel):
+    fee: str
+    amount: float
+
+
+class TermlySummary(BaseModel):
+    items: list[TermlyFeeRow]
+    total: float
+    session: Optional[str] = None
+    term: Optional[str] = None
+
+
+class DiscountLogRow(BaseModel):
+    id: str
+    student_name: Optional[str]
+    discount_type: str
+    value: float
+    amount: float
+    reason: Optional[str]
+    status: str
+    created_at: datetime
+
+
+class DiscountLog(BaseModel):
+    items: list[DiscountLogRow]
+    total_discount: float
+
+
+class WalletLogRow(BaseModel):
+    id: str
+    wallet_name: Optional[str]
+    memo: Optional[str]
+    credit: float
+    debit: float
+    created_at: datetime
+
+
+class WalletLog(BaseModel):
+    items: list[WalletLogRow]
+    total_credit: float
+    total_debit: float

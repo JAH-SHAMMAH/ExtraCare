@@ -1216,6 +1216,10 @@ export const financeApi = {
   statements: (p?: { as_of?: string }) => api.get("/finance/statements", { params: p }).then((r) => r.data),
   broadView: {
     dashboard: (p?: { session?: string; term?: string }) => api.get("/finance/broad-view/dashboard", { params: p }).then((r) => r.data),
+    accountHeadSummary: () => api.get("/finance/broad-view/account-head-summary").then((r) => r.data),
+    termlySummary: (p?: { session?: string; term?: string }) => api.get("/finance/broad-view/termly-summary", { params: p }).then((r) => r.data),
+    discountLog: () => api.get("/finance/broad-view/discount-log").then((r) => r.data),
+    walletLog: () => api.get("/finance/broad-view/wallet-log").then((r) => r.data),
   },
   invoices: {
     list: (p?: { status?: string; page?: number; page_size?: number }) => api.get("/finance/invoices", { params: p }).then((r) => r.data),

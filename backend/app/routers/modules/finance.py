@@ -54,7 +54,10 @@ from app.schemas.finance import (
     PaymentGatewayCreate, PaymentGatewayUpdate, PaymentGatewayResponse, GATEWAY_MODES, GATEWAY_PROVIDERS,
     ACCOUNT_TYPES,
     BroadViewDashboard, BroadViewDistItem, BroadViewBank,
+    AccountHeadSummary, AccountHeadRow, TermlySummary, TermlyFeeRow,
+    DiscountLog, DiscountLogRow, WalletLog, WalletLogRow,
 )
+from app.models.modules.wallet import ParentWallet, ParentWalletEntry
 from app.services import ledger
 from app.services.ledger import money
 from app.services import crypto
@@ -487,6 +490,84 @@ async def broad_view_dashboard(
         total_part_payment=float(total_part_payment), total_debt=float(total_debt),
         distribution=distribution, banks=bank_items, session=session, term=term,
     )
+
+
+@router.get("/broad-view/account-head-summary", response_model=AccountHeadSummary, dependencies=[_fin_write])
+async def broad_view_account_head_summary(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Per income head: invoice count / receipt count / invoiced charge / amount paid."""
+    org_id = current_user.org_id
+    rows = (await db.execute(
+        select(InvoiceLine.income_account_id, InvoiceLine.invoice_id, InvoiceLine.amount, Invoice.status)
+        .join(Invoice, Invoice.id == InvoiceLine.invoice_id)
+        .where(Invoice.org_id == org_id, Invoice.is_deleted == False, Invoice.status != "void")  # noqa: E712
+    )).all()
+    names = {a.id: a.name for a in (await db.execute(
+        select(LedgerAccount).where(LedgerAccount.org_id == org_id, LedgerAccount.type == "income"))).scalars().all()}
+    agg: dict[str, dict] = {}
+    for acct_id, inv_id, amount, status in rows:
+        a = agg.setdefault(acct_id, {"invoices": set(), "paid": set(), "charge": money(0), "amount_paid": money(0)})
+        a["invoices"].add(inv_id)
+        a["charge"] += money(amount or 0)
+        if status == "paid":
+            a["paid"].add(inv_id)
+            a["amount_paid"] += money(amount or 0)
+    items = [AccountHeadRow(account_name=names.get(aid, "—"), total_invoice=len(v["invoices"]),
+                            total_receipt=len(v["paid"]), invoice_charge=float(v["charge"]), amount_paid=float(v["amount_paid"]))
+             for aid, v in agg.items()]
+    items.sort(key=lambda x: x.invoice_charge, reverse=True)
+    return AccountHeadSummary(items=items)
+
+
+@router.get("/broad-view/termly-summary", response_model=TermlySummary, dependencies=[_fin_write])
+async def broad_view_termly_summary(session: str | None = Query(default=None), term: str | None = Query(default=None),
+                                    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Fee-category totals for the selected session/term (from student fee records)."""
+    org_id = current_user.org_id
+    q = select(StudentFeeRecord).where(StudentFeeRecord.org_id == org_id, StudentFeeRecord.is_deleted == False)  # noqa: E712
+    if session:
+        q = q.where(StudentFeeRecord.session_year == session)
+    if term:
+        q = q.where(StudentFeeRecord.term == term)
+    records = (await db.execute(q)).scalars().all()
+    cats = [("Tuition", "tuition_fee"), ("Exam", "exam_fee"), ("Activity", "activity_fee"),
+            ("Transport", "transport_fee"), ("Hostel", "hostel_fee"), ("Other", "other_fees")]
+    items = [TermlyFeeRow(fee=label, amount=float(sum((money(getattr(r, attr)) for r in records), money(0)))) for label, attr in cats]
+    total = float(sum((money(r.total_fee) for r in records), money(0)))
+    return TermlySummary(items=items, total=total, session=session, term=term)
+
+
+@router.get("/broad-view/discount-log", response_model=DiscountLog, dependencies=[_fin_write])
+async def broad_view_discount_log(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(FeeDiscount).where(
+        FeeDiscount.org_id == current_user.org_id, FeeDiscount.is_deleted == False)  # noqa: E712
+        .order_by(FeeDiscount.created_at.desc()))).scalars().all()
+    items = [DiscountLogRow(id=d.id, student_name=d.student_name, discount_type=d.discount_type,
+                            value=float(d.value), amount=float(d.amount), reason=d.reason, status=d.status, created_at=d.created_at)
+             for d in rows]
+    total_discount = float(sum((money(d.amount) for d in rows if d.status == "approved"), money(0)))
+    return DiscountLog(items=items, total_discount=total_discount)
+
+
+@router.get("/broad-view/wallet-log", response_model=WalletLog, dependencies=[_fin_write])
+async def broad_view_wallet_log(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Parent (family) wallet credit/debit log."""
+    org_id = current_user.org_id
+    rows = (await db.execute(
+        select(ParentWalletEntry, User.full_name)
+        .outerjoin(User, User.id == ParentWalletEntry.user_id)
+        .where(ParentWalletEntry.org_id == org_id)
+        .order_by(ParentWalletEntry.created_at.desc())
+    )).all()
+    items: list[WalletLogRow] = []
+    total_credit = total_debit = money(0)
+    for e, name in rows:
+        amt = money(e.signed_amount)
+        credit = amt if e.kind == "credit" else money(0)
+        debit = -amt if e.kind == "debit" else money(0)
+        total_credit += credit
+        total_debit += debit
+        items.append(WalletLogRow(id=e.id, wallet_name=name, memo=e.memo, credit=float(credit), debit=float(debit), created_at=e.created_at))
+    return WalletLog(items=items, total_credit=float(total_credit), total_debit=float(total_debit))
 
 
 # ── Finance Reports (read-only, period-scoped) ──────────────────────────────────

@@ -757,3 +757,15 @@ export function useBroadViewDashboard(params: { session?: string; term?: string 
     queryFn: () => financeApi.broadView.dashboard(params),
   });
 }
+export function useAccountHeadSummary(enabled: boolean) {
+  return useQuery({ queryKey: ["bv-account-head"], queryFn: () => financeApi.broadView.accountHeadSummary(), enabled });
+}
+export function useTermlySummary(params: { session?: string; term?: string }, enabled: boolean) {
+  return useQuery({ queryKey: ["bv-termly", params.session, params.term], queryFn: () => financeApi.broadView.termlySummary(params), enabled });
+}
+export function useDiscountLog(enabled: boolean) {
+  return useQuery({ queryKey: ["bv-discount-log"], queryFn: () => financeApi.broadView.discountLog(), enabled });
+}
+export function useWalletLog(enabled: boolean) {
+  return useQuery({ queryKey: ["bv-wallet-log"], queryFn: () => financeApi.broadView.walletLog(), enabled });
+}
