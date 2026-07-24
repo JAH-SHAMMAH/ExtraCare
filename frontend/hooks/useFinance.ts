@@ -781,3 +781,6 @@ export function useAllTransactionsLog(enabled: boolean) {
 export function useAuditReport(enabled: boolean) {
   return useQuery({ queryKey: ["bv-audit"], queryFn: () => financeApi.broadView.auditReport(), enabled });
 }
+export function usePaymentTransactions(admissionOnly: boolean, enabled: boolean) {
+  return useQuery({ queryKey: ["bv-payment-txns", admissionOnly], queryFn: () => financeApi.broadView.paymentTransactions({ admission_only: admissionOnly }), enabled });
+}

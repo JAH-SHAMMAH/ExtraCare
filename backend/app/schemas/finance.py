@@ -815,3 +815,28 @@ class AuditReport(BaseModel):
     total_paid: float
     total_unpaid: float
     items: list[AuditInvoiceRow]
+
+
+# ── Broad View: online payment transactions (batch 4) ─────────────────────────
+
+class PaymentTxnRow(BaseModel):
+    id: str
+    reference: str
+    provider_reference: Optional[str]
+    payment_type: str
+    provider: str
+    status: str
+    amount_ngn: float
+    fee_ngn: Optional[float]
+    customer_name: Optional[str]
+    customer_email: Optional[str]
+    payment_method: Optional[str]
+    description: Optional[str]
+    created_at: datetime
+
+
+class PaymentTxnList(BaseModel):
+    items: list[PaymentTxnRow]
+    total_amount: float
+    successful_amount: float
+    count: int

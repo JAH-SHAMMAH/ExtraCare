@@ -1224,6 +1224,7 @@ export const financeApi = {
     studentsLedger: (p?: { session?: string; term?: string }) => api.get("/finance/broad-view/students-ledger", { params: p }).then((r) => r.data),
     allTransactionsLog: () => api.get("/finance/broad-view/all-transactions-log").then((r) => r.data),
     auditReport: (p?: { status?: string }) => api.get("/finance/broad-view/audit-report", { params: p }).then((r) => r.data),
+    paymentTransactions: (p?: { admission_only?: boolean }) => api.get("/finance/broad-view/payment-transactions", { params: p }).then((r) => r.data),
   },
   invoices: {
     list: (p?: { status?: string; page?: number; page_size?: number }) => api.get("/finance/invoices", { params: p }).then((r) => r.data),

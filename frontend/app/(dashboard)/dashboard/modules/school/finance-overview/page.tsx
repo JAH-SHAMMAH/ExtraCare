@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useBroadViewDashboard, useAccountHeadSummary, useTermlySummary, useDiscountLog, useWalletLog, useInvoiceItemsReport, useStudentsLedger, useAllTransactionsLog, useAuditReport } from "@/hooks/useFinance";
+import { useBroadViewDashboard, useAccountHeadSummary, useTermlySummary, useDiscountLog, useWalletLog, useInvoiceItemsReport, useStudentsLedger, useAllTransactionsLog, useAuditReport, usePaymentTransactions } from "@/hooks/useFinance";
 import { useSessions } from "@/hooks/usePlatform";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
@@ -216,6 +216,64 @@ function AuditReportTab() {
   );
 }
 
+function txnStatusClass(s: string) {
+  return s === "successful" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+    : s === "failed" || s === "cancelled" ? "bg-rose-50 text-rose-700 border-rose-200"
+    : "bg-amber-50 text-amber-700 border-amber-200";
+}
+
+/** Shared summary cards for the payment-transaction tabs. */
+function TxnCards({ data }: { data: any }) {
+  if (!data) return null;
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+      <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-lg font-black text-slate-900">{data.count}</p><p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Transactions</p></div>
+      <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-lg font-black text-slate-900">{formatCurrency(data.total_amount)}</p><p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Total Amount</p></div>
+      <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4"><p className="text-lg font-black text-emerald-700">{formatCurrency(data.successful_amount)}</p><p className="text-[11px] font-bold uppercase tracking-widest text-emerald-500">Successful</p></div>
+    </div>
+  );
+}
+
+function OnlineTxnTab({ admissionOnly, refView }: { admissionOnly: boolean; refView?: boolean }) {
+  const { data, isLoading } = usePaymentTransactions(admissionOnly, true);
+  const rows = data?.items ?? [];
+  const headers = refView
+    ? ["SN", "Reference", "Provider Ref", "Provider", "Amount", "Status", "Date"]
+    : ["SN", "Reference", "Customer", "Type", "Provider", "Method", "Amount", "Status", "Date"];
+  const empty = admissionOnly ? "No admission-form payments" : "No online transactions";
+  return (
+    <>
+      <TxnCards data={data} />
+      <TabTable headers={headers}>
+        {isLoading ? <tr><td colSpan={headers.length} className="px-5 py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></td></tr>
+        : rows.length ? rows.map((r: any, i: number) => refView ? (
+          <tr key={r.id} className="hover:bg-slate-50/70">
+            <td className="px-5 py-3 text-sm text-slate-500">{i + 1}</td>
+            <td className="px-5 py-3 text-sm font-semibold text-slate-800 font-mono">{r.reference}</td>
+            <td className="px-5 py-3 text-sm text-slate-500 font-mono">{r.provider_reference || "—"}</td>
+            <td className="px-5 py-3 text-sm text-slate-600 capitalize">{r.provider}</td>
+            <td className="px-5 py-3 text-sm font-semibold text-slate-800">{formatCurrency(r.amount_ngn)}</td>
+            <td className="px-5 py-3"><span className={cn("badge capitalize", txnStatusClass(r.status))}>{r.status}</span></td>
+            <td className="px-5 py-3 text-sm text-slate-500 whitespace-nowrap">{fmtDate(r.created_at)}</td>
+          </tr>
+        ) : (
+          <tr key={r.id} className="hover:bg-slate-50/70">
+            <td className="px-5 py-3 text-sm text-slate-500">{i + 1}</td>
+            <td className="px-5 py-3 text-sm font-semibold text-slate-800 font-mono">{r.reference}</td>
+            <td className="px-5 py-3 text-sm text-slate-700">{r.customer_name || "—"}{r.customer_email && <span className="block text-xs text-slate-400">{r.customer_email}</span>}</td>
+            <td className="px-5 py-3 text-sm text-slate-600">{(r.payment_type || "").replace(/_/g, " ")}</td>
+            <td className="px-5 py-3 text-sm text-slate-600 capitalize">{r.provider}</td>
+            <td className="px-5 py-3 text-sm text-slate-600">{r.payment_method || "—"}</td>
+            <td className="px-5 py-3 text-sm font-semibold text-slate-800">{formatCurrency(r.amount_ngn)}</td>
+            <td className="px-5 py-3"><span className={cn("badge capitalize", txnStatusClass(r.status))}>{r.status}</span></td>
+            <td className="px-5 py-3 text-sm text-slate-500 whitespace-nowrap">{fmtDate(r.created_at)}</td>
+          </tr>
+        )) : <tr><td colSpan={headers.length} className="py-14 text-center text-slate-400 font-semibold">{empty}</td></tr>}
+      </TabTable>
+    </>
+  );
+}
+
 const TABS = [
   "Report Dashboard", "Invoice Items Report", "Students Ledger", "All Transactions Log",
   "Payment Refs", "Audit Report", "Online Transactions Log", "Account Head Summary",
@@ -283,6 +341,12 @@ export default function BroadViewPage() {
         <TransactionsLogTab />
       ) : tab === "Audit Report" ? (
         <AuditReportTab />
+      ) : tab === "Online Transactions Log" ? (
+        <OnlineTxnTab admissionOnly={false} />
+      ) : tab === "Payment Refs" ? (
+        <OnlineTxnTab admissionOnly={false} refView />
+      ) : tab === "Admission Form Pay Log" ? (
+        <OnlineTxnTab admissionOnly refView />
       ) : tab !== "Report Dashboard" ? (
         <div className="bg-white rounded-xl border border-slate-200 py-16 text-center text-slate-400">
           <BarChart3 size={30} className="mx-auto mb-3 opacity-40" />

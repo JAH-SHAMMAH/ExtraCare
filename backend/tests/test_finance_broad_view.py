@@ -16,7 +16,9 @@ from app.routers.modules.finance import (
     broad_view_dashboard, broad_view_account_head_summary, broad_view_termly_summary,
     broad_view_discount_log, broad_view_wallet_log,
     broad_view_invoice_items, broad_view_students_ledger, broad_view_transactions_log, broad_view_audit_report,
+    broad_view_payment_transactions,
 )
+from app.models.payment import PaymentTransaction, PaymentType, PaymentStatus, PaymentProvider, TenantPaymentSettings
 from app.services import ledger
 
 
@@ -212,3 +214,34 @@ async def test_audit_report(db, org):
     # Status filter.
     paid = await broad_view_audit_report(status="paid", db=db, current_user=admin)
     assert paid.total_transactions == 1
+
+
+# ── Batch 4: online payment transactions ──────────────────────────────────────
+
+async def _settings(db, org) -> TenantPaymentSettings:
+    s = TenantPaymentSettings(id=str(uuid.uuid4()), org_id=org.id, provider=PaymentProvider.PAYSTACK, is_active=True)
+    db.add(s)
+    await db.commit()
+    return s
+
+
+async def test_payment_transactions_log_and_admission_filter(db, org):
+    admin = await _admin(db, org)
+    ps = await _settings(db, org)
+    db.add(PaymentTransaction(id=str(uuid.uuid4()), org_id=org.id, payment_settings_id=ps.id, reference="ec_fees_1",
+                              provider_reference="ps_ref_1", payment_type=PaymentType.SCHOOL_FEES, status=PaymentStatus.SUCCESSFUL,
+                              provider=PaymentProvider.PAYSTACK, amount_ngn=Decimal(50000), customer_name="Mrs Ada",
+                              payment_method="card", description="Term 1 fees"))
+    db.add(PaymentTransaction(id=str(uuid.uuid4()), org_id=org.id, payment_settings_id=ps.id, reference="ec_adm_1",
+                              provider_reference="ps_ref_2", payment_type=PaymentType.OTHER, status=PaymentStatus.PENDING,
+                              provider=PaymentProvider.PAYSTACK, amount_ngn=Decimal(5000), customer_name="Mr Bell",
+                              description="Admission form payment"))
+    await db.commit()
+
+    res = await broad_view_payment_transactions(admission_only=False, db=db, current_user=admin)
+    assert res.count == 2
+    assert res.total_amount == 55000.0 and res.successful_amount == 50000.0
+    assert {r.reference for r in res.items} == {"ec_fees_1", "ec_adm_1"}
+
+    adm = await broad_view_payment_transactions(admission_only=True, db=db, current_user=admin)
+    assert adm.count == 1 and adm.items[0].reference == "ec_adm_1"

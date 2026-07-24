@@ -58,8 +58,10 @@ from app.schemas.finance import (
     DiscountLog, DiscountLogRow, WalletLog, WalletLogRow,
     InvoiceItemsReport, InvoiceItemRow, StudentsLedger, StudentLedgerRow,
     TransactionsLog, TransactionLogRow, AuditReport, AuditInvoiceRow,
+    PaymentTxnList, PaymentTxnRow,
 )
 from app.models.modules.wallet import ParentWallet, ParentWalletEntry
+from app.models.payment import PaymentTransaction, PaymentStatus
 from app.services import ledger
 from app.services.ledger import money
 from app.services import crypto
@@ -671,6 +673,33 @@ async def broad_view_audit_report(status: str | None = Query(default=None),
                              status=i.status, invoice_date=i.invoice_date) for i in invoices[:200]]
     return AuditReport(total_transactions=len(invoices), total_amount=float(total_amount),
                        total_paid=float(total_paid), total_unpaid=float(total_amount - total_paid), items=items)
+
+
+@router.get("/broad-view/payment-transactions", response_model=PaymentTxnList, dependencies=[_fin_write])
+async def broad_view_payment_transactions(admission_only: bool = Query(default=False),
+                                          db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Online gateway payments (PaymentTransaction). Backs the Online Transactions
+    Log, Payment Refs, and Admission Form Pay Log tabs. ``admission_only`` filters
+    to admission-form payments (by description)."""
+    org_id = current_user.org_id
+    q = select(PaymentTransaction).where(PaymentTransaction.org_id == org_id, PaymentTransaction.is_deleted == False)  # noqa: E712
+    if admission_only:
+        q = q.where(func.lower(func.coalesce(PaymentTransaction.description, "")).like("%admission%"))
+    rows = (await db.execute(q.order_by(PaymentTransaction.created_at.desc()).limit(500))).scalars().all()
+
+    def _val(x):
+        return x.value if hasattr(x, "value") else str(x)
+
+    items = [PaymentTxnRow(
+        id=t.id, reference=t.reference, provider_reference=t.provider_reference,
+        payment_type=_val(t.payment_type), provider=_val(t.provider), status=_val(t.status),
+        amount_ngn=float(t.amount_ngn), fee_ngn=float(t.fee_ngn) if t.fee_ngn is not None else None,
+        customer_name=t.customer_name, customer_email=t.customer_email, payment_method=t.payment_method,
+        description=t.description, created_at=t.created_at,
+    ) for t in rows]
+    total_amount = float(sum((money(t.amount_ngn) for t in rows), money(0)))
+    successful_amount = float(sum((money(t.amount_ngn) for t in rows if _val(t.status) == "successful"), money(0)))
+    return PaymentTxnList(items=items, total_amount=total_amount, successful_amount=successful_amount, count=len(rows))
 
 
 # ── Finance Reports (read-only, period-scoped) ──────────────────────────────────
