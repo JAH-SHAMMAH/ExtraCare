@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.core.permissions import require_superadmin
+from app.core.permissions import require_superadmin, PermissionChecker
 from app.core.ratelimit import rate_limit_auth
 from app.deps import get_current_active_user
 from app.models.audit import AuditAction
@@ -23,7 +23,7 @@ from app.schemas.auth import IndustryLiteral
 from app.services.audit_service import log_action
 from app.services import onboarding as onboarding_svc
 from app.core.workspace import get_default_modules_for_industry, validate_module_for_workspace, workspace_for
-from app.models.role import Role, permission_presets_for_industry
+from app.models.role import Role, permission_presets_for_industry, role_display_name
 
 
 router = APIRouter(prefix="/organizations", tags=["Organizations (Platform)"])
@@ -208,7 +208,7 @@ async def _sync_system_roles_for_org(db: AsyncSession, org: Organization) -> Non
         role = by_slug.get(slug)
         if role is None:
             db.add(Role(
-                name=slug.replace("_", " ").title(),
+                name=role_display_name(slug),
                 slug=slug,
                 permissions=list(perms),
                 org_id=org.id,
@@ -216,6 +216,27 @@ async def _sync_system_roles_for_org(db: AsyncSession, org: Organization) -> Non
             ))
         else:
             role.permissions = list(perms)
+
+
+@router.post(
+    "/current/sync-roles",
+    summary="Seed any missing system roles (+ refresh their permissions) into the caller's org — idempotent",
+    dependencies=[Depends(PermissionChecker("roles:write"))],
+)
+async def sync_roles_for_current_org(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    org = (await db.execute(select(Organization).where(Organization.id == current_user.org_id))).scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found.")
+    await _sync_system_roles_for_org(db, org)
+    await db.commit()
+    total = (await db.execute(
+        select(func.count()).select_from(
+            select(Role.id).where(Role.org_id == org.id, Role.is_system == True).subquery())  # noqa: E712
+    )).scalar() or 0
+    return {"synced": True, "system_roles": total}
 
 
 @router.patch(

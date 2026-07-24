@@ -69,6 +69,14 @@ _reports_read = Depends(PermissionChecker("school:reports:read"))
 _reports_write = Depends(PermissionChecker("school:reports:write"))  # authoring report comments/attendance (staff)
 _attendance_read = Depends(PermissionChecker("school:attendance:read"))
 _lessons_read = Depends(PermissionChecker("school:lessons:read"))
+# Fine scopes for the roster/exam surfaces so narrow roles (Exam/Admission Officer,
+# Guidance Counsellor) reach exactly their domain. Broad school:read/write still
+# satisfy these via the hierarchy — admin/teacher/manager are unaffected.
+_students_read = Depends(PermissionChecker("school:students:read"))
+_subjects_read = Depends(PermissionChecker("school:subjects:read"))
+_classes_read = Depends(PermissionChecker("school:classes:read"))
+_exams_read = Depends(PermissionChecker("school:exams:read"))
+_exams_write = Depends(PermissionChecker("school:exams:write"))
 # Attendance Setup (config) is admin-only; reading the reason list is broader so
 # teachers can pick a reason while marking (school:attendance:read, above).
 _settings_read = Depends(PermissionChecker("settings:read"))
@@ -115,7 +123,7 @@ async def _ensure_student_visible(db: AsyncSession, user: User, student_id: str)
 
 # ── Students ──────────────────────────────────────────────────────────────────
 
-@router.get("/students", dependencies=[_can_read])
+@router.get("/students", dependencies=[_students_read])
 async def list_students(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
@@ -227,7 +235,7 @@ async def create_student(
     return _student_dict(student)
 
 
-@router.get("/students/{id}", dependencies=[_can_read])
+@router.get("/students/{id}", dependencies=[_students_read])
 async def get_student(
     id: str,
     db: AsyncSession = Depends(get_db),
@@ -441,7 +449,7 @@ async def _validate_teacher(db: AsyncSession, org_id: str, teacher_id: str | Non
         raise HTTPException(status_code=404, detail=f"Teacher not found for id: {teacher_id}")
 
 
-@router.get("/classes", dependencies=[_can_read])
+@router.get("/classes", dependencies=[_classes_read])
 async def list_classes(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=100, ge=1, le=200),
@@ -592,7 +600,7 @@ async def _load_subject(db: AsyncSession, subject_id: str, org_id: str) -> Subje
     return s
 
 
-@router.get("/subjects", dependencies=[_can_read])
+@router.get("/subjects", dependencies=[_subjects_read])
 async def list_subjects(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=100, ge=1, le=200),
@@ -1586,7 +1594,7 @@ async def _exam_entered_counts(db: AsyncSession, org_id: str, exam_ids: list[str
     return {r[0]: r[1] for r in rows}
 
 
-@router.get("/exams", dependencies=[_can_read])
+@router.get("/exams", dependencies=[_exams_read])
 async def list_exams(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
@@ -1624,7 +1632,7 @@ async def list_exams(
     }
 
 
-@router.get("/exams/{exam_id}", dependencies=[_can_read])
+@router.get("/exams/{exam_id}", dependencies=[_exams_read])
 async def get_exam(exam_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     org_id = current_user.org_id
     e = await _load_exam(db, exam_id, org_id)
@@ -1636,7 +1644,7 @@ async def get_exam(exam_id: str, db: AsyncSession = Depends(get_db), current_use
                       entered.get(e.id, 0), totals.get(e.class_id, 0))
 
 
-@router.post("/exams", status_code=201, dependencies=[_can_write])
+@router.post("/exams", status_code=201, dependencies=[_exams_write])
 async def create_exam(
     data: ExamCreate,
     request: Request = None,
@@ -1675,7 +1683,7 @@ async def create_exam(
     return _exam_dict(e, subj.get(e.subject_id), cls.get(e.class_id), 0, totals.get(e.class_id, 0))
 
 
-@router.patch("/exams/{exam_id}", dependencies=[_can_write])
+@router.patch("/exams/{exam_id}", dependencies=[_exams_write])
 async def update_exam(
     exam_id: str,
     data: ExamUpdate,
@@ -1724,7 +1732,7 @@ async def _exam_roster(db: AsyncSession, org_id: str, class_id: str | None) -> l
     )).scalars().all())
 
 
-@router.get("/exams/{exam_id}/results", dependencies=[_can_read])
+@router.get("/exams/{exam_id}/results", dependencies=[_exams_read])
 async def get_exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Roster for the exam's class, each row merged with any entered grade — the
     marks-entry grid reads this so every enrolled student shows up (blank if not
@@ -1755,7 +1763,7 @@ async def get_exam_results(exam_id: str, db: AsyncSession = Depends(get_db), cur
     }
 
 
-@router.post("/exams/{exam_id}/results", dependencies=[_can_write])
+@router.post("/exams/{exam_id}/results", dependencies=[_exams_write])
 async def submit_exam_results(
     exam_id: str,
     results: list[ExamResultRow],

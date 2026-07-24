@@ -56,13 +56,25 @@ async def list_available_roles(
     current_user: User = Depends(get_current_active_user),
 ):
     """List all available roles for the current organization."""
-    result = await db.execute(
-        select(Role).where(
-            Role.org_id == current_user.org_id,
-            Role.is_deleted == False
-        ).order_by(Role.name)
-    )
-    roles = result.scalars().all()
+    async def _fetch():
+        return (await db.execute(
+            select(Role).where(Role.org_id == current_user.org_id, Role.is_deleted == False).order_by(Role.name)
+        )).scalars().all()
+
+    roles = await _fetch()
+    # Self-heal: seed any newly-added system-role presets for this org (idempotent).
+    # Runs only while presets are missing, so it's a one-time cost after a release
+    # that adds roles — admins then see the full catalogue with no manual sync step.
+    from app.models.role import permission_presets_for_industry
+    from app.models.organization import Organization
+    org = (await db.execute(select(Organization).where(Organization.id == current_user.org_id))).scalar_one_or_none()
+    if org is not None:
+        expected = len(permission_presets_for_industry(org.industry.value if org.industry else None))
+        if sum(1 for r in roles if r.is_system) < expected:
+            from app.routers.organizations import _sync_system_roles_for_org
+            await _sync_system_roles_for_org(db, org)
+            await db.commit()
+            roles = await _fetch()
     return {
         "items": [
             {

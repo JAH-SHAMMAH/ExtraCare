@@ -162,6 +162,100 @@ SCHOOL_PERMISSION_PRESETS = {
     "viewer": _dedupe(CORE_VIEWER_PERMISSIONS + ["school:read"]),
 }
 
+# ── Educare-parity role catalogue ────────────────────────────────────────────
+# The full set of school roles so admins can assign the right one at account
+# creation without adding roles later. Permission sets reuse the tiers above:
+#   • _ADMIN  = full org admin (school:* + payments:* + admin)   — leadership
+#   • _MGR    = senior admin (school:r/w + school_admin:r/w + payments:read + hr:r/w)
+#   • _TCH    = teaching/academic (school:r/w + hr:read)
+#   • _MIN    = self-service only (own profile / leave)
+# Specialist roles get narrow, function-specific scopes. FLAGGED as broad (can be
+# tightened later): exam_officer / admission_officer / guidance_counsellor sit at
+# _TCH (full school r/w) rather than a narrow exams/admissions/pastoral scope,
+# because those routes are partly gated on the broad school:read/write today.
+_ADMIN = SCHOOL_PERMISSION_PRESETS["org_admin"]
+_MGR = SCHOOL_PERMISSION_PRESETS["manager"]
+_TCH = SCHOOL_PERMISSION_PRESETS["teacher"]
+_MIN = ["hr:read"]   # own profile + My Leave / My HRM Info nav only
+
+SCHOOL_PERMISSION_PRESETS.update({
+    # Leadership → full admin
+    "super_user": _ADMIN,
+    "principal": _ADMIN,
+    "head": _ADMIN,
+    # Senior administration → manager tier
+    "vice_principal": _MGR,
+    "deputy_head": _MGR,
+    "administrative_coordinator": _MGR,
+    "head_of_administration": _MGR,          # HR-adjacent; manager includes hr:r/w
+    # Academic leadership / teaching → teacher tier
+    "instructor": _TCH,
+    "head_teacher": _TCH,
+    "academic_coordinator": _TCH,
+    "head_of_department_secondary": _TCH,
+    "head_of_early_years": _TCH,
+    "homeroom_coordinator": _TCH,
+    "exam_subject_head": _TCH,
+    # Narrowly scoped (gates split to match — see school.py / cbt.py): exams + CBT
+    # admin + read-only reports/grades, plus the supporting rosters (students,
+    # subjects, classes) their pickers need. NO broad school:write.
+    "exam_officer": _dedupe([
+        "school:exams:read", "school:exams:write",
+        "school:cbt:read", "school:cbt:write",
+        "school:reports:read", "school:grades:read",
+        "school:students:read", "school:subjects:read", "school:classes:read",
+        "users:read", "hr:read",
+    ]),
+    "admission_officer": _dedupe([
+        "school:admissions:read", "school:admissions:write",
+        "school:students:read", "users:read", "hr:read",
+    ]),
+    "guidance_counsellor": _dedupe([
+        "school:behaviour:read", "school:behaviour:write",
+        "school:feedback:read", "school:feedback:write",
+        "school:students:read", "users:read", "hr:read",
+    ]),
+    "spa_officer": _TCH,                      # SPA = Sports & Physical Activity
+    "spa_manager": _TCH,
+    # Specialist → narrow, function-specific
+    "hr_manager": _dedupe(["hr:read", "hr:write", "users:read", "users:write", "analytics:read"]),
+    "librarian": _dedupe(["school:library:read", "school:library:write", "users:read", "hr:read"]),
+    "school_nurse": _dedupe(["medical:read", "medical:write", "hr:read"]),
+    "facility_manager": _dedupe(["school_admin:facility:read", "school_admin:facility:write", "school:read", "hr:read"]),
+    "frontdesk_officer": _dedupe(["users:read", "school:read", "payments:read", "store:sell", "hr:read"]),
+    "storekeeper": _dedupe(["store:sell", "payments:read", "hr:read"]),
+    # Support staff → self-service only
+    "janitor": _MIN,
+    "caregiver": _MIN,
+    "maintenance_assistance": _MIN,
+    "kitchen_assistant": _MIN,
+    "assistant_chef": _MIN,
+    "driver": _MIN,
+    "head_of_kitchen": _MIN,
+    "spa_attendant": _MIN,
+})
+
+# Display names where slug.title() would be wrong (acronyms, "of", parentheses).
+ROLE_DISPLAY_NAMES = {
+    "super_user": "Super User",
+    "hr_manager": "HR Manager",
+    "frontdesk_officer": "FrontDesk Officer",
+    "spa_officer": "SPA Officer",
+    "spa_attendant": "SPA Attendant",
+    "spa_manager": "SPA Manager",
+    "head_of_administration": "Head of Administration",
+    "head_of_early_years": "Head of Early Years",
+    "head_of_department_secondary": "Head of Department (Secondary)",
+    "head_of_kitchen": "Head of Kitchen",
+    "maintenance_assistance": "Maintenance Assistance",
+}
+
+
+def role_display_name(slug: str) -> str:
+    """Human label for a preset slug (override table, else title-cased)."""
+    return ROLE_DISPLAY_NAMES.get(slug, slug.replace("_", " ").title())
+
+
 BUSINESS_PERMISSION_PRESETS = {
     "org_admin": _dedupe(CORE_ADMIN_PERMISSIONS + ["business:*", "payroll:*", "finance:*", "inventory:*", "crm:*"]),
     "manager": _dedupe(CORE_MANAGER_PERMISSIONS + ["business:read", "business:write", "payroll:read", "finance:read", "inventory:read", "crm:read"]),
