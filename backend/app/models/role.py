@@ -121,7 +121,7 @@ SCHOOL_PERMISSION_PRESETS = {
     # `payments:write` holder (accountant/manager) via the scope hierarchy. Keeping
     # it its own namespace makes "org_admin only" real. See ENCRYPTION_SERVICE_SPEC.md §9.
     "org_admin": _dedupe(CORE_ADMIN_PERMISSIONS + ["school:*", "school_admin:*", "payments:*", "payment_gateways:read", "payment_gateways:write", "store:*", "medical:*", "wallet:*"]),
-    "manager": _dedupe(CORE_MANAGER_PERMISSIONS + ["school:read", "school:write", "school_admin:read", "school_admin:write", "payments:read", "payments:write", "wallet:spend"]),
+    "manager": _dedupe(CORE_MANAGER_PERMISSIONS + ["school:read", "school:write", "school:cbt:manage", "school_admin:read", "school_admin:write", "payments:read", "payments:write", "wallet:spend"]),
     # Teacher holds broad school read/write (covers every fine-grained school
     # feature via the hierarchy) but NOT `school_admin:*` or `payments:*`, so
     # bulk SMS / transport / tuckshop / fee administration stay out of reach.
@@ -129,7 +129,7 @@ SCHOOL_PERMISSION_PRESETS = {
     # `hr:read` is a self-service marker (My HRM Info / My Leave nav); HR
     # mutations + the admin HR dashboard stay on users:*/hr:write, which the
     # teacher does NOT hold.
-    "teacher": _dedupe(["users:read", "school:read", "school:write", "analytics:read", "hr:read"]),
+    "teacher": _dedupe(["users:read", "school:read", "school:write", "school:cbt:manage", "analytics:read", "hr:read"]),
     # Frontline staff (e.g. tuckshop till) hold the dedicated, constrained
     # `wallet:spend` so they can ring up spends in real time — but NOT cash
     # movement or general ledger posting.
@@ -202,6 +202,7 @@ SCHOOL_PERMISSION_PRESETS.update({
     "exam_officer": _dedupe([
         "school:exams:read", "school:exams:write",
         "school:cbt:read", "school:cbt:write",
+        "school:cbt:manage",  # manage the CBT question bank / results without broad school:read/write
         "school:reports:read", "school:grades:read",
         "school:students:read", "school:subjects:read", "school:classes:read",
         "users:read", "hr:read",

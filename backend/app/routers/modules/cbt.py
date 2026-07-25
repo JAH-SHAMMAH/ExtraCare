@@ -12,8 +12,13 @@ Design notes:
     strips `correct_answer` for non-write callers.
 
 RBAC:
-  - school:read   → students viewing published exams, their own attempts
-  - school:write  → teachers creating exams, grading, publishing
+  - school:cbt:read / school:cbt:write → students: sit published exams, submit
+    their own attempts (never the question bank / answers).
+  - school:read / school:write         → staff (teacher/admin) authoring exams,
+    the question bank, results, grading, publishing.
+  - school:cbt:manage                  → dedicated staff-CBT scope for narrowly-
+    scoped roles (e.g. Exam Officer) — same reach as the broad staff grants for
+    the bank/results/attempts, WITHOUT broad school:read/write.
 """
 
 import csv
@@ -61,7 +66,7 @@ from app.schemas.school_experience import (
 )
 from fastapi.responses import Response
 from app.core.tenant import require_role_module
-from app.core.permissions import PermissionChecker
+from app.core.permissions import PermissionChecker, AnyPermissionChecker
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
 from app.core.events import log_event
@@ -80,10 +85,13 @@ router = APIRouter(
 _can_read = Depends(PermissionChecker("school:cbt:read"))
 _can_write = Depends(PermissionChecker("school:cbt:write"))
 # The Question Bank holds correct answers and is a teacher/admin authoring tool.
-# Gate it on the broad school scopes, NOT school:cbt:* — students hold cbt:read/
-# write to SIT tests and must never read the bank's answers.
-_bank_read = Depends(PermissionChecker("school:read"))
-_bank_write = Depends(PermissionChecker("school:write"))
+# Gate it on the broad school scopes OR the dedicated school:cbt:manage scope —
+# NEVER on school:cbt:read/write, which students hold to SIT tests (they must
+# never read the bank's answers). school:cbt:manage lets a narrowly-scoped role
+# (e.g. Exam Officer) manage exams/results without broad school:read/write, while
+# the broad grants keep every existing teacher/admin working without a re-sync.
+_bank_read = Depends(AnyPermissionChecker("school:read", "school:cbt:manage"))
+_bank_write = Depends(AnyPermissionChecker("school:write", "school:cbt:manage"))
 
 
 # ── Exams ─────────────────────────────────────────────────────────────────────
@@ -272,10 +280,12 @@ async def list_questions(
         if not is_staff and own_student_id:
             random.Random(f"{own_student_id}:{exam.id}").shuffle(questions)
 
-    # Only teachers with school:write should see correct_answer. Because this
-    # endpoint is behind school:read, include_answers=true is permitted only if
-    # the user also has school:write.
-    wants_answers = include_answers and current_user.has_permission("school:write")
+    # Only bank managers should see correct_answer — a broad school:write holder
+    # (teacher/admin) or the dedicated school:cbt:manage scope (e.g. Exam Officer).
+    # Students (school:cbt:read/write only) never get answers.
+    wants_answers = include_answers and (
+        current_user.has_permission("school:write") or current_user.has_permission("school:cbt:manage")
+    )
     if wants_answers:
         return {"items": [QuestionWithAnswer.model_validate(q).model_dump() for q in questions]}
     return {"items": [QuestionResponse.model_validate(q).model_dump() for q in questions]}
@@ -348,10 +358,11 @@ async def delete_question(
 
 
 async def _attempt_scope(db: AsyncSession, user: User) -> tuple[bool, str | None]:
-    """Attempt access scope. Staff (school:read) reach every attempt in the org;
-    a student (cbt:read/write but NOT school:read) is limited to their own linked
+    """Attempt access scope. Staff (broad school:read, or the dedicated
+    school:cbt:manage scope) reach every attempt in the org; a student
+    (cbt:read/write but NOT school:read/manage) is limited to their own linked
     Student record. Parents can't reach these endpoints (no cbt:read)."""
-    if user.has_permission("school:read"):
+    if user.has_permission("school:read") or user.has_permission("school:cbt:manage"):
         return True, None
     return False, await resolve_linked_student_id(db, user)
 

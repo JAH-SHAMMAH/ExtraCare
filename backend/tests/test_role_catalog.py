@@ -37,6 +37,9 @@ def test_new_presets_exist_with_expected_tiers():
     # Exam/Admission Officer + Guidance Counsellor are NARROW (no broad school:write).
     assert "school:write" not in p["exam_officer"] and "school:read" not in p["exam_officer"]
     assert set(p["exam_officer"]) >= {"school:exams:read", "school:exams:write", "school:students:read", "school:subjects:read", "school:classes:read"}
+    # Exam Officer gets the dedicated CBT-bank manage scope (not broad school:*).
+    assert "school:cbt:manage" in p["exam_officer"]
+    assert "school:cbt:manage" in p["teacher"] and "school:cbt:manage" in p["manager"]
     assert set(p["admission_officer"]) == {"school:admissions:read", "school:admissions:write", "school:students:read", "users:read", "hr:read"}
     assert set(p["guidance_counsellor"]) >= {"school:behaviour:read", "school:behaviour:write", "school:feedback:read", "school:feedback:write"}
     assert "school:write" not in p["guidance_counsellor"]
@@ -49,6 +52,35 @@ def test_new_presets_exist_with_expected_tiers():
         assert p[slug] == ["hr:read"]
     # All 37 Educare roles resolvable (spot the total is well beyond the old 11).
     assert len(p) >= 40
+
+
+def _user_with(perms):
+    u = User(id=str(uuid.uuid4()), email=f"u-{uuid.uuid4().hex[:6]}@x.com", full_name="U",
+             status=UserStatus.ACTIVE, org_id="o")
+    u.roles = [Role(id=str(uuid.uuid4()), name="R", slug="r", permissions=list(perms), org_id="o", is_system=True)]
+    return u
+
+
+def test_cbt_bank_scope_admits_exam_officer_excludes_students():
+    """The staff-CBT gate is AnyPermissionChecker(school:read|write, school:cbt:manage)
+    plus inline school:write|cbt:manage answer checks. Verify the boolean logic:
+    Exam Officer reaches the bank + sees answers via school:cbt:manage; a student
+    (cbt:read/write only) reaches neither; teacher still passes via broad scope."""
+    p = SCHOOL_PERMISSION_PRESETS
+    exam = _user_with(p["exam_officer"])
+    student = _user_with(["school:cbt:read", "school:cbt:write"])
+    teacher = _user_with(p["teacher"])
+
+    # _bank_read / _bank_write gate: pass if broad school:read/write OR school:cbt:manage.
+    bank_read = lambda u: u.has_permission("school:read") or u.has_permission("school:cbt:manage")
+    bank_write = lambda u: u.has_permission("school:write") or u.has_permission("school:cbt:manage")
+    # inline answer visibility (questions endpoint) + staff attempt scope.
+    sees_answers = lambda u: u.has_permission("school:write") or u.has_permission("school:cbt:manage")
+
+    assert bank_read(exam) and bank_write(exam) and sees_answers(exam)
+    assert not exam.has_permission("school:read")   # via the narrow manage scope, NOT broad read
+    assert not (bank_read(student) or bank_write(student) or sees_answers(student))
+    assert bank_read(teacher) and bank_write(teacher) and sees_answers(teacher)
 
 
 def test_display_name_overrides():
