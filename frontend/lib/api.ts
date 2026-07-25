@@ -1462,6 +1462,16 @@ export const biometricApi = {
     resolve: (id: string, data: object) => api.post(`/biometric/quarantine/${id}/resolve`, data).then((r) => r.data),
     discard: (id: string) => api.post(`/biometric/quarantine/${id}/discard`),
   },
+  summary: () => api.get("/biometric/summary").then((r) => r.data),
+  attendance: (deviceId?: string) =>
+    api.get("/biometric/attendance", { params: deviceId ? { device_id: deviceId } : {} }).then((r) => r.data),
+  commands: {
+    list: (devicePk?: string) =>
+      api.get("/biometric/commands", { params: devicePk ? { device_pk: devicePk } : {} }).then((r) => r.data),
+    generate: (devicePk: string, data: object) =>
+      api.post(`/biometric/devices/${devicePk}/commands`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/biometric/commands/${id}`),
+  },
 };
 
 export const platformApi = {

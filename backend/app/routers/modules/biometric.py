@@ -33,13 +33,15 @@ from app.core.tenant import require_module
 from app.core.permissions import PermissionChecker
 from app.models.user import User
 from app.models.organization import Organization
+from app.models.role import Role
 from app.models.modules.school import Student, AttendanceEvent
-from app.models.modules.platform import BiometricDevice, BiometricEnrollment, UnmappedPunch
+from app.models.modules.platform import BiometricDevice, BiometricEnrollment, UnmappedPunch, BiometricCommand
 from app.schemas.platform import (
     DeviceCreate, DeviceUpdate, DeviceResponse, DeviceTokenResponse,
     EnrollmentCreate, EnrollmentResponse,
     PunchIn, IngestPunchesRequest, IngestSummary,
     UnmappedPunchResponse, ResolvePunchRequest,
+    BiometricCommandCreate, BiometricCommandResponse, BiometricSummary, AttendanceHistoryRow,
 )
 from app.schemas.attendance import AttendanceEventIn
 from app.services import attendance as attendance_service
@@ -110,11 +112,17 @@ async def _student_name(db, org_id, sid) -> str | None:
 
 # ── Devices ─────────────────────────────────────────────────────────────────────
 
+_SPEC_FIELDS = ("model_name", "vendor", "device_type", "volume", "language", "firmware_version",
+                "fingerprint_version", "face_version", "mac_address", "storage_used_percent",
+                "attendance_log_capacity", "current_attendance_log")
+
+
 def _device_response(d: BiometricDevice) -> DeviceResponse:
     return DeviceResponse(id=d.id, device_id=d.device_id, name=d.name, location=d.location, is_active=d.is_active,
                           last_seen_at=d.last_seen_at, clock_skew_seconds=d.clock_skew_seconds, notes=d.notes,
                           created_at=d.created_at, org_id=d.org_id,
-                          has_token=bool(d.token_hash), token_prefix=d.token_prefix, token_issued_at=d.token_issued_at)
+                          has_token=bool(d.token_hash), token_prefix=d.token_prefix, token_issued_at=d.token_issued_at,
+                          **{f: getattr(d, f) for f in _SPEC_FIELDS})
 
 
 @router.get("/devices", response_model=list[DeviceResponse], dependencies=[_read])
@@ -126,7 +134,8 @@ async def list_devices(db: AsyncSession = Depends(get_db), current_user: User = 
 @router.post("/devices", response_model=DeviceResponse, status_code=201, dependencies=[_write])
 async def register_device(payload: DeviceCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     d = BiometricDevice(device_id=payload.device_id, name=payload.name, location=payload.location, notes=payload.notes,
-                        is_active=True, org_id=current_user.org_id)
+                        is_active=True, org_id=current_user.org_id,
+                        **{f: getattr(payload, f) for f in _SPEC_FIELDS})
     db.add(d)
     try:
         await db.flush()
@@ -207,28 +216,60 @@ async def revoke_device_token(device_pk: str, request: Request = None, db: Async
 
 # ── Enrollments ─────────────────────────────────────────────────────────────────
 
+async def _staff_role_name(db, org_id, user_id) -> str | None:
+    from app.models.role import user_roles
+    return (await db.execute(
+        select(Role.name).join(user_roles, user_roles.c.role_id == Role.id)
+        .where(user_roles.c.user_id == user_id, Role.org_id == org_id).limit(1)
+    )).scalar_one_or_none()
+
+
+async def _enrollment_response(db, e: BiometricEnrollment, org_id: str) -> EnrollmentResponse:
+    if e.user_id:
+        u = (await db.execute(select(User.full_name).where(User.id == e.user_id))).scalar_one_or_none()
+        person_name, person_type = u, "staff"
+        role_name = await _staff_role_name(db, org_id, e.user_id)
+    else:
+        person_name, person_type, role_name = await _student_name(db, org_id, e.student_id), "student", "Student"
+    return EnrollmentResponse(
+        id=e.id, biometric_user_id=e.biometric_user_id, student_id=e.student_id, user_id=e.user_id,
+        person_name=person_name, person_type=person_type, role_name=role_name, label=e.label,
+        fingerprint_count=e.fingerprint_count, has_face=e.has_face, has_card=e.has_card,
+        profile_pic_url=e.profile_pic_url, status=e.status, created_at=e.created_at, org_id=e.org_id,
+    )
+
+
 @router.get("/enrollments", response_model=list[EnrollmentResponse], dependencies=[_read])
 async def list_enrollments(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     rows = (await db.execute(select(BiometricEnrollment).where(BiometricEnrollment.org_id == current_user.org_id))).scalars().all()
-    return [EnrollmentResponse(id=e.id, biometric_user_id=e.biometric_user_id, student_id=e.student_id,
-                               student_name=await _student_name(db, current_user.org_id, e.student_id), label=e.label,
-                               created_at=e.created_at, org_id=e.org_id) for e in rows]
+    return [await _enrollment_response(db, e, current_user.org_id) for e in rows]
 
 
 @router.post("/enrollments", response_model=EnrollmentResponse, status_code=201, dependencies=[_write])
 async def create_enrollment(payload: EnrollmentCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    s = (await db.execute(select(Student).where(Student.id == payload.student_id, Student.org_id == current_user.org_id, Student.is_deleted == False))).scalar_one_or_none()  # noqa: E712
-    if not s:
-        raise HTTPException(status_code=404, detail="student not found in your organisation.")
-    e = BiometricEnrollment(biometric_user_id=payload.biometric_user_id, student_id=s.id, label=payload.label, org_id=current_user.org_id)
+    if bool(payload.student_id) == bool(payload.user_id):
+        raise HTTPException(status_code=422, detail="Provide exactly one of student_id or user_id.")
+    if payload.student_id:
+        person = (await db.execute(select(Student).where(Student.id == payload.student_id, Student.org_id == current_user.org_id, Student.is_deleted == False))).scalar_one_or_none()  # noqa: E712
+        if not person:
+            raise HTTPException(status_code=404, detail="student not found in your organisation.")
+    else:
+        person = (await db.execute(select(User).where(User.id == payload.user_id, User.org_id == current_user.org_id))).scalar_one_or_none()
+        if not person:
+            raise HTTPException(status_code=404, detail="staff user not found in your organisation.")
+    e = BiometricEnrollment(
+        biometric_user_id=payload.biometric_user_id, student_id=payload.student_id, user_id=payload.user_id,
+        label=payload.label, fingerprint_count=payload.fingerprint_count, has_face=payload.has_face,
+        has_card=payload.has_card, profile_pic_url=payload.profile_pic_url, status=payload.status,
+        org_id=current_user.org_id,
+    )
     db.add(e)
     try:
         await db.flush()
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="That biometric id is already mapped.")
-    return EnrollmentResponse(id=e.id, biometric_user_id=e.biometric_user_id, student_id=e.student_id,
-                              student_name=f"{s.first_name} {s.last_name}".strip(), label=e.label, created_at=e.created_at, org_id=e.org_id)
+    return await _enrollment_response(db, e, current_user.org_id)
 
 
 @router.delete("/enrollments/{enrollment_id}", status_code=204, dependencies=[_write])
@@ -237,6 +278,110 @@ async def delete_enrollment(enrollment_id: str, db: AsyncSession = Depends(get_d
     if not e:
         raise HTTPException(status_code=404, detail="Enrollment not found.")
     await db.delete(e)
+
+
+# ── Home summary ─────────────────────────────────────────────────────────────
+
+@router.get("/summary", response_model=BiometricSummary, dependencies=[_read])
+async def biometric_summary(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org_id = current_user.org_id
+
+    async def _c(model, *conds):
+        return (await db.execute(select(func.count()).select_from(model).where(model.org_id == org_id, *conds))).scalar() or 0
+
+    return BiometricSummary(
+        total_devices=await _c(BiometricDevice),
+        total_device_users=await _c(BiometricEnrollment),
+        total_fingerprint=await _c(BiometricEnrollment, BiometricEnrollment.fingerprint_count > 0),
+        total_face=await _c(BiometricEnrollment, BiometricEnrollment.has_face == True),  # noqa: E712
+        total_card=await _c(BiometricEnrollment, BiometricEnrollment.has_card == True),  # noqa: E712
+        total_active_users=await _c(BiometricEnrollment, BiometricEnrollment.status == "registered"),
+        total_attendance=await _c(AttendanceEvent),
+    )
+
+
+@router.get("/attendance", response_model=list[AttendanceHistoryRow], dependencies=[_read])
+async def attendance_history(device_id: str | None = Query(default=None), db: AsyncSession = Depends(get_db),
+                             current_user: User = Depends(get_current_active_user)):
+    """Recent attendance events (Attendance History tab): who, when, in/out, mode."""
+    org_id = current_user.org_id
+    q = (select(AttendanceEvent, Student.first_name, Student.last_name)
+         .outerjoin(Student, Student.id == AttendanceEvent.student_id)
+         .where(AttendanceEvent.org_id == org_id))
+    if device_id:
+        q = q.where(AttendanceEvent.device_id == device_id)
+    rows = (await db.execute(q.order_by(AttendanceEvent.event_time.desc()).limit(300))).all()
+
+    def _v(x):
+        return x.value if hasattr(x, "value") else str(x)
+
+    return [AttendanceHistoryRow(
+        id=e.id, student_id=e.student_id, name=(f"{fn} {ln}".strip() if fn else None),
+        event_type=_v(e.event_type), event_time=e.event_time, source=_v(e.source), device_id=e.device_id,
+    ) for e, fn, ln in rows]
+
+
+# ── Device commands (Home tab log + device queue) ─────────────────────────────
+
+def _command_response(c: BiometricCommand, device_id: str | None = None) -> BiometricCommandResponse:
+    return BiometricCommandResponse(id=c.id, device_pk=c.device_pk, device_id=device_id, command=c.command,
+                                    status=c.status, result=c.result, created_at=c.created_at,
+                                    updated_at=c.updated_at, org_id=c.org_id)
+
+
+@router.get("/commands", response_model=list[BiometricCommandResponse], dependencies=[_read])
+async def list_commands(device_pk: str | None = Query(default=None), db: AsyncSession = Depends(get_db),
+                        current_user: User = Depends(get_current_active_user)):
+    q = (select(BiometricCommand, BiometricDevice.device_id)
+         .join(BiometricDevice, BiometricDevice.id == BiometricCommand.device_pk)
+         .where(BiometricCommand.org_id == current_user.org_id))
+    if device_pk:
+        q = q.where(BiometricCommand.device_pk == device_pk)
+    rows = (await db.execute(q.order_by(BiometricCommand.created_at.desc()).limit(200))).all()
+    return [_command_response(c, did) for c, did in rows]
+
+
+@router.post("/devices/{device_pk}/commands", response_model=BiometricCommandResponse, status_code=201, dependencies=[_write])
+async def generate_command(device_pk: str, payload: BiometricCommandCreate, db: AsyncSession = Depends(get_db),
+                           current_user: User = Depends(get_current_active_user)):
+    d = await _load_device(db, device_pk, current_user.org_id)
+    c = BiometricCommand(device_pk=d.id, command=payload.command.strip(), status="pending", org_id=current_user.org_id)
+    db.add(c)
+    await db.flush()
+    return _command_response(c, d.device_id)
+
+
+@router.delete("/commands/{command_id}", status_code=204, dependencies=[_write])
+async def delete_command(command_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(BiometricCommand).where(BiometricCommand.id == command_id, BiometricCommand.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Command not found.")
+    await db.delete(c)
+
+
+# ── Device command queue (device-authenticated: fetch pending + report result) ──
+
+@ingest_router.get("/commands/pending", response_model=list[BiometricCommandResponse])
+async def device_pending_commands(device: BiometricDevice = Depends(authenticate_device), db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(select(BiometricCommand).where(
+        BiometricCommand.device_pk == device.id, BiometricCommand.status == "pending"
+    ).order_by(BiometricCommand.created_at))).scalars().all()
+    return [_command_response(c, device.device_id) for c in rows]
+
+
+@ingest_router.post("/commands/{command_id}/ack")
+async def device_ack_command(command_id: str, status: str = Query(default="success"), result: str | None = Query(default=None),
+                             device: BiometricDevice = Depends(authenticate_device), db: AsyncSession = Depends(get_db)):
+    if status not in ("success", "failed"):
+        raise HTTPException(status_code=422, detail="status must be success or failed.")
+    c = (await db.execute(select(BiometricCommand).where(
+        BiometricCommand.id == command_id, BiometricCommand.device_pk == device.id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Command not found.")
+    c.status = status
+    c.result = result
+    await db.flush()
+    return {"ok": True, "status": c.status}
 
 
 # ── Ingest ──────────────────────────────────────────────────────────────────────

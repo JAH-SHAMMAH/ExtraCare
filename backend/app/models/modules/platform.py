@@ -25,13 +25,27 @@ class BiometricDevice(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A registered biometric terminal (e.g. ZKTeco)."""
     __tablename__ = "biometric_devices"
 
-    device_id = Column(String(128), nullable=False)   # hardware serial / id
+    device_id = Column(String(128), nullable=False)   # hardware serial / id (NOT the model name)
     name = Column(String(150), nullable=False)
     location = Column(String(200), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
     clock_skew_seconds = Column(Integer, nullable=True)   # device_time − server_receipt; surfaced, not trusted
     notes = Column(Text, nullable=True)
+
+    # Device Information (hardware specs surfaced on the Device Information tab).
+    model_name = Column(String(100), nullable=True)          # e.g. "MB360 Plus"
+    vendor = Column(String(100), nullable=True)              # e.g. "ZKTeco CO., LTD."
+    device_type = Column(String(100), nullable=True)         # e.g. "Fingerprint & Face"
+    volume = Column(Integer, nullable=True)                  # 0–100
+    language = Column(String(40), nullable=True)             # e.g. "English"
+    firmware_version = Column(String(40), nullable=True)     # e.g. "v1.0.8"
+    fingerprint_version = Column(String(20), nullable=True)  # e.g. "v10"
+    face_version = Column(String(20), nullable=True)         # e.g. "v7"
+    mac_address = Column(String(40), nullable=True)          # e.g. "00:17:61:12:f9:74"
+    storage_used_percent = Column(Integer, nullable=True)    # 0–100
+    attendance_log_capacity = Column(Integer, nullable=True)
+    current_attendance_log = Column(Integer, nullable=True)
 
     # Per-device ingest credential. Only the SHA-256 hash is stored (never the
     # plaintext); the token is shown once at issue/rotate time. `token_prefix`
@@ -48,17 +62,37 @@ class BiometricDevice(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
 
 class BiometricEnrollment(Base, UUIDMixin, TimestampMixin, TenantMixin):
-    """Maps a device-side biometric/user id to a student."""
+    """Maps a device-side biometric/user id to a student OR a staff user."""
     __tablename__ = "biometric_enrollments"
 
     biometric_user_id = Column(String(128), nullable=False)   # the id stored on the device
-    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    # A registration targets exactly one of these (enforced in the API).
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)  # staff
     label = Column(String(150), nullable=True)
+    # Device-reported enrolment state (Registered Users tab columns).
+    fingerprint_count = Column(Integer, default=0, nullable=False)
+    has_face = Column(Boolean, default=False, nullable=False)
+    has_card = Column(Boolean, default=False, nullable=False)
+    profile_pic_url = Column(String(500), nullable=True)
+    status = Column(String(30), default="registered", nullable=False)
 
     __table_args__ = (
         UniqueConstraint("org_id", "biometric_user_id", name="uq_biometric_enrollments_org_uid"),
         Index("ix_biometric_enrollments_student_org", "student_id", "org_id"),
     )
+
+
+class BiometricCommand(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A command queued to a biometric device (Home tab command log). The device
+    fetches PENDING commands via the ingest channel and reports back the result."""
+    __tablename__ = "biometric_commands"
+
+    device_pk = Column(String(36), ForeignKey("biometric_devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    command = Column(String(100), nullable=False)     # e.g. "Backup User Data from device", "Sync Users to device"
+    status = Column(String(20), default="pending", nullable=False)  # pending | success | failed
+    result = Column(Text, nullable=True)              # device-reported detail
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 
 class UnmappedPunch(Base, UUIDMixin, TimestampMixin, TenantMixin):

@@ -8,21 +8,36 @@ from pydantic import BaseModel, Field
 
 # ── Biometric ───────────────────────────────────────────────────────────────────
 
-class DeviceCreate(BaseModel):
+class _DeviceSpecs(BaseModel):
+    model_name: Optional[str] = None
+    vendor: Optional[str] = None
+    device_type: Optional[str] = None
+    volume: Optional[int] = None
+    language: Optional[str] = None
+    firmware_version: Optional[str] = None
+    fingerprint_version: Optional[str] = None
+    face_version: Optional[str] = None
+    mac_address: Optional[str] = None
+    storage_used_percent: Optional[int] = None
+    attendance_log_capacity: Optional[int] = None
+    current_attendance_log: Optional[int] = None
+
+
+class DeviceCreate(_DeviceSpecs):
     device_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=150)
     location: Optional[str] = None
     notes: Optional[str] = None
 
 
-class DeviceUpdate(BaseModel):
+class DeviceUpdate(_DeviceSpecs):
     name: Optional[str] = None
     location: Optional[str] = None
     is_active: Optional[bool] = None
     notes: Optional[str] = None
 
 
-class DeviceResponse(BaseModel):
+class DeviceResponse(_DeviceSpecs):
     id: str
     device_id: str
     name: str
@@ -51,18 +66,68 @@ class DeviceTokenResponse(BaseModel):
 
 class EnrollmentCreate(BaseModel):
     biometric_user_id: str = Field(min_length=1, max_length=128)
-    student_id: str
+    student_id: Optional[str] = None      # target a student …
+    user_id: Optional[str] = None         # … OR a staff user (exactly one)
     label: Optional[str] = None
+    fingerprint_count: int = 0
+    has_face: bool = False
+    has_card: bool = False
+    profile_pic_url: Optional[str] = None
+    status: str = "registered"
 
 
 class EnrollmentResponse(BaseModel):
     id: str
     biometric_user_id: str
-    student_id: str
-    student_name: Optional[str]
+    student_id: Optional[str]
+    user_id: Optional[str]
+    person_name: Optional[str]
+    person_type: str                      # "student" | "staff"
+    role_name: Optional[str] = None       # staff role (for the Registered Users role grouping)
     label: Optional[str]
+    fingerprint_count: int
+    has_face: bool
+    has_card: bool
+    profile_pic_url: Optional[str]
+    status: str
     created_at: datetime
     org_id: str
+
+
+class BiometricCommandCreate(BaseModel):
+    command: str = Field(min_length=1, max_length=100)
+
+
+class BiometricCommandResponse(BaseModel):
+    id: str
+    device_pk: str
+    device_id: Optional[str] = None
+    command: str
+    status: str
+    result: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    org_id: str
+
+
+class BiometricSummary(BaseModel):
+    total_devices: int
+    total_device_users: int      # enrolments
+    total_fingerprint: int       # enrolments with ≥1 fingerprint
+    total_face: int
+    total_card: int
+    total_active_users: int      # active (registered) enrolments
+    total_attendance: int        # attendance events
+
+
+class AttendanceHistoryRow(BaseModel):
+    id: str
+    student_id: str
+    name: Optional[str]
+    event_type: str              # check_in | check_out
+    event_time: datetime
+    source: str                  # biometric | manual | …
+    device_id: Optional[str]
 
 
 class PunchIn(BaseModel):

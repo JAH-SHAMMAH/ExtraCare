@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { biometricApi, platformApi } from "@/lib/api";
 import type {
   BiometricDevice, BiometricEnrollment, UnmappedPunch, IngestSummary, DeviceToken,
+  BiometricSummary, AttendanceHistoryRow, BiometricCommand,
   AcademicSession, AcademicWeek, SchoolHouse, GradingBand, CustomFieldDef, Poll,
   SchoolSection, GradingScale, ReportTemplate, AutoMapResult, SubjectAssessment,
   AssessmentDomain,
@@ -30,8 +31,8 @@ function m<T>(fn: (v: any) => Promise<T>, keys: string[], ok: string) {
 export function useDevices() { return useQuery<BiometricDevice[]>({ queryKey: ["bio-devices"], queryFn: () => biometricApi.devices.list() }); }
 export function useEnrollments() { return useQuery<BiometricEnrollment[]>({ queryKey: ["bio-enrollments"], queryFn: () => biometricApi.enrollments.list() }); }
 export function useQuarantine() { return useQuery<UnmappedPunch[]>({ queryKey: ["bio-quarantine"], queryFn: () => biometricApi.quarantine.list() }); }
-export const useCreateDevice = m((d) => biometricApi.devices.create(d), ["bio-devices"], "Device registered.");
-export const useDeleteDevice = m((id: string) => biometricApi.devices.remove(id), ["bio-devices"], "Device removed.");
+export const useCreateDevice = m((d) => biometricApi.devices.create(d), ["bio-devices", "bio-summary"], "Device registered.");
+export const useDeleteDevice = m((id: string) => biometricApi.devices.remove(id), ["bio-devices", "bio-summary"], "Device removed.");
 // Custom (not the `m` helper) because the caller needs the returned plaintext token.
 export function useIssueDeviceToken() {
   const qc = useQueryClient();
@@ -42,10 +43,16 @@ export function useIssueDeviceToken() {
   });
 }
 export const useRevokeDeviceToken = m((id: string) => biometricApi.devices.revokeToken(id), ["bio-devices"], "Token revoked.");
-export const useCreateEnrollment = m((d) => biometricApi.enrollments.create(d), ["bio-enrollments", "bio-quarantine"], "Mapped.");
-export const useDeleteEnrollment = m((id: string) => biometricApi.enrollments.remove(id), ["bio-enrollments"], "Removed.");
+export const useCreateEnrollment = m((d) => biometricApi.enrollments.create(d), ["bio-enrollments", "bio-quarantine", "bio-summary"], "Registered.");
+export const useDeleteEnrollment = m((id: string) => biometricApi.enrollments.remove(id), ["bio-enrollments", "bio-summary"], "Removed.");
 export const useResolvePunch = m((v: { id: string; data: object }) => biometricApi.quarantine.resolve(v.id, v.data), ["bio-quarantine", "bio-enrollments"], "Resolved.");
 export const useDiscardPunch = m((id: string) => biometricApi.quarantine.discard(id), ["bio-quarantine"], "Discarded.");
+export const useUpdateDevice = m((v: { id: string; data: object }) => biometricApi.devices.update(v.id, v.data), ["bio-devices"], "Device updated.");
+export function useBiometricSummary() { return useQuery<BiometricSummary>({ queryKey: ["bio-summary"], queryFn: () => biometricApi.summary() }); }
+export function useAttendanceHistory(deviceId?: string) { return useQuery<AttendanceHistoryRow[]>({ queryKey: ["bio-attendance", deviceId ?? "all"], queryFn: () => biometricApi.attendance(deviceId) }); }
+export function useBiometricCommands(devicePk?: string) { return useQuery<BiometricCommand[]>({ queryKey: ["bio-commands", devicePk ?? "all"], queryFn: () => biometricApi.commands.list(devicePk) }); }
+export const useGenerateCommand = m((v: { devicePk: string; data: object }) => biometricApi.commands.generate(v.devicePk, v.data), ["bio-commands"], "Command queued.");
+export const useDeleteCommand = m((id: string) => biometricApi.commands.remove(id), ["bio-commands"], "Command removed.");
 
 // ── School setup ──────────────────────────────────────────────────────────────
 export function useSessions() { return useQuery<AcademicSession[]>({ queryKey: ["sessions"], queryFn: () => platformApi.sessions.list() }); }

@@ -2466,7 +2466,14 @@ export interface StudentCollection {
 
 // ── Administration & Platform (Batch 7) ────────────────────────────────────
 
-export interface BiometricDevice {
+// Device spec fields (ZKTeco-style), all optional — set via Device Information tab.
+export interface DeviceSpecs {
+  model_name?: string | null; vendor?: string | null; device_type?: string | null;
+  volume?: number | null; language?: string | null; firmware_version?: string | null;
+  fingerprint_version?: string | null; face_version?: string | null; mac_address?: string | null;
+  storage_used_percent?: number | null; attendance_log_capacity?: number | null; current_attendance_log?: number | null;
+}
+export interface BiometricDevice extends DeviceSpecs {
   id: string; device_id: string; name: string; location: string | null;
   is_active: boolean; last_seen_at: string | null; clock_skew_seconds: number | null;
   notes: string | null; created_at: string; org_id: string;
@@ -2478,8 +2485,11 @@ export interface DeviceToken {
   token_prefix: string; token_issued_at: string;
 }
 export interface BiometricEnrollment {
-  id: string; biometric_user_id: string; student_id: string; student_name: string | null;
-  label: string | null; created_at: string; org_id: string;
+  id: string; biometric_user_id: string;
+  student_id: string | null; user_id: string | null;
+  person_name: string | null; person_type: "student" | "staff"; role_name: string | null;
+  label: string | null; fingerprint_count: number; has_face: boolean; has_card: boolean;
+  profile_pic_url: string | null; status: string; created_at: string; org_id: string;
 }
 export interface UnmappedPunch {
   id: string; device_id: string | null; biometric_user_id: string | null;
@@ -2487,6 +2497,18 @@ export interface UnmappedPunch {
   created_at: string; org_id: string;
 }
 export interface IngestSummary { ingested: number; duplicates: number; quarantined: number; }
+export interface BiometricSummary {
+  total_devices: number; total_device_users: number; total_fingerprint: number;
+  total_face: number; total_card: number; total_active_users: number; total_attendance: number;
+}
+export interface AttendanceHistoryRow {
+  id: string; student_id: string; name: string | null;
+  event_type: string; event_time: string; source: string; device_id: string | null;
+}
+export interface BiometricCommand {
+  id: string; device_pk: string; device_id: string | null; command: string;
+  status: string; result: string | null; created_at: string; updated_at: string; org_id: string;
+}
 
 export interface AcademicSession {
   id: string; name: string; term: string | null; start_date: string | null; end_date: string | null;
