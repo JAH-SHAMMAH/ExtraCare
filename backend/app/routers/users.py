@@ -7,7 +7,7 @@ import secrets
 
 from app.database import get_db
 from app.deps import get_current_user, get_current_active_user
-from app.core.permissions import PermissionChecker
+from app.core.permissions import PermissionChecker, assert_can_grant_roles, assert_can_manage_user
 from app.core.security import hash_password
 from app.models.user import User, UserStatus
 from app.models.role import Role
@@ -141,6 +141,10 @@ async def create_new_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    # Guard: can't create an account seeded with roles beyond your own permissions.
+    if data.role_ids:
+        grant = (await db.execute(select(Role).where(Role.id.in_(data.role_ids), Role.org_id == current_user.org_id))).scalars().all()
+        assert_can_grant_roles(current_user, grant)
     user = await create_user(db, current_user.org_id, data)
     await log_action(
         db, AuditAction.USER_CREATED, current_user.org_id, actor=current_user,
@@ -163,6 +167,10 @@ async def invite_new_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    # Guard: can't invite an account seeded with roles beyond your own permissions.
+    if data.role_ids:
+        grant = (await db.execute(select(Role).where(Role.id.in_(data.role_ids), Role.org_id == current_user.org_id))).scalars().all()
+        assert_can_grant_roles(current_user, grant)
     user = await invite_user(db, current_user.org_id, data, invited_by=current_user)
     await log_action(
         db, AuditAction.USER_INVITED, current_user.org_id, actor=current_user,
@@ -283,6 +291,11 @@ async def assign_roles(
         select(Role).where(Role.id.in_(role_ids), Role.org_id == current_user.org_id)
     )
     roles = roles_result.scalars().all()
+    # Privilege-escalation guards: can't touch a more-privileged account, and can't
+    # grant roles carrying permissions you don't hold (e.g. an Admin assigning
+    # Super User / Accountant / Head of Administration → finance_admin).
+    assert_can_manage_user(current_user, user)
+    assert_can_grant_roles(current_user, roles)
     old_roles = [r.slug for r in user.roles]
     user.roles = list(roles)
 

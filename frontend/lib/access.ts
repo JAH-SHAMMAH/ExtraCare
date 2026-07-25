@@ -157,12 +157,15 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/medicals", permission: "medical:read" },
 
   // ── Batch 5: Finance & Accounting ──────────────────────────────────────
-  // Admin finance gated at payments:WRITE (not read): parents hold
-  // payments:read to pay fees, so view-gating on read would leak the ledger /
-  // payroll to them. write keeps it to manager / accountant / admin.
-  { prefix: "/dashboard/modules/school/accounts", permission: "payments:write" },
+  // SENSITIVE back-office finance (Bank Ledger, Payroll) → the dedicated
+  // `finance_admin:read` scope: Super User / Accountant / Head of Administration
+  // ONLY. Deliberately NOT payments:* — org_admin/manager/cashier hold payments
+  // for fee collection but must not reach the ledger or payroll. Fee-collection
+  // surfaces (invoices) + treasury (petty-cash/cash — kept operational by
+  // decision) stay on payments:write.
+  { prefix: "/dashboard/modules/school/accounts", permission: "finance_admin:read" },
   { prefix: "/dashboard/modules/school/invoices", permission: "payments:write" },
-  { prefix: "/dashboard/modules/school/payroll", permission: "payments:write" },
+  { prefix: "/dashboard/modules/school/payroll", permission: "finance_admin:read" },
   { prefix: "/dashboard/modules/school/petty-cash", permission: "payments:write" },
   { prefix: "/dashboard/modules/school/cash-txns", permission: "payments:write" },
   { prefix: "/dashboard/modules/school/store", permission: "payments:write" },
@@ -194,16 +197,19 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/mobile", permission: "settings:read" },
 
   // ── Educare parity — Finance additions (over the existing ledger) ───────
-  { prefix: "/dashboard/modules/school/direct-posts", permission: "payments:write" },
-  { prefix: "/dashboard/modules/school/direct-transfer", permission: "payments:write" },
-  { prefix: "/dashboard/modules/school/financial-statements", permission: "payments:write" },
-  { prefix: "/dashboard/modules/school/finance-overview", permission: "payments:write" },
-  // Finance parity stubs (backend to follow) — admin finance (payments:write).
+  // Ledger-backed surfaces (journal posts, statements, Broad View) → the
+  // SENSITIVE finance_admin:read scope, not payments:*.
+  { prefix: "/dashboard/modules/school/direct-posts", permission: "finance_admin:read" },
+  { prefix: "/dashboard/modules/school/direct-transfer", permission: "finance_admin:read" },
+  { prefix: "/dashboard/modules/school/financial-statements", permission: "finance_admin:read" },
+  { prefix: "/dashboard/modules/school/finance-overview", permission: "finance_admin:read" },
   // Gateway API secrets are org_admin-only, on the SEPARATE payment_gateways
   // namespace (NOT payments:*, which accountants/managers hold). See finance.py.
   { prefix: "/dashboard/modules/school/payment-gateways", permission: "payment_gateways:write" },
+  // account-numbers = the school's collection bank account (fee-side) → payments.
   { prefix: "/dashboard/modules/school/account-numbers", permission: "payments:write" },
-  { prefix: "/dashboard/modules/school/accounts-setup", permission: "payments:write" },
+  // accounts-setup reads the ledger chart of accounts → finance_admin.
+  { prefix: "/dashboard/modules/school/accounts-setup", permission: "finance_admin:read" },
   { prefix: "/dashboard/modules/school/discounts", permission: "payments:write" },
   { prefix: "/dashboard/modules/school/sales-monitor", permission: "payments:write" },
   { prefix: "/dashboard/modules/school/warehouse", permission: "payments:write" },
@@ -211,13 +217,14 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // Page reachable by EITHER — the collect action is store:sell, everything else write.
   { prefix: "/dashboard/modules/school/store-pickup", permission: "payments:write", anyOf: ["store:sell"] },
   { prefix: "/dashboard/modules/school/store-frontdesk", permission: "store:sell" },
-  { prefix: "/dashboard/modules/school/budget", permission: "payments:write" },
+  // Budget, Salary Advance, Bonus/Reduction, Finance Reports → SENSITIVE finance.
+  { prefix: "/dashboard/modules/school/budget", permission: "finance_admin:read" },
   { prefix: "/dashboard/modules/school/requisitions", permission: "payments:write" },
   { prefix: "/dashboard/modules/school/request-form", permission: "payments:write" },
-  { prefix: "/dashboard/modules/school/salary-advance", permission: "payments:write" },
-  { prefix: "/dashboard/modules/school/bonus-reduction", permission: "payments:write" },
+  { prefix: "/dashboard/modules/school/salary-advance", permission: "finance_admin:read" },
+  { prefix: "/dashboard/modules/school/bonus-reduction", permission: "finance_admin:read" },
   { prefix: "/dashboard/modules/school/appointment-manager", permission: "hr:write" },
-  { prefix: "/dashboard/modules/school/finance-reports", permission: "payments:write" },
+  { prefix: "/dashboard/modules/school/finance-reports", permission: "finance_admin:read" },
   { prefix: "/dashboard/modules/school/fee-assignment", permission: "payments:write" },
   // ── Admin Management ────────────────────────────────────────────────────
   { prefix: "/dashboard/modules/school/deactivated-users", permission: "users:write" },

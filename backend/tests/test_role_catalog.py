@@ -28,10 +28,17 @@ async def _admin(db, org) -> User:
 
 def test_new_presets_exist_with_expected_tiers():
     p = SCHOOL_PERMISSION_PRESETS
-    # Leadership → full admin.
-    assert p["principal"] == p["org_admin"] and p["super_user"] == p["org_admin"]
+    # Super User → the top tier: the `*` wildcard, strictly above org_admin.
+    assert p["super_user"] == ["*"]
+    assert "*" not in p["org_admin"]     # org_admin is enumerated, NOT all-powerful
+    # Principal / Head → Admin tier (same as org_admin).
+    assert p["principal"] == p["org_admin"] and p["head"] == p["org_admin"]
     # Senior admin → manager tier.
-    assert p["vice_principal"] == p["manager"] and p["head_of_administration"] == p["manager"]
+    assert p["vice_principal"] == p["manager"] and p["deputy_head"] == p["manager"]
+    # Head of Administration → manager tier PLUS sensitive-finance read/write (but
+    # NOT finance_admin:post — approvals stay with Accountant / Super User).
+    assert set(p["head_of_administration"]) == set(p["manager"]) | {"finance_admin:read", "finance_admin:write"}
+    assert "finance_admin:post" not in p["head_of_administration"]
     # Academic → teacher tier (incl. Sports/PE officer).
     assert p["academic_coordinator"] == p["teacher"] and p["spa_officer"] == p["teacher"]
     # Exam/Admission Officer + Guidance Counsellor are NARROW (no broad school:write).

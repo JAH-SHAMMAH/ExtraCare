@@ -143,7 +143,12 @@ SCHOOL_PERMISSION_PRESETS = {
     # (draft) AND payments:post (post to the ledger) — but the payroll two-person
     # rule (approved_by != created_by) still blocks self-approving a run. Scoped
     # to finance only (no school:*), like the nurse is to medical.
-    "accountant": _dedupe(["payments:read", "payments:write", "payments:post", "store:sell", "wallet:spend", "hr:read"]),
+    # `finance_admin:*` is the DEDICATED sensitive-finance namespace (Budget,
+    # Payroll, Salary Advance, Bank Ledger, Statements, Broad View, Reports) —
+    # the accountant is the primary finance operator, so holds read/write/post.
+    "accountant": _dedupe(["payments:read", "payments:write", "payments:post",
+                           "finance_admin:read", "finance_admin:write", "finance_admin:post",
+                           "store:sell", "wallet:spend", "hr:read"]),
     # School-store cashier / front-desk till operator. Mirrors the tuckshop-till
     # pattern above (narrow `wallet:spend`): holds the dedicated `store:sell` so
     # they can ring up + void store sales at the POS, plus `payments:read` to see
@@ -179,15 +184,23 @@ _TCH = SCHOOL_PERMISSION_PRESETS["teacher"]
 _MIN = ["hr:read"]   # own profile + My Leave / My HRM Info nav only
 
 SCHOOL_PERMISSION_PRESETS.update({
-    # Leadership → full admin
-    "super_user": _ADMIN,
+    # Super User → the org's TOP tier: the `*` wildcard grants every permission in
+    # the org (incl. finance_admin:* and payment_gateways), sitting genuinely above
+    # org_admin (which holds an enumerated list, NOT `*`, and NOT finance_admin).
+    "super_user": ["*"],
+    # Principal / Head → Admin tier (same as org_admin): full school + fee
+    # collection + user management, but NOT the sensitive finance_admin namespace.
     "principal": _ADMIN,
     "head": _ADMIN,
     # Senior administration → manager tier
     "vice_principal": _MGR,
     "deputy_head": _MGR,
     "administrative_coordinator": _MGR,
-    "head_of_administration": _MGR,          # HR-adjacent; manager includes hr:r/w
+    # Head of Administration → manager tier PLUS sensitive-finance read/write (view
+    # + draft Budget/Payroll/Salary-Advance/Ledger) — but NOT finance_admin:post,
+    # so payroll approval / period lock / journal posting stay with the Accountant
+    # (and the two-person rule). HR-adjacent; manager already includes hr:r/w.
+    "head_of_administration": _dedupe(_MGR + ["finance_admin:read", "finance_admin:write"]),
     # Academic leadership / teaching → teacher tier
     "instructor": _TCH,
     "head_teacher": _TCH,

@@ -80,7 +80,13 @@ async def register_organization(
         db.add(role)
     await db.flush()
 
-    admin_role = next(r for r in default_roles if r.slug == "org_admin")
+    # The org creator is its SUPER USER — the top tier (`*`). This is deliberate:
+    # the role-assignment escalation guard means only a Super User can grant the
+    # Super User / Accountant / Head-of-Administration (finance_admin) roles, so
+    # the founder must hold `*` to be able to set up their admin + finance team.
+    # Falls back to org_admin only if super_user somehow isn't seeded.
+    owner_role = next((r for r in default_roles if r.slug == "super_user"),
+                      next(r for r in default_roles if r.slug == "org_admin"))
 
     # Create admin user
     admin = User(
@@ -90,7 +96,7 @@ async def register_organization(
         org_id=org.id,
         status=UserStatus.ACTIVE,
         email_verified=True,
-        roles=[admin_role],
+        roles=[owner_role],
     )
     db.add(admin)
     await db.flush()

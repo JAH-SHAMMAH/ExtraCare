@@ -61,6 +61,10 @@ router = APIRouter(
 _fin_read = Depends(PermissionChecker("payments:read"))
 _fin_write = Depends(PermissionChecker("payments:write"))
 _fin_post = Depends(PermissionChecker("payments:post"))
+# Budget Management is sensitive back-office finance → the dedicated `finance_admin`
+# namespace (Super User / Accountant / Head of Administration only), NOT payments:*.
+_finadmin_read = Depends(PermissionChecker("finance_admin:read"))
+_finadmin_write = Depends(PermissionChecker("finance_admin:write"))
 # Ringing up a store sale is a NARROW till-operator action — its own least-privilege
 # gate, held by the Cashier role, so day-to-day till staff don't need the broad
 # `payments:post` (which also approves payroll / discounts / arbitrary ledger posts).
@@ -138,7 +142,7 @@ async def _load_budget(db: AsyncSession, budget_id: str, org_id: str) -> Budget:
     return b
 
 
-@router.get("/budgets", response_model=list[BudgetResponse], dependencies=[_fin_read])
+@router.get("/budgets", response_model=list[BudgetResponse], dependencies=[_finadmin_read])
 async def list_budgets(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     rows = (await db.execute(
         select(Budget).where(Budget.org_id == current_user.org_id).order_by(Budget.created_at.desc())
@@ -147,7 +151,7 @@ async def list_budgets(db: AsyncSession = Depends(get_db), current_user: User = 
     return [await _budget_response(db, b, current_user.org_id, names.get(b.account_id)) for b in rows]
 
 
-@router.post("/budgets", response_model=BudgetResponse, status_code=201, dependencies=[_fin_write])
+@router.post("/budgets", response_model=BudgetResponse, status_code=201, dependencies=[_finadmin_write])
 async def create_budget(payload: BudgetCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     await _require_account(db, current_user.org_id, payload.account_id)
     if payload.start_date and payload.end_date and payload.end_date < payload.start_date:
@@ -163,7 +167,7 @@ async def create_budget(payload: BudgetCreate, db: AsyncSession = Depends(get_db
     return await _budget_response(db, b, current_user.org_id, names.get(b.account_id))
 
 
-@router.patch("/budgets/{budget_id}", response_model=BudgetResponse, dependencies=[_fin_write])
+@router.patch("/budgets/{budget_id}", response_model=BudgetResponse, dependencies=[_finadmin_write])
 async def update_budget(budget_id: str, payload: BudgetUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     b = await _load_budget(db, budget_id, current_user.org_id)
     if payload.period_label is not None:
@@ -183,7 +187,7 @@ async def update_budget(budget_id: str, payload: BudgetUpdate, db: AsyncSession 
     return await _budget_response(db, b, current_user.org_id, names.get(b.account_id))
 
 
-@router.delete("/budgets/{budget_id}", status_code=204, dependencies=[_fin_write])
+@router.delete("/budgets/{budget_id}", status_code=204, dependencies=[_finadmin_write])
 async def delete_budget(budget_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     b = await _load_budget(db, budget_id, current_user.org_id)
     await db.delete(b)

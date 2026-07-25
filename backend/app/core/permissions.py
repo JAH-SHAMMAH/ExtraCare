@@ -120,3 +120,49 @@ def require_active_user(current_user: User = Depends(get_current_user)) -> User:
             detail=f"Account is {current_user.status.value}. Contact your administrator.",
         )
     return current_user
+
+
+# ── Privilege-escalation guards for role assignment ──────────────────────────────
+#
+# `users:write` alone lets an admin change any user's roles. Without these guards,
+# an org_admin could assign themselves (or a crony) the `super_user` role — or the
+# `accountant` / `head_of_administration` roles — and gain the sensitive
+# `finance_admin:*` (or `*`) they were deliberately denied. The rule is the
+# standard one: you can only grant a role whose permissions you ALREADY hold, and
+# you can only manage a user who is not more privileged than you. This is what
+# makes "only Super User manages other admins / finance roles" real.
+
+def _uncovered_perms(actor: "User", role) -> list[str]:
+    """Permissions on `role` that `actor` does not itself hold."""
+    return [p for p in (role.permissions or []) if not actor.has_permission(p)]
+
+
+def assert_can_grant_roles(actor: "User", roles) -> None:
+    """Raise 403 if `actor` would grant any permission it does not itself hold."""
+    if actor.is_superadmin:
+        return
+    for role in roles:
+        missing = _uncovered_perms(actor, role)
+        if missing:
+            shown = ", ".join(missing[:3]) + ("…" if len(missing) > 3 else "")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(f"You cannot assign the '{role.name}' role — it grants "
+                        f"permissions you do not hold ({shown})."),
+            )
+
+
+def assert_can_manage_user(actor: "User", target: "User") -> None:
+    """Raise 403 if `target` currently holds a role more privileged than `actor`
+    (i.e. carrying a permission `actor` lacks). Prevents a lower-tier admin from
+    editing a Super User / finance role-holder's account. Self-management is
+    always allowed (an admin still cannot escalate themselves — the grant guard
+    blocks adding a role beyond their own permissions)."""
+    if actor.is_superadmin or actor.id == target.id:
+        return
+    for role in (target.roles or []):
+        if _uncovered_perms(actor, role):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You cannot manage an account with higher privileges than your own.",
+            )

@@ -47,6 +47,13 @@ WORKSPACE_PERMISSION_SCOPES: dict[str, WorkspaceType] = {
     # student's OWN wallet down to income (no-overdraw, period-locked) and nothing
     # else — it cannot move cash, post invoices, or create arbitrary entries.
     "wallet": WorkspaceType.SCHOOL,
+    # Sensitive back-office finance (Budget, Payroll, Salary Advance, Bank Ledger,
+    # Financial Statements, Broad View, Finance Reports). DELIBERATELY its own
+    # SCHOOL namespace — like `school_admin`/`medical` — so the broad `school:*`
+    # (org_admin) and `payments:*` (managers/cashiers/parents-for-fees) grants do
+    # NOT reach it. Only roles explicitly granted `finance_admin:*` see it:
+    # Super User (via `*`), Accountant, Head of Administration.
+    "finance_admin": WorkspaceType.SCHOOL,
     "hospital": WorkspaceType.HOSPITAL,
     "business": WorkspaceType.BUSINESS,
     "payroll": WorkspaceType.BUSINESS,

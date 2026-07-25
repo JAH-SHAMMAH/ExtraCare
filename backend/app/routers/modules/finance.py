@@ -77,6 +77,14 @@ router = APIRouter(
 _fin_read = Depends(PermissionChecker("payments:read"))
 _fin_write = Depends(PermissionChecker("payments:write"))
 _fin_post = Depends(PermissionChecker("payments:post"))
+# Sensitive back-office finance (Budget, Payroll, Salary Advance, Bank Ledger,
+# Financial Statements, Broad View, Finance Reports, Pay Adjustments). Gated on
+# the dedicated `finance_admin` namespace — NOT `payments:*` — so org_admin/
+# manager/cashier/parent (who hold payments:* for fee collection) do NOT reach
+# it. Only Super User (`*`), Accountant, and Head of Administration do.
+_finadmin_read = Depends(PermissionChecker("finance_admin:read"))
+_finadmin_write = Depends(PermissionChecker("finance_admin:write"))
+_finadmin_post = Depends(PermissionChecker("finance_admin:post"))
 # Managing live gateway API secrets is org_admin-only. DELIBERATELY on its own
 # `payment_gateways` namespace, NOT a `payments:*` sub-scope — a `payments:gateways:*`
 # scope would be auto-granted to every `payments:write` holder (accountant/manager)
@@ -116,7 +124,7 @@ def _account_response(a: LedgerAccount) -> LedgerAccountResponse:
     )
 
 
-@router.get("/accounts", response_model=list[LedgerAccountResponse], dependencies=[_fin_read])
+@router.get("/accounts", response_model=list[LedgerAccountResponse], dependencies=[_finadmin_read])
 async def list_accounts(
     type: str | None = Query(default=None),
     active_only: bool = Query(default=False),
@@ -133,7 +141,7 @@ async def list_accounts(
     return [_account_response(a) for a in rows]
 
 
-@router.post("/accounts", response_model=LedgerAccountResponse, status_code=201, dependencies=[_fin_write])
+@router.post("/accounts", response_model=LedgerAccountResponse, status_code=201, dependencies=[_finadmin_write])
 async def create_account(
     payload: LedgerAccountCreate,
     request: Request = None,
@@ -162,7 +170,7 @@ async def create_account(
     return _account_response(a)
 
 
-@router.patch("/accounts/{account_id}", response_model=LedgerAccountResponse, dependencies=[_fin_write])
+@router.patch("/accounts/{account_id}", response_model=LedgerAccountResponse, dependencies=[_finadmin_write])
 async def update_account(
     account_id: str,
     payload: LedgerAccountUpdate,
@@ -180,7 +188,7 @@ async def update_account(
     return _account_response(a)
 
 
-@router.delete("/accounts/{account_id}", status_code=204, dependencies=[_fin_write])
+@router.delete("/accounts/{account_id}", status_code=204, dependencies=[_finadmin_write])
 async def delete_account(
     account_id: str,
     db: AsyncSession = Depends(get_db),
@@ -206,7 +214,7 @@ def _period_response(p: AccountingPeriod) -> PeriodResponse:
     )
 
 
-@router.get("/periods", response_model=list[PeriodResponse], dependencies=[_fin_read])
+@router.get("/periods", response_model=list[PeriodResponse], dependencies=[_finadmin_read])
 async def list_periods(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -218,7 +226,7 @@ async def list_periods(
     return [_period_response(p) for p in rows]
 
 
-@router.post("/periods", response_model=PeriodResponse, status_code=201, dependencies=[_fin_write])
+@router.post("/periods", response_model=PeriodResponse, status_code=201, dependencies=[_finadmin_write])
 async def create_period(
     payload: PeriodCreate,
     db: AsyncSession = Depends(get_db),
@@ -244,7 +252,7 @@ async def _load_period(db, pid, org_id) -> AccountingPeriod:
     return p
 
 
-@router.post("/periods/{period_id}/lock", response_model=PeriodResponse, dependencies=[_fin_post])
+@router.post("/periods/{period_id}/lock", response_model=PeriodResponse, dependencies=[_finadmin_post])
 async def lock_period(
     period_id: str,
     request: Request = None,
@@ -264,7 +272,7 @@ async def lock_period(
     return _period_response(p)
 
 
-@router.post("/periods/{period_id}/unlock", response_model=PeriodResponse, dependencies=[_fin_post])
+@router.post("/periods/{period_id}/unlock", response_model=PeriodResponse, dependencies=[_finadmin_post])
 async def unlock_period(
     period_id: str,
     request: Request = None,
@@ -309,7 +317,7 @@ async def _entry_response(db: AsyncSession, e: JournalEntry, org_id: str) -> Jou
     )
 
 
-@router.get("/journal", response_model=JournalListResponse, dependencies=[_fin_read])
+@router.get("/journal", response_model=JournalListResponse, dependencies=[_finadmin_read])
 async def list_journal(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
@@ -326,7 +334,7 @@ async def list_journal(
     return JournalListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
-@router.post("/journal", response_model=JournalEntryResponse, status_code=201, dependencies=[_fin_post])
+@router.post("/journal", response_model=JournalEntryResponse, status_code=201, dependencies=[_finadmin_post])
 async def post_manual_journal(
     payload: ManualJournalCreate,
     request: Request = None,
@@ -341,7 +349,7 @@ async def post_manual_journal(
     return await _entry_response(db, entry, current_user.org_id)
 
 
-@router.post("/journal/{entry_id}/reverse", response_model=JournalEntryResponse, dependencies=[_fin_post])
+@router.post("/journal/{entry_id}/reverse", response_model=JournalEntryResponse, dependencies=[_finadmin_post])
 async def reverse_journal(
     entry_id: str,
     request: Request = None,
@@ -356,7 +364,7 @@ async def reverse_journal(
 # Read-only reporting derived from the ledger. Reversals are themselves cancelling
 # entries, so summing ALL posted lines yields correct net balances (no filtering).
 
-@router.get("/statements", response_model=FinancialStatements, dependencies=[_fin_write])
+@router.get("/statements", response_model=FinancialStatements, dependencies=[_finadmin_read])
 async def financial_statements(
     as_of: date | None = Query(default=None, description="Include entries on/before this date"),
     db: AsyncSession = Depends(get_db),
@@ -428,7 +436,7 @@ async def financial_statements(
 # Gated payments:WRITE (org-wide financials) — same bar as /statements; a read
 # gate would leak the school's whole P&L to parents (who hold payments:read).
 
-@router.get("/broad-view/dashboard", response_model=BroadViewDashboard, dependencies=[_fin_write])
+@router.get("/broad-view/dashboard", response_model=BroadViewDashboard, dependencies=[_finadmin_read])
 async def broad_view_dashboard(
     session: str | None = Query(default=None),
     term: str | None = Query(default=None),
@@ -496,7 +504,7 @@ async def broad_view_dashboard(
     )
 
 
-@router.get("/broad-view/account-head-summary", response_model=AccountHeadSummary, dependencies=[_fin_write])
+@router.get("/broad-view/account-head-summary", response_model=AccountHeadSummary, dependencies=[_finadmin_read])
 async def broad_view_account_head_summary(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Per income head: invoice count / receipt count / invoiced charge / amount paid."""
     org_id = current_user.org_id
@@ -522,7 +530,7 @@ async def broad_view_account_head_summary(db: AsyncSession = Depends(get_db), cu
     return AccountHeadSummary(items=items)
 
 
-@router.get("/broad-view/termly-summary", response_model=TermlySummary, dependencies=[_fin_write])
+@router.get("/broad-view/termly-summary", response_model=TermlySummary, dependencies=[_finadmin_read])
 async def broad_view_termly_summary(session: str | None = Query(default=None), term: str | None = Query(default=None),
                                     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Fee-category totals for the selected session/term (from student fee records)."""
@@ -540,7 +548,7 @@ async def broad_view_termly_summary(session: str | None = Query(default=None), t
     return TermlySummary(items=items, total=total, session=session, term=term)
 
 
-@router.get("/broad-view/discount-log", response_model=DiscountLog, dependencies=[_fin_write])
+@router.get("/broad-view/discount-log", response_model=DiscountLog, dependencies=[_finadmin_read])
 async def broad_view_discount_log(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     rows = (await db.execute(select(FeeDiscount).where(
         FeeDiscount.org_id == current_user.org_id, FeeDiscount.is_deleted == False)  # noqa: E712
@@ -552,7 +560,7 @@ async def broad_view_discount_log(db: AsyncSession = Depends(get_db), current_us
     return DiscountLog(items=items, total_discount=total_discount)
 
 
-@router.get("/broad-view/wallet-log", response_model=WalletLog, dependencies=[_fin_write])
+@router.get("/broad-view/wallet-log", response_model=WalletLog, dependencies=[_finadmin_read])
 async def broad_view_wallet_log(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Parent (family) wallet credit/debit log."""
     org_id = current_user.org_id
@@ -574,7 +582,7 @@ async def broad_view_wallet_log(db: AsyncSession = Depends(get_db), current_user
     return WalletLog(items=items, total_credit=float(total_credit), total_debit=float(total_debit))
 
 
-@router.get("/broad-view/invoice-items-report", response_model=InvoiceItemsReport, dependencies=[_fin_write])
+@router.get("/broad-view/invoice-items-report", response_model=InvoiceItemsReport, dependencies=[_finadmin_read])
 async def broad_view_invoice_items(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Invoiced items rolled up by description: quantity, amount, occurrences."""
     org_id = current_user.org_id
@@ -595,7 +603,7 @@ async def broad_view_invoice_items(db: AsyncSession = Depends(get_db), current_u
     return InvoiceItemsReport(items=items, total_amount=float(sum((money(v["amount"]) for v in agg.values()), money(0))))
 
 
-@router.get("/broad-view/students-ledger", response_model=StudentsLedger, dependencies=[_fin_write])
+@router.get("/broad-view/students-ledger", response_model=StudentsLedger, dependencies=[_finadmin_read])
 async def broad_view_students_ledger(session: str | None = Query(default=None), term: str | None = Query(default=None),
                                      db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Per-student invoiced / paid / balance from the fee records."""
@@ -635,7 +643,7 @@ async def broad_view_students_ledger(session: str | None = Query(default=None), 
     )
 
 
-@router.get("/broad-view/all-transactions-log", response_model=TransactionsLog, dependencies=[_fin_write])
+@router.get("/broad-view/all-transactions-log", response_model=TransactionsLog, dependencies=[_finadmin_read])
 async def broad_view_transactions_log(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Recent journal entries with their posted total."""
     org_id = current_user.org_id
@@ -658,7 +666,7 @@ async def broad_view_transactions_log(db: AsyncSession = Depends(get_db), curren
     return TransactionsLog(items=items)
 
 
-@router.get("/broad-view/audit-report", response_model=AuditReport, dependencies=[_fin_write])
+@router.get("/broad-view/audit-report", response_model=AuditReport, dependencies=[_finadmin_read])
 async def broad_view_audit_report(status: str | None = Query(default=None),
                                   db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Invoice audit: transaction count, total / paid / unpaid amounts + the list."""
@@ -675,7 +683,7 @@ async def broad_view_audit_report(status: str | None = Query(default=None),
                        total_paid=float(total_paid), total_unpaid=float(total_amount - total_paid), items=items)
 
 
-@router.get("/broad-view/payment-transactions", response_model=PaymentTxnList, dependencies=[_fin_write])
+@router.get("/broad-view/payment-transactions", response_model=PaymentTxnList, dependencies=[_finadmin_read])
 async def broad_view_payment_transactions(admission_only: bool = Query(default=False),
                                           db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Online gateway payments (PaymentTransaction). Backs the Online Transactions
@@ -713,7 +721,7 @@ async def broad_view_payment_transactions(admission_only: bool = Query(default=F
 # Gated payments:WRITE (not read) — the same bar as /statements. `payments:read`
 # is granted to parents for their own invoice/fee visibility, so a read gate would
 # leak the school's whole P&L to parents. Org-wide financials require payments:write.
-@router.get("/reports/income-expense", response_model=IncomeExpenseReport, dependencies=[_fin_write])
+@router.get("/reports/income-expense", response_model=IncomeExpenseReport, dependencies=[_finadmin_read])
 async def income_expense_report(
     start: date | None = Query(default=None, description="Include entries on/after this date"),
     end: date | None = Query(default=None, description="Include entries on/before this date"),
@@ -1066,7 +1074,7 @@ async def _load_run(db, rid, org_id) -> PayrollRun:
     return run
 
 
-@router.get("/payroll", response_model=PayrollListResponse, dependencies=[_fin_read])
+@router.get("/payroll", response_model=PayrollListResponse, dependencies=[_finadmin_read])
 async def list_payroll(
     status: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -1085,7 +1093,7 @@ async def list_payroll(
     return PayrollListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
-@router.post("/payroll", response_model=PayrollRunResponse, status_code=201, dependencies=[_fin_write])
+@router.post("/payroll", response_model=PayrollRunResponse, status_code=201, dependencies=[_finadmin_write])
 async def create_payroll(
     payload: PayrollRunCreate,
     request: Request = None,
@@ -1123,7 +1131,7 @@ async def create_payroll(
     return await _payroll_response(db, run, current_user.org_id)
 
 
-@router.post("/payroll/{run_id}/approve", response_model=PayrollRunResponse, dependencies=[_fin_post])
+@router.post("/payroll/{run_id}/approve", response_model=PayrollRunResponse, dependencies=[_finadmin_post])
 async def approve_payroll(
     run_id: str,
     request: Request = None,
@@ -1176,7 +1184,7 @@ async def approve_payroll(
     return await _payroll_response(db, run, current_user.org_id)
 
 
-@router.post("/payroll/{run_id}/void", response_model=PayrollRunResponse, dependencies=[_fin_post])
+@router.post("/payroll/{run_id}/void", response_model=PayrollRunResponse, dependencies=[_finadmin_post])
 async def void_payroll(
     run_id: str,
     request: Request = None,
@@ -1200,7 +1208,7 @@ async def void_payroll(
     return await _payroll_response(db, run, current_user.org_id)
 
 
-@router.delete("/payroll/{run_id}", status_code=204, dependencies=[_fin_write])
+@router.delete("/payroll/{run_id}", status_code=204, dependencies=[_finadmin_write])
 async def delete_payroll(run_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     run = await _load_run(db, run_id, current_user.org_id)
     if run.status != "draft":
@@ -1280,7 +1288,7 @@ async def _load_advance(db: AsyncSession, advance_id: str, org_id: str) -> Salar
     return a
 
 
-@router.get("/salary-advances", response_model=list[SalaryAdvanceResponse], dependencies=[_fin_read])
+@router.get("/salary-advances", response_model=list[SalaryAdvanceResponse], dependencies=[_finadmin_read])
 async def list_salary_advances(
     status: str | None = Query(None, description="Filter by status: pending|approved|rejected|repaid"),
     staff_user_id: str | None = Query(None),
@@ -1297,7 +1305,7 @@ async def list_salary_advances(
     return [_advance_response(a) for a in rows]
 
 
-@router.post("/salary-advances", response_model=SalaryAdvanceResponse, status_code=201, dependencies=[_fin_write])
+@router.post("/salary-advances", response_model=SalaryAdvanceResponse, status_code=201, dependencies=[_finadmin_write])
 async def create_salary_advance(
     payload: SalaryAdvanceCreate,
     request: Request = None,
@@ -1326,7 +1334,7 @@ async def create_salary_advance(
     return _advance_response(a)
 
 
-@router.post("/salary-advances/{advance_id}/approve", response_model=SalaryAdvanceResponse, dependencies=[_fin_post])
+@router.post("/salary-advances/{advance_id}/approve", response_model=SalaryAdvanceResponse, dependencies=[_finadmin_post])
 async def approve_salary_advance(
     advance_id: str,
     payload: SalaryAdvanceApprove = SalaryAdvanceApprove(),
@@ -1383,7 +1391,7 @@ async def approve_salary_advance(
     return _advance_response(a)
 
 
-@router.post("/salary-advances/{advance_id}/reject", response_model=SalaryAdvanceResponse, dependencies=[_fin_post])
+@router.post("/salary-advances/{advance_id}/reject", response_model=SalaryAdvanceResponse, dependencies=[_finadmin_post])
 async def reject_salary_advance(
     advance_id: str,
     request: Request = None,
@@ -1404,7 +1412,7 @@ async def reject_salary_advance(
     return _advance_response(a)
 
 
-@router.post("/salary-advances/{advance_id}/repay", response_model=SalaryAdvanceResponse, dependencies=[_fin_post])
+@router.post("/salary-advances/{advance_id}/repay", response_model=SalaryAdvanceResponse, dependencies=[_finadmin_post])
 async def repay_salary_advance(
     advance_id: str,
     payload: SalaryAdvanceRepay,
@@ -1476,7 +1484,7 @@ async def repay_salary_advance(
     return _advance_response(a)
 
 
-@router.delete("/salary-advances/{advance_id}", status_code=204, dependencies=[_fin_write])
+@router.delete("/salary-advances/{advance_id}", status_code=204, dependencies=[_finadmin_write])
 async def delete_salary_advance(
     advance_id: str,
     db: AsyncSession = Depends(get_db),
@@ -1530,7 +1538,7 @@ async def _pack_response(db: AsyncSession, p: PayAdjustmentPack) -> PayAdjustmen
     )
 
 
-@router.get("/pay-adjustments", response_model=list[PayAdjustmentResponse], dependencies=[_fin_read])
+@router.get("/pay-adjustments", response_model=list[PayAdjustmentResponse], dependencies=[_finadmin_read])
 async def list_pay_adjustments(
     kind: str | None = Query(None, description="bonus | reduction"),
     status: str | None = Query(None, description="draft | approved | void"),
@@ -1547,7 +1555,7 @@ async def list_pay_adjustments(
     return [await _pack_response(db, p) for p in packs]
 
 
-@router.post("/pay-adjustments", response_model=PayAdjustmentResponse, status_code=201, dependencies=[_fin_write])
+@router.post("/pay-adjustments", response_model=PayAdjustmentResponse, status_code=201, dependencies=[_finadmin_write])
 async def create_pay_adjustment(
     payload: PayAdjustmentCreate,
     request: Request = None,
@@ -1586,7 +1594,7 @@ async def create_pay_adjustment(
     return await _pack_response(db, pack)
 
 
-@router.post("/pay-adjustments/{pack_id}/approve", response_model=PayAdjustmentResponse, dependencies=[_fin_post])
+@router.post("/pay-adjustments/{pack_id}/approve", response_model=PayAdjustmentResponse, dependencies=[_finadmin_post])
 async def approve_pay_adjustment(
     pack_id: str,
     request: Request = None,
@@ -1643,7 +1651,7 @@ async def approve_pay_adjustment(
     return await _pack_response(db, pack)
 
 
-@router.post("/pay-adjustments/{pack_id}/void", response_model=PayAdjustmentResponse, dependencies=[_fin_post])
+@router.post("/pay-adjustments/{pack_id}/void", response_model=PayAdjustmentResponse, dependencies=[_finadmin_post])
 async def void_pay_adjustment(
     pack_id: str,
     request: Request = None,
@@ -1669,7 +1677,7 @@ async def void_pay_adjustment(
     return await _pack_response(db, pack)
 
 
-@router.delete("/pay-adjustments/{pack_id}", status_code=204, dependencies=[_fin_write])
+@router.delete("/pay-adjustments/{pack_id}", status_code=204, dependencies=[_finadmin_write])
 async def delete_pay_adjustment(
     pack_id: str,
     db: AsyncSession = Depends(get_db),
