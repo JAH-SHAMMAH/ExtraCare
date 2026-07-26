@@ -19,12 +19,12 @@ from app.core.cookies import set_auth_cookies, clear_auth_cookies, issue_csrf_to
 from app.schemas.auth import (
     LoginRequest, TokenResponse, RefreshRequest,
     RegisterOrgRequest, PasswordResetRequest, PasswordResetConfirm, UserMeResponse,
-    ChangePasswordRequest,
+    ChangePasswordRequest, SwitchRoleRequest,
 )
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
 from app.core.ratelimit import rate_limit_ip
-from app.deps import get_current_user
+from app.deps import get_current_user, get_current_active_user
 from app.config import get_settings
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -261,8 +261,21 @@ async def refresh_token(
 
     org = (await db.execute(select(Organization).where(Organization.id == user.org_id))).scalar_one_or_none()
 
-    access_token = create_access_token(_identity_claims(user, org))
-    new_refresh = create_refresh_token({"sub": user.id, "org": user.org_id})
+    # Preserve an active "My Roles" scope across refresh — but only if the user
+    # still holds that role (revoked mid-session → silently back to full access).
+    act = payload.get("act")
+    if act and any(r.id == act for r in user.roles):
+        user._active_role_id = act
+        user._active_role_slug = next((r.slug for r in user.roles if r.id == act), None)
+        claims = {**_identity_claims(user, org), "act": act}
+        refresh_extra = {"act": act}
+    else:
+        act = None
+        claims = _identity_claims(user, org)
+        refresh_extra = {}
+
+    access_token = create_access_token(claims)
+    new_refresh = create_refresh_token({"sub": user.id, "org": user.org_id, **refresh_extra})
 
     if settings.COOKIE_AUTH_ENABLED:
         set_auth_cookies(response, access_token, new_refresh, issue_csrf_token())
@@ -272,6 +285,59 @@ async def refresh_token(
         refresh_token=new_refresh,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         user=UserMeResponse.from_user(user, org),
+    )
+
+
+@router.post("/switch-role", response_model=TokenResponse, summary='"My Roles": scope the session to one held role (or null = full access)')
+async def switch_role(
+    data: SwitchRoleRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Genuine privilege switch. `role_id` must be a role the user ALREADY holds
+    (so it can only ever narrow access, never escalate); `null` returns to full
+    access (the union of all their roles). Re-issues a token carrying the `act`
+    claim; every request then resolves permissions scoped to that one role."""
+    settings = get_settings()
+    role_id = data.role_id or None
+
+    if role_id is not None and not any(r.id == role_id for r in current_user.roles):
+        raise HTTPException(status_code=403, detail="You do not hold that role.")
+
+    org = (await db.execute(select(Organization).where(Organization.id == current_user.org_id))).scalar_one_or_none()
+
+    # Reflect the new scope on this instance so the response payload (and audit
+    # stamp) show the scoped permissions immediately.
+    current_user._active_role_id = role_id
+    current_user._active_role_slug = next((r.slug for r in current_user.roles if r.id == role_id), None) if role_id else None
+
+    claims = _identity_claims(current_user, org)
+    refresh_extra: dict = {}
+    if role_id:
+        claims["act"] = role_id
+        refresh_extra["act"] = role_id
+
+    access_token = create_access_token(claims)
+    new_refresh = create_refresh_token({"sub": current_user.id, "org": current_user.org_id, **refresh_extra})
+
+    if settings.COOKIE_AUTH_ENABLED:
+        set_auth_cookies(response, access_token, new_refresh, issue_csrf_token())
+
+    await log_action(
+        db, AuditAction.ROLE_SWITCHED, current_user.org_id, actor=current_user,
+        resource_type="User", resource_id=current_user.id, resource_label=current_user.full_name,
+        metadata={"to_role": current_user._active_role_slug or "all", "to_role_id": role_id},
+        request=request,
+    )
+    await db.commit()
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=new_refresh,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user=UserMeResponse.from_user(current_user, org),
     )
 
 

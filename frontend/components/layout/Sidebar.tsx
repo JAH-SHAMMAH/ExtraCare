@@ -23,6 +23,7 @@ import { useAuthStore, type ActiveRole } from "@/lib/store";
 import { effectiveModulesForOrg, moduleAllowedForOrg } from "@/lib/workspace";
 import { canAccessPath } from "@/lib/access";
 import { useLogout } from "@/hooks/useAuth";
+import { MyRolesMenu } from "@/components/role/MyRolesMenu";
 import { markNavClick } from "@/lib/perf";
 
 const CORE_NAV = [
@@ -766,6 +767,8 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
             <span className="truncate">Settings</span>
           </Link>
         )}
+        {/* "My Roles" — genuine active-role switch; self-hides for single-role users. */}
+        <MyRolesMenu />
         <Link href="/support" className={cn(NAV_ROW, NAV_IDLE)}>
           <HelpCircle size={NAV_ICON} strokeWidth={NAV_STROKE} className="shrink-0" />
           <span className="truncate">Support</span>

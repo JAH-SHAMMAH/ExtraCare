@@ -166,6 +166,9 @@ export const authApi = {
   }) => api.post("/auth/register", data).then((r) => r.data),
 
   me: () => api.get("/auth/me").then((r) => r.data),
+  // "My Roles": scope the session to one held role, or null = full access.
+  switchRole: (roleId: string | null) =>
+    api.post("/auth/switch-role", { role_id: roleId }).then((r) => r.data),
   changePassword: (data: { current_password: string; new_password: string }) =>
     api.post("/auth/change-password", data).then((r) => r.data),
   logout: async () => {

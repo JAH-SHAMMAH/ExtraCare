@@ -11,6 +11,7 @@ class AuditAction(str, enum.Enum):
     LOGIN_FAILED = "auth.login_failed"
     PASSWORD_RESET = "auth.password_reset"
     MFA_ENABLED = "auth.mfa_enabled"
+    ROLE_SWITCHED = "auth.role_switched"   # "My Roles" active-role scope change
 
     # Users
     USER_CREATED = "user.created"

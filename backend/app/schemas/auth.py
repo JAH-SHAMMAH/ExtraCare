@@ -72,6 +72,14 @@ class OrganizationSummary(BaseModel):
         )
 
 
+class RoleBrief(BaseModel):
+    """Minimal role identity for the "My Roles" switcher."""
+    id: str
+    slug: str
+    name: str
+    color: str | None = None
+
+
 class UserMeResponse(BaseModel):
     id: str
     email: str
@@ -81,6 +89,8 @@ class UserMeResponse(BaseModel):
     org_id: str
     primary_role: str
     permissions: list[str]
+    roles: list[RoleBrief] = []              # every role the user holds (for "My Roles")
+    active_role_id: str | None = None        # the role the session is scoped to, or null = full
     mfa_enabled: bool
     force_password_change: bool = False
     org: OrganizationSummary | None = None
@@ -98,10 +108,19 @@ class UserMeResponse(BaseModel):
             org_id=user.org_id,
             primary_role=user.primary_role,
             permissions=list(user.permissions),
+            roles=[RoleBrief(id=r.id, slug=r.slug, name=r.name, color=getattr(r, "color", None))
+                   for r in user.roles],
+            active_role_id=getattr(user, "_active_role_id", None),
             mfa_enabled=user.mfa_enabled,
             force_password_change=bool(getattr(user, "force_password_change", False)),
             org=OrganizationSummary.from_org(org) if org is not None else None,
         )
+
+
+class SwitchRoleRequest(BaseModel):
+    """Pick one of the user's assigned roles to scope the session to, or null to
+    return to full access (the union of all their roles)."""
+    role_id: str | None = None
 
 
 class ChangePasswordRequest(BaseModel):

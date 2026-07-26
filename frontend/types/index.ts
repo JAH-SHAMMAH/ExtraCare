@@ -1,5 +1,12 @@
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
+export interface RoleBrief {
+  id: string;
+  slug: string;
+  name: string;
+  color?: string | null;
+}
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -9,6 +16,8 @@ export interface AuthUser {
   org_id: string;
   primary_role: string;
   permissions: string[];
+  roles?: RoleBrief[];              // every role the user holds (for "My Roles")
+  active_role_id?: string | null;  // the role the session is scoped to, or null = full
   mfa_enabled: boolean;
   force_password_change?: boolean;
   org?: Organization | null;

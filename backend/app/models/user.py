@@ -63,18 +63,35 @@ class User(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     roles = relationship("Role", secondary=user_roles, back_populates="users", lazy="selectin")
     audit_logs = relationship("AuditLog", foreign_keys="AuditLog.actor_id", lazy="raise")
 
+    def _scoped_roles(self) -> list:
+        """The roles that back this user's effective permissions RIGHT NOW.
+
+        Normally the union of every assigned role. But when a "My Roles" switch
+        is active (request-scoped ``_active_role_id`` set by get_current_user from
+        the token's ``act`` claim) AND the user still actually holds that role,
+        the session is deliberately scoped DOWN to that one role. Switching can
+        only ever narrow access — the role must already be assigned — so this is
+        never an escalation vector."""
+        active = getattr(self, "_active_role_id", None)
+        if active:
+            scoped = [r for r in self.roles if r.id == active]
+            if scoped:
+                return scoped
+        return list(self.roles)
+
     @property
     def primary_role(self) -> str:
         if self.is_superadmin:
             return "super_admin"
-        if self.roles:
-            return self.roles[0].slug
+        scoped = self._scoped_roles()
+        if scoped:
+            return scoped[0].slug
         return "viewer"
 
     @property
     def permissions(self) -> set[str]:
         perms = set()
-        for role in self.roles:
+        for role in self._scoped_roles():
             perms.update(role.permissions or [])
         return perms
 

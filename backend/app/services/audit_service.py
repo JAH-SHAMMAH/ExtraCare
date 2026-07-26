@@ -51,6 +51,14 @@ async def log_action(
 
     metadata_safe = _make_jsonable(metadata or {})
 
+    # Stamp which role the actor was ACTING AS when a "My Roles" scope is active,
+    # so the audit trail records "who did what, as which role". Centralised here
+    # so every existing log_action call gets it for free. Absent = full access.
+    if actor is not None and isinstance(metadata_safe, dict):
+        acting = getattr(actor, "_active_role_slug", None)
+        if acting:
+            metadata_safe.setdefault("acting_role", acting)
+
     log = AuditLog(
         action=action,
         org_id=org_id,

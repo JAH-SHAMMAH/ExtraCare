@@ -76,6 +76,14 @@ async def get_current_user(
     if not hasattr(request.state, "org_id"):
         request.state.org_id = user.org_id
 
+    # "My Roles" active-role scope: if the token carries an `act` claim AND the
+    # user still holds that role, scope this request's effective permissions down
+    # to it (see User._scoped_roles). Stale/removed role → ignored (full access).
+    act = payload.get("act")
+    if act and any(r.id == act for r in user.roles):
+        user._active_role_id = act
+        user._active_role_slug = next((r.slug for r in user.roles if r.id == act), None)
+
     return user
 
 

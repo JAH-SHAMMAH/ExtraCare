@@ -57,8 +57,10 @@ async def list_available_roles(
 ):
     """List all available roles for the current organization."""
     async def _fetch():
+        # NB: Role has no soft-delete column (custom-role CRUD is deferred), so we
+        # must NOT filter on Role.is_deleted here — doing so 500s the endpoint.
         return (await db.execute(
-            select(Role).where(Role.org_id == current_user.org_id, Role.is_deleted == False).order_by(Role.name)
+            select(Role).where(Role.org_id == current_user.org_id).order_by(Role.name)
         )).scalars().all()
 
     roles = await _fetch()
