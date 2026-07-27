@@ -47,8 +47,12 @@ export function MyRolesMenu() {
       setOpen(false);
       router.push("/dashboard");
       router.refresh();
-    } catch {
-      toast.error("Couldn't switch role.");
+    } catch (e: any) {
+      // Surface the real reason (backend `detail` / status) instead of a generic
+      // message — otherwise a 403/500 is indistinguishable when debugging.
+      const detail = e?.response?.data?.detail;
+      const status = e?.response?.status;
+      toast.error(detail || (status ? `Couldn't switch role (HTTP ${status}).` : "Couldn't switch role."));
     } finally {
       setBusy(null);
     }
