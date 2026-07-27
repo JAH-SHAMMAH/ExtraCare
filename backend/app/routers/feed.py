@@ -22,14 +22,14 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import get_current_active_user
 from app.core.ratelimit import rate_limit_auth
 from app.models.user import User
-from app.models.feed import Post, PostLike, PostComment, PostAttachment
+from app.models.feed import Post, PostLike, PostComment, PostAttachment, PostAudience
 from app.schemas.feed import (
     PostCreate, PostResponse, AttachmentOut,
     CommentCreate, CommentResponse,
@@ -42,14 +42,34 @@ router = APIRouter(prefix="/feed", tags=["News Feed"])
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
-async def _load_post(db: AsyncSession, post_id: str, org_id: str) -> Post:
-    row = (await db.execute(
-        select(Post).where(
-            Post.id == post_id,
-            Post.org_id == org_id,
-            Post.is_deleted == False,
-        )
-    )).scalar_one_or_none()
+def _audience_visible_clause(user: User):
+    """SQL condition: the post is visible to `user`. Visible if the user is the
+    author, OR the post is public (no audience rows), OR the user is targeted
+    individually or via one of their ASSIGNED roles (not the active-role scope —
+    audience is about identity, so 'View as' never changes reach)."""
+    role_slugs = [r.slug for r in user.roles] or ["\x00"]   # sentinel avoids empty IN ()
+    has_audience = select(PostAudience.id).where(PostAudience.post_id == Post.id).exists()
+    is_targeted = select(PostAudience.id).where(
+        PostAudience.post_id == Post.id,
+        or_(
+            and_(PostAudience.kind == "user", PostAudience.ref == user.id),
+            and_(PostAudience.kind == "role", PostAudience.ref.in_(role_slugs)),
+        ),
+    ).exists()
+    return or_(Post.user_id == user.id, ~has_audience, is_targeted)
+
+
+async def _load_post(db: AsyncSession, post_id: str, org_id: str, viewer: User | None = None) -> Post:
+    q = select(Post).where(
+        Post.id == post_id,
+        Post.org_id == org_id,
+        Post.is_deleted == False,
+    )
+    # Enforce audience on single-post fetch too (so you can't get/like/comment a
+    # post that wasn't shared with you). 404 — never reveal a targeted post exists.
+    if viewer is not None:
+        q = q.where(_audience_visible_clause(viewer))
+    row = (await db.execute(q)).scalar_one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail=f"Post not found for id: {post_id}")
     return row
@@ -94,6 +114,8 @@ def _to_post_response(p: Post, *, like_count: int, comment_count: int, liked_by_
                           mime_type=a.mime_type, size_bytes=a.size_bytes, title=a.title)
             for a in sorted(getattr(p, "attachments", []) or [], key=lambda a: a.sort_order)
         ],
+        audience_roles=[a.ref for a in (getattr(p, "audiences", []) or []) if a.kind == "role"],
+        audience_user_ids=[a.ref for a in (getattr(p, "audiences", []) or []) if a.kind == "user"],
         like_count=like_count,
         comment_count=comment_count,
         liked_by_me=liked_by_me,
@@ -141,6 +163,20 @@ async def create_post(
         )
         for i, a in enumerate(data.attachments)
     ]
+
+    # Publish-To targeting. Only keep user ids that belong to THIS org (never let a
+    # post reference a user in another tenant). Empty audience = public.
+    role_refs = list(dict.fromkeys(s for s in data.audience_roles if s))
+    wanted_users = list(dict.fromkeys(u for u in data.audience_user_ids if u))
+    valid_users: list[str] = []
+    if wanted_users:
+        valid_users = list((await db.execute(
+            select(User.id).where(User.id.in_(wanted_users), User.org_id == current_user.org_id)
+        )).scalars().all())
+    post.audiences = (
+        [PostAudience(org_id=current_user.org_id, kind="role", ref=s) for s in role_refs]
+        + [PostAudience(org_id=current_user.org_id, kind="user", ref=u) for u in valid_users]
+    )
     db.add(post)
     await db.flush()
     # Refresh ONLY created_at (server default) — a full refresh would expire the
@@ -165,6 +201,7 @@ async def list_posts(
     q = select(Post).where(
         Post.org_id == current_user.org_id,
         Post.is_deleted == False,
+        _audience_visible_clause(current_user),   # Publish-To targeting
     )
     if before:
         q = q.where(Post.created_at < before)
@@ -218,7 +255,7 @@ async def get_post(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    post = await _load_post(db, post_id, current_user.org_id)
+    post = await _load_post(db, post_id, current_user.org_id, viewer=current_user)
     like_count, comment_count, liked = await _counts_for(db, post.id, current_user.id)
     return _to_post_response(post, like_count=like_count, comment_count=comment_count, liked_by_me=liked)
 
@@ -229,7 +266,7 @@ async def delete_post(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    post = await _load_post(db, post_id, current_user.org_id)
+    post = await _load_post(db, post_id, current_user.org_id, viewer=current_user)
     if post.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Only the author can delete this post.")
     post.is_deleted = True
@@ -246,7 +283,7 @@ async def like_post(
     current_user: User = Depends(get_current_active_user),
 ):
     """Idempotent like — calling twice leaves the post liked exactly once."""
-    post = await _load_post(db, post_id, current_user.org_id)
+    post = await _load_post(db, post_id, current_user.org_id, viewer=current_user)
 
     existing = (await db.execute(
         select(PostLike).where(
@@ -270,7 +307,7 @@ async def unlike_post(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    post = await _load_post(db, post_id, current_user.org_id)
+    post = await _load_post(db, post_id, current_user.org_id, viewer=current_user)
 
     existing = (await db.execute(
         select(PostLike).where(
@@ -297,7 +334,7 @@ async def list_comments(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    await _load_post(db, post_id, current_user.org_id)
+    await _load_post(db, post_id, current_user.org_id, viewer=current_user)
     rows = (await db.execute(
         select(PostComment).where(
             PostComment.post_id == post_id,
@@ -314,7 +351,7 @@ async def create_comment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    post = await _load_post(db, post_id, current_user.org_id)
+    post = await _load_post(db, post_id, current_user.org_id, viewer=current_user)
     c = PostComment(
         org_id=current_user.org_id,
         post_id=post.id,
@@ -334,7 +371,7 @@ async def delete_comment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    await _load_post(db, post_id, current_user.org_id)
+    await _load_post(db, post_id, current_user.org_id, viewer=current_user)
     c = (await db.execute(
         select(PostComment).where(
             PostComment.id == comment_id,

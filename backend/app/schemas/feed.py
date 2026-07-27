@@ -58,6 +58,12 @@ class PostCreate(BaseModel):
     media_url: Optional[str] = None
     media_type: Optional[Literal["image", "video"]] = None
     attachments: list[AttachmentIn] = []
+    # Publish-To targeting. Both empty = public (everyone in the org). Otherwise
+    # the post reaches the listed roles (by slug) and/or specific users (by id),
+    # plus the author. Unknown role slugs simply never match; user ids are
+    # validated against the caller's org.
+    audience_roles: list[str] = []
+    audience_user_ids: list[str] = []
 
     @field_validator("content", mode="before")
     @classmethod
@@ -81,6 +87,10 @@ class PostResponse(BaseModel):
     media_url: Optional[str] = None
     media_type: Optional[str] = None
     attachments: list[AttachmentOut] = []
+    # Targeting (empty both = public). Returned so the author/UI can show + edit
+    # who a post reached.
+    audience_roles: list[str] = []
+    audience_user_ids: list[str] = []
 
     like_count: int
     comment_count: int

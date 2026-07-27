@@ -14,6 +14,7 @@ import pytest_asyncio
 from fastapi import HTTPException
 
 from app.models.user import User, UserStatus
+from app.models.role import Role
 from app.models.organization import Organization, IndustryType
 from app.routers.feed import (
     create_post, list_posts, get_post, delete_post,
@@ -35,6 +36,7 @@ async def second_user(db, org) -> User:
         status=UserStatus.ACTIVE,
         org_id=org.id,
     )
+    u.roles = []   # loaded (mirrors get_current_user's selectinload) so audience checks don't lazy-load
     db.add(u)
     await db.commit()
     return u
@@ -63,6 +65,7 @@ async def other_org_user(db, other_org) -> User:
         status=UserStatus.ACTIVE,
         org_id=other_org.id,
     )
+    u.roles = []   # loaded (mirrors get_current_user's selectinload) so audience checks don't lazy-load
     db.add(u)
     await db.commit()
     return u
@@ -177,6 +180,71 @@ async def test_list_includes_counts_and_liked_by_me(db, teacher, second_user):
     assert rows[0].like_count == 2
     assert rows[0].comment_count == 1
     assert rows[0].liked_by_me is True
+
+
+# ── Audience targeting (Publish-To) ─────────────────────────────────────────────
+
+async def _user_with_roles(db, org, *slugs, name="U") -> User:
+    u = User(id=str(uuid.uuid4()), email=f"{uuid.uuid4().hex[:8]}@x.com", full_name=name,
+             status=UserStatus.ACTIVE, org_id=org.id)
+    u.roles = [Role(id=str(uuid.uuid4()), name=s, slug=s, permissions=[], org_id=org.id, is_system=True) for s in slugs]
+    db.add(u)
+    await db.commit()
+    return u
+
+
+def _ids(rows):
+    return {p.id for p in rows}
+
+
+async def test_audience_targeting_roles_and_users(db, org):
+    author = await _user_with_roles(db, org, "org_admin", name="Author")
+    teacher_u = await _user_with_roles(db, org, "teacher", name="Teach")
+    parent_u = await _user_with_roles(db, org, "parent", name="Parent")
+
+    async def feed_for(u):
+        return await list_posts(limit=20, before=None, db=db, current_user=u)
+
+    # Public (no audience) → everyone.
+    pub = await create_post(data=PostCreate(content="hello all"), db=db, current_user=author)
+    assert pub.audience_roles == [] and pub.audience_user_ids == []
+    assert pub.id in _ids(await feed_for(parent_u))
+
+    # Role-targeted (teacher): teacher sees; parent doesn't; author sees own even
+    # though org_admin is not "teacher".
+    tp = await create_post(data=PostCreate(content="staff only", audience_roles=["teacher"]), db=db, current_user=author)
+    assert tp.audience_roles == ["teacher"]
+    assert tp.id in _ids(await feed_for(teacher_u))
+    assert tp.id not in _ids(await feed_for(parent_u))
+    assert tp.id in _ids(await feed_for(author))
+
+    # User-targeted (parent): parent sees; teacher doesn't.
+    up = await create_post(data=PostCreate(content="hi parent", audience_user_ids=[parent_u.id]), db=db, current_user=author)
+    assert up.audience_user_ids == [parent_u.id]
+    assert up.id in _ids(await feed_for(parent_u))
+    assert up.id not in _ids(await feed_for(teacher_u))
+
+    # Single-post fetch enforces audience too (404 for non-audience; author/target OK).
+    with pytest.raises(HTTPException) as exc:
+        await get_post(post_id=tp.id, db=db, current_user=parent_u)
+    assert exc.value.status_code == 404
+    assert (await get_post(post_id=tp.id, db=db, current_user=teacher_u)).id == tp.id
+
+    # Can't like a post that wasn't shared with you.
+    with pytest.raises(HTTPException) as exc:
+        await like_post(post_id=tp.id, db=db, current_user=parent_u)
+    assert exc.value.status_code == 404
+
+
+async def test_audience_drops_cross_org_user(db, org, other_org):
+    author = await _user_with_roles(db, org, "org_admin")
+    outsider = await _user_with_roles(db, other_org, "teacher")
+    p = await create_post(
+        data=PostCreate(content="x", audience_user_ids=[outsider.id]),
+        db=db, current_user=author,
+    )
+    # A cross-tenant user id is silently dropped — it can never target another org.
+    assert p.audience_user_ids == []
 
 
 # ── Like toggle ───────────────────────────────────────────────────────────────

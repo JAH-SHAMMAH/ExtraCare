@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import {
   Heart, MessageCircle, Image as ImageIcon, Film, Loader2, Trash2,
-  Send, X, Newspaper, Paperclip, FileText, ExternalLink, Link2, Plus,
+  Send, X, Newspaper, Paperclip, FileText, ExternalLink, Link2, Plus, Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -12,8 +12,10 @@ import {
 } from "@/hooks/useFeed";
 import { useAuthStore } from "@/lib/store";
 import { messengerApi, uploadApi } from "@/lib/api";
+import { useHasPermission } from "@/components/guards/PermissionGate";
+import { AudiencePicker } from "@/components/feed/AudiencePicker";
 import { cn, getInitials, resolveMediaUrl, timeAgo } from "@/lib/utils";
-import type { FeedPost, FeedAttachment, FeedAttachmentInput, UploadResponse } from "@/types";
+import type { FeedPost, FeedAttachment, FeedAttachmentInput, AudienceUser, UploadResponse } from "@/types";
 
 /**
  * Shared News Feed — the org social feed (posts, likes, comments). Single source
@@ -56,6 +58,10 @@ function Composer() {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
   const [linkTitle, setLinkTitle] = useState("");
+  // Publish-To targeting (empty both = everyone). Only shown to users:read holders.
+  const [audRoles, setAudRoles] = useState<string[]>([]);
+  const [audUsers, setAudUsers] = useState<AudienceUser[]>([]);
+  const canTarget = useHasPermission("users:read");
   // Genuinely distinct pickers so each button opens only its media type.
   const imageRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
@@ -70,6 +76,8 @@ function Composer() {
     setLinkOpen(false);
     setLinkUrl("");
     setLinkTitle("");
+    setAudRoles([]);
+    setAudUsers([]);
     if (imageRef.current) imageRef.current.value = "";
     if (videoRef.current) videoRef.current.value = "";
     if (docRef.current) docRef.current.value = "";
@@ -148,6 +156,8 @@ function Composer() {
       media_url: media?.file_url,
       media_type: media ? (media.type as "image" | "video") : undefined,
       attachments: attachments.length ? attachments : undefined,
+      audience_roles: audRoles.length ? audRoles : undefined,
+      audience_user_ids: audUsers.length ? audUsers.map((u) => u.id) : undefined,
     });
     reset();
   };
@@ -281,14 +291,24 @@ function Composer() {
           )}
         </div>
 
-        <button
-          type="submit"
-          disabled={busy || (!content.trim() && !media && attachments.length === 0)}
-          className="flex items-center gap-1.5 bg-indigo-600 text-white text-sm font-medium px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {create.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          Post
-        </button>
+        <div className="flex items-center gap-2">
+          {canTarget && (
+            <AudiencePicker
+              roles={audRoles}
+              users={audUsers}
+              onChange={(r, u) => { setAudRoles(r); setAudUsers(u); }}
+              disabled={busy}
+            />
+          )}
+          <button
+            type="submit"
+            disabled={busy || (!content.trim() && !media && attachments.length === 0)}
+            className="flex items-center gap-1.5 bg-indigo-600 text-white text-sm font-medium px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {create.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            Post
+          </button>
+        </div>
       </div>
     </form>
   );
@@ -316,7 +336,14 @@ function PostCard({ post, currentUserId }: { post: FeedPost; currentUserId?: str
           <p className="text-sm font-semibold text-slate-800 truncate">
             {post.author_name || "Unknown"}
           </p>
-          <p className="text-xs text-slate-400">{timeAgo(post.created_at)}</p>
+          <p className="text-xs text-slate-400 flex items-center gap-1.5">
+            {timeAgo(post.created_at)}
+            {((post.audience_roles?.length ?? 0) + (post.audience_user_ids?.length ?? 0) > 0) && (
+              <span className="inline-flex items-center gap-0.5 text-indigo-500" title="Limited audience — not shared with everyone">
+                <span aria-hidden>·</span><Lock className="w-3 h-3" />
+              </span>
+            )}
+          </p>
         </div>
         {isAuthor && (
           <button

@@ -10,7 +10,7 @@ from app.deps import get_current_user, get_current_active_user
 from app.core.permissions import PermissionChecker, assert_can_grant_roles, assert_can_manage_user
 from app.core.security import hash_password
 from app.models.user import User, UserStatus
-from app.models.role import Role
+from app.models.role import Role, user_roles
 from app.schemas.user import (
     UserCreate, UserUpdate, UserStatusUpdate, UserResponse,
     UserListResponse, InviteUserRequest,
@@ -93,6 +93,29 @@ async def list_available_roles(
             for role in roles
         ]
     }
+
+
+@router.get("/by-role/{role_slug}", dependencies=[_can_read])
+async def list_users_by_role(
+    role_slug: str,
+    search: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Minimal {id, full_name, avatar_url} list of users holding a role — powers
+    the News Feed 'Select Users' (Publish-To → more) modal. Org-scoped, gated
+    users:read (the same scope the role list + contact picker use)."""
+    q = (
+        select(User.id, User.full_name, User.avatar_url)
+        .join(user_roles, user_roles.c.user_id == User.id)
+        .join(Role, Role.id == user_roles.c.role_id)
+        .where(User.org_id == current_user.org_id, User.is_deleted == False, Role.slug == role_slug)  # noqa: E712
+    )
+    if search:
+        term = f"%{search.strip()}%"
+        q = q.where((User.full_name.ilike(term)) | (User.email.ilike(term)))
+    rows = (await db.execute(q.order_by(User.full_name).limit(100))).all()
+    return {"items": [{"id": r.id, "full_name": r.full_name, "avatar_url": r.avatar_url} for r in rows]}
 
 
 # ┌─ FUTURE: custom-role CRUD (Access Control) ─────────────────────────────────────┐

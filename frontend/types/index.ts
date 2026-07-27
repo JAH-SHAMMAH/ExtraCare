@@ -2621,10 +2621,19 @@ export interface FeedPost {
   media_url: string | null;
   media_type: FeedMediaType | null;
   attachments?: FeedAttachment[];
+  audience_roles?: string[];
+  audience_user_ids?: string[];
   like_count: number;
   comment_count: number;
   liked_by_me: boolean;
   created_at: string;
+}
+
+// Minimal user shape for the feed "Select Users" modal (GET /users/by-role/{slug}).
+export interface AudienceUser {
+  id: string;
+  full_name: string;
+  avatar_url: string | null;
 }
 
 export interface FeedComment {

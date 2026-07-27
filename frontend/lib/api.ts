@@ -188,6 +188,9 @@ export const usersApi = {
   // All non-teaching staff + admins (no 100-row cap; server-side filtered).
   staff: (params?: { search?: string }) => api.get("/users/staff", { params }).then((r) => r.data),
   listRoles: () => api.get("/users/roles/available").then((r) => r.data),
+  // Minimal {id, full_name, avatar_url} users holding a role — feed Select-Users modal.
+  byRole: (roleSlug: string, search?: string) =>
+    api.get(`/users/by-role/${encodeURIComponent(roleSlug)}`, { params: search ? { search } : {} }).then((r) => r.data),
   create: (data: object) => api.post("/users", data).then((r) => r.data),
   update: (id: string, data: object) => api.patch(`/users/${id}`, data).then((r) => r.data),
   updateStatus: (id: string, status: string) => api.patch(`/users/${id}/status`, { status }).then((r) => r.data),
@@ -1556,6 +1559,7 @@ export const feedApi = {
     create: (data: {
       content?: string; media_url?: string; media_type?: "image" | "video";
       attachments?: import("@/types").FeedAttachmentInput[];
+      audience_roles?: string[]; audience_user_ids?: string[];
     }) => api.post("/feed/posts", data).then((r) => r.data),
     remove: (id: string) => api.delete(`/feed/posts/${id}`),
   },

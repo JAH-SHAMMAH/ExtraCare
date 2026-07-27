@@ -46,6 +46,10 @@ class Post(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
         "PostAttachment", back_populates="post", cascade="all, delete-orphan",
         passive_deletes=True, order_by="PostAttachment.sort_order", lazy="selectin",
     )
+    audiences = relationship(
+        "PostAudience", back_populates="post", cascade="all, delete-orphan",
+        passive_deletes=True, lazy="selectin",
+    )
 
     __table_args__ = (
         # Feed query: org_id + not deleted, newest first.
@@ -69,6 +73,26 @@ class PostAttachment(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     __table_args__ = (
         Index("ix_feed_attachment_post", "post_id", "sort_order"),
+    )
+
+
+class PostAudience(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Who a post is targeted at. NO rows for a post = public (everyone in the
+    org). Each row narrows the audience to a role (kind="role", ref=role slug) or
+    a specific user (kind="user", ref=user id). The author always sees their own
+    post regardless. Membership uses a user's ASSIGNED roles (not the active-role
+    'View as' scope), so switching personas never changes who a post reached."""
+    __tablename__ = "feed_post_audiences"
+
+    post_id = Column(String(36), ForeignKey("feed_posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String(10), nullable=False)    # "role" | "user"
+    ref = Column(String(100), nullable=False)     # role slug or user id
+
+    post = relationship("Post", back_populates="audiences")
+
+    __table_args__ = (
+        Index("ix_feed_audience_post", "post_id"),
+        UniqueConstraint("post_id", "kind", "ref", name="uq_post_audience_post_kind_ref"),
     )
 
 
