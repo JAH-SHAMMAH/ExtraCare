@@ -1,10 +1,11 @@
 """Pydantic schemas for the News Feed module."""
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Optional, Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 
 def _empty_to_none(v):
@@ -31,6 +32,15 @@ class AttachmentIn(BaseModel):
         if not v:
             raise ValueError("attachment url must not be blank")
         return v
+
+    @model_validator(mode="after")
+    def _safe_link_scheme(self):
+        # A link is rendered as a clickable <a href>; only allow http(s) so a
+        # javascript:/data: URL can't become a stored-XSS-on-click. Uploaded
+        # media (image/video/file) is a server-issued /uploads/… path.
+        if self.kind == "link" and not re.match(r"^https?://", self.url, re.I):
+            raise ValueError("link url must start with http:// or https://")
+        return self
 
 
 class AttachmentOut(BaseModel):

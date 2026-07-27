@@ -121,6 +121,23 @@ async def test_create_post_with_document_attachment(db, teacher):
     assert doc_only.content is None and len(doc_only.attachments) == 1
 
 
+async def test_link_attachment_and_xss_scheme_guard(db, teacher):
+    from pydantic import ValidationError
+    from app.schemas.feed import AttachmentIn
+    post = await create_post(
+        data=PostCreate(content="Resource", attachments=[
+            AttachmentIn(kind="link", url="https://example.com/policy", title="Policy")]),
+        db=db, current_user=teacher,
+    )
+    assert post.attachments[0].kind == "link"
+    assert post.attachments[0].url == "https://example.com/policy" and post.attachments[0].title == "Policy"
+
+    # Non-http(s) link schemes (javascript:/data:) are rejected at validation.
+    for bad in ("javascript:alert(1)", "data:text/html,<script>1</script>", "/uploads/x"):
+        with pytest.raises(ValidationError):
+            AttachmentIn(kind="link", url=bad)
+
+
 async def test_post_requires_content_or_media(db, teacher):
     with pytest.raises(HTTPException) as exc:
         await create_post(data=PostCreate(), db=db, current_user=teacher)

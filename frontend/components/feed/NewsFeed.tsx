@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import {
   Heart, MessageCircle, Image as ImageIcon, Film, Loader2, Trash2,
-  Send, X, Newspaper, Paperclip, FileText, ExternalLink,
+  Send, X, Newspaper, Paperclip, FileText, ExternalLink, Link2, Plus,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -50,9 +50,15 @@ const DOC_ACCEPT = ".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,applica
 function Composer() {
   const [content, setContent] = useState("");
   const [media, setMedia] = useState<UploadResponse | null>(null);
-  const [docs, setDocs] = useState<FeedAttachmentInput[]>([]);
+  // Non-inline attachments (documents + links). Image/video go through `media`.
+  const [attachments, setAttachments] = useState<FeedAttachmentInput[]>([]);
   const [uploading, setUploading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkTitle, setLinkTitle] = useState("");
+  // Genuinely distinct pickers so each button opens only its media type.
+  const imageRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
   const docRef = useRef<HTMLInputElement>(null);
 
   const create = useCreatePost();
@@ -60,8 +66,12 @@ function Composer() {
   const reset = () => {
     setContent("");
     setMedia(null);
-    setDocs([]);
-    if (fileRef.current) fileRef.current.value = "";
+    setAttachments([]);
+    setLinkOpen(false);
+    setLinkUrl("");
+    setLinkTitle("");
+    if (imageRef.current) imageRef.current.value = "";
+    if (videoRef.current) videoRef.current.value = "";
     if (docRef.current) docRef.current.value = "";
   };
 
@@ -94,7 +104,7 @@ function Composer() {
     try {
       // Durable document upload (/upload/document) — accepts PDF/Word/Excel/CSV/text.
       const res: { url: string; filename: string } = await uploadApi.document(f);
-      setDocs((prev) => [
+      setAttachments((prev) => [
         ...prev,
         { kind: "file", url: res.url, filename: res.filename || f.name, mime_type: f.type, size_bytes: f.size },
       ]);
@@ -106,18 +116,38 @@ function Composer() {
     }
   };
 
+  const addLink = () => {
+    let raw = linkUrl.trim();
+    if (!raw) return;
+    // Be forgiving — accept "example.com" and normalise to a real URL.
+    if (!/^https?:\/\//i.test(raw)) raw = `https://${raw}`;
+    try {
+      new URL(raw);
+    } catch {
+      toast.error("Enter a valid URL.");
+      return;
+    }
+    setAttachments((prev) => [...prev, { kind: "link", url: raw, title: linkTitle.trim() || raw }]);
+    setLinkUrl("");
+    setLinkTitle("");
+    setLinkOpen(false);
+  };
+
+  const removeAttachment = (i: number) =>
+    setAttachments((prev) => prev.filter((_, j) => j !== i));
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = content.trim();
-    if (!text && !media && docs.length === 0) {
-      toast.error("Say something or attach media/a document first.");
+    if (!text && !media && attachments.length === 0) {
+      toast.error("Say something or attach media, a document, or a link first.");
       return;
     }
     await create.mutateAsync({
       content: text || undefined,
       media_url: media?.file_url,
       media_type: media ? (media.type as "image" | "video") : undefined,
-      attachments: docs.length ? docs : undefined,
+      attachments: attachments.length ? attachments : undefined,
     });
     reset();
   };
@@ -155,17 +185,19 @@ function Composer() {
         </div>
       )}
 
-      {docs.length > 0 && (
+      {attachments.length > 0 && (
         <div className="space-y-1.5">
-          {docs.map((d, i) => (
+          {attachments.map((a, i) => (
             <div key={i} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <FileText className="w-4 h-4 text-indigo-600 shrink-0" />
-              <span className="text-sm text-slate-700 truncate flex-1">{d.filename}</span>
+              {a.kind === "link"
+                ? <Link2 className="w-4 h-4 text-indigo-600 shrink-0" />
+                : <FileText className="w-4 h-4 text-indigo-600 shrink-0" />}
+              <span className="text-sm text-slate-700 truncate flex-1">{a.kind === "link" ? (a.title || a.url) : a.filename}</span>
               <button
                 type="button"
-                onClick={() => setDocs((prev) => prev.filter((_, j) => j !== i))}
+                onClick={() => removeAttachment(i)}
                 className="text-slate-400 hover:text-red-500 shrink-0"
-                aria-label="Remove document"
+                aria-label="Remove attachment"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -174,25 +206,38 @@ function Composer() {
         </div>
       )}
 
+      {linkOpen && (
+        <div className="flex flex-col sm:flex-row items-stretch gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+          <input
+            value={linkUrl}
+            onChange={(e) => setLinkUrl(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addLink(); } }}
+            placeholder="Paste a link (https://…)"
+            className="flex-1 text-sm px-3 py-2 rounded-lg bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 placeholder:text-slate-400"
+            autoFocus
+          />
+          <input
+            value={linkTitle}
+            onChange={(e) => setLinkTitle(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addLink(); } }}
+            placeholder="Label (optional)"
+            className="sm:w-40 text-sm px-3 py-2 rounded-lg bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 placeholder:text-slate-400"
+          />
+          <button type="button" onClick={addLink} disabled={!linkUrl.trim()}
+            className="flex items-center justify-center gap-1 bg-indigo-600 text-white text-sm font-medium px-3 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+            <Plus className="w-4 h-4" /> Add
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between pt-2 border-t border-slate-100">
         <div className="flex items-center gap-2">
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*,video/*"
-            className="hidden"
-            onChange={handleFile}
-          />
-          <input
-            ref={docRef}
-            type="file"
-            accept={DOC_ACCEPT}
-            className="hidden"
-            onChange={handleDoc}
-          />
+          <input ref={imageRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+          <input ref={videoRef} type="file" accept="video/*" className="hidden" onChange={handleFile} />
+          <input ref={docRef} type="file" accept={DOC_ACCEPT} className="hidden" onChange={handleDoc} />
           <button
             type="button"
-            onClick={() => fileRef.current?.click()}
+            onClick={() => imageRef.current?.click()}
             disabled={busy}
             className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-indigo-600 px-2 py-1.5 rounded-md hover:bg-slate-50 disabled:opacity-50"
           >
@@ -201,7 +246,7 @@ function Composer() {
           </button>
           <button
             type="button"
-            onClick={() => fileRef.current?.click()}
+            onClick={() => videoRef.current?.click()}
             disabled={busy}
             className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-indigo-600 px-2 py-1.5 rounded-md hover:bg-slate-50 disabled:opacity-50"
           >
@@ -217,6 +262,18 @@ function Composer() {
             <Paperclip className="w-4 h-4" />
             File
           </button>
+          <button
+            type="button"
+            onClick={() => setLinkOpen((v) => !v)}
+            disabled={busy}
+            className={cn(
+              "flex items-center gap-1.5 text-xs font-medium px-2 py-1.5 rounded-md hover:bg-slate-50 disabled:opacity-50",
+              linkOpen ? "text-indigo-600 bg-indigo-50" : "text-slate-600 hover:text-indigo-600",
+            )}
+          >
+            <Link2 className="w-4 h-4" />
+            Link
+          </button>
           {uploading && (
             <span className="flex items-center gap-1 text-xs text-slate-500">
               <Loader2 className="w-3 h-3 animate-spin" /> uploading…
@@ -226,7 +283,7 @@ function Composer() {
 
         <button
           type="submit"
-          disabled={busy || (!content.trim() && !media && docs.length === 0)}
+          disabled={busy || (!content.trim() && !media && attachments.length === 0)}
           className="flex items-center gap-1.5 bg-indigo-600 text-white text-sm font-medium px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {create.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
