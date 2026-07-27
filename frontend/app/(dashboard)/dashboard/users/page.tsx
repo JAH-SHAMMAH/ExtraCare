@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { useUsers, useUpdateUserStatus, useDeleteUser, useAvailableRoles, useResetPassword } from "@/hooks/useUsers";
+import { useState, useRef } from "react";
+import { useUsers, useUpdateUserStatus, useDeleteUser, useAvailableRoles, useResetPassword, useSetUserAvatar } from "@/hooks/useUsers";
 import { UserCreateModal } from "@/components/users/UserCreateModal";
-import { cn, timeAgo, STATUS_COLORS, getInitials } from "@/lib/utils";
-import { Search, Download, UserPlus, MoreVertical, Shield, Ban, Trash2, Edit, KeyRound, Copy, X, Check } from "lucide-react";
+import { cn, timeAgo, STATUS_COLORS, getInitials, resolveMediaUrl } from "@/lib/utils";
+import { Search, Download, UserPlus, MoreVertical, Shield, Ban, Trash2, Edit, KeyRound, Copy, X, Check, Camera, Loader2 } from "lucide-react";
 import type { User, UserStatus } from "@/types";
 import { useAuthStore } from "@/lib/store";
 
@@ -224,9 +224,7 @@ function UserRow({ user, canWrite, canDelete, onSuspend, onActivate, onDelete, o
     <tr className="group hover:bg-slate-50/70 transition-colors">
       <td className="px-5 py-4">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-brand-600/10 border border-brand-100 flex items-center justify-center text-brand-700 text-sm font-bold shrink-0">
-            {getInitials(user.full_name)}
-          </div>
+          <AvatarCell user={user} canWrite={canWrite} />
           <div>
             <p className="text-sm font-bold text-slate-900">{user.full_name}</p>
             <p className="text-xs text-slate-400">{user.email}</p>
@@ -282,6 +280,41 @@ function UserRow({ user, canWrite, canDelete, onSuspend, onActivate, onDelete, o
         )}
       </td>
     </tr>
+  );
+}
+
+function AvatarCell({ user, canWrite }: { user: User; canWrite: boolean }) {
+  const setAvatar = useSetUserAvatar();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) setAvatar.mutate({ userId: user.id, file: f });
+    e.target.value = "";
+  };
+  return (
+    <div className="relative w-9 h-9 shrink-0 group/av">
+      {user.avatar_url ? (
+        <img src={resolveMediaUrl(user.avatar_url)} alt="" className="w-9 h-9 rounded-lg object-cover bg-slate-100" />
+      ) : (
+        <div className="w-9 h-9 rounded-lg bg-brand-600/10 border border-brand-100 flex items-center justify-center text-brand-700 text-sm font-bold">
+          {getInitials(user.full_name)}
+        </div>
+      )}
+      {canWrite && (
+        <>
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={setAvatar.isPending}
+            title={user.avatar_url ? "Change photo" : "Set photo"}
+            className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-slate-700 text-white flex items-center justify-center shadow ring-2 ring-white opacity-0 group-hover/av:opacity-100 transition disabled:opacity-100"
+          >
+            {setAvatar.isPending ? <Loader2 size={10} className="animate-spin" /> : <Camera size={10} />}
+          </button>
+          <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={onPick} />
+        </>
+      )}
+    </div>
   );
 }
 

@@ -9,11 +9,12 @@ import os
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import get_current_active_user
+from app.core.permissions import PermissionChecker
 from app.models.user import User
 from app.config import get_settings
 
@@ -67,6 +68,28 @@ async def upload_avatar(
     await db.execute(update(User).where(User.id == current_user.id).values(avatar_url=url))
     _logger.info("upload.avatar user=%s url=%s", current_user.id, url)
     return {"url": url, "filename": file.filename}
+
+
+@router.post("/avatar/{user_id}", dependencies=[Depends(PermissionChecker("users:write"))])
+async def upload_avatar_for_user(
+    user_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Admin-set another user's profile photo (users:write). Target must be in the
+    caller's org. Makes staff/student directories — and the feed Select-Users
+    modal — photo-rich for people who never uploaded their own avatar."""
+    target = (await db.execute(
+        select(User).where(User.id == user_id, User.org_id == current_user.org_id, User.is_deleted == False)
+    )).scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    content = await _read_validated(file, _IMAGE_TYPES, _MAX_AVATAR)
+    _, url = _save(current_user.org_id, "avatars", file.filename, content)
+    await db.execute(update(User).where(User.id == target.id).values(avatar_url=url))
+    _logger.info("upload.avatar.admin actor=%s target=%s url=%s", current_user.id, target.id, url)
+    return {"url": url, "user_id": target.id, "filename": file.filename}
 
 
 @router.post("/document")

@@ -2,8 +2,17 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { usersApi } from "@/lib/api";
+import { usersApi, uploadApi } from "@/lib/api";
 import type { UserStatus } from "@/types";
+
+export function useSetUserAvatar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, file }: { userId: string; file: File }) => uploadApi.avatarForUser(userId, file),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["users"] }); toast.success("Photo updated."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to set photo."),
+  });
+}
 
 export function useUsers(params?: {
   page?: number;
