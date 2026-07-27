@@ -348,6 +348,21 @@ app.include_router(upload_router.router, prefix=API_V1)
 # 500 in fresh environments.
 _upload_root = Path(settings.UPLOAD_DIR)
 _upload_root.mkdir(parents=True, exist_ok=True)
+# Durability guardrail: on Render/containers the filesystem is EPHEMERAL — a
+# relative or /tmp UPLOAD_DIR is wiped on every redeploy, silently losing every
+# uploaded image/document/avatar. In prod/staging that must be an absolute path
+# on a MOUNTED PERSISTENT DISK (see DEPLOYMENT.md). Warn loudly rather than fail,
+# so a deploy isn't hard-blocked, but the misconfig is impossible to miss in logs.
+if settings.ENVIRONMENT in ("production", "staging"):
+    _resolved = _upload_root.resolve()
+    _looks_ephemeral = (not _upload_root.is_absolute()) or str(_resolved).startswith(("/tmp", "/app", "/opt/render/project"))
+    if _looks_ephemeral:
+        logging.getLogger("extracare").warning(
+            "UPLOAD_DIR=%s resolves to %s, which looks EPHEMERAL. Uploaded media will "
+            "be LOST on every redeploy. Mount a Render persistent disk and set "
+            "UPLOAD_DIR to its mount path (see DEPLOYMENT.md).",
+            settings.UPLOAD_DIR, _resolved,
+        )
 app.mount("/uploads", StaticFiles(directory=str(_upload_root)), name="uploads")
 
 # School Experience Layer — mounted under /api/v1 with their own prefixes

@@ -13,10 +13,41 @@ def _empty_to_none(v):
     return v
 
 
+AttachmentKind = Literal["image", "video", "file", "link"]
+
+
+class AttachmentIn(BaseModel):
+    kind: AttachmentKind
+    url: str                                   # /uploads/… (uploaded) or an external link
+    filename: Optional[str] = None             # original name — the "View Document" label
+    mime_type: Optional[str] = None
+    size_bytes: Optional[int] = None
+    title: Optional[str] = None                # link card title (or doc display name)
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _url_required(cls, v):
+        v = _empty_to_none(v)
+        if not v:
+            raise ValueError("attachment url must not be blank")
+        return v
+
+
+class AttachmentOut(BaseModel):
+    id: str
+    kind: str
+    url: str
+    filename: Optional[str] = None
+    mime_type: Optional[str] = None
+    size_bytes: Optional[int] = None
+    title: Optional[str] = None
+
+
 class PostCreate(BaseModel):
     content: Optional[str] = None
     media_url: Optional[str] = None
     media_type: Optional[Literal["image", "video"]] = None
+    attachments: list[AttachmentIn] = []
 
     @field_validator("content", mode="before")
     @classmethod
@@ -39,6 +70,7 @@ class PostResponse(BaseModel):
     content: Optional[str] = None
     media_url: Optional[str] = None
     media_type: Optional[str] = None
+    attachments: list[AttachmentOut] = []
 
     like_count: int
     comment_count: int

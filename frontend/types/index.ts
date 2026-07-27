@@ -2589,6 +2589,28 @@ export interface AppConfigItem { id: string; key: string; value: string | null; 
 
 export type FeedMediaType = "image" | "video";
 
+export type FeedAttachmentKind = "image" | "video" | "file" | "link";
+
+export interface FeedAttachment {
+  id: string;
+  kind: FeedAttachmentKind;
+  url: string;
+  filename?: string | null;
+  mime_type?: string | null;
+  size_bytes?: number | null;
+  title?: string | null;
+}
+
+// Input shape when attaching to a new post (no id yet).
+export interface FeedAttachmentInput {
+  kind: FeedAttachmentKind;
+  url: string;
+  filename?: string | null;
+  mime_type?: string | null;
+  size_bytes?: number | null;
+  title?: string | null;
+}
+
 export interface FeedPost {
   id: string;
   org_id: string;
@@ -2598,6 +2620,7 @@ export interface FeedPost {
   content: string | null;
   media_url: string | null;
   media_type: FeedMediaType | null;
+  attachments?: FeedAttachment[];
   like_count: number;
   comment_count: number;
   liked_by_me: boolean;

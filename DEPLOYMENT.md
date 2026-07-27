@@ -57,6 +57,26 @@ service. (PostgreSQL: swap to `asyncpg` and `postgresql+asyncpg://…`.)
 uvicorn serves traffic. Alembic reads `DATABASE_URL` from settings.
 Migration chain: `baseline → 001_payment → 002_attendance (head)`.
 
+## 5b. Persistent storage for uploaded media (REQUIRED)
+Uploaded images, **documents**, and profile photos are written to `UPLOAD_DIR`
+and served at `/uploads/<org_id>/…`. On an **ephemeral filesystem** (Render's
+default, and any plain container) that directory is **wiped on every redeploy /
+restart**, silently destroying every uploaded file. `UPLOAD_DIR` **must** point
+at durable storage. The API logs a loud `WARNING` at boot if it looks ephemeral
+in `production`/`staging`.
+
+- **Render:** attach a **Persistent Disk** to the backend (`api`) service —
+  e.g. Name `uploads`, **Mount Path** `/var/uploads`, Size `1–5 GB` — then set
+  env **`UPLOAD_DIR=/var/uploads`** and redeploy. Files now survive deploys.
+  > A Render disk binds to a **single instance**. If you scale `api` beyond one
+  > instance, switch to object storage (S3 / Cloudinary) instead — a disk can't
+  > be shared. (No code change needed there beyond a storage adapter.)
+- **Docker Compose:** mount a named volume at the container's `UPLOAD_DIR`
+  (e.g. `uploads:/app/uploads` with `UPLOAD_DIR=/app/uploads`) so it persists
+  across `up -d --build`.
+- **Already-lost files** (wiped by earlier ephemeral redeploys) cannot be
+  recovered — re-upload them once the disk is attached.
+
 ## 6. Initial deployment
 ```bash
 cp .env.production.example .env        # fill secrets
@@ -101,6 +121,7 @@ See `BACKUP.md` for the full runbook. Minimum: nightly `scripts/backup_db.py`,
 | `SECRET_KEY` | 32-byte random | **secret** |
 | `DATABASE_URL` | `mysql+aiomysql://…` | via compose/secret |
 | `AUTO_CREATE_SCHEMA` | `false` | yes |
+| `UPLOAD_DIR` | durable path, e.g. `/var/uploads` (Render disk mount) | **yes — see §5b** |
 | `ENABLE_API_DOCS` | `false` | recommended |
 | `ALLOWED_ORIGINS` | `https://<domain>` | yes |
 | `SINGLE_SCHOOL_MODE` | `true` | yes |

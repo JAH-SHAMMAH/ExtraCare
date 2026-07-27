@@ -92,6 +92,35 @@ async def test_create_media_post(db, teacher):
     assert post.media_type == "image"
 
 
+async def test_create_post_with_document_attachment(db, teacher):
+    """Documents attach via the PostAttachment model and round-trip through the feed."""
+    from app.schemas.feed import AttachmentIn
+    post = await create_post(
+        data=PostCreate(
+            content="Please review the attached policy.",
+            attachments=[AttachmentIn(
+                kind="file", url="/uploads/org/documents/x.pdf",
+                filename="Policy 2026.pdf", mime_type="application/pdf", size_bytes=12345)],
+        ),
+        db=db, current_user=teacher,
+    )
+    assert len(post.attachments) == 1
+    a = post.attachments[0]
+    assert a.id and a.kind == "file" and a.filename == "Policy 2026.pdf" and a.url.endswith("x.pdf")
+
+    # Selectin-loaded on the listing.
+    rows = await list_posts(limit=20, before=None, db=db, current_user=teacher)
+    mine = next(p for p in rows if p.id == post.id)
+    assert len(mine.attachments) == 1 and mine.attachments[0].kind == "file"
+
+    # A post with ONLY an attachment (no text/media) is valid.
+    doc_only = await create_post(
+        data=PostCreate(attachments=[AttachmentIn(kind="file", url="/uploads/o/d.docx", filename="d.docx")]),
+        db=db, current_user=teacher,
+    )
+    assert doc_only.content is None and len(doc_only.attachments) == 1
+
+
 async def test_post_requires_content_or_media(db, teacher):
     with pytest.raises(HTTPException) as exc:
         await create_post(data=PostCreate(), db=db, current_user=teacher)

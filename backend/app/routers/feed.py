@@ -29,9 +29,9 @@ from app.database import get_db
 from app.deps import get_current_active_user
 from app.core.ratelimit import rate_limit_auth
 from app.models.user import User
-from app.models.feed import Post, PostLike, PostComment
+from app.models.feed import Post, PostLike, PostComment, PostAttachment
 from app.schemas.feed import (
-    PostCreate, PostResponse,
+    PostCreate, PostResponse, AttachmentOut,
     CommentCreate, CommentResponse,
     LikeToggleResponse,
 )
@@ -89,6 +89,11 @@ def _to_post_response(p: Post, *, like_count: int, comment_count: int, liked_by_
         content=p.content,
         media_url=p.media_url,
         media_type=p.media_type,
+        attachments=[
+            AttachmentOut(id=a.id, kind=a.kind, url=a.url, filename=a.filename,
+                          mime_type=a.mime_type, size_bytes=a.size_bytes, title=a.title)
+            for a in sorted(getattr(p, "attachments", []) or [], key=lambda a: a.sort_order)
+        ],
         like_count=like_count,
         comment_count=comment_count,
         liked_by_me=liked_by_me,
@@ -116,8 +121,8 @@ async def create_post(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    if not data.content and not data.media_url:
-        raise HTTPException(status_code=422, detail="content: post must have text or media")
+    if not data.content and not data.media_url and not data.attachments:
+        raise HTTPException(status_code=422, detail="content: post must have text, media, or an attachment")
     if data.media_url and not data.media_type:
         raise HTTPException(status_code=422, detail="media_type: required when media_url is set")
 
@@ -128,10 +133,21 @@ async def create_post(
         media_url=data.media_url,
         media_type=data.media_type,
     )
+    # New multi-attachment model (image/video/file/link). Ordered as submitted.
+    post.attachments = [
+        PostAttachment(
+            org_id=current_user.org_id, kind=a.kind, url=a.url, filename=a.filename,
+            mime_type=a.mime_type, size_bytes=a.size_bytes, title=a.title, sort_order=i,
+        )
+        for i, a in enumerate(data.attachments)
+    ]
     db.add(post)
     await db.flush()
-    await db.refresh(post)
-    logger.info("feed.post.create user=%s org=%s has_media=%s", current_user.id, current_user.org_id, bool(data.media_url))
+    # Refresh ONLY created_at (server default) — a full refresh would expire the
+    # in-memory attachments collection and trigger an async lazy-load on access.
+    await db.refresh(post, attribute_names=["created_at"])
+    logger.info("feed.post.create user=%s org=%s has_media=%s attachments=%s",
+                current_user.id, current_user.org_id, bool(data.media_url), len(data.attachments))
     return _to_post_response(post, like_count=0, comment_count=0, liked_by_me=False)
 
 

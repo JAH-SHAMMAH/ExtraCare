@@ -1553,8 +1553,10 @@ export const feedApi = {
     list: (params?: { limit?: number; before?: string }) =>
       api.get("/feed/posts", { params }).then((r) => r.data),
     get: (id: string) => api.get(`/feed/posts/${id}`).then((r) => r.data),
-    create: (data: { content?: string; media_url?: string; media_type?: "image" | "video" }) =>
-      api.post("/feed/posts", data).then((r) => r.data),
+    create: (data: {
+      content?: string; media_url?: string; media_type?: "image" | "video";
+      attachments?: import("@/types").FeedAttachmentInput[];
+    }) => api.post("/feed/posts", data).then((r) => r.data),
     remove: (id: string) => api.delete(`/feed/posts/${id}`),
   },
   like: (id: string) => api.post(`/feed/posts/${id}/like`).then((r) => r.data),
