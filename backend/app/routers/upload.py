@@ -1,12 +1,10 @@
 """File uploads — avatar (image) and generic document.
 
-Saves under UPLOAD_DIR/{org_id}/{kind}/ with a random filename and returns the
-/uploads/... URL served by the static mount in main.py. Avatar upload also sets
-the caller's avatar_url so the profile page reflects it after a ["me"] refetch.
+Persists via app.services.storage.save_upload (Cloudinary when configured, else
+local disk) and returns a servable URL. Avatar upload also sets the caller's
+avatar_url so the profile page reflects it after a ["me"] refetch.
 """
 import logging
-import os
-import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select, update
@@ -16,7 +14,7 @@ from app.database import get_db
 from app.deps import get_current_active_user
 from app.core.permissions import PermissionChecker
 from app.models.user import User
-from app.config import get_settings
+from app.services.storage import save_upload
 
 _logger = logging.getLogger("extracare.upload")
 router = APIRouter(prefix="/upload", tags=["Upload"])
@@ -46,16 +44,6 @@ async def _read_validated(file: UploadFile, allowed: set[str], max_size: int) ->
     return content
 
 
-def _save(org_id: str, kind: str, filename: str | None, content: bytes) -> tuple[str, str]:
-    org_dir = os.path.join(get_settings().UPLOAD_DIR, org_id, kind)
-    os.makedirs(org_dir, exist_ok=True)
-    ext = os.path.splitext(filename or "")[1].lower()[:10]
-    safe = f"{uuid.uuid4().hex}{ext}"
-    with open(os.path.join(org_dir, safe), "wb") as fh:
-        fh.write(content)
-    return safe, f"/uploads/{org_id}/{kind}/{safe}"
-
-
 @router.post("/avatar")
 async def upload_avatar(
     file: UploadFile = File(...),
@@ -64,7 +52,7 @@ async def upload_avatar(
 ):
     """Upload the caller's profile photo, persist it as avatar_url, return the URL."""
     content = await _read_validated(file, _IMAGE_TYPES, _MAX_AVATAR)
-    _, url = _save(current_user.org_id, "avatars", file.filename, content)
+    url = await save_upload(current_user.org_id, "avatars", file.filename, content, file.content_type)
     await db.execute(update(User).where(User.id == current_user.id).values(avatar_url=url))
     _logger.info("upload.avatar user=%s url=%s", current_user.id, url)
     return {"url": url, "filename": file.filename}
@@ -86,7 +74,7 @@ async def upload_avatar_for_user(
     if not target:
         raise HTTPException(status_code=404, detail="User not found.")
     content = await _read_validated(file, _IMAGE_TYPES, _MAX_AVATAR)
-    _, url = _save(current_user.org_id, "avatars", file.filename, content)
+    url = await save_upload(current_user.org_id, "avatars", file.filename, content, file.content_type)
     await db.execute(update(User).where(User.id == target.id).values(avatar_url=url))
     _logger.info("upload.avatar.admin actor=%s target=%s url=%s", current_user.id, target.id, url)
     return {"url": url, "user_id": target.id, "filename": file.filename}
@@ -101,6 +89,6 @@ async def upload_document(
 ):
     """Store a document under the org and return its URL."""
     content = await _read_validated(file, _DOC_TYPES, _MAX_DOC)
-    _, url = _save(current_user.org_id, "documents", file.filename, content)
+    url = await save_upload(current_user.org_id, "documents", file.filename, content, file.content_type)
     _logger.info("upload.document user=%s category=%s url=%s", current_user.id, category, url)
     return {"url": url, "filename": file.filename, "category": category}

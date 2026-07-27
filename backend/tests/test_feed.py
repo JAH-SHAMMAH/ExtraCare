@@ -236,6 +236,23 @@ async def test_audience_targeting_roles_and_users(db, org):
     assert exc.value.status_code == 404
 
 
+async def test_moderator_settings_read_sees_all(db, org):
+    """Admin-tier moderators (settings:read) bypass targeting and see every post."""
+    mod = User(id=str(uuid.uuid4()), email=f"{uuid.uuid4().hex[:8]}@x.com", full_name="Mod",
+               status=UserStatus.ACTIVE, org_id=org.id)
+    mod.roles = [Role(id=str(uuid.uuid4()), name="Admin", slug="org_admin",
+                      permissions=["settings:read"], org_id=org.id, is_system=True)]
+    db.add(mod)
+    await db.commit()
+
+    author = await _user_with_roles(db, org, "teacher", name="Author")
+    tp = await create_post(data=PostCreate(content="parents only", audience_roles=["parent"]), db=db, current_user=author)
+
+    # Mod is not a parent, but sees the post in the feed AND via single-fetch.
+    assert tp.id in {p.id for p in await list_posts(limit=20, before=None, db=db, current_user=mod)}
+    assert (await get_post(post_id=tp.id, db=db, current_user=mod)).id == tp.id
+
+
 async def test_audience_drops_cross_org_user(db, org, other_org):
     author = await _user_with_roles(db, org, "org_admin")
     outsider = await _user_with_roles(db, other_org, "teacher")

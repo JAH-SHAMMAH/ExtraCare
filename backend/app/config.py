@@ -111,6 +111,10 @@ class Settings(BaseSettings):
     # ── File Storage ─────────────────────────────────────────────────────────
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE_MB: int = 10
+    # Set to a Cloudinary URL (cloudinary://<api_key>:<api_secret>@<cloud_name>)
+    # to store uploads on Cloudinary's CDN instead of local disk — durable across
+    # redeploys + multi-instance. Empty = local disk (dev). See DEPLOYMENT.md §5b.
+    CLOUDINARY_URL: str = ""
 
     # ── Subscription Tiers ───────────────────────────────────────────────────
     FREE_TIER_USER_LIMIT: int = 10

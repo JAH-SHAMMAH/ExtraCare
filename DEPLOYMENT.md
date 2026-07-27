@@ -58,12 +58,30 @@ uvicorn serves traffic. Alembic reads `DATABASE_URL` from settings.
 Migration chain: `baseline → 001_payment → 002_attendance (head)`.
 
 ## 5b. Persistent storage for uploaded media (REQUIRED)
-Uploaded images, **documents**, and profile photos are written to `UPLOAD_DIR`
-and served at `/uploads/<org_id>/…`. On an **ephemeral filesystem** (Render's
-default, and any plain container) that directory is **wiped on every redeploy /
-restart**, silently destroying every uploaded file. `UPLOAD_DIR` **must** point
-at durable storage. The API logs a loud `WARNING` at boot if it looks ephemeral
-in `production`/`staging`.
+Uploaded images, **documents**, and profile photos must land on durable storage —
+otherwise they're **wiped on every redeploy / restart** on an ephemeral filesystem
+(Render's default, and any plain container). There are two supported backends;
+**pick one:**
+
+### Option A — Cloudinary (RECOMMENDED; no disk, survives everything)
+Set one env var on the backend service:
+
+```
+CLOUDINARY_URL=cloudinary://<api_key>:<api_secret>@<cloud_name>
+```
+
+Get it free from the Cloudinary dashboard (Account Details → "API environment
+variable"). When set, all uploads (feed images/documents, avatars, messenger
+media) go to Cloudinary's CDN and the stored URL is an absolute
+`https://res.cloudinary.com/…`. Survives redeploys **and** works across multiple
+app instances — nothing else to configure, and the ephemeral-storage warning goes
+away. The `cloudinary` package is already in `requirements.txt`.
+
+### Option B — local disk on a Render Persistent Disk
+If you'd rather not use Cloudinary, uploads fall back to `UPLOAD_DIR` (served at
+`/uploads/<org_id>/…`). That path **must** be a mounted persistent disk, or files
+vanish on redeploy. The API logs a loud `WARNING` at boot if `UPLOAD_DIR` looks
+ephemeral in `production`/`staging` **and** `CLOUDINARY_URL` is not set.
 
 - **Render:** attach a **Persistent Disk** to the backend (`api`) service —
   e.g. Name `uploads`, **Mount Path** `/var/uploads`, Size `1–5 GB` — then set
@@ -121,7 +139,8 @@ See `BACKUP.md` for the full runbook. Minimum: nightly `scripts/backup_db.py`,
 | `SECRET_KEY` | 32-byte random | **secret** |
 | `DATABASE_URL` | `mysql+aiomysql://…` | via compose/secret |
 | `AUTO_CREATE_SCHEMA` | `false` | yes |
-| `UPLOAD_DIR` | durable path, e.g. `/var/uploads` (Render disk mount) | **yes — see §5b** |
+| `CLOUDINARY_URL` | `cloudinary://<key>:<secret>@<cloud>` | **recommended — §5b Option A** |
+| `UPLOAD_DIR` | durable path, e.g. `/var/uploads` (only if not using Cloudinary) | §5b Option B |
 | `ENABLE_API_DOCS` | `false` | recommended |
 | `ALLOWED_ORIGINS` | `https://<domain>` | yes |
 | `SINGLE_SCHOOL_MODE` | `true` | yes |

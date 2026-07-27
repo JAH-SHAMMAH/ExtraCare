@@ -22,7 +22,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, desc, and_, or_
+from sqlalchemy import select, func, desc, and_, or_, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -46,7 +46,12 @@ def _audience_visible_clause(user: User):
     """SQL condition: the post is visible to `user`. Visible if the user is the
     author, OR the post is public (no audience rows), OR the user is targeted
     individually or via one of their ASSIGNED roles (not the active-role scope —
-    audience is about identity, so 'View as' never changes reach)."""
+    audience is about identity, so 'View as' never changes reach).
+
+    Admin-tier moderators (settings:read — Super User / org_admin / Principal /
+    Head) bypass targeting entirely and see every post. NOT managers/teachers."""
+    if user.has_permission("settings:read"):
+        return true()
     role_slugs = [r.slug for r in user.roles] or ["\x00"]   # sentinel avoids empty IN ()
     has_audience = select(PostAudience.id).where(PostAudience.post_id == Post.id).exists()
     is_targeted = select(PostAudience.id).where(

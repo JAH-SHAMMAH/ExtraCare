@@ -1,6 +1,7 @@
 """Admin-set avatar: POST /upload/avatar/{user_id} (users:write) sets another
 user's photo, org-scoped. Powers photo-rich directories + the feed Select-Users
-modal. The disk write (_save) is monkeypatched so tests don't touch ./uploads."""
+modal. The storage write (save_upload) is monkeypatched so tests don't touch
+./uploads or Cloudinary."""
 from __future__ import annotations
 
 import io
@@ -35,8 +36,12 @@ async def _user(db, org, name="U") -> User:
     return u
 
 
+async def _fake_save(org_id, kind, filename, content, content_type=""):
+    return f"/uploads/{org_id}/{kind}/f.png"
+
+
 async def test_admin_sets_another_users_avatar(db, org, monkeypatch):
-    monkeypatch.setattr(up, "_save", lambda org_id, kind, filename, content: ("f.png", f"/uploads/{org_id}/{kind}/f.png"))
+    monkeypatch.setattr(up, "save_upload", _fake_save)
     admin = await _user(db, org, "Admin")
     target = await _user(db, org, "Target")
 
@@ -48,7 +53,7 @@ async def test_admin_sets_another_users_avatar(db, org, monkeypatch):
 
 
 async def test_admin_avatar_rejects_unknown_or_cross_org(db, org, monkeypatch):
-    monkeypatch.setattr(up, "_save", lambda *a: ("f.png", "/uploads/x/avatars/f.png"))
+    monkeypatch.setattr(up, "save_upload", _fake_save)
     admin = await _user(db, org, "Admin")
     # Unknown id → 404 (checked before the file is even read).
     with pytest.raises(HTTPException) as exc:

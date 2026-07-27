@@ -353,7 +353,9 @@ _upload_root.mkdir(parents=True, exist_ok=True)
 # uploaded image/document/avatar. In prod/staging that must be an absolute path
 # on a MOUNTED PERSISTENT DISK (see DEPLOYMENT.md). Warn loudly rather than fail,
 # so a deploy isn't hard-blocked, but the misconfig is impossible to miss in logs.
-if settings.ENVIRONMENT in ("production", "staging"):
+if settings.ENVIRONMENT in ("production", "staging") and not settings.CLOUDINARY_URL:
+    # Cloudinary-backed uploads are durable regardless of the local dir, so the
+    # warning only applies when we're still falling back to local disk.
     _resolved = _upload_root.resolve()
     _looks_ephemeral = (not _upload_root.is_absolute()) or str(_resolved).startswith(("/tmp", "/app", "/opt/render/project"))
     if _looks_ephemeral:

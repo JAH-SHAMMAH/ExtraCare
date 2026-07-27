@@ -48,6 +48,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.core.security import decode_token
+from app.services.storage import save_upload
 from app.database import get_db, AsyncSessionLocal
 from app.deps import get_current_active_user
 from app.core.ratelimit import rate_limit_auth
@@ -527,40 +528,25 @@ async def upload_media(
         raise HTTPException(status_code=415, detail=f"Unsupported file type: {ctype or 'unknown'}")
 
     max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
-    # Tenant-scoped subfolder so files never cross org boundaries on disk.
-    org_dir = Path(settings.UPLOAD_DIR) / current_user.org_id
-    org_dir.mkdir(parents=True, exist_ok=True)
-
-    # Strip path components from the client-supplied name; add UUID prefix so
-    # uploads never collide and browsing the dir doesn't leak user patterns.
+    # Read with an enforced cap (no unbounded in-memory buffer), then persist via
+    # the storage backend — Cloudinary when configured (durable across redeploys),
+    # else local disk. Both are tenant-scoped so files never cross org boundaries.
     orig = os.path.basename(file.filename or "upload.bin")
-    ext = os.path.splitext(orig)[1].lower()
-    fname = f"{uuid.uuid4().hex}{ext}"
-    path = org_dir / fname
+    buf = bytearray()
+    while True:
+        chunk = await file.read(1024 * 64)
+        if not chunk:
+            break
+        buf += chunk
+        if len(buf) > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File exceeds {settings.MAX_UPLOAD_SIZE_MB}MB limit.",
+            )
 
-    size = 0
-    with open(path, "wb") as out:
-        while True:
-            chunk = await file.read(1024 * 64)
-            if not chunk:
-                break
-            size += len(chunk)
-            if size > max_bytes:
-                out.close()
-                try:
-                    path.unlink()
-                except OSError:
-                    pass
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"File exceeds {settings.MAX_UPLOAD_SIZE_MB}MB limit.",
-                )
-            out.write(chunk)
-
-    # Public URL, served via StaticFiles mount at /uploads in main.py.
-    file_url = f"/uploads/{current_user.org_id}/{fname}"
-    logger.info("messenger.upload user=%s org=%s type=%s size=%s", current_user.id, current_user.org_id, mtype.value, size)
-    return UploadResponse(file_url=file_url, type=mtype, size_bytes=size, filename=orig)
+    file_url = await save_upload(current_user.org_id, "messenger", orig, bytes(buf), file.content_type or "")
+    logger.info("messenger.upload user=%s org=%s type=%s size=%s", current_user.id, current_user.org_id, mtype.value, len(buf))
+    return UploadResponse(file_url=file_url, type=mtype, size_bytes=len(buf), filename=orig)
 
 
 # ── WebSocket ───────────────────────────────────────────────────────────────
