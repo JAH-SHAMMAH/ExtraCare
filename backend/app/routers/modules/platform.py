@@ -443,12 +443,12 @@ async def delete_template(template_id: str, db: AsyncSession = Depends(get_db), 
 
 @router.post("/report-config/bootstrap", response_model=list[ReportTemplateResponse], dependencies=[_write])
 async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    """One-click setup: create/refresh the Nursery / Primary / Secondary sections
-    (British curriculum: Year 1–6 Primary, Year 7–12 Secondary) with their level
-    aliases, the school's REAL grading scale + bands, and a template per section.
-    Idempotent + self-healing: re-running updates templates in place, so an earlier
-    provisional seed is replaced by the confirmed constants (one shared A–F scale;
-    CA/exam 40/60 for Primary + Secondary; EYFS descriptors for Nursery)."""
+    """One-click setup: create/refresh the Early Years / Primary / Secondary
+    sections (British curriculum: Year 1–6 Primary, Year 7–12 Secondary) with their
+    level aliases, the school's REAL grading scale + bands, and a template per
+    section. Idempotent + self-healing: re-running updates templates in place, so an
+    earlier provisional seed is replaced by the confirmed constants (one shared A–F
+    scale; CA/exam 40/60 for Primary + Secondary; EYFS descriptors for Early Years)."""
     org_id = current_user.org_id
     existing_secs = {s.name.casefold(): s for s in (await db.execute(select(SchoolSection).where(SchoolSection.org_id == org_id))).scalars().all()}
     existing_scales = {s.name.casefold(): s for s in (await db.execute(select(GradingScale).where(GradingScale.org_id == org_id))).scalars().all()}
@@ -464,7 +464,9 @@ async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_us
             s.level_aliases = _clean_aliases(aliases) or None   # backfill aliases onto a pre-existing bare section
         return s
 
-    nursery = ensure_section("Nursery", "eyfs", 0, ["PLAY GROUP", "PRE-NURSERY", "NURSERY", "RECEPTION"])
+    # "Early Years" is the EYFS section (aliases still include NURSERY etc. so
+    # existing class levels auto-map). EYFS detection keys on curriculum, not name.
+    early_years = ensure_section("Early Years", "eyfs", 0, ["PLAY GROUP", "PRE-NURSERY", "NURSERY", "EARLY YEARS", "RECEPTION"])
     primary = ensure_section("Primary", "hybrid", 1, ["YEAR 1", "YEAR 2", "YEAR 3", "YEAR 4", "YEAR 5", "YEAR 6"])
     secondary = ensure_section("Secondary", "hybrid", 2, ["YEAR 7", "YEAR 8", "YEAR 9", "YEAR 10", "YEAR 11", "YEAR 12"])
 
@@ -522,7 +524,7 @@ async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_us
         t.is_provisional = False
         return t
 
-    ensure_template(nursery, "Nursery (EYFS)", "descriptive", None, None, None)
+    ensure_template(early_years, "Early Years (EYFS)", "descriptive", None, None, None)
     ensure_template(primary, "Primary report", "hybrid", 40, 60, grading_scale)
     ensure_template(secondary, "Secondary report", "hybrid", 40, 60, grading_scale)
     await db.flush()

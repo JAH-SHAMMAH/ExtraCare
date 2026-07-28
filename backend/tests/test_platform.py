@@ -328,7 +328,7 @@ async def test_bootstrap_report_config_is_idempotent(db, org):
     sections = await list_sections(db=db, current_user=admin)
     primary = next(s for s in sections if s.name == "Primary")
     assert "YEAR 3" in primary.aliases and "YEAR 13" not in primary.aliases
-    assert "RECEPTION" in next(s for s in sections if s.name == "Nursery").aliases
+    assert "RECEPTION" in next(s for s in sections if s.name == "Early Years").aliases
     assert "YEAR 9" in next(s for s in sections if s.name == "Secondary").aliases
     # Idempotent: a second run doesn't duplicate sections/templates.
     second = await bootstrap_report_config(db=db, current_user=admin)
