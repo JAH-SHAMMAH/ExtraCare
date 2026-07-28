@@ -60,7 +60,10 @@ export const ROUTE_ACCESS: RouteAccess[] = [
 
   // ── School module (fine-grained per feature) ───────────────────────
   { prefix: "/dashboard/modules/school/students", permission: "school:students:read" },
-  { prefix: "/dashboard/modules/school/teachers", permission: "school:teachers:read" },
+  // Teachers module is Admin/Super-User-only (settings:read) — covers View
+  // Teachers + Assign To School. (The shared /school/teachers API stays
+  // school:read for Lesson Planner / Ratings.)
+  { prefix: "/dashboard/modules/school/teachers", permission: "settings:read" },
   { prefix: "/dashboard/modules/school/staff", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/classes", permission: "school:classes:read" },
   { prefix: "/dashboard/modules/school/subjects", permission: "school:subjects:read" },

@@ -136,10 +136,13 @@ export interface Student {
 
 export interface Teacher {
   id: string;
-  teacher_id: string;
-  user_id: string;
+  teacher_id?: string;
+  user_id?: string;
   first_name: string;
   last_name: string;
+  other_names?: string | null;
+  employee_id?: string | null;
+  photo_url?: string | null;
   email: string;
   phone: string | null;
   department: string | null;
@@ -147,7 +150,9 @@ export interface Teacher {
   qualification: string | null;
   hire_date: string | null;
   is_active: boolean;
-  avatar_url: string | null;
+  section_id?: string | null;
+  section_name?: string | null;
+  avatar_url?: string | null;
   created_at: string;
 }
 

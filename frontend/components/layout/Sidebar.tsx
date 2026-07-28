@@ -415,12 +415,22 @@ const MODULE_SECTIONS: ModuleSection[] = [
     ],
   },
   {
+    // Admin/Super-User only (all items gate on settings:read via the access map).
+    key: "teachers",
+    requiredModule: "school",
+    label: "Teachers",
+    icon: UserCheck,
+    items: [
+      { href: "/dashboard/modules/school/teachers", label: "View Teachers", icon: UsersIcon },
+      { href: "/dashboard/modules/school/teachers/assign", label: "Assign To School", icon: Building2 },
+    ],
+  },
+  {
     key: "people",
     requiredModule: "school",
     label: "Staff Management",
     icon: Briefcase,
     items: [
-      { href: "/dashboard/modules/school/teachers", label: "Teachers", icon: UserCheck },
       { href: "/dashboard/modules/school/staff", label: "Staff", icon: UsersIcon },
       { href: "/dashboard/modules/school/ratings", label: "Teacher Ratings", icon: Star },
       // Batch 1 (People & HR) — shipped. Permission resolved from the access map:

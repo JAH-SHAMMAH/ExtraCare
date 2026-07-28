@@ -234,6 +234,13 @@ export const schoolApi = {
     create: (data: object) => api.post("/school/teachers", data).then((r) => r.data),
     update: (id: string, data: object) => api.patch(`/school/teachers/${id}`, data).then((r) => r.data),
     delete: (id: string) => api.delete(`/school/teachers/${id}`),
+    subjects: (id: string) => api.get(`/school/teachers/${id}/subjects`).then((r) => r.data),
+    setSubjects: (id: string, subject_ids: string[]) =>
+      api.put(`/school/teachers/${id}/subjects`, { subject_ids }).then((r) => r.data),
+    assignSection: (id: string, section_id: string | null) =>
+      api.post(`/school/teachers/${id}/assign-section`, { section_id }).then((r) => r.data),
+    exportCsv: (section?: string) =>
+      api.get("/school/teachers/export", { params: section ? { section } : {}, responseType: "blob" }).then((r) => r.data),
   },
   classes: {
     list: (p?: object) => api.get("/school/classes", { params: p }).then((r) => r.data),

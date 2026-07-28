@@ -78,10 +78,43 @@ export function useReactivateStudent() {
 
 // ── Teachers ─────────────────────────────────────────────────────────────────
 
-export function useTeachers(params?: { page?: number; page_size?: number; search?: string; department?: string }) {
+export function useTeachers(params?: { page?: number; page_size?: number; search?: string; department?: string; section?: string }) {
   return useQuery({
     queryKey: ["teachers", params],
     queryFn: () => schoolApi.teachers.list(params),
+  });
+}
+
+export function useTeacherSubjects(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ["teachers", id, "subjects"],
+    queryFn: () => schoolApi.teachers.subjects(id),
+    enabled: !!id && enabled,
+  });
+}
+
+export function useSetTeacherSubjects() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, subjectIds }: { id: string; subjectIds: string[] }) => schoolApi.teachers.setSubjects(id, subjectIds),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["teachers", v.id, "subjects"] });
+      qc.invalidateQueries({ queryKey: ["teachers"] });
+      toast.success("Subjects updated.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update subjects."),
+  });
+}
+
+export function useAssignTeacherSection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, sectionId }: { id: string; sectionId: string | null }) => schoolApi.teachers.assignSection(id, sectionId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["teachers"] });
+      toast.success("Teacher assigned.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to assign teacher."),
   });
 }
 

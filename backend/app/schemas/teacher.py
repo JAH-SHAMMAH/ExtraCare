@@ -24,14 +24,18 @@ def _empty_to_none(v):
 class TeacherCreate(BaseModel):
     first_name: str
     last_name: str
+    other_names: Optional[str] = None
+    employee_id: Optional[str] = None
     email: EmailStr
     phone: Optional[str] = None
     department: Optional[str] = None
     qualification: Optional[str] = None
     subjects: list[str] = []
     hire_date: Optional[date] = None
+    section_id: Optional[str] = None       # Educare "Select School" section
 
-    @field_validator("phone", "department", "qualification", "hire_date", mode="before")
+    @field_validator("phone", "department", "qualification", "hire_date",
+                     "other_names", "employee_id", "section_id", mode="before")
     @classmethod
     def _blank_str_to_none(cls, v):
         return _empty_to_none(v)
@@ -55,6 +59,8 @@ class TeacherCreate(BaseModel):
 class TeacherUpdate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    other_names: Optional[str] = None
+    employee_id: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     department: Optional[str] = None
@@ -62,10 +68,11 @@ class TeacherUpdate(BaseModel):
     subjects: Optional[list[str]] = None
     hire_date: Optional[date] = None
     is_active: Optional[bool] = None
+    section_id: Optional[str] = None
 
     @field_validator(
         "first_name", "last_name", "phone", "department",
-        "qualification", "hire_date",
+        "qualification", "hire_date", "other_names", "employee_id", "section_id",
         mode="before",
     )
     @classmethod
@@ -86,6 +93,9 @@ class TeacherResponse(BaseModel):
     id: str
     first_name: str
     last_name: str
+    other_names: Optional[str] = None
+    employee_id: Optional[str] = None
+    photo_url: Optional[str] = None
     email: str
     phone: Optional[str] = None
     department: Optional[str] = None
@@ -93,4 +103,17 @@ class TeacherResponse(BaseModel):
     subjects: list[str] = []
     hire_date: Optional[str] = None
     is_active: bool
+    section_id: Optional[str] = None
+    section_name: Optional[str] = None
     created_at: Optional[datetime] = None
+
+
+class TeacherSubjectsUpdate(BaseModel):
+    """Set which Subjects a teacher teaches (real Subject.teacher_id links). One
+    teacher per subject — assigning a subject here reassigns it from its previous
+    teacher; subjects dropped from the list are unassigned."""
+    subject_ids: list[str] = []
+
+
+class AssignSectionRequest(BaseModel):
+    section_id: Optional[str] = None       # null = unassign from any section

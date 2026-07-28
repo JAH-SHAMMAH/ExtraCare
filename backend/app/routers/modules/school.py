@@ -1,5 +1,8 @@
+import csv
+import io
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, update as sa_update
 from sqlalchemy.exc import IntegrityError
@@ -13,7 +16,7 @@ from app.models.modules.school import (
     LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus, TeacherRating,
     GradeStatus, AttendanceSettings, AbsenceReason, StudentReport,
     LessonPlanCategory, LessonPlannerSettings, LessonPlanSupervisor, LessonPlanSchedule,
-    YearGroup,
+    YearGroup, TeacherSection,
 )
 from app.models.modules.platform import (
     AcademicSession, SchoolSection, ReportTemplate, GradingBand, ReportSubjectAssessment,
@@ -32,7 +35,7 @@ from app.core.school_identity import teacher_identity_filter
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
 from app.schemas.student import StudentCreate, StudentUpdate
-from app.schemas.teacher import TeacherCreate, TeacherUpdate
+from app.schemas.teacher import TeacherCreate, TeacherUpdate, TeacherSubjectsUpdate, AssignSectionRequest
 from app.schemas.school_class import ClassCreate, ClassUpdate
 from app.schemas.subject import SubjectCreate, SubjectUpdate
 from app.schemas.exam import ExamCreate, ExamUpdate, ExamResultRow, EXAM_TYPES, EXAM_STATUSES
@@ -2112,7 +2115,7 @@ TEACHER_JOB_TITLE = "Teacher"
 _TEACHER_PREF_KEY = "teacher"
 
 
-def _teacher_dict(u: User) -> dict:
+def _teacher_dict(u: User, section: tuple = (None, None)) -> dict:
     prefs = (u.preferences or {}).get(_TEACHER_PREF_KEY, {}) if u.preferences else {}
     # preferences stores the logical first/last split the frontend wants,
     # since User.full_name is a single field on the model.
@@ -2122,6 +2125,9 @@ def _teacher_dict(u: User) -> dict:
         "id": u.id,
         "first_name": first,
         "last_name": last,
+        "other_names": prefs.get("other_names"),
+        "employee_id": u.employee_id,
+        "photo_url": u.avatar_url,
         "email": u.email,
         "phone": u.phone,
         "department": u.department,
@@ -2129,6 +2135,8 @@ def _teacher_dict(u: User) -> dict:
         "subjects": prefs.get("subjects", []),
         "hire_date": prefs.get("hire_date"),
         "is_active": u.status == UserStatus.ACTIVE,
+        "section_id": section[0],
+        "section_name": section[1],
         "created_at": u.created_at.isoformat() if u.created_at else None,
     }
 
@@ -2141,20 +2149,62 @@ def _teacher_query_base(org_id: str):
     )
 
 
+async def _teacher_sections_map(db: AsyncSession, org_id: str, teacher_ids: list[str]) -> dict[str, tuple]:
+    """{teacher_id: (section_id, section_name)} for the given teachers."""
+    if not teacher_ids:
+        return {}
+    rows = (await db.execute(
+        select(TeacherSection.teacher_id, TeacherSection.section_id, SchoolSection.name)
+        .join(SchoolSection, SchoolSection.id == TeacherSection.section_id)
+        .where(TeacherSection.org_id == org_id, TeacherSection.teacher_id.in_(teacher_ids))
+    )).all()
+    return {r.teacher_id: (r.section_id, r.name) for r in rows}
+
+
+async def _set_teacher_section(db: AsyncSession, org_id: str, teacher_id: str, section_id: str | None) -> None:
+    """Upsert (or clear) a teacher's current section — the Assign-To-School link."""
+    existing = (await db.execute(
+        select(TeacherSection).where(TeacherSection.org_id == org_id, TeacherSection.teacher_id == teacher_id)
+    )).scalar_one_or_none()
+    if not section_id:
+        if existing:
+            await db.delete(existing)
+        return
+    # Validate the section belongs to this org before linking.
+    ok = (await db.execute(
+        select(SchoolSection.id).where(SchoolSection.id == section_id, SchoolSection.org_id == org_id)
+    )).scalar_one_or_none()
+    if not ok:
+        raise HTTPException(status_code=422, detail="section_id: not a section in your organisation")
+    if existing:
+        existing.section_id = section_id
+    else:
+        db.add(TeacherSection(org_id=org_id, teacher_id=teacher_id, section_id=section_id))
+
+
+def _teacher_list_query(org_id: str, search: str | None, section: str | None):
+    query = _teacher_query_base(org_id)
+    if search:
+        term = f"%{search}%"
+        query = query.where(or_(User.full_name.ilike(term), User.email.ilike(term)))
+    if section:
+        # Educare "Select School" — teachers assigned to this section.
+        sub = select(TeacherSection.teacher_id).where(
+            TeacherSection.org_id == org_id, TeacherSection.section_id == section)
+        query = query.where(User.id.in_(sub))
+    return query
+
+
 @router.get("/teachers", dependencies=[_can_read])
 async def list_teachers(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     search: str | None = None,
+    section: str | None = None,   # school section id (Select School). Plain default: safe for direct calls.
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    query = _teacher_query_base(current_user.org_id)
-    if search:
-        term = f"%{search}%"
-        query = query.where(
-            or_(User.full_name.ilike(term), User.email.ilike(term))
-        )
+    query = _teacher_list_query(current_user.org_id, search, section)
 
     total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar() or 0
     result = await db.execute(
@@ -2164,14 +2214,42 @@ async def list_teachers(
     )
     items = result.scalars().all()
     total_pages = (total + page_size - 1) // page_size if total else 0
+    smap = await _teacher_sections_map(db, current_user.org_id, [u.id for u in items])
 
     return {
-        "items": [_teacher_dict(u) for u in items],
+        "items": [_teacher_dict(u, smap.get(u.id, (None, None))) for u in items],
         "total": total,
         "page": page,
         "page_size": page_size,
         "total_pages": total_pages,
     }
+
+
+@router.get("/teachers/export", dependencies=[_settings_read])
+async def export_teachers(
+    section: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Download Teachers List — CSV of the (optionally section-filtered) teachers.
+    Admin-only (settings:read), matching the module gating."""
+    rows = (await db.execute(
+        _teacher_list_query(current_user.org_id, None, section).order_by(User.full_name)
+    )).scalars().all()
+    smap = await _teacher_sections_map(db, current_user.org_id, [u.id for u in rows])
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Employee ID", "First Name", "Last Name", "Other Names", "Email", "Phone", "School", "Status"])
+    for u in rows:
+        d = _teacher_dict(u, smap.get(u.id, (None, None)))
+        w.writerow([d["employee_id"] or "", d["first_name"], d["last_name"], d["other_names"] or "",
+                    d["email"], d["phone"] or "", d["section_name"] or "", "Active" if d["is_active"] else "Inactive"])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="teachers.csv"'},
+    )
 
 
 @router.get("/teachers/{id}", dependencies=[_can_read])
@@ -2186,10 +2264,11 @@ async def get_teacher(
     teacher = result.scalar_one_or_none()
     if not teacher:
         raise HTTPException(status_code=404, detail=f"Teacher not found for id: {id}")
-    return _teacher_dict(teacher)
+    smap = await _teacher_sections_map(db, current_user.org_id, [teacher.id])
+    return _teacher_dict(teacher, smap.get(teacher.id, (None, None)))
 
 
-@router.post("/teachers", status_code=201, dependencies=[_can_write])
+@router.post("/teachers", status_code=201, dependencies=[_settings_write])
 async def create_teacher(
     data: TeacherCreate,
     request: Request = None,
@@ -2227,6 +2306,7 @@ async def create_teacher(
         _TEACHER_PREF_KEY: {
             "first_name": data.first_name,
             "last_name": data.last_name,
+            "other_names": data.other_names,
             "qualification": data.qualification,
             "subjects": data.subjects or [],
             "hire_date": data.hire_date.isoformat() if data.hire_date else None,
@@ -2237,6 +2317,7 @@ async def create_teacher(
         full_name=full_name,
         phone=data.phone,
         department=data.department,
+        employee_id=data.employee_id,
         job_title=TEACHER_JOB_TITLE,
         status=UserStatus.ACTIVE,
         org_id=org_id,
@@ -2256,6 +2337,10 @@ async def create_teacher(
             detail="Teacher could not be created due to a database conflict.",
         )
 
+    if data.section_id:
+        await _set_teacher_section(db, org_id, teacher.id, data.section_id)
+        await db.flush()
+
     logger.info(
         "teacher_create.ok org=%s id=%s email=%s",
         org_id, teacher.id, teacher.email,
@@ -2267,10 +2352,11 @@ async def create_teacher(
         new_values={"email": teacher.email, "department": teacher.department},
         request=request,
     )
-    return _teacher_dict(teacher)
+    smap = await _teacher_sections_map(db, org_id, [teacher.id])
+    return _teacher_dict(teacher, smap.get(teacher.id, (None, None)))
 
 
-@router.patch("/teachers/{id}", dependencies=[_can_write])
+@router.patch("/teachers/{id}", dependencies=[_settings_write])
 async def update_teacher(
     id: str,
     data: TeacherUpdate,
@@ -2305,13 +2391,17 @@ async def update_teacher(
         teacher.email = updates["email"]
 
     # Direct-mapped User columns.
-    for col in ("phone", "department"):
+    for col in ("phone", "department", "employee_id"):
         if col in updates:
             setattr(teacher, col, updates[col])
 
     # is_active maps onto UserStatus.
     if "is_active" in updates and updates["is_active"] is not None:
         teacher.status = UserStatus.ACTIVE if updates["is_active"] else UserStatus.INACTIVE
+
+    # Section (Assign-To-School link).
+    if "section_id" in updates:
+        await _set_teacher_section(org_id=org_id, db=db, teacher_id=teacher.id, section_id=updates["section_id"])
 
     # Pref-backed fields (and name split).
     prefs = dict(teacher.preferences or {})
@@ -2320,6 +2410,8 @@ async def update_teacher(
         tpref["first_name"] = updates["first_name"]
     if "last_name" in updates and updates["last_name"]:
         tpref["last_name"] = updates["last_name"]
+    if "other_names" in updates:
+        tpref["other_names"] = updates["other_names"]
     if "qualification" in updates:
         tpref["qualification"] = updates["qualification"]
     if "subjects" in updates and updates["subjects"] is not None:
@@ -2345,10 +2437,11 @@ async def update_teacher(
         resource_label=teacher.full_name or teacher.email,
         new_values=updates, request=request,
     )
-    return _teacher_dict(teacher)
+    smap = await _teacher_sections_map(db, org_id, [teacher.id])
+    return _teacher_dict(teacher, smap.get(teacher.id, (None, None)))
 
 
-@router.delete("/teachers/{id}", status_code=204, dependencies=[_can_write])
+@router.delete("/teachers/{id}", status_code=204, dependencies=[_settings_write])
 async def delete_teacher(
     id: str,
     request: Request = None,
@@ -2371,6 +2464,91 @@ async def delete_teacher(
         resource_label=teacher.full_name or teacher.email,
         severity="warning", request=request,
     )
+
+
+async def _require_teacher(db: AsyncSession, org_id: str, teacher_id: str) -> User:
+    t = (await db.execute(_teacher_query_base(org_id).where(User.id == teacher_id))).scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail=f"Teacher not found for id: {teacher_id}")
+    return t
+
+
+@router.get("/teachers/{id}/subjects", dependencies=[_settings_read])
+async def get_teacher_subjects(
+    id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """The Subjects this teacher teaches (real Subject.teacher_id links)."""
+    await _require_teacher(db, current_user.org_id, id)
+    rows = (await db.execute(
+        select(Subject).where(Subject.org_id == current_user.org_id, Subject.teacher_id == id).order_by(Subject.name)
+    )).scalars().all()
+    return {"items": [{"id": s.id, "name": s.name, "code": getattr(s, "code", None)} for s in rows]}
+
+
+@router.put("/teachers/{id}/subjects", dependencies=[_settings_write])
+async def set_teacher_subjects(
+    id: str,
+    data: TeacherSubjectsUpdate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Set which Subjects this teacher teaches. One teacher per subject: subjects
+    in the list are (re)assigned to this teacher; subjects previously theirs but
+    dropped are unassigned. Only subjects in the caller's org are touched."""
+    org_id = current_user.org_id
+    await _require_teacher(db, org_id, id)
+    wanted = set(data.subject_ids or [])
+    # Validate the requested subjects belong to this org.
+    if wanted:
+        valid = set((await db.execute(
+            select(Subject.id).where(Subject.id.in_(wanted), Subject.org_id == org_id)
+        )).scalars().all())
+        wanted = valid
+    # Currently-assigned to this teacher.
+    current_ids = set((await db.execute(
+        select(Subject.id).where(Subject.org_id == org_id, Subject.teacher_id == id)
+    )).scalars().all())
+    to_assign = wanted - current_ids
+    to_unassign = current_ids - wanted
+    if to_assign:
+        await db.execute(sa_update(Subject).where(Subject.id.in_(to_assign), Subject.org_id == org_id).values(teacher_id=id))
+    if to_unassign:
+        await db.execute(sa_update(Subject).where(Subject.id.in_(to_unassign), Subject.org_id == org_id).values(teacher_id=None))
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="Teacher", resource_id=id, resource_label="teacher subjects",
+        new_values={"subject_ids": sorted(wanted)}, request=request,
+    )
+    rows = (await db.execute(
+        select(Subject).where(Subject.org_id == org_id, Subject.teacher_id == id).order_by(Subject.name)
+    )).scalars().all()
+    return {"items": [{"id": s.id, "name": s.name, "code": getattr(s, "code", None)} for s in rows]}
+
+
+@router.post("/teachers/{id}/assign-section", dependencies=[_settings_write])
+async def assign_teacher_section(
+    id: str,
+    data: AssignSectionRequest,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Assign / transfer a teacher to a school section (null = unassign)."""
+    org_id = current_user.org_id
+    teacher = await _require_teacher(db, org_id, id)
+    await _set_teacher_section(db, org_id, id, data.section_id)
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="Teacher", resource_id=id, resource_label=teacher.full_name or teacher.email,
+        new_values={"section_id": data.section_id}, request=request,
+    )
+    smap = await _teacher_sections_map(db, org_id, [id])
+    return _teacher_dict(teacher, smap.get(id, (None, None)))
 
 
 # ── Lesson Planner (Phase 6.4) ───────────────────────────────────────────────
