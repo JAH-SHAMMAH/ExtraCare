@@ -163,3 +163,37 @@ class MentorReportListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ── Pastoral Setup: settings (Exeat + Default Settings) ──────────────────────
+
+# All flags optional on update (PUT is an upsert-merge); every flag echoed back.
+_FLAGS = [
+    "enable_head_only_approval", "notify_parent_on_exeat_approval",
+    "notify_house_parent_on_exeat_approval", "notify_pastoral_head_on_new_request",
+    "enable_tutorial_week", "email_parent_on_new_point_entry", "enable_academic_cohesion",
+    "show_award_in_point_analysis", "allow_referral_in_mentor_comment", "enable_point_category",
+    "enable_mentor_report_assessment", "allow_only_merits_in_point_entry",
+    "allow_observation_in_mentor_comment",
+]
+
+
+class PastoralSettingsUpdate(BaseModel):
+    enable_head_only_approval: Optional[bool] = None
+    notify_parent_on_exeat_approval: Optional[bool] = None
+    notify_house_parent_on_exeat_approval: Optional[bool] = None
+    notify_pastoral_head_on_new_request: Optional[bool] = None
+    enable_tutorial_week: Optional[bool] = None
+    email_parent_on_new_point_entry: Optional[bool] = None
+    enable_academic_cohesion: Optional[bool] = None
+    show_award_in_point_analysis: Optional[bool] = None
+    allow_referral_in_mentor_comment: Optional[bool] = None
+    enable_point_category: Optional[bool] = None
+    enable_mentor_report_assessment: Optional[bool] = None
+    allow_only_merits_in_point_entry: Optional[bool] = None
+    allow_observation_in_mentor_comment: Optional[bool] = None
+    school_nurse_role_id: Optional[str] = None       # "" / null clears it
+
+
+class PastoralSettingsResponse(PastoralSettingsUpdate):
+    school_nurse_role_name: Optional[str] = None

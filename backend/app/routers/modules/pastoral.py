@@ -31,13 +31,15 @@ from app.deps import get_current_active_user
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
 from app.models.user import User
+from app.models.role import Role
 from app.models.modules.school import Student
-from app.models.modules.pastoral import Hostel, BoardingAllocation, ExeatRequest, MentorReport
+from app.models.modules.pastoral import Hostel, BoardingAllocation, ExeatRequest, MentorReport, PastoralSettings
 from app.schemas.pastoral import (
     HostelCreate, HostelUpdate, HostelResponse, HostelListResponse,
     AllocationCreate, AllocationResponse,
     ExeatCreate, ExeatUpdate, ExeatDecision, ExeatResponse, ExeatListResponse,
     MentorReportCreate, MentorReportUpdate, MentorReportResponse, MentorReportListResponse,
+    PastoralSettingsUpdate, PastoralSettingsResponse,
     HOSTEL_GENDERS, EXEAT_STATUSES,
 )
 from app.services.audit_service import log_action
@@ -507,3 +509,74 @@ async def delete_mentor_report(
     if not m:
         raise HTTPException(status_code=404, detail="Mentor report not found.")
     await db.delete(m)
+
+
+# ── Pastoral Setup: settings (Exeat Settings + Default Settings) ──────────────
+
+_FLAG_FIELDS = (
+    "enable_head_only_approval", "notify_parent_on_exeat_approval",
+    "notify_house_parent_on_exeat_approval", "notify_pastoral_head_on_new_request",
+    "enable_tutorial_week", "email_parent_on_new_point_entry", "enable_academic_cohesion",
+    "show_award_in_point_analysis", "allow_referral_in_mentor_comment", "enable_point_category",
+    "enable_mentor_report_assessment", "allow_only_merits_in_point_entry",
+    "allow_observation_in_mentor_comment",
+)
+
+
+async def _get_or_create_settings(db: AsyncSession, org_id: str) -> PastoralSettings:
+    s = (await db.execute(
+        select(PastoralSettings).where(PastoralSettings.org_id == org_id)
+    )).scalar_one_or_none()
+    if not s:
+        s = PastoralSettings(org_id=org_id)
+        db.add(s)
+        await db.flush()
+    return s
+
+
+async def _settings_response(db: AsyncSession, s: PastoralSettings) -> PastoralSettingsResponse:
+    role_name = None
+    if s.school_nurse_role_id:
+        role_name = (await db.execute(
+            select(Role.name).where(Role.id == s.school_nurse_role_id, Role.org_id == s.org_id)
+        )).scalar_one_or_none()
+    return PastoralSettingsResponse(
+        **{f: getattr(s, f) for f in _FLAG_FIELDS},
+        school_nurse_role_id=s.school_nurse_role_id,
+        school_nurse_role_name=role_name,
+    )
+
+
+@router.get("/settings", response_model=PastoralSettingsResponse, dependencies=[_hostel_read])
+async def get_pastoral_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = await _get_or_create_settings(db, current_user.org_id)
+    return await _settings_response(db, s)
+
+
+@router.put("/settings", response_model=PastoralSettingsResponse, dependencies=[_hostel_write])
+async def update_pastoral_settings(
+    payload: PastoralSettingsUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    s = await _get_or_create_settings(db, current_user.org_id)
+    data = payload.model_dump(exclude_unset=True)
+    # Nurse role: validate it's a role in this org (empty string clears it).
+    if "school_nurse_role_id" in data:
+        rid = data.pop("school_nurse_role_id") or None
+        if rid:
+            ok = (await db.execute(select(Role.id).where(Role.id == rid, Role.org_id == current_user.org_id))).scalar_one_or_none()
+            if not ok:
+                raise HTTPException(status_code=422, detail="school_nurse_role_id: not a role in your organisation")
+        s.school_nurse_role_id = rid
+    for f in _FLAG_FIELDS:
+        if f in data and data[f] is not None:
+            setattr(s, f, bool(data[f]))
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="PastoralSettings", resource_id=s.id, resource_label="Pastoral settings",
+        request=request,
+    )
+    return await _settings_response(db, s)

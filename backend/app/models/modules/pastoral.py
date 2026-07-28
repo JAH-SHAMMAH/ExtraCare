@@ -116,3 +116,31 @@ class StudentMedicalRecord(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDel
         Index("ix_student_medical_records_student_org", "student_id", "org_id"),
         Index("ix_student_medical_records_org_type", "org_id", "record_type"),
     )
+
+
+class PastoralSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Per-org Pastoral configuration — the flag groups behind Pastoral Setup →
+    Exeat Settings + Default Settings. One row per org (upserted). Mirrors the
+    BehaviourSettings / ClubSettings pattern."""
+    __tablename__ = "pastoral_settings"
+
+    # ── Exeat Settings ────────────────────────────────────────────────────────
+    enable_head_only_approval = Column(Boolean, default=False, nullable=False)
+    notify_parent_on_exeat_approval = Column(Boolean, default=True, nullable=False)
+    notify_house_parent_on_exeat_approval = Column(Boolean, default=False, nullable=False)
+    notify_pastoral_head_on_new_request = Column(Boolean, default=True, nullable=False)
+
+    # ── Default Settings ──────────────────────────────────────────────────────
+    enable_tutorial_week = Column(Boolean, default=False, nullable=False)
+    email_parent_on_new_point_entry = Column(Boolean, default=False, nullable=False)
+    enable_academic_cohesion = Column(Boolean, default=False, nullable=False)
+    show_award_in_point_analysis = Column(Boolean, default=False, nullable=False)
+    allow_referral_in_mentor_comment = Column(Boolean, default=True, nullable=False)
+    enable_point_category = Column(Boolean, default=False, nullable=False)
+    enable_mentor_report_assessment = Column(Boolean, default=False, nullable=False)
+    allow_only_merits_in_point_entry = Column(Boolean, default=False, nullable=False)
+    allow_observation_in_mentor_comment = Column(Boolean, default=True, nullable=False)
+    # "School Nurse Role" — points at an existing RBAC role (never a new one).
+    school_nurse_role_id = Column(String(36), ForeignKey("roles.id", ondelete="SET NULL"), nullable=True)
+
+    org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)

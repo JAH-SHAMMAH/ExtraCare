@@ -165,3 +165,18 @@ export function useDeleteMedicalRecord() {
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to remove."),
   });
 }
+
+// ── Pastoral Setup: settings ────────────────────────────────────────────────────
+
+export function usePastoralSettings() {
+  return useQuery({ queryKey: ["pastoral-settings"], queryFn: () => pastoralApi.settings.get() });
+}
+
+export function useUpdatePastoralSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => pastoralApi.settings.update(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["pastoral-settings"] }); toast.success("Settings saved."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save settings."),
+  });
+}

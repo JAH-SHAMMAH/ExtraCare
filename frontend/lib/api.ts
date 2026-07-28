@@ -1078,6 +1078,10 @@ export const pastoralApi = {
     update: (id: string, data: object) => api.patch(`/pastoral/mentor-reports/${id}`, data).then((r) => r.data),
     remove: (id: string) => api.delete(`/pastoral/mentor-reports/${id}`),
   },
+  settings: {
+    get: () => api.get("/pastoral/settings").then((r) => r.data),
+    update: (data: object) => api.put("/pastoral/settings", data).then((r) => r.data),
+  },
 };
 
 // CONFIDENTIAL — only org_admin + nurse hold `medical:*`.
