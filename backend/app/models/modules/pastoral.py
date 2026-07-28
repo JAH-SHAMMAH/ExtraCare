@@ -11,7 +11,7 @@ All tenant-scoped; status/type stored as validated strings.
 """
 from __future__ import annotations
 
-from sqlalchemy import Column, String, Text, Date, DateTime, Integer, Boolean, ForeignKey, Index
+from sqlalchemy import Column, String, Text, Date, DateTime, Integer, Boolean, ForeignKey, Index, UniqueConstraint
 
 from app.models.base import Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin
 
@@ -144,3 +144,43 @@ class PastoralSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
     school_nurse_role_id = Column(String(36), ForeignKey("roles.id", ondelete="SET NULL"), nullable=True)
 
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, unique=True, index=True)
+
+
+class HouseMaster(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A staff member assigned as master of a school house (Pastoral House Setup →
+    House Masters). Reuses SchoolHouse; the person is a User."""
+    __tablename__ = "house_masters"
+
+    house_id = Column(String(36), ForeignKey("school_houses.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    __table_args__ = (
+        Index("ix_house_masters_house", "house_id", "org_id"),
+    )
+
+
+class HouseWeek(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A named pastoral 'house week' window (Pastoral House Setup → House Week
+    Management). Used to scope house duty/roll-call periods."""
+    __tablename__ = "house_weeks"
+
+    name = Column(String(120), nullable=False)
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class StudentPastoralAssignment(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A student's pastoral assignment — mentor, house, and leader flag (the
+    Pastoral Students roster). One row per student per org. House reuses
+    SchoolHouse; mentor is a User. Kept separate from the academic Student record."""
+    __tablename__ = "student_pastoral_assignments"
+
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    house_id = Column(String(36), ForeignKey("school_houses.id", ondelete="SET NULL"), nullable=True, index=True)
+    mentor_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    is_leader = Column(Boolean, default=False, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "student_id", name="uq_student_pastoral_org_student"),
+    )

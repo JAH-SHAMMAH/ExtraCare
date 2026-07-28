@@ -22,8 +22,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import csv
+import io
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select, func
+from fastapi.responses import Response
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -32,14 +36,20 @@ from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
 from app.models.user import User
 from app.models.role import Role
-from app.models.modules.school import Student
-from app.models.modules.pastoral import Hostel, BoardingAllocation, ExeatRequest, MentorReport, PastoralSettings
+from app.models.modules.school import Student, SchoolClass
+from app.models.modules.platform import SchoolHouse
+from app.models.modules.pastoral import (
+    Hostel, BoardingAllocation, ExeatRequest, MentorReport, PastoralSettings,
+    HouseMaster, HouseWeek, StudentPastoralAssignment,
+)
 from app.schemas.pastoral import (
     HostelCreate, HostelUpdate, HostelResponse, HostelListResponse,
     AllocationCreate, AllocationResponse,
     ExeatCreate, ExeatUpdate, ExeatDecision, ExeatResponse, ExeatListResponse,
     MentorReportCreate, MentorReportUpdate, MentorReportResponse, MentorReportListResponse,
     PastoralSettingsUpdate, PastoralSettingsResponse,
+    HouseMasterCreate, HouseMasterResponse, HouseWeekCreate, HouseWeekUpdate, HouseWeekResponse,
+    PastoralStudentAssign, PastoralBulkAssign, PastoralStudentRow,
     HOSTEL_GENDERS, EXEAT_STATUSES,
 )
 from app.services.audit_service import log_action
@@ -580,3 +590,219 @@ async def update_pastoral_settings(
         request=request,
     )
     return await _settings_response(db, s)
+
+
+# ── House Masters (Pastoral House Setup → House Masters) ──────────────────────
+
+@router.get("/house-masters", response_model=list[HouseMasterResponse], dependencies=[_hostel_read])
+async def list_house_masters(house_id: str | None = None, db: AsyncSession = Depends(get_db),
+                             current_user: User = Depends(get_current_active_user)):
+    q = select(HouseMaster).where(HouseMaster.org_id == current_user.org_id)
+    if house_id:
+        q = q.where(HouseMaster.house_id == house_id)
+    rows = (await db.execute(q)).scalars().all()
+    houses = {h.id: h.name for h in (await db.execute(
+        select(SchoolHouse).where(SchoolHouse.org_id == current_user.org_id))).scalars().all()}
+    users = await _user_names(db, current_user.org_id, {r.user_id for r in rows})
+    return [HouseMasterResponse(id=r.id, house_id=r.house_id, house_name=houses.get(r.house_id),
+                                user_id=r.user_id, user_name=users.get(r.user_id)) for r in rows]
+
+
+@router.post("/house-masters", response_model=HouseMasterResponse, status_code=201, dependencies=[_hostel_write])
+async def add_house_master(payload: HouseMasterCreate, db: AsyncSession = Depends(get_db),
+                           current_user: User = Depends(get_current_active_user)):
+    house = (await db.execute(select(SchoolHouse).where(SchoolHouse.id == payload.house_id, SchoolHouse.org_id == current_user.org_id))).scalar_one_or_none()
+    if not house:
+        raise HTTPException(status_code=404, detail="House not found.")
+    user = (await db.execute(select(User.id).where(User.id == payload.user_id, User.org_id == current_user.org_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=422, detail="user_id: not a user in your organisation")
+    m = HouseMaster(org_id=current_user.org_id, house_id=payload.house_id, user_id=payload.user_id)
+    db.add(m)
+    await db.flush()
+    users = await _user_names(db, current_user.org_id, {payload.user_id})
+    return HouseMasterResponse(id=m.id, house_id=m.house_id, house_name=house.name,
+                               user_id=m.user_id, user_name=users.get(m.user_id))
+
+
+@router.delete("/house-masters/{master_id}", status_code=204, dependencies=[_hostel_write])
+async def remove_house_master(master_id: str, db: AsyncSession = Depends(get_db),
+                              current_user: User = Depends(get_current_active_user)):
+    m = (await db.execute(select(HouseMaster).where(HouseMaster.id == master_id, HouseMaster.org_id == current_user.org_id))).scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="House master not found.")
+    await db.delete(m)
+
+
+# ── House Weeks (Pastoral House Setup → House Week Management) ─────────────────
+
+def _week_response(w: HouseWeek) -> HouseWeekResponse:
+    return HouseWeekResponse(id=w.id, name=w.name, start_date=w.start_date, end_date=w.end_date, is_active=w.is_active)
+
+
+@router.get("/house-weeks", response_model=list[HouseWeekResponse], dependencies=[_hostel_read])
+async def list_house_weeks(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(
+        select(HouseWeek).where(HouseWeek.org_id == current_user.org_id).order_by(HouseWeek.start_date.desc().nullslast())
+    )).scalars().all()
+    return [_week_response(w) for w in rows]
+
+
+@router.post("/house-weeks", response_model=HouseWeekResponse, status_code=201, dependencies=[_hostel_write])
+async def create_house_week(payload: HouseWeekCreate, db: AsyncSession = Depends(get_db),
+                            current_user: User = Depends(get_current_active_user)):
+    w = HouseWeek(org_id=current_user.org_id, **payload.model_dump())
+    db.add(w)
+    await db.flush()
+    return _week_response(w)
+
+
+@router.patch("/house-weeks/{week_id}", response_model=HouseWeekResponse, dependencies=[_hostel_write])
+async def update_house_week(week_id: str, payload: HouseWeekUpdate, db: AsyncSession = Depends(get_db),
+                            current_user: User = Depends(get_current_active_user)):
+    w = (await db.execute(select(HouseWeek).where(HouseWeek.id == week_id, HouseWeek.org_id == current_user.org_id))).scalar_one_or_none()
+    if not w:
+        raise HTTPException(status_code=404, detail="House week not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(w, f, v)
+    await db.flush()
+    return _week_response(w)
+
+
+@router.delete("/house-weeks/{week_id}", status_code=204, dependencies=[_hostel_write])
+async def delete_house_week(week_id: str, db: AsyncSession = Depends(get_db),
+                            current_user: User = Depends(get_current_active_user)):
+    w = (await db.execute(select(HouseWeek).where(HouseWeek.id == week_id, HouseWeek.org_id == current_user.org_id))).scalar_one_or_none()
+    if not w:
+        raise HTTPException(status_code=404, detail="House week not found.")
+    await db.delete(w)
+
+
+# ── Pastoral Students (roster: mentor / house / leaders) ─────────────────────
+
+async def _pastoral_rows(db: AsyncSession, org_id: str, section: str | None, class_id: str | None,
+                         house: str | None, search: str | None) -> list[PastoralStudentRow]:
+    # All (non-deleted) students LEFT-joined to their pastoral assignment, so the
+    # roster shows everyone even before a "Sync".
+    q = (
+        select(Student, StudentPastoralAssignment, SchoolClass.name)
+        .outerjoin(StudentPastoralAssignment,
+                   (StudentPastoralAssignment.student_id == Student.id) & (StudentPastoralAssignment.org_id == org_id))
+        .outerjoin(SchoolClass, SchoolClass.id == Student.class_id)
+        .where(Student.org_id == org_id, Student.is_deleted == False)  # noqa: E712
+    )
+    if section:
+        q = q.where(Student.section_id == section)
+    if class_id:
+        q = q.where(Student.class_id == class_id)
+    if house:
+        q = q.where(StudentPastoralAssignment.house_id == house)
+    if search:
+        term = f"%{search}%"
+        q = q.where(or_(Student.first_name.ilike(term), Student.last_name.ilike(term)))
+    rows = (await db.execute(q.order_by(Student.first_name, Student.last_name).limit(500))).all()
+
+    houses = {h.id: h.name for h in (await db.execute(
+        select(SchoolHouse).where(SchoolHouse.org_id == org_id))).scalars().all()}
+    mentor_ids = {a.mentor_id for _s, a, _c in rows if a and a.mentor_id}
+    mentors = await _user_names(db, org_id, mentor_ids)
+
+    out = []
+    for s, a, class_name in rows:
+        out.append(PastoralStudentRow(
+            student_id=s.id, student_name=f"{s.first_name} {s.last_name}".strip(), class_name=class_name,
+            house_id=(a.house_id if a else None), house_name=(houses.get(a.house_id) if a and a.house_id else None),
+            mentor_id=(a.mentor_id if a else None), mentor_name=(mentors.get(a.mentor_id) if a and a.mentor_id else None),
+            is_leader=bool(a.is_leader) if a else False,
+        ))
+    return out
+
+
+@router.get("/students", response_model=list[PastoralStudentRow], dependencies=[_hostel_read])
+async def list_pastoral_students(
+    section: str | None = None, class_id: str | None = None, house: str | None = None, search: str | None = None,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    return await _pastoral_rows(db, current_user.org_id, section, class_id, house, search)
+
+
+async def _upsert_assignment(db: AsyncSession, org_id: str, student_id: str) -> StudentPastoralAssignment:
+    a = (await db.execute(select(StudentPastoralAssignment).where(
+        StudentPastoralAssignment.org_id == org_id, StudentPastoralAssignment.student_id == student_id))).scalar_one_or_none()
+    if not a:
+        a = StudentPastoralAssignment(org_id=org_id, student_id=student_id)
+        db.add(a)
+        await db.flush()
+    return a
+
+
+@router.patch("/students/{student_id}", dependencies=[_hostel_write])
+async def assign_pastoral_student(
+    student_id: str, payload: PastoralStudentAssign, db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    await _require_student(db, current_user.org_id, student_id)
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("house_id"):
+        ok = (await db.execute(select(SchoolHouse.id).where(SchoolHouse.id == data["house_id"], SchoolHouse.org_id == current_user.org_id))).scalar_one_or_none()
+        if not ok:
+            raise HTTPException(status_code=422, detail="house_id: not a house in your organisation")
+    if data.get("mentor_id"):
+        ok = (await db.execute(select(User.id).where(User.id == data["mentor_id"], User.org_id == current_user.org_id))).scalar_one_or_none()
+        if not ok:
+            raise HTTPException(status_code=422, detail="mentor_id: not a user in your organisation")
+    a = await _upsert_assignment(db, current_user.org_id, student_id)
+    for f in ("house_id", "mentor_id", "is_leader"):
+        if f in data:
+            setattr(a, f, data[f] if f != "is_leader" else bool(data[f]))
+    await db.flush()
+    return {"ok": True}
+
+
+@router.post("/students/bulk-assign", dependencies=[_hostel_write])
+async def bulk_assign_pastoral_students(
+    payload: PastoralBulkAssign, db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Mark-All / bulk assign — set house / mentor / leader for many students."""
+    ids = list(dict.fromkeys(payload.student_ids or []))
+    valid = set((await db.execute(
+        select(Student.id).where(Student.id.in_(ids), Student.org_id == current_user.org_id, Student.is_deleted == False))).scalars().all()) if ids else set()  # noqa: E712
+    fields = payload.model_dump(exclude_unset=True)
+    fields.pop("student_ids", None)
+    for sid in valid:
+        a = await _upsert_assignment(db, current_user.org_id, sid)
+        for f in ("house_id", "mentor_id", "is_leader"):
+            if f in fields:
+                setattr(a, f, fields[f] if f != "is_leader" else bool(fields[f]))
+    await db.flush()
+    return {"updated": len(valid)}
+
+
+@router.post("/students/sync", dependencies=[_hostel_write])
+async def sync_pastoral_students(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Create empty pastoral assignment rows for students that don't have one yet."""
+    have = set((await db.execute(
+        select(StudentPastoralAssignment.student_id).where(StudentPastoralAssignment.org_id == current_user.org_id))).scalars().all())
+    all_ids = set((await db.execute(
+        select(Student.id).where(Student.org_id == current_user.org_id, Student.is_deleted == False))).scalars().all())  # noqa: E712
+    missing = all_ids - have
+    for sid in missing:
+        db.add(StudentPastoralAssignment(org_id=current_user.org_id, student_id=sid))
+    await db.flush()
+    return {"synced": len(missing)}
+
+
+@router.get("/students/export", dependencies=[_hostel_read])
+async def export_pastoral_students(
+    section: str | None = None, db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    rows = await _pastoral_rows(db, current_user.org_id, section, None, None, None)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Student", "Class", "House", "Mentor", "Leader"])
+    for r in rows:
+        w.writerow([r.student_name or "", r.class_name or "", r.house_name or "", r.mentor_name or "", "Yes" if r.is_leader else "No"])
+    return Response(content=buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="student-house.csv"'})

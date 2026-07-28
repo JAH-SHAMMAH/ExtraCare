@@ -32,7 +32,7 @@ from app.models.modules.platform import (
 from app.models.modules.school import SchoolClass, Subject
 from app.schemas.platform import (
     SessionCreate, SessionUpdate, SessionResponse, CurrentSessionResponse,
-    HouseCreate, HouseResponse, BandCreate, BandResponse,
+    HouseCreate, HouseUpdate, HouseResponse, BandCreate, BandResponse,
     WeekCreate, WeekUpdate, WeekGenerate, WeekResponse,
     FieldDefCreate, FieldDefResponse, FieldValueSet, FieldValueResponse,
     PollCreate, PollResponse, PollOptionResult, PollListResponse, CastVote,
@@ -119,22 +119,55 @@ async def delete_session(session_id: str, db: AsyncSession = Depends(get_db), cu
     await db.delete(s)
 
 
+async def _house_section_names(db: AsyncSession, org_id: str, ids: set[str]) -> dict[str, str]:
+    ids = {i for i in ids if i}
+    if not ids:
+        return {}
+    rows = (await db.execute(select(SchoolSection.id, SchoolSection.name).where(SchoolSection.org_id == org_id, SchoolSection.id.in_(ids)))).all()
+    return {r.id: r.name for r in rows}
+
+
+def _house_response(h: SchoolHouse, section_name: str | None = None) -> HouseResponse:
+    return HouseResponse(
+        id=h.id, name=h.name, color=h.color, motto=h.motto,
+        section_id=getattr(h, "section_id", None), section_name=section_name,
+        is_active=bool(getattr(h, "is_active", True)), created_at=h.created_at, org_id=h.org_id,
+    )
+
+
 @router.get("/houses", response_model=list[HouseResponse], dependencies=[_read])
-async def list_houses(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    rows = (await db.execute(select(SchoolHouse).where(SchoolHouse.org_id == current_user.org_id).order_by(SchoolHouse.name))).scalars().all()
-    return [HouseResponse(id=h.id, name=h.name, color=h.color, motto=h.motto, created_at=h.created_at, org_id=h.org_id) for h in rows]
+async def list_houses(section: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = select(SchoolHouse).where(SchoolHouse.org_id == current_user.org_id)
+    if section:
+        q = q.where(SchoolHouse.section_id == section)
+    rows = (await db.execute(q.order_by(SchoolHouse.name))).scalars().all()
+    names = await _house_section_names(db, current_user.org_id, {h.section_id for h in rows})
+    return [_house_response(h, names.get(h.section_id)) for h in rows]
 
 
 @router.post("/houses", response_model=HouseResponse, status_code=201, dependencies=[_write])
 async def create_house(payload: HouseCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    h = SchoolHouse(**payload.model_dump(), org_id=current_user.org_id)
+    h = SchoolHouse(**payload.model_dump(exclude_none=True), org_id=current_user.org_id)
     db.add(h)
     try:
         await db.flush()
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="A house with that name already exists.")
-    return HouseResponse(id=h.id, name=h.name, color=h.color, motto=h.motto, created_at=h.created_at, org_id=h.org_id)
+    names = await _house_section_names(db, current_user.org_id, {h.section_id})
+    return _house_response(h, names.get(h.section_id))
+
+
+@router.patch("/houses/{house_id}", response_model=HouseResponse, dependencies=[_write])
+async def update_house(house_id: str, payload: HouseUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    h = (await db.execute(select(SchoolHouse).where(SchoolHouse.id == house_id, SchoolHouse.org_id == current_user.org_id))).scalar_one_or_none()
+    if not h:
+        raise HTTPException(status_code=404, detail="House not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(h, f, v)
+    await db.flush()
+    names = await _house_section_names(db, current_user.org_id, {h.section_id})
+    return _house_response(h, names.get(h.section_id))
 
 
 @router.delete("/houses/{house_id}", status_code=204, dependencies=[_write])

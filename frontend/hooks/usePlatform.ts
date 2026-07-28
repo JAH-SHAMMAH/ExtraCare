@@ -88,6 +88,7 @@ export const useCreateSession = m((d) => platformApi.sessions.create(d), ["sessi
 export const useUpdateSession = m((v: { id: string; data: object }) => platformApi.sessions.update(v.id, v.data), ["sessions", "current-session"], "Session updated.");
 export const useDeleteSession = m((id: string) => platformApi.sessions.remove(id), ["sessions", "current-session"], "Removed.");
 export const useCreateHouse = m((d) => platformApi.houses.create(d), ["houses"], "House added.");
+export const useUpdateHouse = m((v: { id: string; data: object }) => platformApi.houses.update(v.id, v.data), ["houses"], "House updated.");
 export const useDeleteHouse = m((id: string) => platformApi.houses.remove(id), ["houses"], "Removed.");
 export const useCreateBand = m((d) => platformApi.bands.create(d), ["bands"], "Band added.");
 export const useDeleteBand = m((id: string) => platformApi.bands.remove(id), ["bands"], "Removed.");

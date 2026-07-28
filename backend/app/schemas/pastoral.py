@@ -197,3 +197,64 @@ class PastoralSettingsUpdate(BaseModel):
 
 class PastoralSettingsResponse(PastoralSettingsUpdate):
     school_nurse_role_name: Optional[str] = None
+
+
+# ── Batch B: House Masters / House Weeks / Pastoral Students ──────────────────
+
+class HouseMasterCreate(BaseModel):
+    house_id: str
+    user_id: str
+
+
+class HouseMasterResponse(BaseModel):
+    id: str
+    house_id: str
+    house_name: Optional[str] = None
+    user_id: str
+    user_name: Optional[str] = None
+
+
+class HouseWeekCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    is_active: bool = True
+
+
+class HouseWeekUpdate(BaseModel):
+    name: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    is_active: Optional[bool] = None
+
+
+class HouseWeekResponse(BaseModel):
+    id: str
+    name: str
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    is_active: bool
+
+
+class PastoralStudentAssign(BaseModel):
+    house_id: Optional[str] = None
+    mentor_id: Optional[str] = None
+    is_leader: Optional[bool] = None
+
+
+class PastoralBulkAssign(BaseModel):
+    student_ids: list[str] = []
+    house_id: Optional[str] = None
+    mentor_id: Optional[str] = None
+    is_leader: Optional[bool] = None
+
+
+class PastoralStudentRow(BaseModel):
+    student_id: str
+    student_name: Optional[str] = None
+    class_name: Optional[str] = None
+    house_id: Optional[str] = None
+    house_name: Optional[str] = None
+    mentor_id: Optional[str] = None
+    mentor_name: Optional[str] = None
+    is_leader: bool = False

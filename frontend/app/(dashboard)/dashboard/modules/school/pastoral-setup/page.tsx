@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePastoralSettings, useUpdatePastoralSettings } from "@/hooks/usePastoral";
 import { useAvailableRoles } from "@/hooks/useUsers";
 import { useHasPermission } from "@/components/guards/PermissionGate";
+import { HouseSetup } from "@/components/pastoral/HouseSetup";
 import { cn } from "@/lib/utils";
 import { Loader2, Save, Settings2 } from "lucide-react";
 
@@ -67,7 +68,9 @@ export default function PastoralSetupPage() {
       {/* Placeholder tabs are STATIC — never gated on the settings fetch, so they
           render instantly even if /pastoral/settings is slow or failing. Only the
           two settings-backed tabs depend on the query. */}
-      {tab !== "exeat" && tab !== "default" ? (
+      {tab === "house" ? (
+        <HouseSetup canWrite={canWrite} />
+      ) : tab !== "exeat" && tab !== "default" ? (
         <Placeholder label={TABS.find(([k]) => k === tab)?.[1] ?? ""} />
       ) : isLoading ? (
         <div className="py-16 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>

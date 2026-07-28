@@ -161,12 +161,15 @@ class AcademicWeek(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
 
 class SchoolHouse(Base, UUIDMixin, TimestampMixin, TenantMixin):
-    """A school house (for the merit/conduct leaderboard etc.)."""
+    """A school house (for the merit/conduct leaderboard + Pastoral House Setup)."""
     __tablename__ = "school_houses"
 
     name = Column(String(80), nullable=False)
     color = Column(String(20), nullable=True)
     motto = Column(String(200), nullable=True)
+    # Pastoral House Setup: optional school-section scoping + active flag.
+    section_id = Column(String(36), ForeignKey("school_sections.id", ondelete="SET NULL"), nullable=True, index=True)
+    is_active = Column(Boolean, default=True, nullable=False)
 
     __table_args__ = (
         UniqueConstraint("org_id", "name", name="uq_school_houses_org_name"),

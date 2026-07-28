@@ -253,6 +253,16 @@ class HouseCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     color: Optional[str] = None
     motto: Optional[str] = None
+    section_id: Optional[str] = None
+    is_active: Optional[bool] = True
+
+
+class HouseUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    color: Optional[str] = None
+    motto: Optional[str] = None
+    section_id: Optional[str] = None
+    is_active: Optional[bool] = None
 
 
 class HouseResponse(BaseModel):
@@ -260,6 +270,9 @@ class HouseResponse(BaseModel):
     name: str
     color: Optional[str]
     motto: Optional[str]
+    section_id: Optional[str] = None
+    section_name: Optional[str] = None
+    is_active: bool = True
     created_at: datetime
     org_id: str
 

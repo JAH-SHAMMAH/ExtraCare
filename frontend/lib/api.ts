@@ -1082,6 +1082,26 @@ export const pastoralApi = {
     get: () => api.get("/pastoral/settings").then((r) => r.data),
     update: (data: object) => api.put("/pastoral/settings", data).then((r) => r.data),
   },
+  houseMasters: {
+    list: (houseId?: string) => api.get("/pastoral/house-masters", { params: houseId ? { house_id: houseId } : {} }).then((r) => r.data),
+    add: (data: { house_id: string; user_id: string }) => api.post("/pastoral/house-masters", data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/house-masters/${id}`),
+  },
+  houseWeeks: {
+    list: () => api.get("/pastoral/house-weeks").then((r) => r.data),
+    create: (data: object) => api.post("/pastoral/house-weeks", data).then((r) => r.data),
+    update: (id: string, data: object) => api.patch(`/pastoral/house-weeks/${id}`, data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/house-weeks/${id}`),
+  },
+  students: {
+    list: (p?: { section?: string; class_id?: string; house?: string; search?: string }) =>
+      api.get("/pastoral/students", { params: p }).then((r) => r.data),
+    assign: (studentId: string, data: object) => api.patch(`/pastoral/students/${studentId}`, data).then((r) => r.data),
+    bulkAssign: (data: object) => api.post("/pastoral/students/bulk-assign", data).then((r) => r.data),
+    sync: () => api.post("/pastoral/students/sync").then((r) => r.data),
+    exportCsv: (section?: string) =>
+      api.get("/pastoral/students/export", { params: section ? { section } : {}, responseType: "blob" }).then((r) => r.data),
+  },
 };
 
 // CONFIDENTIAL — only org_admin + nurse hold `medical:*`.
@@ -1509,7 +1529,7 @@ export const platformApi = {
     update: (id: string, d: object) => api.patch(`/platform/weeks/${id}`, d).then((r) => r.data),
     remove: (id: string) => api.delete(`/platform/weeks/${id}`),
   },
-  houses: { list: () => api.get("/platform/houses").then((r) => r.data), create: (d: object) => api.post("/platform/houses", d).then((r) => r.data), remove: (id: string) => api.delete(`/platform/houses/${id}`) },
+  houses: { list: (section?: string) => api.get("/platform/houses", { params: section ? { section } : {} }).then((r) => r.data), create: (d: object) => api.post("/platform/houses", d).then((r) => r.data), update: (id: string, d: object) => api.patch(`/platform/houses/${id}`, d).then((r) => r.data), remove: (id: string) => api.delete(`/platform/houses/${id}`) },
   bands: { list: () => api.get("/platform/grading-bands").then((r) => r.data), create: (d: object) => api.post("/platform/grading-bands", d).then((r) => r.data), remove: (id: string) => api.delete(`/platform/grading-bands/${id}`) },
   // School Reports R2 config
   sections: {

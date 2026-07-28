@@ -322,6 +322,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     items: [
       // Pastoral parity build-out (A–F). Setup is the tabbed config hub.
       { href: "/dashboard/modules/school/pastoral-setup", label: "Pastoral Setup", icon: Settings2 },
+      { href: "/dashboard/modules/school/pastoral-students", label: "Pastoral Students", icon: Users2 },
       { href: "/dashboard/modules/school/behaviour", label: "Pastoral Care", icon: HeartHandshake },
       { href: "/dashboard/modules/school/journals", label: "Photo Journals", icon: Camera },
       { href: "/dashboard/modules/school/remarks", label: "Weekly Remarks", icon: MessageCircle },

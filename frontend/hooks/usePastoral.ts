@@ -180,3 +180,81 @@ export function useUpdatePastoralSettings() {
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save settings."),
   });
 }
+
+// ── Batch B: House Masters / Weeks / Pastoral Students ──────────────────────────
+
+export function useHouseMasters(houseId?: string) {
+  return useQuery({ queryKey: ["house-masters", houseId ?? "all"], queryFn: () => pastoralApi.houseMasters.list(houseId) });
+}
+export function useAddHouseMaster() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { house_id: string; user_id: string }) => pastoralApi.houseMasters.add(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["house-masters"] }); toast.success("House master added."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to add."),
+  });
+}
+export function useRemoveHouseMaster() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => pastoralApi.houseMasters.remove(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["house-masters"] }); toast.success("Removed."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to remove."),
+  });
+}
+
+export function useHouseWeeks() {
+  return useQuery({ queryKey: ["house-weeks"], queryFn: () => pastoralApi.houseWeeks.list() });
+}
+export function useCreateHouseWeek() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => pastoralApi.houseWeeks.create(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["house-weeks"] }); toast.success("Week added."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed."),
+  });
+}
+export function useUpdateHouseWeek() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: object }) => pastoralApi.houseWeeks.update(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["house-weeks"] }); toast.success("Updated."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed."),
+  });
+}
+export function useDeleteHouseWeek() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => pastoralApi.houseWeeks.remove(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["house-weeks"] }); toast.success("Removed."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed."),
+  });
+}
+
+export function usePastoralStudents(params?: { section?: string; class_id?: string; house?: string; search?: string }) {
+  return useQuery({ queryKey: ["pastoral-students", params], queryFn: () => pastoralApi.students.list(params) });
+}
+export function useAssignPastoralStudent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ studentId, data }: { studentId: string; data: object }) => pastoralApi.students.assign(studentId, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pastoral-students"] }),
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to assign."),
+  });
+}
+export function useBulkAssignPastoralStudents() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => pastoralApi.students.bulkAssign(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["pastoral-students"] }); toast.success("Applied."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed."),
+  });
+}
+export function useSyncPastoralStudents() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => pastoralApi.students.sync(),
+    onSuccess: (r: any) => { qc.invalidateQueries({ queryKey: ["pastoral-students"] }); toast.success(`Synced ${r?.synced ?? 0} student(s).`); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Sync failed."),
+  });
+}
