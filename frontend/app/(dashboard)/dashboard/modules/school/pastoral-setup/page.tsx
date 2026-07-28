@@ -42,7 +42,7 @@ const DEFAULT_FLAGS: [string, string][] = [
 export default function PastoralSetupPage() {
   const canWrite = useHasPermission("school:hostel:write");
   const [tab, setTab] = useState<Tab>("exeat");
-  const { data: settings, isLoading } = usePastoralSettings();
+  const { data: settings, isLoading, isError, refetch } = usePastoralSettings();
   const { data: rolesData } = useAvailableRoles();
   const update = useUpdatePastoralSettings();
 
@@ -64,7 +64,20 @@ export default function PastoralSetupPage() {
         ))}
       </div>
 
-      {isLoading || !form ? (
+      {/* Placeholder tabs are STATIC — never gated on the settings fetch, so they
+          render instantly even if /pastoral/settings is slow or failing. Only the
+          two settings-backed tabs depend on the query. */}
+      {tab !== "exeat" && tab !== "default" ? (
+        <Placeholder label={TABS.find(([k]) => k === tab)?.[1] ?? ""} />
+      ) : isLoading ? (
+        <div className="py-16 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
+      ) : isError ? (
+        <div className="bg-white rounded-xl border border-slate-200 py-14 text-center">
+          <p className="text-sm font-semibold text-slate-600">Couldn&apos;t load pastoral settings.</p>
+          <p className="text-xs text-slate-400 mt-1">If this persists, the backend may be pending migration <code>100_pastoral_settings</code>.</p>
+          <button onClick={() => refetch()} className="mt-3 btn-secondary">Retry</button>
+        </div>
+      ) : !form ? (
         <div className="py-16 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
       ) : tab === "exeat" ? (
         <SettingsCard title="Exeat Settings" flags={EXEAT_FLAGS} form={form} set={set} canWrite={canWrite} onSave={save} saving={update.isPending} />
@@ -85,9 +98,7 @@ export default function PastoralSetupPage() {
             </div>
           }
         />
-      ) : (
-        <Placeholder label={TABS.find(([k]) => k === tab)?.[1] ?? ""} />
-      )}
+      ) : null}
     </div>
   );
 }
