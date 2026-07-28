@@ -70,19 +70,33 @@ function SectionRow({ section, canWrite, onUp, onDown }: { section: SchoolSectio
   const dirty = aliases.trim() !== (section.aliases || []).join(", ");
   const saveAliases = () => update.mutate({ id: section.id, data: { aliases: aliases.split(",").map((a) => a.trim()).filter(Boolean) } });
 
+  // Inline rename (keeps the section id → classes / templates / teacher
+  // assignments stay intact; e.g. rename "Junior" → "Early Years").
+  const [nm, setNm] = useState(section.name);
+  const nameDirty = nm.trim().length > 0 && nm.trim() !== section.name;
+  const saveName = () => update.mutate({ id: section.id, data: { name: nm.trim() } });
+
   return (
     <div className="px-4 py-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
           {canWrite && (
             <div className="flex flex-col">
               <button onClick={onUp} disabled={!onUp} className="text-slate-300 hover:text-slate-600 disabled:opacity-30 leading-none"><ChevronUp size={14} /></button>
               <button onClick={onDown} disabled={!onDown} className="text-slate-300 hover:text-slate-600 disabled:opacity-30 leading-none"><ChevronDown size={14} /></button>
             </div>
           )}
-          <div><span className="text-sm font-semibold text-slate-800">{section.name}</span><span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">{section.curriculum}</span></div>
+          {canWrite ? (
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <input value={nm} onChange={(e) => setNm(e.target.value)} className="input text-sm font-semibold py-1 max-w-[220px]" />
+              <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{section.curriculum}</span>
+              {nameDirty && <button onClick={saveName} disabled={update.isPending} className="btn-secondary gap-1.5 text-xs py-1 shrink-0">{update.isPending ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Rename</button>}
+            </div>
+          ) : (
+            <div><span className="text-sm font-semibold text-slate-800">{section.name}</span><span className="ml-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">{section.curriculum}</span></div>
+          )}
         </div>
-        {canWrite && <button onClick={() => { if (confirm(`Delete section ${section.name}? Its template is removed and classes become unassigned.`)) del.mutate(section.id); }} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>}
+        {canWrite && <button onClick={() => { if (confirm(`Delete section ${section.name}? Its template is removed and classes become unassigned.`)) del.mutate(section.id); }} className="text-slate-400 hover:text-red-600 p-1 shrink-0"><Trash2 size={14} /></button>}
       </div>
       <div className="flex items-center gap-2 mt-2 md:ml-6">
         <input value={aliases} onChange={(e) => setAliases(e.target.value)} disabled={!canWrite} className="input text-xs flex-1" placeholder="Level aliases, comma-separated (e.g. YEAR 1, YEAR 2, …)" />
