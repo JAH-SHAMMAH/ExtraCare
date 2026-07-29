@@ -354,3 +354,27 @@ class StudentDisciplinaryCase(Base, UUIDMixin, TimestampMixin, TenantMixin):
         Index("ix_student_disc_cases_student_org", "student_id", "org_id"),
         Index("ix_student_disc_cases_status_org", "status", "org_id"),
     )
+
+
+# ── Batch F-1: Leadership Roles + Pastoral Heads ─────────────────────────────
+
+class PastoralLeadershipRole(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A student pastoral-leadership role (Leadership Roles setup), e.g. Head Boy,
+    House Captain, Prefect. A lightweight pastoral list — NOT an RBAC role."""
+    __tablename__ = "pastoral_leadership_roles"
+
+    name = Column(String(120), nullable=False)
+    description = Column(Text, nullable=True)
+    sort_order = Column(Integer, default=0, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class PastoralHead(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A staff member holding a pastoral head position (Pastoral Heads setup), e.g.
+    Head of Boarding, Head of Pastoral Care. Lightweight — NOT an RBAC role."""
+    __tablename__ = "pastoral_heads"
+
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(120), nullable=False)
+    scope = Column(String(120), nullable=True)     # optional area, e.g. a house/section name
+    is_active = Column(Boolean, default=True, nullable=False)

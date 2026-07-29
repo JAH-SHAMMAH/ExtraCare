@@ -600,3 +600,59 @@ class DisciplinaryCaseResponse(BaseModel):
     case_date: Optional[date] = None
     recorded_by_name: Optional[str] = None
     created_at: Optional[datetime] = None
+
+
+# ── Batch F-1: Leadership Roles + Pastoral Heads + Head Dashboard ─────────────
+
+class LeadershipRoleCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    description: Optional[str] = None
+    sort_order: int = 0
+
+
+class LeadershipRoleUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=120)
+    description: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class LeadershipRoleResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class PastoralHeadCreate(BaseModel):
+    user_id: str
+    title: str = Field(..., min_length=1, max_length=120)
+    scope: Optional[str] = None
+
+
+class PastoralHeadUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=120)
+    scope: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class PastoralHeadResponse(BaseModel):
+    id: str
+    user_id: str
+    user_name: Optional[str] = None
+    title: str
+    scope: Optional[str] = None
+    is_active: bool = True
+
+
+class HeadDashboard(BaseModel):
+    hostels: int = 0
+    boarders: int = 0
+    houses: int = 0
+    pending_exeats: int = 0
+    open_cases: int = 0
+    leadership_roles: int = 0
+    pastoral_heads: int = 0
+    heads: list[PastoralHeadResponse] = Field(default_factory=list)
+    recent_cases: list[DisciplinaryCaseResponse] = Field(default_factory=list)

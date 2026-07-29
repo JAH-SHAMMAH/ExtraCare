@@ -154,6 +154,7 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // Hostel + Exeat ride school:hostel; Mentor reports ride school:behaviour.
   // Medicals is CONFIDENTIAL: gated by the dedicated `medical` namespace, which
   // the broad school:read hierarchy does NOT reach — only org_admin + nurse.
+  { prefix: "/dashboard/modules/school/pastoral-dashboard", permission: "school:hostel:read" },
   { prefix: "/dashboard/modules/school/pastoral-setup", permission: "school:hostel:read" },
   { prefix: "/dashboard/modules/school/pastoral-students", permission: "school:hostel:read" },
   // Point Entry + Points Analysis ride the Recognition ledger → school:behaviour.

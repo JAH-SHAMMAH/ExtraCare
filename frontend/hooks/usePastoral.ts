@@ -261,7 +261,7 @@ export function useSyncPastoralStudents() {
 
 // ── Batch C: Point System / Award System / Points Analysis ──────────────────────
 
-function crud(resource: "pointTypes" | "awardTypes" | "hostelLifeGrades" | "hostelCommentBank" | "sanctionGroups" | "disciplinaryActions", key: string) {
+function crud(resource: "pointTypes" | "awardTypes" | "hostelLifeGrades" | "hostelCommentBank" | "sanctionGroups" | "disciplinaryActions" | "leadershipRoles" | "pastoralHeads", key: string) {
   return {
     useList: () => useQuery({ queryKey: [key], queryFn: () => (pastoralApi as any)[resource].list() }),
     useCreate: () => { const qc = useQueryClient(); return useMutation({ mutationFn: (d: object) => (pastoralApi as any)[resource].create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: [key] }); toast.success("Added."); }, onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed.") }); },
@@ -435,6 +435,23 @@ function caseMut<TArgs>(fn: (a: TArgs) => Promise<any>, msg: string) {
 export function useCreateDisciplinaryCase() { return caseMut((d: object) => pastoralApi.disciplinaryCases.create(d), "Case recorded."); }
 export function useUpdateDisciplinaryCase() { return caseMut((v: { id: string; data: object }) => pastoralApi.disciplinaryCases.update(v.id, v.data), "Updated."); }
 export function useDeleteDisciplinaryCase() { return caseMut((id: string) => pastoralApi.disciplinaryCases.remove(id), "Removed."); }
+
+// ── Batch F-1: Leadership Roles + Pastoral Heads + Head Dashboard ─────────────
+
+const _leadershipRoles = crud("leadershipRoles", "leadership-roles");
+const _pastoralHeads = crud("pastoralHeads", "pastoral-heads");
+export const useLeadershipRoles = _leadershipRoles.useList;
+export const useCreateLeadershipRole = _leadershipRoles.useCreate;
+export const useUpdateLeadershipRole = _leadershipRoles.useUpdate;
+export const useDeleteLeadershipRole = _leadershipRoles.useDelete;
+export const usePastoralHeads = _pastoralHeads.useList;
+export const useCreatePastoralHead = _pastoralHeads.useCreate;
+export const useUpdatePastoralHead = _pastoralHeads.useUpdate;
+export const useDeletePastoralHead = _pastoralHeads.useDelete;
+
+export function useHeadDashboard() {
+  return useQuery({ queryKey: ["head-dashboard"], queryFn: () => pastoralApi.headDashboard() });
+}
 export function usePointsAnalysis(params?: { section?: string; house?: string }) {
   return useQuery({ queryKey: ["points-analysis", params], queryFn: () => pastoralApi.points.analysis(params) });
 }

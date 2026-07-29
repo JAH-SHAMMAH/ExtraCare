@@ -45,6 +45,7 @@ from app.models.modules.pastoral import (
     HostelLifeComment, HostelReport,
     SanctionGroup, DisciplinaryAction, DisciplinaryCommittee,
     DisciplinaryCommitteeMember, StudentDisciplinaryCase,
+    PastoralLeadershipRole, PastoralHead,
 )
 from app.models.modules.academics import Recognition
 from app.services.import_files import rows_from_upload
@@ -70,6 +71,8 @@ from app.schemas.pastoral import (
     CommitteeCreate, CommitteeUpdate, CommitteeResponse, CommitteeMemberInfo, CommitteeMemberCreate,
     DisciplinaryCaseCreate, DisciplinaryCaseUpdate, DisciplinaryCaseResponse,
     SEVERITIES, CASE_STATUSES,
+    LeadershipRoleCreate, LeadershipRoleUpdate, LeadershipRoleResponse,
+    PastoralHeadCreate, PastoralHeadUpdate, PastoralHeadResponse, HeadDashboard,
     HOSTEL_GENDERS, EXEAT_STATUSES,
 )
 from app.services.audit_service import log_action
@@ -1628,3 +1631,128 @@ async def delete_disciplinary_case(case_id: str, db: AsyncSession = Depends(get_
     if not c:
         raise HTTPException(status_code=404, detail="Case not found.")
     await db.delete(c)
+
+
+# ── Batch F-1: Leadership Roles (Leadership Roles setup) ─────────────────────
+
+def _lr_response(r: PastoralLeadershipRole) -> LeadershipRoleResponse:
+    return LeadershipRoleResponse(id=r.id, name=r.name, description=r.description,
+                                  sort_order=r.sort_order, is_active=r.is_active)
+
+
+@router.get("/leadership-roles", response_model=list[LeadershipRoleResponse], dependencies=[_hostel_read])
+async def list_leadership_roles(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(PastoralLeadershipRole).where(PastoralLeadershipRole.org_id == current_user.org_id)
+                             .order_by(PastoralLeadershipRole.sort_order, PastoralLeadershipRole.name))).scalars().all()
+    return [_lr_response(r) for r in rows]
+
+
+@router.post("/leadership-roles", response_model=LeadershipRoleResponse, status_code=201, dependencies=[_hostel_write])
+async def create_leadership_role(payload: LeadershipRoleCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    r = PastoralLeadershipRole(org_id=current_user.org_id, **payload.model_dump())
+    db.add(r)
+    await db.flush()
+    return _lr_response(r)
+
+
+@router.patch("/leadership-roles/{role_id}", response_model=LeadershipRoleResponse, dependencies=[_hostel_write])
+async def update_leadership_role(role_id: str, payload: LeadershipRoleUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    r = (await db.execute(select(PastoralLeadershipRole).where(PastoralLeadershipRole.id == role_id, PastoralLeadershipRole.org_id == current_user.org_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Leadership role not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(r, f, v)
+    await db.flush()
+    return _lr_response(r)
+
+
+@router.delete("/leadership-roles/{role_id}", status_code=204, dependencies=[_hostel_write])
+async def delete_leadership_role(role_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    r = (await db.execute(select(PastoralLeadershipRole).where(PastoralLeadershipRole.id == role_id, PastoralLeadershipRole.org_id == current_user.org_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Leadership role not found.")
+    await db.delete(r)
+
+
+# ── Pastoral Heads (Pastoral Heads setup) ────────────────────────────────────
+
+def _head_response(h: PastoralHead, name: str | None) -> PastoralHeadResponse:
+    return PastoralHeadResponse(id=h.id, user_id=h.user_id, user_name=name, title=h.title,
+                                scope=h.scope, is_active=h.is_active)
+
+
+@router.get("/pastoral-heads", response_model=list[PastoralHeadResponse], dependencies=[_hostel_read])
+async def list_pastoral_heads(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(PastoralHead).where(PastoralHead.org_id == current_user.org_id).order_by(PastoralHead.title))).scalars().all()
+    names = await _user_names(db, current_user.org_id, {r.user_id for r in rows})
+    return [_head_response(h, names.get(h.user_id)) for h in rows]
+
+
+@router.post("/pastoral-heads", response_model=PastoralHeadResponse, status_code=201, dependencies=[_hostel_write])
+async def create_pastoral_head(payload: PastoralHeadCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    user = (await db.execute(select(User.id).where(User.id == payload.user_id, User.org_id == current_user.org_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=422, detail="user_id: not a user in your organisation")
+    h = PastoralHead(org_id=current_user.org_id, **payload.model_dump())
+    db.add(h)
+    await db.flush()
+    names = await _user_names(db, current_user.org_id, {payload.user_id})
+    return _head_response(h, names.get(h.user_id))
+
+
+@router.patch("/pastoral-heads/{head_id}", response_model=PastoralHeadResponse, dependencies=[_hostel_write])
+async def update_pastoral_head(head_id: str, payload: PastoralHeadUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    h = (await db.execute(select(PastoralHead).where(PastoralHead.id == head_id, PastoralHead.org_id == current_user.org_id))).scalar_one_or_none()
+    if not h:
+        raise HTTPException(status_code=404, detail="Pastoral head not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(h, f, v)
+    await db.flush()
+    names = await _user_names(db, current_user.org_id, {h.user_id})
+    return _head_response(h, names.get(h.user_id))
+
+
+@router.delete("/pastoral-heads/{head_id}", status_code=204, dependencies=[_hostel_write])
+async def delete_pastoral_head(head_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    h = (await db.execute(select(PastoralHead).where(PastoralHead.id == head_id, PastoralHead.org_id == current_user.org_id))).scalar_one_or_none()
+    if not h:
+        raise HTTPException(status_code=404, detail="Pastoral head not found.")
+    await db.delete(h)
+
+
+# ── Pastoral Head Dashboard ──────────────────────────────────────────────────
+
+async def _count(db: AsyncSession, model, *conds) -> int:
+    q = select(func.count()).select_from(model)
+    for c in conds:
+        q = q.where(c)
+    return (await db.execute(q)).scalar() or 0
+
+
+@router.get("/head-dashboard", response_model=HeadDashboard, dependencies=[_hostel_read])
+async def head_dashboard(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org = current_user.org_id
+    hostels = await _count(db, Hostel, Hostel.org_id == org, Hostel.is_deleted == False)          # noqa: E712
+    boarders = await _count(db, BoardingAllocation, BoardingAllocation.org_id == org, BoardingAllocation.is_active == True)  # noqa: E712
+    houses = await _count(db, SchoolHouse, SchoolHouse.org_id == org)
+    pending_exeats = await _count(db, ExeatRequest, ExeatRequest.org_id == org, ExeatRequest.status == "pending")
+    open_cases = await _count(db, StudentDisciplinaryCase, StudentDisciplinaryCase.org_id == org, StudentDisciplinaryCase.status == "pending")
+    lr = await _count(db, PastoralLeadershipRole, PastoralLeadershipRole.org_id == org)
+    ph = await _count(db, PastoralHead, PastoralHead.org_id == org)
+
+    head_rows = (await db.execute(select(PastoralHead).where(PastoralHead.org_id == org, PastoralHead.is_active == True).order_by(PastoralHead.title))).scalars().all()  # noqa: E712
+    hnames = await _user_names(db, org, {h.user_id for h in head_rows})
+
+    case_rows = (await db.execute(select(StudentDisciplinaryCase).where(StudentDisciplinaryCase.org_id == org)
+                                  .order_by(StudentDisciplinaryCase.created_at.desc()).limit(5))).scalars().all()
+    snames = await _student_names(db, org, {c.student_id for c in case_rows})
+    anames = {a.id: a.name for a in (await db.execute(select(DisciplinaryAction).where(DisciplinaryAction.org_id == org))).scalars().all()}
+    cnames = {cm.id: cm.name for cm in (await db.execute(select(DisciplinaryCommittee).where(DisciplinaryCommittee.org_id == org))).scalars().all()}
+    unames = await _user_names(db, org, {c.recorded_by for c in case_rows})
+
+    return HeadDashboard(
+        hostels=hostels, boarders=boarders, houses=houses, pending_exeats=pending_exeats,
+        open_cases=open_cases, leadership_roles=lr, pastoral_heads=ph,
+        heads=[_head_response(h, hnames.get(h.user_id)) for h in head_rows],
+        recent_cases=[await _case_response(db, org, c, snames, cnames, anames, unames) for c in case_rows],
+    )

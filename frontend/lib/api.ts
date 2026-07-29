@@ -1188,6 +1188,20 @@ export const pastoralApi = {
     update: (id: string, d: object) => api.patch(`/pastoral/disciplinary-cases/${id}`, d).then((r) => r.data),
     remove: (id: string) => api.delete(`/pastoral/disciplinary-cases/${id}`),
   },
+  // Batch F-1: Leadership Roles + Pastoral Heads + Head Dashboard.
+  leadershipRoles: {
+    list: () => api.get("/pastoral/leadership-roles").then((r) => r.data),
+    create: (d: object) => api.post("/pastoral/leadership-roles", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/pastoral/leadership-roles/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/leadership-roles/${id}`),
+  },
+  pastoralHeads: {
+    list: () => api.get("/pastoral/pastoral-heads").then((r) => r.data),
+    create: (d: object) => api.post("/pastoral/pastoral-heads", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/pastoral/pastoral-heads/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/pastoral-heads/${id}`),
+  },
+  headDashboard: () => api.get("/pastoral/head-dashboard").then((r) => r.data),
 };
 
 // CONFIDENTIAL — only org_admin + nurse hold `medical:*`.
