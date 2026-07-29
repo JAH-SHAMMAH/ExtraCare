@@ -420,3 +420,65 @@ class HostelStudentRow(BaseModel):
 class HostelImportResult(BaseModel):
     imported: int = 0
     errors: list[str] = Field(default_factory=list)
+
+
+# ── Batch D-2: Hostel life comments + reports ────────────────────────────────
+
+class HostelLifeCommentCreate(BaseModel):
+    student_id: str
+    hostel_id: Optional[str] = None
+    term: Optional[str] = None
+    grade: Optional[str] = None
+    comment: Optional[str] = None
+
+
+class HostelLifeCommentResponse(BaseModel):
+    id: str
+    student_id: str
+    student_name: Optional[str] = None
+    hostel_id: Optional[str] = None
+    hostel_name: Optional[str] = None
+    term: Optional[str] = None
+    grade: Optional[str] = None
+    comment: Optional[str] = None
+    recorded_on: Optional[date] = None
+    recorded_by_name: Optional[str] = None
+
+
+class HostelResultRow(BaseModel):
+    """Result View: one row per boarder with their latest grade + all comments."""
+    student_id: str
+    student_name: Optional[str] = None
+    hostel_name: Optional[str] = None
+    latest_grade: Optional[str] = None
+    comment_count: int = 0
+    comments: list[str] = Field(default_factory=list)
+
+
+REPORT_TYPES = {"daily", "manager"}
+
+
+class HostelReportCreate(BaseModel):
+    report_type: str = "daily"
+    hostel_id: str
+    report_date: Optional[date] = None
+    title: Optional[str] = None
+    body: Optional[str] = None
+
+
+class HostelReportUpdate(BaseModel):
+    report_date: Optional[date] = None
+    title: Optional[str] = None
+    body: Optional[str] = None
+
+
+class HostelReportResponse(BaseModel):
+    id: str
+    report_type: str
+    hostel_id: str
+    hostel_name: Optional[str] = None
+    report_date: Optional[date] = None
+    title: Optional[str] = None
+    body: Optional[str] = None
+    recorded_by_name: Optional[str] = None
+    created_at: Optional[datetime] = None

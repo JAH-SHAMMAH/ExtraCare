@@ -160,6 +160,8 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/point-entry", permission: "school:behaviour:read" },
   { prefix: "/dashboard/modules/school/points-analysis", permission: "school:behaviour:read" },
   { prefix: "/dashboard/modules/school/hostel-students", permission: "school:hostel:read" },
+  { prefix: "/dashboard/modules/school/hostel-life", permission: "school:hostel:read" },
+  { prefix: "/dashboard/modules/school/hostel-reports", permission: "school:hostel:read" },
   { prefix: "/dashboard/modules/school/hostel", permission: "school:hostel:read" },
   { prefix: "/dashboard/modules/school/exeat", permission: "school:hostel:read" },
   { prefix: "/dashboard/modules/school/mentor", permission: "school:behaviour:read" },

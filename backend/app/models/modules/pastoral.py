@@ -247,3 +247,40 @@ class HostelCommentBank(Base, UUIDMixin, TimestampMixin, TenantMixin):
     text = Column(Text, nullable=False)
     category = Column(String(80), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+
+
+# ── Batch D-2: Hostel life comments + reports ────────────────────────────────
+
+class HostelLifeComment(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A manager's per-boarder hostel-life note for a term, optionally carrying a
+    grade off the HostelLifeGrade scale. The Result View aggregates these."""
+    __tablename__ = "hostel_life_comments"
+
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    hostel_id = Column(String(36), ForeignKey("hostels.id", ondelete="SET NULL"), nullable=True, index=True)
+    term = Column(String(60), nullable=True)
+    grade = Column(String(80), nullable=True)      # matches a HostelLifeGrade.name
+    comment = Column(Text, nullable=True)
+    recorded_on = Column(Date, nullable=True)
+    recorded_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        Index("ix_hostel_life_comments_student_org", "student_id", "org_id"),
+    )
+
+
+class HostelReport(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A hostel report — daily (roll/notes for a date) or manager (periodic
+    summary). One table discriminated by ``report_type``."""
+    __tablename__ = "hostel_reports"
+
+    report_type = Column(String(20), default="daily", nullable=False)   # daily | manager
+    hostel_id = Column(String(36), ForeignKey("hostels.id", ondelete="CASCADE"), nullable=False, index=True)
+    report_date = Column(Date, nullable=True)
+    title = Column(String(200), nullable=True)
+    body = Column(Text, nullable=True)
+    recorded_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        Index("ix_hostel_reports_type_org", "report_type", "org_id"),
+    )

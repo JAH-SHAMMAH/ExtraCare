@@ -42,6 +42,7 @@ from app.models.modules.pastoral import (
     Hostel, BoardingAllocation, ExeatRequest, MentorReport, PastoralSettings,
     HouseMaster, HouseWeek, StudentPastoralAssignment, PointType, AwardType,
     HostelManager, HostelLifeGrade, HostelCommentBank,
+    HostelLifeComment, HostelReport,
 )
 from app.models.modules.academics import Recognition
 from app.services.import_files import rows_from_upload
@@ -60,6 +61,8 @@ from app.schemas.pastoral import (
     HostelLifeGradeCreate, HostelLifeGradeUpdate, HostelLifeGradeResponse,
     HostelCommentBankCreate, HostelCommentBankUpdate, HostelCommentBankResponse,
     HostelStudentRow, HostelImportResult,
+    HostelLifeCommentCreate, HostelLifeCommentResponse, HostelResultRow,
+    HostelReportCreate, HostelReportUpdate, HostelReportResponse, REPORT_TYPES,
     HOSTEL_GENDERS, EXEAT_STATUSES,
 )
 from app.services.audit_service import log_action
@@ -1229,3 +1232,159 @@ async def import_hostel_students(file: UploadFile = File(...), db: AsyncSession 
         imported += 1
     await db.flush()
     return HostelImportResult(imported=imported, errors=errors[:50])
+
+
+# ── Batch D-2: Hostel life comments + Result View ────────────────────────────
+
+@router.post("/hostel-life-comments", response_model=HostelLifeCommentResponse, status_code=201, dependencies=[_hostel_write])
+async def create_hostel_life_comment(payload: HostelLifeCommentCreate, db: AsyncSession = Depends(get_db),
+                                     current_user: User = Depends(get_current_active_user)):
+    from datetime import date as _date
+    student = await _require_student(db, current_user.org_id, payload.student_id)
+    hostel_name = None
+    if payload.hostel_id:
+        hostel = await _load_hostel(db, payload.hostel_id, current_user.org_id)
+        hostel_name = hostel.name
+    c = HostelLifeComment(
+        org_id=current_user.org_id, student_id=student.id, hostel_id=payload.hostel_id,
+        term=payload.term, grade=payload.grade, comment=payload.comment,
+        recorded_on=_date.today(), recorded_by=current_user.id,
+    )
+    db.add(c)
+    await db.flush()
+    return HostelLifeCommentResponse(
+        id=c.id, student_id=c.student_id, student_name=f"{student.first_name} {student.last_name}".strip(),
+        hostel_id=c.hostel_id, hostel_name=hostel_name, term=c.term, grade=c.grade, comment=c.comment,
+        recorded_on=c.recorded_on, recorded_by_name=current_user.full_name,
+    )
+
+
+@router.get("/hostel-life-comments", response_model=list[HostelLifeCommentResponse], dependencies=[_hostel_read])
+async def list_hostel_life_comments(student_id: str | None = None, hostel_id: str | None = None,
+                                    term: str | None = None, db: AsyncSession = Depends(get_db),
+                                    current_user: User = Depends(get_current_active_user)):
+    q = select(HostelLifeComment).where(HostelLifeComment.org_id == current_user.org_id)
+    if student_id:
+        q = q.where(HostelLifeComment.student_id == student_id)
+    if hostel_id:
+        q = q.where(HostelLifeComment.hostel_id == hostel_id)
+    if term:
+        q = q.where(HostelLifeComment.term == term)
+    rows = (await db.execute(q.order_by(HostelLifeComment.recorded_on.desc().nullslast()).limit(1000))).scalars().all()
+    snames = await _student_names(db, current_user.org_id, {r.student_id for r in rows})
+    unames = await _user_names(db, current_user.org_id, {r.recorded_by for r in rows})
+    hostels = {h.id: h.name for h in (await db.execute(
+        select(Hostel).where(Hostel.org_id == current_user.org_id))).scalars().all()}
+    return [
+        HostelLifeCommentResponse(
+            id=r.id, student_id=r.student_id, student_name=snames.get(r.student_id),
+            hostel_id=r.hostel_id, hostel_name=(hostels.get(r.hostel_id) if r.hostel_id else None),
+            term=r.term, grade=r.grade, comment=r.comment, recorded_on=r.recorded_on,
+            recorded_by_name=(unames.get(r.recorded_by) if r.recorded_by else None),
+        )
+        for r in rows
+    ]
+
+
+@router.delete("/hostel-life-comments/{comment_id}", status_code=204, dependencies=[_hostel_write])
+async def delete_hostel_life_comment(comment_id: str, db: AsyncSession = Depends(get_db),
+                                     current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(HostelLifeComment).where(
+        HostelLifeComment.id == comment_id, HostelLifeComment.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Comment not found.")
+    await db.delete(c)
+
+
+@router.get("/hostel-results", response_model=list[HostelResultRow], dependencies=[_hostel_read])
+async def hostel_results(hostel_id: str | None = None, term: str | None = None,
+                         db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Result View: one row per boarder with their latest grade + all comments."""
+    q = select(HostelLifeComment).where(HostelLifeComment.org_id == current_user.org_id)
+    if hostel_id:
+        q = q.where(HostelLifeComment.hostel_id == hostel_id)
+    if term:
+        q = q.where(HostelLifeComment.term == term)
+    rows = (await db.execute(q.order_by(HostelLifeComment.recorded_on.asc().nullsfirst()))).scalars().all()
+    snames = await _student_names(db, current_user.org_id, {r.student_id for r in rows})
+    hostels = {h.id: h.name for h in (await db.execute(
+        select(Hostel).where(Hostel.org_id == current_user.org_id))).scalars().all()}
+
+    agg: dict[str, HostelResultRow] = {}
+    for r in rows:
+        row = agg.get(r.student_id)
+        if not row:
+            row = HostelResultRow(student_id=r.student_id, student_name=snames.get(r.student_id),
+                                  hostel_name=(hostels.get(r.hostel_id) if r.hostel_id else None))
+            agg[r.student_id] = row
+        if r.grade:
+            row.latest_grade = r.grade   # rows are asc by date → last wins = latest
+        if r.comment:
+            row.comments.append(r.comment)
+        row.comment_count += 1
+    return sorted(agg.values(), key=lambda x: (x.student_name or ""))
+
+
+# ── Batch D-2: Hostel reports (daily / manager) ──────────────────────────────
+
+def _report_response(r: HostelReport, hostel_name: str | None, by_name: str | None) -> HostelReportResponse:
+    return HostelReportResponse(
+        id=r.id, report_type=r.report_type, hostel_id=r.hostel_id, hostel_name=hostel_name,
+        report_date=r.report_date, title=r.title, body=r.body, recorded_by_name=by_name,
+        created_at=r.created_at,
+    )
+
+
+@router.post("/hostel-reports", response_model=HostelReportResponse, status_code=201, dependencies=[_hostel_write])
+async def create_hostel_report(payload: HostelReportCreate, db: AsyncSession = Depends(get_db),
+                               current_user: User = Depends(get_current_active_user)):
+    if payload.report_type not in REPORT_TYPES:
+        raise HTTPException(status_code=422, detail=f"report_type must be one of {sorted(REPORT_TYPES)}")
+    hostel = await _load_hostel(db, payload.hostel_id, current_user.org_id)
+    r = HostelReport(
+        org_id=current_user.org_id, report_type=payload.report_type, hostel_id=hostel.id,
+        report_date=payload.report_date, title=payload.title, body=payload.body, recorded_by=current_user.id,
+    )
+    db.add(r)
+    await db.flush()
+    return _report_response(r, hostel.name, current_user.full_name)
+
+
+@router.get("/hostel-reports", response_model=list[HostelReportResponse], dependencies=[_hostel_read])
+async def list_hostel_reports(report_type: str | None = None, hostel_id: str | None = None,
+                              db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = select(HostelReport).where(HostelReport.org_id == current_user.org_id)
+    if report_type:
+        q = q.where(HostelReport.report_type == report_type)
+    if hostel_id:
+        q = q.where(HostelReport.hostel_id == hostel_id)
+    rows = (await db.execute(q.order_by(HostelReport.report_date.desc().nullslast(), HostelReport.created_at.desc()).limit(500))).scalars().all()
+    hostels = {h.id: h.name for h in (await db.execute(
+        select(Hostel).where(Hostel.org_id == current_user.org_id))).scalars().all()}
+    unames = await _user_names(db, current_user.org_id, {r.recorded_by for r in rows})
+    return [_report_response(r, hostels.get(r.hostel_id), (unames.get(r.recorded_by) if r.recorded_by else None)) for r in rows]
+
+
+@router.patch("/hostel-reports/{report_id}", response_model=HostelReportResponse, dependencies=[_hostel_write])
+async def update_hostel_report(report_id: str, payload: HostelReportUpdate, db: AsyncSession = Depends(get_db),
+                               current_user: User = Depends(get_current_active_user)):
+    r = (await db.execute(select(HostelReport).where(
+        HostelReport.id == report_id, HostelReport.org_id == current_user.org_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Report not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(r, f, v)
+    await db.flush()
+    hostel = (await db.execute(select(Hostel).where(Hostel.id == r.hostel_id))).scalar_one_or_none()
+    unames = await _user_names(db, current_user.org_id, {r.recorded_by})
+    return _report_response(r, hostel.name if hostel else None, unames.get(r.recorded_by) if r.recorded_by else None)
+
+
+@router.delete("/hostel-reports/{report_id}", status_code=204, dependencies=[_hostel_write])
+async def delete_hostel_report(report_id: str, db: AsyncSession = Depends(get_db),
+                               current_user: User = Depends(get_current_active_user)):
+    r = (await db.execute(select(HostelReport).where(
+        HostelReport.id == report_id, HostelReport.org_id == current_user.org_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Report not found.")
+    await db.delete(r)

@@ -1146,6 +1146,21 @@ export const pastoralApi = {
     import: (formData: FormData) =>
       api.post("/pastoral/hostel-students/import", formData, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data),
   },
+  // Batch D-2: hostel life comments + Result View + reports.
+  hostelLifeComments: {
+    list: (p?: { student_id?: string; hostel_id?: string; term?: string }) => api.get("/pastoral/hostel-life-comments", { params: p }).then((r) => r.data),
+    create: (d: object) => api.post("/pastoral/hostel-life-comments", d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/hostel-life-comments/${id}`),
+  },
+  hostelResults: {
+    list: (p?: { hostel_id?: string; term?: string }) => api.get("/pastoral/hostel-results", { params: p }).then((r) => r.data),
+  },
+  hostelReports: {
+    list: (p?: { report_type?: string; hostel_id?: string }) => api.get("/pastoral/hostel-reports", { params: p }).then((r) => r.data),
+    create: (d: object) => api.post("/pastoral/hostel-reports", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/pastoral/hostel-reports/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/hostel-reports/${id}`),
+  },
 };
 
 // CONFIDENTIAL — only org_admin + nurse hold `medical:*`.

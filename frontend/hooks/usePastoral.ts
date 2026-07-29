@@ -338,6 +338,58 @@ export function useImportHostelStudents() {
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Import failed."),
   });
 }
+
+// ── Batch D-2: hostel life comments + Result View + reports ──────────────────
+
+export function useHostelLifeComments(params?: { student_id?: string; hostel_id?: string; term?: string }) {
+  return useQuery({ queryKey: ["hostel-life-comments", params], queryFn: () => pastoralApi.hostelLifeComments.list(params) });
+}
+export function useAddHostelLifeComment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => pastoralApi.hostelLifeComments.create(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["hostel-life-comments"] }); qc.invalidateQueries({ queryKey: ["hostel-results"] }); toast.success("Comment recorded."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to record."),
+  });
+}
+export function useDeleteHostelLifeComment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => pastoralApi.hostelLifeComments.remove(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["hostel-life-comments"] }); qc.invalidateQueries({ queryKey: ["hostel-results"] }); toast.success("Removed."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed."),
+  });
+}
+export function useHostelResults(params?: { hostel_id?: string; term?: string }) {
+  return useQuery({ queryKey: ["hostel-results", params], queryFn: () => pastoralApi.hostelResults.list(params) });
+}
+export function useHostelReports(params?: { report_type?: string; hostel_id?: string }) {
+  return useQuery({ queryKey: ["hostel-reports", params], queryFn: () => pastoralApi.hostelReports.list(params) });
+}
+export function useAddHostelReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => pastoralApi.hostelReports.create(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["hostel-reports"] }); toast.success("Report saved."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save."),
+  });
+}
+export function useUpdateHostelReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; data: object }) => pastoralApi.hostelReports.update(v.id, v.data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["hostel-reports"] }); toast.success("Updated."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed."),
+  });
+}
+export function useDeleteHostelReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => pastoralApi.hostelReports.remove(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["hostel-reports"] }); toast.success("Removed."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed."),
+  });
+}
 export function usePointsAnalysis(params?: { section?: string; house?: string }) {
   return useQuery({ queryKey: ["points-analysis", params], queryFn: () => pastoralApi.points.analysis(params) });
 }
