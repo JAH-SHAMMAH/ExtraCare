@@ -378,3 +378,51 @@ class PastoralHead(Base, UUIDMixin, TimestampMixin, TenantMixin):
     title = Column(String(120), nullable=False)
     scope = Column(String(120), nullable=True)     # optional area, e.g. a house/section name
     is_active = Column(Boolean, default=True, nullable=False)
+
+
+# ── Batch F-2: Roll Call + Pastoral Report + Remarks ─────────────────────────
+
+class HostelRollCall(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A boarding roll-call mark for one boarder, on a date, for a session
+    (morning|afternoon|evening|night). Distinct from the school-wide class
+    AttendanceEvent — this is the pastoral/boarding presence check."""
+    __tablename__ = "hostel_roll_calls"
+
+    hostel_id = Column(String(36), ForeignKey("hostels.id", ondelete="CASCADE"), nullable=False, index=True)
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    roll_date = Column(Date, nullable=False, index=True)
+    session = Column(String(20), default="evening", nullable=False)   # morning|afternoon|evening|night
+    status = Column(String(20), default="present", nullable=False)    # present|absent|exeat|sick
+    recorded_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "student_id", "roll_date", "session", name="uq_roll_call"),
+        Index("ix_roll_calls_hostel_date", "hostel_id", "roll_date"),
+    )
+
+
+class PastoralRemarkBank(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A reusable pastoral-report remark template (Pastoral Report Setup). Managers
+    pick a phrase for the term remark instead of retyping."""
+    __tablename__ = "pastoral_remark_bank"
+
+    text = Column(Text, nullable=False)
+    category = Column(String(80), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class PastoralRemark(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A per-student pastoral remark for a term — the head/mentor's summary that
+    tops the pastoral report."""
+    __tablename__ = "pastoral_remarks"
+
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    term = Column(String(60), nullable=True)
+    category = Column(String(80), nullable=True)
+    remark = Column(Text, nullable=True)
+    recorded_on = Column(Date, nullable=True)
+    recorded_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        Index("ix_pastoral_remarks_student_org", "student_id", "org_id"),
+    )

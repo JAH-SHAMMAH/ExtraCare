@@ -656,3 +656,79 @@ class HeadDashboard(BaseModel):
     pastoral_heads: int = 0
     heads: list[PastoralHeadResponse] = Field(default_factory=list)
     recent_cases: list[DisciplinaryCaseResponse] = Field(default_factory=list)
+
+
+# ── Batch F-2: Roll Call + Pastoral Report + Remarks ─────────────────────────
+
+ROLL_SESSIONS = {"morning", "afternoon", "evening", "night"}
+ROLL_STATUSES = {"present", "absent", "exeat", "sick"}
+
+
+class RollCallRow(BaseModel):
+    student_id: str
+    student_name: Optional[str] = None
+    room: Optional[str] = None
+    status: Optional[str] = None       # None = not yet marked for this date/session
+    roll_call_id: Optional[str] = None
+
+
+class RollCallMarkItem(BaseModel):
+    student_id: str
+    status: str
+
+
+class RollCallMark(BaseModel):
+    hostel_id: str
+    roll_date: date
+    session: str = "evening"
+    marks: list[RollCallMarkItem] = Field(default_factory=list)
+
+
+class RemarkBankCreate(BaseModel):
+    text: str = Field(..., min_length=1)
+    category: Optional[str] = None
+
+
+class RemarkBankUpdate(BaseModel):
+    text: Optional[str] = Field(None, min_length=1)
+    category: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class RemarkBankResponse(BaseModel):
+    id: str
+    text: str
+    category: Optional[str] = None
+    is_active: bool = True
+
+
+class PastoralRemarkCreate(BaseModel):
+    student_id: str
+    term: Optional[str] = None
+    category: Optional[str] = None
+    remark: Optional[str] = None
+
+
+class PastoralRemarkResponse(BaseModel):
+    id: str
+    student_id: str
+    student_name: Optional[str] = None
+    term: Optional[str] = None
+    category: Optional[str] = None
+    remark: Optional[str] = None
+    recorded_on: Optional[date] = None
+    recorded_by_name: Optional[str] = None
+
+
+class PastoralReport(BaseModel):
+    student_id: str
+    student_name: Optional[str] = None
+    house_name: Optional[str] = None
+    hostel_name: Optional[str] = None
+    total_points: int = 0
+    points_gained: int = 0
+    points_lost: int = 0
+    open_cases: int = 0
+    total_cases: int = 0
+    life_comments: list[HostelLifeCommentResponse] = Field(default_factory=list)
+    remarks: list[PastoralRemarkResponse] = Field(default_factory=list)

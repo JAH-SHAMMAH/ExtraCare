@@ -1202,6 +1202,23 @@ export const pastoralApi = {
     remove: (id: string) => api.delete(`/pastoral/pastoral-heads/${id}`),
   },
   headDashboard: () => api.get("/pastoral/head-dashboard").then((r) => r.data),
+  // Batch F-2: Roll Call + Report Setup + Pastoral Report/Remarks.
+  rollCall: {
+    get: (p: { hostel_id: string; roll_date: string; session: string }) => api.get("/pastoral/roll-call", { params: p }).then((r) => r.data),
+    mark: (d: object) => api.post("/pastoral/roll-call/mark", d).then((r) => r.data),
+  },
+  remarkBank: {
+    list: () => api.get("/pastoral/remark-bank").then((r) => r.data),
+    create: (d: object) => api.post("/pastoral/remark-bank", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/pastoral/remark-bank/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/remark-bank/${id}`),
+  },
+  pastoralRemarks: {
+    list: (p?: { student_id?: string; term?: string }) => api.get("/pastoral/pastoral-remarks", { params: p }).then((r) => r.data),
+    create: (d: object) => api.post("/pastoral/pastoral-remarks", d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/pastoral-remarks/${id}`),
+  },
+  pastoralReport: (p: { student_id: string; term?: string }) => api.get("/pastoral/pastoral-report", { params: p }).then((r) => r.data),
 };
 
 // CONFIDENTIAL — only org_admin + nurse hold `medical:*`.

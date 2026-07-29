@@ -261,7 +261,7 @@ export function useSyncPastoralStudents() {
 
 // ── Batch C: Point System / Award System / Points Analysis ──────────────────────
 
-function crud(resource: "pointTypes" | "awardTypes" | "hostelLifeGrades" | "hostelCommentBank" | "sanctionGroups" | "disciplinaryActions" | "leadershipRoles" | "pastoralHeads", key: string) {
+function crud(resource: "pointTypes" | "awardTypes" | "hostelLifeGrades" | "hostelCommentBank" | "sanctionGroups" | "disciplinaryActions" | "leadershipRoles" | "pastoralHeads" | "remarkBank", key: string) {
   return {
     useList: () => useQuery({ queryKey: [key], queryFn: () => (pastoralApi as any)[resource].list() }),
     useCreate: () => { const qc = useQueryClient(); return useMutation({ mutationFn: (d: object) => (pastoralApi as any)[resource].create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: [key] }); toast.success("Added."); }, onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed.") }); },
@@ -451,6 +451,56 @@ export const useDeletePastoralHead = _pastoralHeads.useDelete;
 
 export function useHeadDashboard() {
   return useQuery({ queryKey: ["head-dashboard"], queryFn: () => pastoralApi.headDashboard() });
+}
+
+// ── Batch F-2: Roll Call + Report Setup + Pastoral Report/Remarks ─────────────
+
+const _remarkBank = crud("remarkBank", "remark-bank");
+export const useRemarkBank = _remarkBank.useList;
+export const useCreateRemark = _remarkBank.useCreate;
+export const useUpdateRemark = _remarkBank.useUpdate;
+export const useDeleteRemark = _remarkBank.useDelete;
+
+export function useRollCall(params: { hostel_id: string; roll_date: string; session: string }) {
+  return useQuery({
+    queryKey: ["roll-call", params],
+    queryFn: () => pastoralApi.rollCall.get(params),
+    enabled: !!params.hostel_id && !!params.roll_date,
+  });
+}
+export function useMarkRollCall() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => pastoralApi.rollCall.mark(data),
+    onSuccess: (r: any) => { qc.invalidateQueries({ queryKey: ["roll-call"] }); toast.success(`Saved ${r?.saved ?? 0} mark(s).`); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to save roll call."),
+  });
+}
+export function usePastoralRemarks(params?: { student_id?: string; term?: string }) {
+  return useQuery({ queryKey: ["pastoral-remarks", params], queryFn: () => pastoralApi.pastoralRemarks.list(params) });
+}
+export function useAddPastoralRemark() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => pastoralApi.pastoralRemarks.create(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["pastoral-remarks"] }); qc.invalidateQueries({ queryKey: ["pastoral-report"] }); toast.success("Remark saved."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed."),
+  });
+}
+export function useDeletePastoralRemark() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => pastoralApi.pastoralRemarks.remove(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["pastoral-remarks"] }); qc.invalidateQueries({ queryKey: ["pastoral-report"] }); toast.success("Removed."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed."),
+  });
+}
+export function usePastoralReport(params: { student_id: string; term?: string }) {
+  return useQuery({
+    queryKey: ["pastoral-report", params],
+    queryFn: () => pastoralApi.pastoralReport(params),
+    enabled: !!params.student_id,
+  });
 }
 export function usePointsAnalysis(params?: { section?: string; house?: string }) {
   return useQuery({ queryKey: ["points-analysis", params], queryFn: () => pastoralApi.points.analysis(params) });

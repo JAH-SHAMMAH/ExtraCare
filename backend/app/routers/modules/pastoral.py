@@ -46,6 +46,7 @@ from app.models.modules.pastoral import (
     SanctionGroup, DisciplinaryAction, DisciplinaryCommittee,
     DisciplinaryCommitteeMember, StudentDisciplinaryCase,
     PastoralLeadershipRole, PastoralHead,
+    HostelRollCall, PastoralRemarkBank, PastoralRemark,
 )
 from app.models.modules.academics import Recognition
 from app.services.import_files import rows_from_upload
@@ -73,6 +74,9 @@ from app.schemas.pastoral import (
     SEVERITIES, CASE_STATUSES,
     LeadershipRoleCreate, LeadershipRoleUpdate, LeadershipRoleResponse,
     PastoralHeadCreate, PastoralHeadUpdate, PastoralHeadResponse, HeadDashboard,
+    RollCallRow, RollCallMark, RemarkBankCreate, RemarkBankUpdate, RemarkBankResponse,
+    PastoralRemarkCreate, PastoralRemarkResponse, PastoralReport,
+    ROLL_SESSIONS, ROLL_STATUSES,
     HOSTEL_GENDERS, EXEAT_STATUSES,
 )
 from app.services.audit_service import log_action
@@ -1755,4 +1759,187 @@ async def head_dashboard(db: AsyncSession = Depends(get_db), current_user: User 
         open_cases=open_cases, leadership_roles=lr, pastoral_heads=ph,
         heads=[_head_response(h, hnames.get(h.user_id)) for h in head_rows],
         recent_cases=[await _case_response(db, org, c, snames, cnames, anames, unames) for c in case_rows],
+    )
+
+
+# ── Batch F-2: Pastoral Roll Call ────────────────────────────────────────────
+
+@router.get("/roll-call", response_model=list[RollCallRow], dependencies=[_hostel_read])
+async def get_roll_call(hostel_id: str, roll_date: date, session: str = "evening",
+                        db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Boarders of a hostel with their mark for the given date + session (status
+    None = not yet marked)."""
+    if session not in ROLL_SESSIONS:
+        raise HTTPException(status_code=422, detail=f"session must be one of {sorted(ROLL_SESSIONS)}")
+    await _load_hostel(db, hostel_id, current_user.org_id)
+    allocs = (await db.execute(select(BoardingAllocation).where(
+        BoardingAllocation.hostel_id == hostel_id, BoardingAllocation.org_id == current_user.org_id,
+        BoardingAllocation.is_active == True))).scalars().all()  # noqa: E712
+    snames = await _student_names(db, current_user.org_id, {a.student_id for a in allocs})
+    existing = {r.student_id: r for r in (await db.execute(select(HostelRollCall).where(
+        HostelRollCall.org_id == current_user.org_id, HostelRollCall.roll_date == roll_date,
+        HostelRollCall.session == session,
+        HostelRollCall.student_id.in_([a.student_id for a in allocs] or ["_none_"])))).scalars().all()}
+    return [
+        RollCallRow(student_id=a.student_id, student_name=snames.get(a.student_id), room=a.room,
+                    status=(existing[a.student_id].status if a.student_id in existing else None),
+                    roll_call_id=(existing[a.student_id].id if a.student_id in existing else None))
+        for a in allocs
+    ]
+
+
+@router.post("/roll-call/mark", dependencies=[_hostel_write])
+async def mark_roll_call(payload: RollCallMark, db: AsyncSession = Depends(get_db),
+                         current_user: User = Depends(get_current_active_user)):
+    """Upsert roll-call marks for a hostel/date/session. One mark per student per
+    date+session (idempotent via the unique constraint)."""
+    if payload.session not in ROLL_SESSIONS:
+        raise HTTPException(status_code=422, detail=f"session must be one of {sorted(ROLL_SESSIONS)}")
+    await _load_hostel(db, payload.hostel_id, current_user.org_id)
+    ids = [m.student_id for m in payload.marks]
+    existing = {r.student_id: r for r in (await db.execute(select(HostelRollCall).where(
+        HostelRollCall.org_id == current_user.org_id, HostelRollCall.roll_date == payload.roll_date,
+        HostelRollCall.session == payload.session,
+        HostelRollCall.student_id.in_(ids or ["_none_"])))).scalars().all()}
+    saved = 0
+    for m in payload.marks:
+        if m.status not in ROLL_STATUSES:
+            raise HTTPException(status_code=422, detail=f"status must be one of {sorted(ROLL_STATUSES)}")
+        row = existing.get(m.student_id)
+        if row:
+            row.status = m.status
+            row.recorded_by = current_user.id
+        else:
+            db.add(HostelRollCall(org_id=current_user.org_id, hostel_id=payload.hostel_id,
+                                  student_id=m.student_id, roll_date=payload.roll_date,
+                                  session=payload.session, status=m.status, recorded_by=current_user.id))
+        saved += 1
+    await db.flush()
+    return {"saved": saved}
+
+
+# ── Pastoral Report Setup (remark bank) ──────────────────────────────────────
+
+def _rb_response(r: PastoralRemarkBank) -> RemarkBankResponse:
+    return RemarkBankResponse(id=r.id, text=r.text, category=r.category, is_active=r.is_active)
+
+
+@router.get("/remark-bank", response_model=list[RemarkBankResponse], dependencies=[_hostel_read])
+async def list_remark_bank(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(PastoralRemarkBank).where(PastoralRemarkBank.org_id == current_user.org_id)
+                             .order_by(PastoralRemarkBank.category.nullslast(), PastoralRemarkBank.created_at))).scalars().all()
+    return [_rb_response(r) for r in rows]
+
+
+@router.post("/remark-bank", response_model=RemarkBankResponse, status_code=201, dependencies=[_hostel_write])
+async def create_remark_bank(payload: RemarkBankCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    r = PastoralRemarkBank(org_id=current_user.org_id, **payload.model_dump())
+    db.add(r)
+    await db.flush()
+    return _rb_response(r)
+
+
+@router.patch("/remark-bank/{remark_id}", response_model=RemarkBankResponse, dependencies=[_hostel_write])
+async def update_remark_bank(remark_id: str, payload: RemarkBankUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    r = (await db.execute(select(PastoralRemarkBank).where(PastoralRemarkBank.id == remark_id, PastoralRemarkBank.org_id == current_user.org_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Remark not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(r, f, v)
+    await db.flush()
+    return _rb_response(r)
+
+
+@router.delete("/remark-bank/{remark_id}", status_code=204, dependencies=[_hostel_write])
+async def delete_remark_bank(remark_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    r = (await db.execute(select(PastoralRemarkBank).where(PastoralRemarkBank.id == remark_id, PastoralRemarkBank.org_id == current_user.org_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Remark not found.")
+    await db.delete(r)
+
+
+# ── Pastoral Remarks (per-student term remark) ───────────────────────────────
+
+@router.get("/pastoral-remarks", response_model=list[PastoralRemarkResponse], dependencies=[_hostel_read])
+async def list_pastoral_remarks(student_id: str | None = None, term: str | None = None,
+                                db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = select(PastoralRemark).where(PastoralRemark.org_id == current_user.org_id)
+    if student_id:
+        q = q.where(PastoralRemark.student_id == student_id)
+    if term:
+        q = q.where(PastoralRemark.term == term)
+    rows = (await db.execute(q.order_by(PastoralRemark.recorded_on.desc().nullslast()).limit(500))).scalars().all()
+    snames = await _student_names(db, current_user.org_id, {r.student_id for r in rows})
+    unames = await _user_names(db, current_user.org_id, {r.recorded_by for r in rows})
+    return [
+        PastoralRemarkResponse(id=r.id, student_id=r.student_id, student_name=snames.get(r.student_id),
+                               term=r.term, category=r.category, remark=r.remark, recorded_on=r.recorded_on,
+                               recorded_by_name=(unames.get(r.recorded_by) if r.recorded_by else None))
+        for r in rows
+    ]
+
+
+@router.post("/pastoral-remarks", response_model=PastoralRemarkResponse, status_code=201, dependencies=[_hostel_write])
+async def create_pastoral_remark(payload: PastoralRemarkCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    from datetime import date as _date
+    student = await _require_student(db, current_user.org_id, payload.student_id)
+    r = PastoralRemark(org_id=current_user.org_id, recorded_on=_date.today(), recorded_by=current_user.id, **payload.model_dump())
+    db.add(r)
+    await db.flush()
+    return PastoralRemarkResponse(id=r.id, student_id=r.student_id,
+                                  student_name=f"{student.first_name} {student.last_name}".strip(),
+                                  term=r.term, category=r.category, remark=r.remark, recorded_on=r.recorded_on,
+                                  recorded_by_name=current_user.full_name)
+
+
+@router.delete("/pastoral-remarks/{remark_id}", status_code=204, dependencies=[_hostel_write])
+async def delete_pastoral_remark(remark_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    r = (await db.execute(select(PastoralRemark).where(PastoralRemark.id == remark_id, PastoralRemark.org_id == current_user.org_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Remark not found.")
+    await db.delete(r)
+
+
+# ── Pastoral Report (per-student aggregation) ────────────────────────────────
+
+@router.get("/pastoral-report", response_model=PastoralReport, dependencies=[_hostel_read])
+async def pastoral_report(student_id: str, term: str | None = None,
+                          db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org = current_user.org_id
+    student = await _require_student(db, org, student_id)
+
+    # House (from pastoral assignment) + hostel (from active allocation).
+    assign = (await db.execute(select(StudentPastoralAssignment).where(
+        StudentPastoralAssignment.student_id == student_id, StudentPastoralAssignment.org_id == org))).scalar_one_or_none()
+    house_name = None
+    if assign and assign.house_id:
+        house_name = (await db.execute(select(SchoolHouse.name).where(SchoolHouse.id == assign.house_id))).scalar_one_or_none()
+    alloc = (await db.execute(select(BoardingAllocation).where(
+        BoardingAllocation.student_id == student_id, BoardingAllocation.org_id == org,
+        BoardingAllocation.is_active == True))).scalar_one_or_none()  # noqa: E712
+    hostel_name = None
+    if alloc:
+        hostel_name = (await db.execute(select(Hostel.name).where(Hostel.id == alloc.hostel_id))).scalar_one_or_none()
+
+    # Conduct points from the Recognition ledger.
+    pq = select(Recognition.points).where(
+        Recognition.org_id == org, Recognition.type == "conduct_point", Recognition.student_id == student_id)
+    if term:
+        pq = pq.where(Recognition.term == term)
+    pts = [p or 0 for p in (await db.execute(pq)).scalars().all()]
+    gained = sum(p for p in pts if p > 0)
+    lost = sum(-p for p in pts if p < 0)
+
+    total_cases = await _count(db, StudentDisciplinaryCase, StudentDisciplinaryCase.org_id == org, StudentDisciplinaryCase.student_id == student_id)
+    open_cases = await _count(db, StudentDisciplinaryCase, StudentDisciplinaryCase.org_id == org,
+                              StudentDisciplinaryCase.student_id == student_id, StudentDisciplinaryCase.status == "pending")
+
+    life = await list_hostel_life_comments(student_id=student_id, hostel_id=None, term=term, db=db, current_user=current_user)
+    remarks = await list_pastoral_remarks(student_id=student_id, term=term, db=db, current_user=current_user)
+
+    return PastoralReport(
+        student_id=student_id, student_name=f"{student.first_name} {student.last_name}".strip(),
+        house_name=house_name, hostel_name=hostel_name,
+        total_points=gained - lost, points_gained=gained, points_lost=lost,
+        open_cases=open_cases, total_cases=total_cases, life_comments=life, remarks=remarks,
     )

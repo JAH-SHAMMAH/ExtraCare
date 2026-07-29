@@ -340,6 +340,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/hostel-students", label: "Hostel Students", icon: Users2 },
       { href: "/dashboard/modules/school/hostel-life", label: "Hostel Life", icon: Heart },
       { href: "/dashboard/modules/school/hostel-reports", label: "Hostel Reports", icon: FileText },
+      { href: "/dashboard/modules/school/pastoral-report", label: "Pastoral Report", icon: FileText },
       { href: "/dashboard/modules/school/exeat", label: "Exeat Requests", icon: FileText },
       { href: "/dashboard/modules/school/mentor", label: "Mentor Reports", icon: UserCheck },
       // Batch E — Discipline (setup lives in the Pastoral Setup hub; this is the

@@ -8,6 +8,8 @@ import { HouseSetup } from "@/components/pastoral/HouseSetup";
 import { HostelSetup } from "@/components/pastoral/HostelSetup";
 import { DisciplineSetup } from "@/components/pastoral/DisciplineSetup";
 import { LeadershipRolesSetup, PastoralHeadsSetup } from "@/components/pastoral/LeadershipHeadsSetup";
+import { RollCall } from "@/components/pastoral/RollCall";
+import { ReportSetup } from "@/components/pastoral/ReportSetup";
 import { PointSystemSetup, AwardSystemSetup } from "@/components/pastoral/PointAwardSetup";
 import { cn } from "@/lib/utils";
 import { Loader2, Save, Settings2 } from "lucide-react";
@@ -82,6 +84,10 @@ export default function PastoralSetupPage() {
         <LeadershipRolesSetup canWrite={canWrite} />
       ) : tab === "heads" ? (
         <PastoralHeadsSetup canWrite={canWrite} />
+      ) : tab === "rollcall" ? (
+        <RollCall canWrite={canWrite} />
+      ) : tab === "report" ? (
+        <ReportSetup canWrite={canWrite} />
       ) : tab === "points" ? (
         <PointSystemSetup canWrite={canWrite} />
       ) : tab === "awards" ? (
