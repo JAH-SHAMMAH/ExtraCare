@@ -8,7 +8,7 @@ import {
   GraduationCap, Heart, Briefcase, Package, DollarSign,
   HelpCircle, ChevronDown, Building2, Stethoscope,
   Calendar, ClipboardList, ClipboardCheck, Users2, BookOpen, Bell, Shield, ShieldCheck,
-  FileText, Wallet, Clock, UserCheck, Award,
+  FileText, Wallet, Clock, UserCheck, Award, PlusCircle,
   BookMarked, School, Microscope, Pill, BedDouble, Activity,
   Receipt, BadgeDollarSign, FolderOpen, BarChart, Star,
   UserCog, ShoppingCart, Truck, Contact, HandshakeIcon, UserPlus, Palette, CalendarRange,
@@ -323,6 +323,9 @@ const MODULE_SECTIONS: ModuleSection[] = [
       // Pastoral parity build-out (A–F). Setup is the tabbed config hub.
       { href: "/dashboard/modules/school/pastoral-setup", label: "Pastoral Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/pastoral-students", label: "Pastoral Students", icon: Users2 },
+      // Batch C — Point System (conduct points via the Recognition ledger).
+      { href: "/dashboard/modules/school/point-entry", label: "Point Entry", icon: PlusCircle },
+      { href: "/dashboard/modules/school/points-analysis", label: "Points Analysis", icon: BarChart3 },
       { href: "/dashboard/modules/school/behaviour", label: "Pastoral Care", icon: HeartHandshake },
       { href: "/dashboard/modules/school/journals", label: "Photo Journals", icon: Camera },
       { href: "/dashboard/modules/school/remarks", label: "Weekly Remarks", icon: MessageCircle },

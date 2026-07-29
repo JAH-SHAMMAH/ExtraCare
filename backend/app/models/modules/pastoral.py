@@ -184,3 +184,30 @@ class StudentPastoralAssignment(Base, UUIDMixin, TimestampMixin, TenantMixin):
     __table_args__ = (
         UniqueConstraint("org_id", "student_id", name="uq_student_pastoral_org_student"),
     )
+
+
+class PointType(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A defined pastoral point type (Point System Setup). Conduct points are
+    recorded against the Recognition ledger; this just defines the pickable types
+    (e.g. 'Opening Point' sessional max 60, 'Reading' weekly max 10)."""
+    __tablename__ = "point_types"
+
+    name = Column(String(120), nullable=False)
+    scope = Column(String(20), default="weekly", nullable=False)   # sessional | weekly
+    max_point = Column(Integer, nullable=True)
+    category = Column(String(80), nullable=True)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class AwardType(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A defined award band (Award System Setup) — a point range that earns an
+    award (e.g. 'Best in Neatness' min 2 max 10). Awards themselves are Recognition
+    rows (type=academic_award)."""
+    __tablename__ = "award_types"
+
+    name = Column(String(120), nullable=False)
+    min_point = Column(Integer, nullable=True)
+    max_point = Column(Integer, nullable=True)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)

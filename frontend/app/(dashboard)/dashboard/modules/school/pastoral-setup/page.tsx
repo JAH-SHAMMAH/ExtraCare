@@ -5,6 +5,7 @@ import { usePastoralSettings, useUpdatePastoralSettings } from "@/hooks/usePasto
 import { useAvailableRoles } from "@/hooks/useUsers";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { HouseSetup } from "@/components/pastoral/HouseSetup";
+import { PointSystemSetup, AwardSystemSetup } from "@/components/pastoral/PointAwardSetup";
 import { cn } from "@/lib/utils";
 import { Loader2, Save, Settings2 } from "lucide-react";
 
@@ -70,6 +71,10 @@ export default function PastoralSetupPage() {
           two settings-backed tabs depend on the query. */}
       {tab === "house" ? (
         <HouseSetup canWrite={canWrite} />
+      ) : tab === "points" ? (
+        <PointSystemSetup canWrite={canWrite} />
+      ) : tab === "awards" ? (
+        <AwardSystemSetup canWrite={canWrite} />
       ) : tab !== "exeat" && tab !== "default" ? (
         <Placeholder label={TABS.find(([k]) => k === tab)?.[1] ?? ""} />
       ) : isLoading ? (

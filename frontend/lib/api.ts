@@ -1102,6 +1102,25 @@ export const pastoralApi = {
     exportCsv: (section?: string) =>
       api.get("/pastoral/students/export", { params: section ? { section } : {}, responseType: "blob" }).then((r) => r.data),
   },
+  pointTypes: {
+    list: () => api.get("/pastoral/point-types").then((r) => r.data),
+    create: (d: object) => api.post("/pastoral/point-types", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/pastoral/point-types/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/point-types/${id}`),
+  },
+  awardTypes: {
+    list: () => api.get("/pastoral/award-types").then((r) => r.data),
+    create: (d: object) => api.post("/pastoral/award-types", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/pastoral/award-types/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/award-types/${id}`),
+  },
+  points: {
+    add: (d: object) => api.post("/pastoral/points", d).then((r) => r.data),
+    list: (p?: { student_id?: string; term?: string }) => api.get("/pastoral/points", { params: p }).then((r) => r.data),
+    analysis: (p?: { section?: string; house?: string }) => api.get("/pastoral/points-analysis", { params: p }).then((r) => r.data),
+    analysisCsv: (p?: { section?: string; house?: string }) =>
+      api.get("/pastoral/points-analysis/export", { params: p, responseType: "blob" }).then((r) => r.data),
+  },
 };
 
 // CONFIDENTIAL — only org_admin + nurse hold `medical:*`.

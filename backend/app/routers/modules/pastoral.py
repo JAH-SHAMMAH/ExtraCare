@@ -40,8 +40,9 @@ from app.models.modules.school import Student, SchoolClass
 from app.models.modules.platform import SchoolHouse
 from app.models.modules.pastoral import (
     Hostel, BoardingAllocation, ExeatRequest, MentorReport, PastoralSettings,
-    HouseMaster, HouseWeek, StudentPastoralAssignment,
+    HouseMaster, HouseWeek, StudentPastoralAssignment, PointType, AwardType,
 )
+from app.models.modules.academics import Recognition
 from app.schemas.pastoral import (
     HostelCreate, HostelUpdate, HostelResponse, HostelListResponse,
     AllocationCreate, AllocationResponse,
@@ -50,6 +51,9 @@ from app.schemas.pastoral import (
     PastoralSettingsUpdate, PastoralSettingsResponse,
     HouseMasterCreate, HouseMasterResponse, HouseWeekCreate, HouseWeekUpdate, HouseWeekResponse,
     PastoralStudentAssign, PastoralBulkAssign, PastoralStudentRow,
+    PointTypeCreate, PointTypeUpdate, PointTypeResponse,
+    AwardTypeCreate, AwardTypeUpdate, AwardTypeResponse,
+    PointEntryCreate, PointEntryResponse, PointsAnalysisRow,
     HOSTEL_GENDERS, EXEAT_STATUSES,
 )
 from app.services.audit_service import log_action
@@ -806,3 +810,190 @@ async def export_pastoral_students(
         w.writerow([r.student_name or "", r.class_name or "", r.house_name or "", r.mentor_name or "", "Yes" if r.is_leader else "No"])
     return Response(content=buf.getvalue(), media_type="text/csv",
                     headers={"Content-Disposition": 'attachment; filename="student-house.csv"'})
+
+
+# ── Point System Setup (point types) ─────────────────────────────────────────
+
+def _pt_response(p: PointType) -> PointTypeResponse:
+    return PointTypeResponse(id=p.id, name=p.name, scope=p.scope, max_point=p.max_point,
+                             category=p.category, description=p.description, is_active=p.is_active)
+
+
+@router.get("/point-types", response_model=list[PointTypeResponse], dependencies=[_beh_read])
+async def list_point_types(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(PointType).where(PointType.org_id == current_user.org_id).order_by(PointType.name))).scalars().all()
+    return [_pt_response(p) for p in rows]
+
+
+@router.post("/point-types", response_model=PointTypeResponse, status_code=201, dependencies=[_beh_write])
+async def create_point_type(payload: PointTypeCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    p = PointType(org_id=current_user.org_id, **payload.model_dump())
+    db.add(p)
+    await db.flush()
+    return _pt_response(p)
+
+
+@router.patch("/point-types/{type_id}", response_model=PointTypeResponse, dependencies=[_beh_write])
+async def update_point_type(type_id: str, payload: PointTypeUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    p = (await db.execute(select(PointType).where(PointType.id == type_id, PointType.org_id == current_user.org_id))).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Point type not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(p, f, v)
+    await db.flush()
+    return _pt_response(p)
+
+
+@router.delete("/point-types/{type_id}", status_code=204, dependencies=[_beh_write])
+async def delete_point_type(type_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    p = (await db.execute(select(PointType).where(PointType.id == type_id, PointType.org_id == current_user.org_id))).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Point type not found.")
+    await db.delete(p)
+
+
+# ── Award System Setup (award types) ─────────────────────────────────────────
+
+def _at_response(a: AwardType) -> AwardTypeResponse:
+    return AwardTypeResponse(id=a.id, name=a.name, min_point=a.min_point, max_point=a.max_point,
+                             description=a.description, is_active=a.is_active)
+
+
+@router.get("/award-types", response_model=list[AwardTypeResponse], dependencies=[_beh_read])
+async def list_award_types(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(AwardType).where(AwardType.org_id == current_user.org_id).order_by(AwardType.name))).scalars().all()
+    return [_at_response(a) for a in rows]
+
+
+@router.post("/award-types", response_model=AwardTypeResponse, status_code=201, dependencies=[_beh_write])
+async def create_award_type(payload: AwardTypeCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    a = AwardType(org_id=current_user.org_id, **payload.model_dump())
+    db.add(a)
+    await db.flush()
+    return _at_response(a)
+
+
+@router.patch("/award-types/{type_id}", response_model=AwardTypeResponse, dependencies=[_beh_write])
+async def update_award_type(type_id: str, payload: AwardTypeUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    a = (await db.execute(select(AwardType).where(AwardType.id == type_id, AwardType.org_id == current_user.org_id))).scalar_one_or_none()
+    if not a:
+        raise HTTPException(status_code=404, detail="Award type not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(a, f, v)
+    await db.flush()
+    return _at_response(a)
+
+
+@router.delete("/award-types/{type_id}", status_code=204, dependencies=[_beh_write])
+async def delete_award_type(type_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    a = (await db.execute(select(AwardType).where(AwardType.id == type_id, AwardType.org_id == current_user.org_id))).scalar_one_or_none()
+    if not a:
+        raise HTTPException(status_code=404, detail="Award type not found.")
+    await db.delete(a)
+
+
+# ── Point Entry (writes the Recognition conduct-point ledger) ────────────────
+
+@router.post("/points", response_model=PointEntryResponse, status_code=201, dependencies=[_beh_write])
+async def add_point_entry(payload: PointEntryCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Record a conduct point against a student — a Recognition(type=conduct_point)."""
+    from datetime import date as _date
+    await _require_student(db, current_user.org_id, payload.student_id)
+    r = Recognition(
+        org_id=current_user.org_id, type="conduct_point", student_id=payload.student_id,
+        title=payload.title, reason=payload.reason, points=payload.points,
+        house=payload.house, category=payload.category, term=payload.term,
+        awarded_on=_date.today(), recorded_by=current_user.id,
+    )
+    db.add(r)
+    await db.flush()
+    names = await _student_names(db, current_user.org_id, {r.student_id})
+    return PointEntryResponse(id=r.id, student_id=r.student_id, student_name=names.get(r.student_id),
+                              points=r.points, title=r.title, category=r.category, reason=r.reason, term=r.term,
+                              house=r.house, awarded_on=r.awarded_on)
+
+
+@router.get("/points", response_model=list[PointEntryResponse], dependencies=[_beh_read])
+async def list_point_entries(student_id: str | None = None, term: str | None = None,
+                             db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = select(Recognition).where(Recognition.org_id == current_user.org_id, Recognition.type == "conduct_point")
+    if student_id:
+        q = q.where(Recognition.student_id == student_id)
+    if term:
+        q = q.where(Recognition.term == term)
+    rows = (await db.execute(q.order_by(Recognition.awarded_on.desc().nullslast()).limit(500))).scalars().all()
+    names = await _student_names(db, current_user.org_id, {r.student_id for r in rows})
+    return [PointEntryResponse(id=r.id, student_id=r.student_id, student_name=names.get(r.student_id),
+                               points=r.points or 0, title=r.title, category=r.category, reason=r.reason, term=r.term,
+                               house=r.house, awarded_on=r.awarded_on) for r in rows]
+
+
+# ── Points Analysis (per-student term breakdown) ─────────────────────────────
+
+def _term_bucket(term: str | None) -> str:
+    t = (term or "").strip().lower()
+    if "autumn" in t or "first" in t:
+        return "autumn"
+    if "spring" in t or "second" in t:
+        return "spring"
+    if "summer" in t or "third" in t:
+        return "summer"
+    return "opening_point"
+
+
+async def _analysis_rows(db: AsyncSession, org_id: str, section: str | None, house: str | None) -> list[PointsAnalysisRow]:
+    # Students in scope.
+    sq = select(Student).where(Student.org_id == org_id, Student.is_deleted == False)  # noqa: E712
+    if section:
+        sq = sq.where(Student.section_id == section)
+    students = (await db.execute(sq)).scalars().all()
+    sids = [s.id for s in students]
+    agg: dict[str, PointsAnalysisRow] = {
+        s.id: PointsAnalysisRow(student_id=s.id, student_name=f"{s.first_name} {s.last_name}".strip())
+        for s in students
+    }
+    if sids:
+        recs = (await db.execute(
+            select(Recognition.student_id, Recognition.points, Recognition.term, Recognition.house)
+            .where(Recognition.org_id == org_id, Recognition.type == "conduct_point", Recognition.student_id.in_(sids))
+        )).all()
+        for sid, pts, term, hse in recs:
+            row = agg.get(sid)
+            if not row:
+                continue
+            if house and hse != house:
+                continue
+            p = int(pts or 0)
+            bucket = _term_bucket(term)
+            setattr(row, bucket, getattr(row, bucket) + p)
+            if p >= 0:
+                row.total_pg += p
+            else:
+                row.total_pl += -p
+            row.total += p
+            if hse and not row.house_name:
+                row.house_name = hse
+    rows = list(agg.values())
+    if house:
+        rows = [r for r in rows if r.house_name == house or r.total != 0 or r.total_pg or r.total_pl]
+    rows.sort(key=lambda r: r.total, reverse=True)
+    return rows
+
+
+@router.get("/points-analysis", response_model=list[PointsAnalysisRow], dependencies=[_beh_read])
+async def points_analysis(section: str | None = None, house: str | None = None,
+                          db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    return await _analysis_rows(db, current_user.org_id, section, house)
+
+
+@router.get("/points-analysis/export", dependencies=[_beh_read])
+async def export_points_analysis(section: str | None = None, house: str | None = None,
+                                 db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = await _analysis_rows(db, current_user.org_id, section, house)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Student", "House", "Opening", "Autumn", "Spring", "Summer", "Total PG", "Total PL", "Total"])
+    for r in rows:
+        w.writerow([r.student_name or "", r.house_name or "", r.opening_point, r.autumn, r.spring, r.summer, r.total_pg, r.total_pl, r.total])
+    return Response(content=buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="points-analysis.csv"'})

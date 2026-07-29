@@ -258,3 +258,39 @@ export function useSyncPastoralStudents() {
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Sync failed."),
   });
 }
+
+// ── Batch C: Point System / Award System / Points Analysis ──────────────────────
+
+function crud(resource: "pointTypes" | "awardTypes", key: string) {
+  return {
+    useList: () => useQuery({ queryKey: [key], queryFn: () => (pastoralApi as any)[resource].list() }),
+    useCreate: () => { const qc = useQueryClient(); return useMutation({ mutationFn: (d: object) => (pastoralApi as any)[resource].create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: [key] }); toast.success("Added."); }, onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed.") }); },
+    useUpdate: () => { const qc = useQueryClient(); return useMutation({ mutationFn: (v: { id: string; data: object }) => (pastoralApi as any)[resource].update(v.id, v.data), onSuccess: () => { qc.invalidateQueries({ queryKey: [key] }); toast.success("Updated."); }, onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed.") }); },
+    useDelete: () => { const qc = useQueryClient(); return useMutation({ mutationFn: (id: string) => (pastoralApi as any)[resource].remove(id), onSuccess: () => { qc.invalidateQueries({ queryKey: [key] }); toast.success("Removed."); }, onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed.") }); },
+  };
+}
+const _pt = crud("pointTypes", "point-types");
+const _at = crud("awardTypes", "award-types");
+export const usePointTypes = _pt.useList;
+export const useCreatePointType = _pt.useCreate;
+export const useUpdatePointType = _pt.useUpdate;
+export const useDeletePointType = _pt.useDelete;
+export const useAwardTypes = _at.useList;
+export const useCreateAwardType = _at.useCreate;
+export const useUpdateAwardType = _at.useUpdate;
+export const useDeleteAwardType = _at.useDelete;
+
+export function useAddPoint() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: object) => pastoralApi.points.add(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["pastoral-points"] }); qc.invalidateQueries({ queryKey: ["points-analysis"] }); toast.success("Point recorded."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to record point."),
+  });
+}
+export function usePointEntries(params?: { student_id?: string; term?: string }) {
+  return useQuery({ queryKey: ["pastoral-points", params], queryFn: () => pastoralApi.points.list(params) });
+}
+export function usePointsAnalysis(params?: { section?: string; house?: string }) {
+  return useQuery({ queryKey: ["points-analysis", params], queryFn: () => pastoralApi.points.analysis(params) });
+}

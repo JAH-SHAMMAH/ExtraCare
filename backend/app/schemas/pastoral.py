@@ -258,3 +258,94 @@ class PastoralStudentRow(BaseModel):
     mentor_id: Optional[str] = None
     mentor_name: Optional[str] = None
     is_leader: bool = False
+
+
+# ── Batch C: Point System / Award System / Point Entry / Points Analysis ─────
+
+class PointTypeCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    scope: str = "weekly"          # sessional | weekly
+    max_point: Optional[int] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class PointTypeUpdate(BaseModel):
+    name: Optional[str] = None
+    scope: Optional[str] = None
+    max_point: Optional[int] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class PointTypeResponse(BaseModel):
+    id: str
+    name: str
+    scope: str
+    max_point: Optional[int] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    is_active: bool
+
+
+class AwardTypeCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    min_point: Optional[int] = None
+    max_point: Optional[int] = None
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class AwardTypeUpdate(BaseModel):
+    name: Optional[str] = None
+    min_point: Optional[int] = None
+    max_point: Optional[int] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class AwardTypeResponse(BaseModel):
+    id: str
+    name: str
+    min_point: Optional[int] = None
+    max_point: Optional[int] = None
+    description: Optional[str] = None
+    is_active: bool
+
+
+class PointEntryCreate(BaseModel):
+    student_id: str
+    points: int
+    category: Optional[str] = None     # point type name / category
+    title: Optional[str] = None
+    reason: Optional[str] = None
+    term: Optional[str] = None
+    house: Optional[str] = None
+
+
+class PointEntryResponse(BaseModel):
+    id: str
+    student_id: str
+    student_name: Optional[str] = None
+    points: int
+    title: Optional[str] = None
+    category: Optional[str] = None
+    reason: Optional[str] = None
+    term: Optional[str] = None
+    house: Optional[str] = None
+    awarded_on: Optional[date] = None
+
+
+class PointsAnalysisRow(BaseModel):
+    student_id: str
+    student_name: Optional[str] = None
+    house_name: Optional[str] = None
+    opening_point: int = 0
+    autumn: int = 0
+    spring: int = 0
+    summer: int = 0
+    total_pg: int = 0    # points gained (positive)
+    total_pl: int = 0    # points lost (|negative|)
+    total: int = 0       # net
