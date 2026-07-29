@@ -6,6 +6,7 @@ import { useAvailableRoles } from "@/hooks/useUsers";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { HouseSetup } from "@/components/pastoral/HouseSetup";
 import { HostelSetup } from "@/components/pastoral/HostelSetup";
+import { DisciplineSetup } from "@/components/pastoral/DisciplineSetup";
 import { PointSystemSetup, AwardSystemSetup } from "@/components/pastoral/PointAwardSetup";
 import { cn } from "@/lib/utils";
 import { Loader2, Save, Settings2 } from "lucide-react";
@@ -74,6 +75,8 @@ export default function PastoralSetupPage() {
         <HouseSetup canWrite={canWrite} />
       ) : tab === "hostel" ? (
         <HostelSetup canWrite={canWrite} />
+      ) : tab === "disciplinary" ? (
+        <DisciplineSetup canWrite={canWrite} />
       ) : tab === "points" ? (
         <PointSystemSetup canWrite={canWrite} />
       ) : tab === "awards" ? (

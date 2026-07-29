@@ -284,3 +284,73 @@ class HostelReport(Base, UUIDMixin, TimestampMixin, TenantMixin):
     __table_args__ = (
         Index("ix_hostel_reports_type_org", "report_type", "org_id"),
     )
+
+
+# ── Batch E: Discipline (Disciplinary Setup + Behaviour & Sanction) ──────────
+
+class SanctionGroup(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A grouping of disciplinary actions (Disciplinary Setup → Sanction Group),
+    e.g. 'Minor', 'Major', 'Boarding'."""
+    __tablename__ = "sanction_groups"
+
+    name = Column(String(120), nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class DisciplinaryAction(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A catalogue disciplinary action / sanction (Disciplinary Setup → Actions),
+    e.g. 'Verbal Warning', 'Detention', 'Suspension'. Optionally in a group."""
+    __tablename__ = "disciplinary_actions"
+
+    name = Column(String(120), nullable=False)
+    sanction_group_id = Column(String(36), ForeignKey("sanction_groups.id", ondelete="SET NULL"), nullable=True, index=True)
+    severity = Column(String(20), default="minor", nullable=False)   # minor | major | severe
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class DisciplinaryCommittee(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A named disciplinary committee (Disciplinary Setup → Committee), with staff
+    members. Cases can be assigned to a committee."""
+    __tablename__ = "disciplinary_committees"
+
+    name = Column(String(120), nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class DisciplinaryCommitteeMember(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A staff member on a disciplinary committee, with an optional role label
+    (e.g. 'Chair', 'Secretary')."""
+    __tablename__ = "disciplinary_committee_members"
+
+    committee_id = Column(String(36), ForeignKey("disciplinary_committees.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    role_label = Column(String(80), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "committee_id", "user_id", name="uq_committee_member"),
+    )
+
+
+class StudentDisciplinaryCase(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A disciplinary case against a STUDENT (Behaviour & Sanction): the offence,
+    the sanction/action applied, the handling committee, and a status. Distinct
+    from hr_extended.DisciplinaryCase, which is the STAFF disciplinary record."""
+    __tablename__ = "student_disciplinary_cases"
+
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    committee_id = Column(String(36), ForeignKey("disciplinary_committees.id", ondelete="SET NULL"), nullable=True, index=True)
+    action_id = Column(String(36), ForeignKey("disciplinary_actions.id", ondelete="SET NULL"), nullable=True, index=True)
+    sanction_group_id = Column(String(36), ForeignKey("sanction_groups.id", ondelete="SET NULL"), nullable=True)
+    offence = Column(Text, nullable=True)
+    sanction = Column(Text, nullable=True)         # free-text applied sanction / notes
+    status = Column(String(20), default="pending", nullable=False)   # pending | resolved | dismissed
+    case_date = Column(Date, nullable=True)
+    recorded_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        Index("ix_student_disc_cases_student_org", "student_id", "org_id"),
+        Index("ix_student_disc_cases_status_org", "status", "org_id"),
+    )

@@ -43,6 +43,8 @@ from app.models.modules.pastoral import (
     HouseMaster, HouseWeek, StudentPastoralAssignment, PointType, AwardType,
     HostelManager, HostelLifeGrade, HostelCommentBank,
     HostelLifeComment, HostelReport,
+    SanctionGroup, DisciplinaryAction, DisciplinaryCommittee,
+    DisciplinaryCommitteeMember, StudentDisciplinaryCase,
 )
 from app.models.modules.academics import Recognition
 from app.services.import_files import rows_from_upload
@@ -63,6 +65,11 @@ from app.schemas.pastoral import (
     HostelStudentRow, HostelImportResult,
     HostelLifeCommentCreate, HostelLifeCommentResponse, HostelResultRow,
     HostelReportCreate, HostelReportUpdate, HostelReportResponse, REPORT_TYPES,
+    SanctionGroupCreate, SanctionGroupUpdate, SanctionGroupResponse,
+    DisciplinaryActionCreate, DisciplinaryActionUpdate, DisciplinaryActionResponse,
+    CommitteeCreate, CommitteeUpdate, CommitteeResponse, CommitteeMemberInfo, CommitteeMemberCreate,
+    DisciplinaryCaseCreate, DisciplinaryCaseUpdate, DisciplinaryCaseResponse,
+    SEVERITIES, CASE_STATUSES,
     HOSTEL_GENDERS, EXEAT_STATUSES,
 )
 from app.services.audit_service import log_action
@@ -1388,3 +1395,236 @@ async def delete_hostel_report(report_id: str, db: AsyncSession = Depends(get_db
     if not r:
         raise HTTPException(status_code=404, detail="Report not found.")
     await db.delete(r)
+
+
+# ── Batch E: Discipline (Disciplinary Setup) ─────────────────────────────────
+
+def _sg_response(g: SanctionGroup) -> SanctionGroupResponse:
+    return SanctionGroupResponse(id=g.id, name=g.name, description=g.description, is_active=g.is_active)
+
+
+@router.get("/sanction-groups", response_model=list[SanctionGroupResponse], dependencies=[_beh_read])
+async def list_sanction_groups(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(SanctionGroup).where(SanctionGroup.org_id == current_user.org_id).order_by(SanctionGroup.name))).scalars().all()
+    return [_sg_response(g) for g in rows]
+
+
+@router.post("/sanction-groups", response_model=SanctionGroupResponse, status_code=201, dependencies=[_beh_write])
+async def create_sanction_group(payload: SanctionGroupCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    g = SanctionGroup(org_id=current_user.org_id, **payload.model_dump())
+    db.add(g)
+    await db.flush()
+    return _sg_response(g)
+
+
+@router.patch("/sanction-groups/{group_id}", response_model=SanctionGroupResponse, dependencies=[_beh_write])
+async def update_sanction_group(group_id: str, payload: SanctionGroupUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    g = (await db.execute(select(SanctionGroup).where(SanctionGroup.id == group_id, SanctionGroup.org_id == current_user.org_id))).scalar_one_or_none()
+    if not g:
+        raise HTTPException(status_code=404, detail="Sanction group not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(g, f, v)
+    await db.flush()
+    return _sg_response(g)
+
+
+@router.delete("/sanction-groups/{group_id}", status_code=204, dependencies=[_beh_write])
+async def delete_sanction_group(group_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    g = (await db.execute(select(SanctionGroup).where(SanctionGroup.id == group_id, SanctionGroup.org_id == current_user.org_id))).scalar_one_or_none()
+    if not g:
+        raise HTTPException(status_code=404, detail="Sanction group not found.")
+    await db.delete(g)
+
+
+async def _group_names(db: AsyncSession, org_id: str) -> dict[str, str]:
+    return {g.id: g.name for g in (await db.execute(
+        select(SanctionGroup).where(SanctionGroup.org_id == org_id))).scalars().all()}
+
+
+def _da_response(a: DisciplinaryAction, group_name: str | None) -> DisciplinaryActionResponse:
+    return DisciplinaryActionResponse(id=a.id, name=a.name, sanction_group_id=a.sanction_group_id,
+                                      sanction_group_name=group_name, severity=a.severity,
+                                      description=a.description, is_active=a.is_active)
+
+
+@router.get("/disciplinary-actions", response_model=list[DisciplinaryActionResponse], dependencies=[_beh_read])
+async def list_disciplinary_actions(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(DisciplinaryAction).where(DisciplinaryAction.org_id == current_user.org_id).order_by(DisciplinaryAction.name))).scalars().all()
+    groups = await _group_names(db, current_user.org_id)
+    return [_da_response(a, groups.get(a.sanction_group_id) if a.sanction_group_id else None) for a in rows]
+
+
+@router.post("/disciplinary-actions", response_model=DisciplinaryActionResponse, status_code=201, dependencies=[_beh_write])
+async def create_disciplinary_action(payload: DisciplinaryActionCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    if payload.severity not in SEVERITIES:
+        raise HTTPException(status_code=422, detail=f"severity must be one of {sorted(SEVERITIES)}")
+    a = DisciplinaryAction(org_id=current_user.org_id, **payload.model_dump())
+    db.add(a)
+    await db.flush()
+    groups = await _group_names(db, current_user.org_id)
+    return _da_response(a, groups.get(a.sanction_group_id) if a.sanction_group_id else None)
+
+
+@router.patch("/disciplinary-actions/{action_id}", response_model=DisciplinaryActionResponse, dependencies=[_beh_write])
+async def update_disciplinary_action(action_id: str, payload: DisciplinaryActionUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    a = (await db.execute(select(DisciplinaryAction).where(DisciplinaryAction.id == action_id, DisciplinaryAction.org_id == current_user.org_id))).scalar_one_or_none()
+    if not a:
+        raise HTTPException(status_code=404, detail="Action not found.")
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("severity") and data["severity"] not in SEVERITIES:
+        raise HTTPException(status_code=422, detail=f"severity must be one of {sorted(SEVERITIES)}")
+    for f, v in data.items():
+        setattr(a, f, v)
+    await db.flush()
+    groups = await _group_names(db, current_user.org_id)
+    return _da_response(a, groups.get(a.sanction_group_id) if a.sanction_group_id else None)
+
+
+@router.delete("/disciplinary-actions/{action_id}", status_code=204, dependencies=[_beh_write])
+async def delete_disciplinary_action(action_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    a = (await db.execute(select(DisciplinaryAction).where(DisciplinaryAction.id == action_id, DisciplinaryAction.org_id == current_user.org_id))).scalar_one_or_none()
+    if not a:
+        raise HTTPException(status_code=404, detail="Action not found.")
+    await db.delete(a)
+
+
+# ── Disciplinary Committees (+ members) ──────────────────────────────────────
+
+async def _committee_response(db: AsyncSession, org_id: str, c: DisciplinaryCommittee) -> CommitteeResponse:
+    members = (await db.execute(select(DisciplinaryCommitteeMember).where(
+        DisciplinaryCommitteeMember.committee_id == c.id, DisciplinaryCommitteeMember.org_id == org_id))).scalars().all()
+    unames = await _user_names(db, org_id, {m.user_id for m in members})
+    return CommitteeResponse(
+        id=c.id, name=c.name, description=c.description, is_active=c.is_active,
+        members=[CommitteeMemberInfo(id=m.id, user_id=m.user_id, user_name=unames.get(m.user_id), role_label=m.role_label) for m in members],
+    )
+
+
+@router.get("/committees", response_model=list[CommitteeResponse], dependencies=[_beh_read])
+async def list_committees(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(DisciplinaryCommittee).where(DisciplinaryCommittee.org_id == current_user.org_id).order_by(DisciplinaryCommittee.name))).scalars().all()
+    return [await _committee_response(db, current_user.org_id, c) for c in rows]
+
+
+@router.post("/committees", response_model=CommitteeResponse, status_code=201, dependencies=[_beh_write])
+async def create_committee(payload: CommitteeCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = DisciplinaryCommittee(org_id=current_user.org_id, **payload.model_dump())
+    db.add(c)
+    await db.flush()
+    return await _committee_response(db, current_user.org_id, c)
+
+
+@router.patch("/committees/{committee_id}", response_model=CommitteeResponse, dependencies=[_beh_write])
+async def update_committee(committee_id: str, payload: CommitteeUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(DisciplinaryCommittee).where(DisciplinaryCommittee.id == committee_id, DisciplinaryCommittee.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Committee not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(c, f, v)
+    await db.flush()
+    return await _committee_response(db, current_user.org_id, c)
+
+
+@router.delete("/committees/{committee_id}", status_code=204, dependencies=[_beh_write])
+async def delete_committee(committee_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(DisciplinaryCommittee).where(DisciplinaryCommittee.id == committee_id, DisciplinaryCommittee.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Committee not found.")
+    await db.delete(c)
+
+
+@router.post("/committees/{committee_id}/members", response_model=CommitteeResponse, status_code=201, dependencies=[_beh_write])
+async def add_committee_member(committee_id: str, payload: CommitteeMemberCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(DisciplinaryCommittee).where(DisciplinaryCommittee.id == committee_id, DisciplinaryCommittee.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Committee not found.")
+    user = (await db.execute(select(User.id).where(User.id == payload.user_id, User.org_id == current_user.org_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=422, detail="user_id: not a user in your organisation")
+    existing = (await db.execute(select(DisciplinaryCommitteeMember).where(
+        DisciplinaryCommitteeMember.org_id == current_user.org_id, DisciplinaryCommitteeMember.committee_id == committee_id,
+        DisciplinaryCommitteeMember.user_id == payload.user_id))).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="Already on this committee.")
+    db.add(DisciplinaryCommitteeMember(org_id=current_user.org_id, committee_id=committee_id,
+                                       user_id=payload.user_id, role_label=payload.role_label))
+    await db.flush()
+    return await _committee_response(db, current_user.org_id, c)
+
+
+@router.delete("/committee-members/{member_id}", status_code=204, dependencies=[_beh_write])
+async def remove_committee_member(member_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    m = (await db.execute(select(DisciplinaryCommitteeMember).where(
+        DisciplinaryCommitteeMember.id == member_id, DisciplinaryCommitteeMember.org_id == current_user.org_id))).scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found.")
+    await db.delete(m)
+
+
+# ── Behaviour & Sanction (disciplinary cases) ────────────────────────────────
+
+async def _case_response(db: AsyncSession, org_id: str, c: StudentDisciplinaryCase, snames, cnames, anames, unames) -> DisciplinaryCaseResponse:
+    return DisciplinaryCaseResponse(
+        id=c.id, student_id=c.student_id, student_name=snames.get(c.student_id),
+        committee_id=c.committee_id, committee_name=(cnames.get(c.committee_id) if c.committee_id else None),
+        action_id=c.action_id, action_name=(anames.get(c.action_id) if c.action_id else None),
+        sanction_group_id=c.sanction_group_id, offence=c.offence, sanction=c.sanction, status=c.status,
+        case_date=c.case_date, recorded_by_name=(unames.get(c.recorded_by) if c.recorded_by else None),
+        created_at=c.created_at,
+    )
+
+
+@router.get("/disciplinary-cases", response_model=list[DisciplinaryCaseResponse], dependencies=[_beh_read])
+async def list_disciplinary_cases(student_id: str | None = None, status: str | None = None,
+                                  db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = select(StudentDisciplinaryCase).where(StudentDisciplinaryCase.org_id == current_user.org_id)
+    if student_id:
+        q = q.where(StudentDisciplinaryCase.student_id == student_id)
+    if status:
+        q = q.where(StudentDisciplinaryCase.status == status)
+    rows = (await db.execute(q.order_by(StudentDisciplinaryCase.case_date.desc().nullslast(), StudentDisciplinaryCase.created_at.desc()).limit(1000))).scalars().all()
+    snames = await _student_names(db, current_user.org_id, {r.student_id for r in rows})
+    cnames = {c.id: c.name for c in (await db.execute(select(DisciplinaryCommittee).where(DisciplinaryCommittee.org_id == current_user.org_id))).scalars().all()}
+    anames = {a.id: a.name for a in (await db.execute(select(DisciplinaryAction).where(DisciplinaryAction.org_id == current_user.org_id))).scalars().all()}
+    unames = await _user_names(db, current_user.org_id, {r.recorded_by for r in rows})
+    return [await _case_response(db, current_user.org_id, r, snames, cnames, anames, unames) for r in rows]
+
+
+@router.post("/disciplinary-cases", response_model=DisciplinaryCaseResponse, status_code=201, dependencies=[_beh_write])
+async def create_disciplinary_case(payload: DisciplinaryCaseCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    if payload.status not in CASE_STATUSES:
+        raise HTTPException(status_code=422, detail=f"status must be one of {sorted(CASE_STATUSES)}")
+    student = await _require_student(db, current_user.org_id, payload.student_id)
+    c = StudentDisciplinaryCase(org_id=current_user.org_id, recorded_by=current_user.id, **payload.model_dump())
+    db.add(c)
+    await db.flush()
+    snames = {student.id: f"{student.first_name} {student.last_name}".strip()}
+    cnames = {cm.id: cm.name for cm in (await db.execute(select(DisciplinaryCommittee).where(DisciplinaryCommittee.org_id == current_user.org_id))).scalars().all()}
+    anames = {a.id: a.name for a in (await db.execute(select(DisciplinaryAction).where(DisciplinaryAction.org_id == current_user.org_id))).scalars().all()}
+    return await _case_response(db, current_user.org_id, c, snames, cnames, anames, {current_user.id: current_user.full_name})
+
+
+@router.patch("/disciplinary-cases/{case_id}", response_model=DisciplinaryCaseResponse, dependencies=[_beh_write])
+async def update_disciplinary_case(case_id: str, payload: DisciplinaryCaseUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(StudentDisciplinaryCase).where(StudentDisciplinaryCase.id == case_id, StudentDisciplinaryCase.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("status") and data["status"] not in CASE_STATUSES:
+        raise HTTPException(status_code=422, detail=f"status must be one of {sorted(CASE_STATUSES)}")
+    for f, v in data.items():
+        setattr(c, f, v)
+    await db.flush()
+    snames = await _student_names(db, current_user.org_id, {c.student_id})
+    cnames = {cm.id: cm.name for cm in (await db.execute(select(DisciplinaryCommittee).where(DisciplinaryCommittee.org_id == current_user.org_id))).scalars().all()}
+    anames = {a.id: a.name for a in (await db.execute(select(DisciplinaryAction).where(DisciplinaryAction.org_id == current_user.org_id))).scalars().all()}
+    unames = await _user_names(db, current_user.org_id, {c.recorded_by})
+    return await _case_response(db, current_user.org_id, c, snames, cnames, anames, unames)
+
+
+@router.delete("/disciplinary-cases/{case_id}", status_code=204, dependencies=[_beh_write])
+async def delete_disciplinary_case(case_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(StudentDisciplinaryCase).where(StudentDisciplinaryCase.id == case_id, StudentDisciplinaryCase.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    await db.delete(c)

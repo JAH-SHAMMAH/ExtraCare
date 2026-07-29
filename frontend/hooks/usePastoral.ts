@@ -261,7 +261,7 @@ export function useSyncPastoralStudents() {
 
 // ── Batch C: Point System / Award System / Points Analysis ──────────────────────
 
-function crud(resource: "pointTypes" | "awardTypes" | "hostelLifeGrades" | "hostelCommentBank", key: string) {
+function crud(resource: "pointTypes" | "awardTypes" | "hostelLifeGrades" | "hostelCommentBank" | "sanctionGroups" | "disciplinaryActions", key: string) {
   return {
     useList: () => useQuery({ queryKey: [key], queryFn: () => (pastoralApi as any)[resource].list() }),
     useCreate: () => { const qc = useQueryClient(); return useMutation({ mutationFn: (d: object) => (pastoralApi as any)[resource].create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: [key] }); toast.success("Added."); }, onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed.") }); },
@@ -390,6 +390,51 @@ export function useDeleteHostelReport() {
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed."),
   });
 }
+
+// ── Batch E: Discipline ──────────────────────────────────────────────────────
+
+const _sanctionGroups = crud("sanctionGroups", "sanction-groups");
+const _discActions = crud("disciplinaryActions", "disciplinary-actions");
+export const useSanctionGroups = _sanctionGroups.useList;
+export const useCreateSanctionGroup = _sanctionGroups.useCreate;
+export const useUpdateSanctionGroup = _sanctionGroups.useUpdate;
+export const useDeleteSanctionGroup = _sanctionGroups.useDelete;
+export const useDisciplinaryActions = _discActions.useList;
+export const useCreateDisciplinaryAction = _discActions.useCreate;
+export const useUpdateDisciplinaryAction = _discActions.useUpdate;
+export const useDeleteDisciplinaryAction = _discActions.useDelete;
+
+export function useCommittees() {
+  return useQuery({ queryKey: ["committees"], queryFn: () => pastoralApi.committees.list() });
+}
+function committeeMut<TArgs>(fn: (a: TArgs) => Promise<any>, msg: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["committees"] }); if (msg) toast.success(msg); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed."),
+  });
+}
+export function useCreateCommittee() { return committeeMut((d: object) => pastoralApi.committees.create(d), "Committee created."); }
+export function useUpdateCommittee() { return committeeMut((v: { id: string; data: object }) => pastoralApi.committees.update(v.id, v.data), "Updated."); }
+export function useDeleteCommittee() { return committeeMut((id: string) => pastoralApi.committees.remove(id), "Removed."); }
+export function useAddCommitteeMember() { return committeeMut((v: { id: string; data: { user_id: string; role_label?: string | null } }) => pastoralApi.committees.addMember(v.id, v.data), "Member added."); }
+export function useRemoveCommitteeMember() { return committeeMut((memberId: string) => pastoralApi.committees.removeMember(memberId), "Removed."); }
+
+export function useDisciplinaryCases(params?: { student_id?: string; status?: string }) {
+  return useQuery({ queryKey: ["disciplinary-cases", params], queryFn: () => pastoralApi.disciplinaryCases.list(params) });
+}
+function caseMut<TArgs>(fn: (a: TArgs) => Promise<any>, msg: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["disciplinary-cases"] }); if (msg) toast.success(msg); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed."),
+  });
+}
+export function useCreateDisciplinaryCase() { return caseMut((d: object) => pastoralApi.disciplinaryCases.create(d), "Case recorded."); }
+export function useUpdateDisciplinaryCase() { return caseMut((v: { id: string; data: object }) => pastoralApi.disciplinaryCases.update(v.id, v.data), "Updated."); }
+export function useDeleteDisciplinaryCase() { return caseMut((id: string) => pastoralApi.disciplinaryCases.remove(id), "Removed."); }
 export function usePointsAnalysis(params?: { section?: string; house?: string }) {
   return useQuery({ queryKey: ["points-analysis", params], queryFn: () => pastoralApi.points.analysis(params) });
 }

@@ -1161,6 +1161,33 @@ export const pastoralApi = {
     update: (id: string, d: object) => api.patch(`/pastoral/hostel-reports/${id}`, d).then((r) => r.data),
     remove: (id: string) => api.delete(`/pastoral/hostel-reports/${id}`),
   },
+  // Batch E: Discipline (setup + Behaviour & Sanction cases).
+  sanctionGroups: {
+    list: () => api.get("/pastoral/sanction-groups").then((r) => r.data),
+    create: (d: object) => api.post("/pastoral/sanction-groups", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/pastoral/sanction-groups/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/sanction-groups/${id}`),
+  },
+  disciplinaryActions: {
+    list: () => api.get("/pastoral/disciplinary-actions").then((r) => r.data),
+    create: (d: object) => api.post("/pastoral/disciplinary-actions", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/pastoral/disciplinary-actions/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/disciplinary-actions/${id}`),
+  },
+  committees: {
+    list: () => api.get("/pastoral/committees").then((r) => r.data),
+    create: (d: object) => api.post("/pastoral/committees", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/pastoral/committees/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/committees/${id}`),
+    addMember: (id: string, d: { user_id: string; role_label?: string | null }) => api.post(`/pastoral/committees/${id}/members`, d).then((r) => r.data),
+    removeMember: (memberId: string) => api.delete(`/pastoral/committee-members/${memberId}`),
+  },
+  disciplinaryCases: {
+    list: (p?: { student_id?: string; status?: string }) => api.get("/pastoral/disciplinary-cases", { params: p }).then((r) => r.data),
+    create: (d: object) => api.post("/pastoral/disciplinary-cases", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/pastoral/disciplinary-cases/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/disciplinary-cases/${id}`),
+  },
 };
 
 // CONFIDENTIAL — only org_admin + nurse hold `medical:*`.

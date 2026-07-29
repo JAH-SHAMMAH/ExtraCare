@@ -341,6 +341,9 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/hostel-reports", label: "Hostel Reports", icon: FileText },
       { href: "/dashboard/modules/school/exeat", label: "Exeat Requests", icon: FileText },
       { href: "/dashboard/modules/school/mentor", label: "Mentor Reports", icon: UserCheck },
+      // Batch E — Discipline (setup lives in the Pastoral Setup hub; this is the
+      // operational Behaviour & Sanction case log). Gated school:behaviour:read.
+      { href: "/dashboard/modules/school/behaviour-sanction", label: "Behaviour & Sanction", icon: Gavel },
     ],
   },
   {

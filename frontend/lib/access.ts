@@ -165,6 +165,7 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/hostel", permission: "school:hostel:read" },
   { prefix: "/dashboard/modules/school/exeat", permission: "school:hostel:read" },
   { prefix: "/dashboard/modules/school/mentor", permission: "school:behaviour:read" },
+  { prefix: "/dashboard/modules/school/behaviour-sanction", permission: "school:behaviour:read" },
   { prefix: "/dashboard/modules/school/medicals", permission: "medical:read" },
 
   // ── Batch 5: Finance & Accounting ──────────────────────────────────────

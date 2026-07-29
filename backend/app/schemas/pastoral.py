@@ -482,3 +482,121 @@ class HostelReportResponse(BaseModel):
     body: Optional[str] = None
     recorded_by_name: Optional[str] = None
     created_at: Optional[datetime] = None
+
+
+# ── Batch E: Discipline ──────────────────────────────────────────────────────
+
+SEVERITIES = {"minor", "major", "severe"}
+CASE_STATUSES = {"pending", "resolved", "dismissed"}
+
+
+class SanctionGroupCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    description: Optional[str] = None
+
+
+class SanctionGroupUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=120)
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class SanctionGroupResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class DisciplinaryActionCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    sanction_group_id: Optional[str] = None
+    severity: str = "minor"
+    description: Optional[str] = None
+
+
+class DisciplinaryActionUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=120)
+    sanction_group_id: Optional[str] = None
+    severity: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class DisciplinaryActionResponse(BaseModel):
+    id: str
+    name: str
+    sanction_group_id: Optional[str] = None
+    sanction_group_name: Optional[str] = None
+    severity: str = "minor"
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class CommitteeCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    description: Optional[str] = None
+
+
+class CommitteeUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=120)
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class CommitteeMemberInfo(BaseModel):
+    id: str
+    user_id: str
+    user_name: Optional[str] = None
+    role_label: Optional[str] = None
+
+
+class CommitteeResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    is_active: bool = True
+    members: list[CommitteeMemberInfo] = Field(default_factory=list)
+
+
+class CommitteeMemberCreate(BaseModel):
+    user_id: str
+    role_label: Optional[str] = None
+
+
+class DisciplinaryCaseCreate(BaseModel):
+    student_id: str
+    committee_id: Optional[str] = None
+    action_id: Optional[str] = None
+    sanction_group_id: Optional[str] = None
+    offence: Optional[str] = None
+    sanction: Optional[str] = None
+    status: str = "pending"
+    case_date: Optional[date] = None
+
+
+class DisciplinaryCaseUpdate(BaseModel):
+    committee_id: Optional[str] = None
+    action_id: Optional[str] = None
+    sanction_group_id: Optional[str] = None
+    offence: Optional[str] = None
+    sanction: Optional[str] = None
+    status: Optional[str] = None
+    case_date: Optional[date] = None
+
+
+class DisciplinaryCaseResponse(BaseModel):
+    id: str
+    student_id: str
+    student_name: Optional[str] = None
+    committee_id: Optional[str] = None
+    committee_name: Optional[str] = None
+    action_id: Optional[str] = None
+    action_name: Optional[str] = None
+    sanction_group_id: Optional[str] = None
+    offence: Optional[str] = None
+    sanction: Optional[str] = None
+    status: str = "pending"
+    case_date: Optional[date] = None
+    recorded_by_name: Optional[str] = None
+    created_at: Optional[datetime] = None
