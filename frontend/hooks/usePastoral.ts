@@ -261,7 +261,7 @@ export function useSyncPastoralStudents() {
 
 // ── Batch C: Point System / Award System / Points Analysis ──────────────────────
 
-function crud(resource: "pointTypes" | "awardTypes", key: string) {
+function crud(resource: "pointTypes" | "awardTypes" | "hostelLifeGrades" | "hostelCommentBank", key: string) {
   return {
     useList: () => useQuery({ queryKey: [key], queryFn: () => (pastoralApi as any)[resource].list() }),
     useCreate: () => { const qc = useQueryClient(); return useMutation({ mutationFn: (d: object) => (pastoralApi as any)[resource].create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: [key] }); toast.success("Added."); }, onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed.") }); },
@@ -290,6 +290,53 @@ export function useAddPoint() {
 }
 export function usePointEntries(params?: { student_id?: string; term?: string }) {
   return useQuery({ queryKey: ["pastoral-points", params], queryFn: () => pastoralApi.points.list(params) });
+}
+
+// ── Batch D-1: Hostel Setup (managers / life grades / comment bank) + Students ──
+
+const _hg = crud("hostelLifeGrades", "hostel-life-grades");
+const _cb = crud("hostelCommentBank", "hostel-comment-bank");
+export const useHostelLifeGrades = _hg.useList;
+export const useCreateHostelLifeGrade = _hg.useCreate;
+export const useUpdateHostelLifeGrade = _hg.useUpdate;
+export const useDeleteHostelLifeGrade = _hg.useDelete;
+export const useHostelCommentBank = _cb.useList;
+export const useCreateHostelComment = _cb.useCreate;
+export const useUpdateHostelComment = _cb.useUpdate;
+export const useDeleteHostelComment = _cb.useDelete;
+
+export function useHostelManagers(hostelId?: string) {
+  return useQuery({ queryKey: ["hostel-managers", hostelId], queryFn: () => pastoralApi.hostelManagers.list(hostelId), enabled: !!hostelId });
+}
+export function useAddHostelManager() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { hostel_id: string; user_id: string }) => pastoralApi.hostelManagers.add(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["hostel-managers"] }); toast.success("Manager added."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to add manager."),
+  });
+}
+export function useRemoveHostelManager() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => pastoralApi.hostelManagers.remove(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["hostel-managers"] }); toast.success("Removed."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed."),
+  });
+}
+export function useHostelStudents(params?: { hostel_id?: string; search?: string }) {
+  return useQuery({ queryKey: ["hostel-students", params], queryFn: () => pastoralApi.hostelStudents.list(params) });
+}
+export function useImportHostelStudents() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (formData: FormData) => pastoralApi.hostelStudents.import(formData),
+    onSuccess: (r: any) => {
+      qc.invalidateQueries({ queryKey: ["hostel-students"] });
+      toast.success(`Imported ${r?.imported ?? 0} boarder(s).${r?.errors?.length ? ` ${r.errors.length} skipped.` : ""}`);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Import failed."),
+  });
 }
 export function usePointsAnalysis(params?: { section?: string; house?: string }) {
   return useQuery({ queryKey: ["points-analysis", params], queryFn: () => pastoralApi.points.analysis(params) });

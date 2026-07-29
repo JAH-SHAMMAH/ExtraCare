@@ -1121,6 +1121,31 @@ export const pastoralApi = {
     analysisCsv: (p?: { section?: string; house?: string }) =>
       api.get("/pastoral/points-analysis/export", { params: p, responseType: "blob" }).then((r) => r.data),
   },
+  // Batch D-1: Hostel Setup (managers / life grades / comment bank) + Hostel Students.
+  hostelManagers: {
+    list: (hostelId?: string) => api.get("/pastoral/hostel-managers", { params: hostelId ? { hostel_id: hostelId } : {} }).then((r) => r.data),
+    add: (data: { hostel_id: string; user_id: string }) => api.post("/pastoral/hostel-managers", data).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/hostel-managers/${id}`),
+  },
+  hostelLifeGrades: {
+    list: () => api.get("/pastoral/hostel-life-grades").then((r) => r.data),
+    create: (d: object) => api.post("/pastoral/hostel-life-grades", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/pastoral/hostel-life-grades/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/hostel-life-grades/${id}`),
+  },
+  hostelCommentBank: {
+    list: () => api.get("/pastoral/hostel-comment-bank").then((r) => r.data),
+    create: (d: object) => api.post("/pastoral/hostel-comment-bank", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/pastoral/hostel-comment-bank/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/pastoral/hostel-comment-bank/${id}`),
+  },
+  hostelStudents: {
+    list: (p?: { hostel_id?: string; search?: string }) => api.get("/pastoral/hostel-students", { params: p }).then((r) => r.data),
+    exportCsv: (p?: { hostel_id?: string; search?: string }) =>
+      api.get("/pastoral/hostel-students/export", { params: p, responseType: "blob" }).then((r) => r.data),
+    import: (formData: FormData) =>
+      api.post("/pastoral/hostel-students/import", formData, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data),
+  },
 };
 
 // CONFIDENTIAL — only org_admin + nurse hold `medical:*`.

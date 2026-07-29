@@ -211,3 +211,39 @@ class AwardType(Base, UUIDMixin, TimestampMixin, TenantMixin):
     max_point = Column(Integer, nullable=True)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+
+
+# ── Batch D: Hostel deepening (Setup config) ─────────────────────────────────
+
+class HostelManager(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A staff member assigned to run a hostel (Hostel Setup → Managers). Parallels
+    HouseMaster but for boarding houses. Distinct from the hostel's single warden."""
+    __tablename__ = "hostel_managers"
+
+    hostel_id = Column(String(36), ForeignKey("hostels.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "hostel_id", "user_id", name="uq_hostel_manager"),
+    )
+
+
+class HostelLifeGrade(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A grade on the hostel-life scale (Hostel Setup → Life Grades), e.g.
+    Excellent / Good / Fair / Poor. Consumed by hostel life comments (Batch D-2)."""
+    __tablename__ = "hostel_life_grades"
+
+    name = Column(String(80), nullable=False)
+    description = Column(Text, nullable=True)
+    sort_order = Column(Integer, default=0, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class HostelCommentBank(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A reusable hostel-life comment template (Hostel Setup → Comment Bank), so
+    managers pick a phrase instead of retyping. Optionally categorised."""
+    __tablename__ = "hostel_comment_bank"
+
+    text = Column(Text, nullable=False)
+    category = Column(String(80), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)

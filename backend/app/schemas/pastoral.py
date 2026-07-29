@@ -349,3 +349,74 @@ class PointsAnalysisRow(BaseModel):
     total_pg: int = 0    # points gained (positive)
     total_pl: int = 0    # points lost (|negative|)
     total: int = 0       # net
+
+
+# ── Batch D-1: Hostel Setup + Hostel Students ────────────────────────────────
+
+class HostelManagerCreate(BaseModel):
+    hostel_id: str
+    user_id: str
+
+
+class HostelManagerResponse(BaseModel):
+    id: str
+    hostel_id: str
+    hostel_name: Optional[str] = None
+    user_id: str
+    user_name: Optional[str] = None
+
+
+class HostelLifeGradeCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+    description: Optional[str] = None
+    sort_order: int = 0
+
+
+class HostelLifeGradeUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=80)
+    description: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class HostelLifeGradeResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class HostelCommentBankCreate(BaseModel):
+    text: str = Field(..., min_length=1)
+    category: Optional[str] = None
+
+
+class HostelCommentBankUpdate(BaseModel):
+    text: Optional[str] = Field(None, min_length=1)
+    category: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class HostelCommentBankResponse(BaseModel):
+    id: str
+    text: str
+    category: Optional[str] = None
+    is_active: bool = True
+
+
+class HostelStudentRow(BaseModel):
+    allocation_id: str
+    student_id: str
+    student_name: Optional[str] = None
+    admission_no: Optional[str] = None
+    hostel_id: str
+    hostel_name: Optional[str] = None
+    room: Optional[str] = None
+    bed: Optional[str] = None
+    allocated_on: Optional[date] = None
+
+
+class HostelImportResult(BaseModel):
+    imported: int = 0
+    errors: list[str] = Field(default_factory=list)

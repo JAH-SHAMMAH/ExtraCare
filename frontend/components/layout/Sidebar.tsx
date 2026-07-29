@@ -336,6 +336,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
       // school:hostel:read; mentor → school:behaviour:read; medicals →
       // medical:read (confidential: org_admin + nurse only, NOT general staff).
       { href: "/dashboard/modules/school/hostel", label: "Hostel / Boarding", icon: BedDouble },
+      { href: "/dashboard/modules/school/hostel-students", label: "Hostel Students", icon: Users2 },
       { href: "/dashboard/modules/school/exeat", label: "Exeat Requests", icon: FileText },
       { href: "/dashboard/modules/school/mentor", label: "Mentor Reports", icon: UserCheck },
     ],

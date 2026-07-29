@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 import csv
 import io
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import Response
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,8 +41,10 @@ from app.models.modules.platform import SchoolHouse
 from app.models.modules.pastoral import (
     Hostel, BoardingAllocation, ExeatRequest, MentorReport, PastoralSettings,
     HouseMaster, HouseWeek, StudentPastoralAssignment, PointType, AwardType,
+    HostelManager, HostelLifeGrade, HostelCommentBank,
 )
 from app.models.modules.academics import Recognition
+from app.services.import_files import rows_from_upload
 from app.schemas.pastoral import (
     HostelCreate, HostelUpdate, HostelResponse, HostelListResponse,
     AllocationCreate, AllocationResponse,
@@ -54,6 +56,10 @@ from app.schemas.pastoral import (
     PointTypeCreate, PointTypeUpdate, PointTypeResponse,
     AwardTypeCreate, AwardTypeUpdate, AwardTypeResponse,
     PointEntryCreate, PointEntryResponse, PointsAnalysisRow,
+    HostelManagerCreate, HostelManagerResponse,
+    HostelLifeGradeCreate, HostelLifeGradeUpdate, HostelLifeGradeResponse,
+    HostelCommentBankCreate, HostelCommentBankUpdate, HostelCommentBankResponse,
+    HostelStudentRow, HostelImportResult,
     HOSTEL_GENDERS, EXEAT_STATUSES,
 )
 from app.services.audit_service import log_action
@@ -997,3 +1003,229 @@ async def export_points_analysis(section: str | None = None, house: str | None =
         w.writerow([r.student_name or "", r.house_name or "", r.opening_point, r.autumn, r.spring, r.summer, r.total_pg, r.total_pl, r.total])
     return Response(content=buf.getvalue(), media_type="text/csv",
                     headers={"Content-Disposition": 'attachment; filename="points-analysis.csv"'})
+
+
+# ── Batch D-1: Hostel Setup (Managers / Life Grades / Comment Bank) ──────────
+
+@router.get("/hostel-managers", response_model=list[HostelManagerResponse], dependencies=[_hostel_read])
+async def list_hostel_managers(hostel_id: str | None = None, db: AsyncSession = Depends(get_db),
+                               current_user: User = Depends(get_current_active_user)):
+    q = select(HostelManager).where(HostelManager.org_id == current_user.org_id)
+    if hostel_id:
+        q = q.where(HostelManager.hostel_id == hostel_id)
+    rows = (await db.execute(q)).scalars().all()
+    hostels = {h.id: h.name for h in (await db.execute(
+        select(Hostel).where(Hostel.org_id == current_user.org_id))).scalars().all()}
+    users = await _user_names(db, current_user.org_id, {r.user_id for r in rows})
+    return [HostelManagerResponse(id=r.id, hostel_id=r.hostel_id, hostel_name=hostels.get(r.hostel_id),
+                                  user_id=r.user_id, user_name=users.get(r.user_id)) for r in rows]
+
+
+@router.post("/hostel-managers", response_model=HostelManagerResponse, status_code=201, dependencies=[_hostel_write])
+async def add_hostel_manager(payload: HostelManagerCreate, db: AsyncSession = Depends(get_db),
+                             current_user: User = Depends(get_current_active_user)):
+    hostel = await _load_hostel(db, payload.hostel_id, current_user.org_id)
+    user = (await db.execute(select(User.id).where(User.id == payload.user_id, User.org_id == current_user.org_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=422, detail="user_id: not a user in your organisation")
+    existing = (await db.execute(select(HostelManager).where(
+        HostelManager.org_id == current_user.org_id, HostelManager.hostel_id == payload.hostel_id,
+        HostelManager.user_id == payload.user_id))).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="Already a manager of this hostel.")
+    m = HostelManager(org_id=current_user.org_id, hostel_id=payload.hostel_id, user_id=payload.user_id)
+    db.add(m)
+    await db.flush()
+    users = await _user_names(db, current_user.org_id, {payload.user_id})
+    return HostelManagerResponse(id=m.id, hostel_id=m.hostel_id, hostel_name=hostel.name,
+                                 user_id=m.user_id, user_name=users.get(m.user_id))
+
+
+@router.delete("/hostel-managers/{manager_id}", status_code=204, dependencies=[_hostel_write])
+async def remove_hostel_manager(manager_id: str, db: AsyncSession = Depends(get_db),
+                                current_user: User = Depends(get_current_active_user)):
+    m = (await db.execute(select(HostelManager).where(HostelManager.id == manager_id, HostelManager.org_id == current_user.org_id))).scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="Hostel manager not found.")
+    await db.delete(m)
+
+
+def _grade_response(g: HostelLifeGrade) -> HostelLifeGradeResponse:
+    return HostelLifeGradeResponse(id=g.id, name=g.name, description=g.description,
+                                   sort_order=g.sort_order, is_active=g.is_active)
+
+
+@router.get("/hostel-life-grades", response_model=list[HostelLifeGradeResponse], dependencies=[_hostel_read])
+async def list_hostel_life_grades(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(HostelLifeGrade).where(HostelLifeGrade.org_id == current_user.org_id)
+                             .order_by(HostelLifeGrade.sort_order, HostelLifeGrade.name))).scalars().all()
+    return [_grade_response(g) for g in rows]
+
+
+@router.post("/hostel-life-grades", response_model=HostelLifeGradeResponse, status_code=201, dependencies=[_hostel_write])
+async def create_hostel_life_grade(payload: HostelLifeGradeCreate, db: AsyncSession = Depends(get_db),
+                                   current_user: User = Depends(get_current_active_user)):
+    g = HostelLifeGrade(org_id=current_user.org_id, **payload.model_dump())
+    db.add(g)
+    await db.flush()
+    return _grade_response(g)
+
+
+@router.patch("/hostel-life-grades/{grade_id}", response_model=HostelLifeGradeResponse, dependencies=[_hostel_write])
+async def update_hostel_life_grade(grade_id: str, payload: HostelLifeGradeUpdate, db: AsyncSession = Depends(get_db),
+                                   current_user: User = Depends(get_current_active_user)):
+    g = (await db.execute(select(HostelLifeGrade).where(HostelLifeGrade.id == grade_id, HostelLifeGrade.org_id == current_user.org_id))).scalar_one_or_none()
+    if not g:
+        raise HTTPException(status_code=404, detail="Grade not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(g, f, v)
+    await db.flush()
+    return _grade_response(g)
+
+
+@router.delete("/hostel-life-grades/{grade_id}", status_code=204, dependencies=[_hostel_write])
+async def delete_hostel_life_grade(grade_id: str, db: AsyncSession = Depends(get_db),
+                                   current_user: User = Depends(get_current_active_user)):
+    g = (await db.execute(select(HostelLifeGrade).where(HostelLifeGrade.id == grade_id, HostelLifeGrade.org_id == current_user.org_id))).scalar_one_or_none()
+    if not g:
+        raise HTTPException(status_code=404, detail="Grade not found.")
+    await db.delete(g)
+
+
+def _cb_response(c: HostelCommentBank) -> HostelCommentBankResponse:
+    return HostelCommentBankResponse(id=c.id, text=c.text, category=c.category, is_active=c.is_active)
+
+
+@router.get("/hostel-comment-bank", response_model=list[HostelCommentBankResponse], dependencies=[_hostel_read])
+async def list_hostel_comment_bank(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(HostelCommentBank).where(HostelCommentBank.org_id == current_user.org_id)
+                             .order_by(HostelCommentBank.category.nullslast(), HostelCommentBank.created_at))).scalars().all()
+    return [_cb_response(c) for c in rows]
+
+
+@router.post("/hostel-comment-bank", response_model=HostelCommentBankResponse, status_code=201, dependencies=[_hostel_write])
+async def create_hostel_comment(payload: HostelCommentBankCreate, db: AsyncSession = Depends(get_db),
+                                current_user: User = Depends(get_current_active_user)):
+    c = HostelCommentBank(org_id=current_user.org_id, **payload.model_dump())
+    db.add(c)
+    await db.flush()
+    return _cb_response(c)
+
+
+@router.patch("/hostel-comment-bank/{comment_id}", response_model=HostelCommentBankResponse, dependencies=[_hostel_write])
+async def update_hostel_comment(comment_id: str, payload: HostelCommentBankUpdate, db: AsyncSession = Depends(get_db),
+                                current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(HostelCommentBank).where(HostelCommentBank.id == comment_id, HostelCommentBank.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Comment not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(c, f, v)
+    await db.flush()
+    return _cb_response(c)
+
+
+@router.delete("/hostel-comment-bank/{comment_id}", status_code=204, dependencies=[_hostel_write])
+async def delete_hostel_comment(comment_id: str, db: AsyncSession = Depends(get_db),
+                                current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(HostelCommentBank).where(HostelCommentBank.id == comment_id, HostelCommentBank.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Comment not found.")
+    await db.delete(c)
+
+
+# ── Hostel Students (roster over boarding_allocations) ───────────────────────
+
+async def _hostel_student_rows(db: AsyncSession, org_id: str, hostel_id: str | None,
+                               search: str | None) -> list[HostelStudentRow]:
+    q = (
+        select(BoardingAllocation, Student, Hostel.name)
+        .join(Student, Student.id == BoardingAllocation.student_id)
+        .join(Hostel, Hostel.id == BoardingAllocation.hostel_id)
+        .where(BoardingAllocation.org_id == org_id, BoardingAllocation.is_active == True)  # noqa: E712
+    )
+    if hostel_id:
+        q = q.where(BoardingAllocation.hostel_id == hostel_id)
+    if search:
+        term = f"%{search}%"
+        q = q.where(or_(Student.first_name.ilike(term), Student.last_name.ilike(term), Student.student_id.ilike(term)))
+    rows = (await db.execute(q.order_by(Student.first_name, Student.last_name).limit(1000))).all()
+    return [
+        HostelStudentRow(
+            allocation_id=a.id, student_id=s.id, student_name=f"{s.first_name} {s.last_name}".strip(),
+            admission_no=s.student_id, hostel_id=a.hostel_id, hostel_name=hname,
+            room=a.room, bed=a.bed, allocated_on=a.allocated_on,
+        )
+        for a, s, hname in rows
+    ]
+
+
+@router.get("/hostel-students", response_model=list[HostelStudentRow], dependencies=[_hostel_read])
+async def list_hostel_students(hostel_id: str | None = None, search: str | None = None,
+                               db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    return await _hostel_student_rows(db, current_user.org_id, hostel_id, search)
+
+
+@router.get("/hostel-students/export", dependencies=[_hostel_read])
+async def export_hostel_students(hostel_id: str | None = None, search: str | None = None,
+                                 db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = await _hostel_student_rows(db, current_user.org_id, hostel_id, search)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Student", "Admission No", "Hostel", "Room", "Bed", "Allocated On"])
+    for r in rows:
+        w.writerow([r.student_name or "", r.admission_no or "", r.hostel_name or "", r.room or "", r.bed or "",
+                    r.allocated_on.isoformat() if r.allocated_on else ""])
+    return Response(content=buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="hostel-students.csv"'})
+
+
+@router.post("/hostel-students/import", response_model=HostelImportResult, dependencies=[_hostel_write])
+async def import_hostel_students(file: UploadFile = File(...), db: AsyncSession = Depends(get_db),
+                                 current_user: User = Depends(get_current_active_user)):
+    """Bulk-allocate boarders from a CSV / Excel / Word / PDF table. Columns
+    (case-insensitive): student (name) or admission_no, hostel (name), room, bed.
+    Students are matched by admission_no first, else by exact full name; the hostel
+    is matched by name. Re-allocation deactivates any prior active allocation."""
+    content = await file.read()
+    try:
+        parsed = rows_from_upload(file.filename or "", content)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    students = (await db.execute(select(Student).where(
+        Student.org_id == current_user.org_id, Student.is_deleted == False))).scalars().all()  # noqa: E712
+    by_adm = {(s.student_id or "").strip().lower(): s for s in students if s.student_id}
+    by_name = {f"{s.first_name} {s.last_name}".strip().lower(): s for s in students}
+    hostels = {h.name.strip().lower(): h for h in (await db.execute(
+        select(Hostel).where(Hostel.org_id == current_user.org_id, Hostel.is_deleted == False))).scalars().all()}  # noqa: E712
+
+    imported = 0
+    errors: list[str] = []
+    for i, raw in enumerate(parsed, start=2):
+        row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items()}
+        adm = (row.get("admission_no") or row.get("admission") or row.get("admission no") or "").lower()
+        name = (row.get("student") or row.get("name") or row.get("student name") or "").lower()
+        hostel_name = (row.get("hostel") or row.get("hostel name") or "").lower()
+        student = by_adm.get(adm) if adm else None
+        if not student and name:
+            student = by_name.get(name)
+        if not student:
+            errors.append(f"row {i}: student not found ({row.get('student') or row.get('admission_no') or '—'})")
+            continue
+        hostel = hostels.get(hostel_name) if hostel_name else None
+        if not hostel:
+            errors.append(f"row {i}: hostel not found ({row.get('hostel') or '—'})")
+            continue
+        prior = (await db.execute(select(BoardingAllocation).where(
+            BoardingAllocation.student_id == student.id, BoardingAllocation.org_id == current_user.org_id,
+            BoardingAllocation.is_active == True))).scalars().all()  # noqa: E712
+        for p in prior:
+            p.is_active = False
+        db.add(BoardingAllocation(
+            student_id=student.id, hostel_id=hostel.id, room=(row.get("room") or None),
+            bed=(row.get("bed") or None), is_active=True, allocated_by=current_user.id,
+            org_id=current_user.org_id,
+        ))
+        imported += 1
+    await db.flush()
+    return HostelImportResult(imported=imported, errors=errors[:50])
