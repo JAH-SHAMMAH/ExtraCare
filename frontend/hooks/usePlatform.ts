@@ -176,3 +176,27 @@ export function useMobileDevices() { return useQuery<MobileDevice[]>({ queryKey:
 export function useAppConfig() { return useQuery<AppConfigItem[]>({ queryKey: ["app-config"], queryFn: () => platformApi.mobile.config() }); }
 export const useDeleteMobileDevice = m((id: string) => platformApi.mobile.remove(id), ["mobile-devices"], "Removed.");
 export const useSetConfig = m((d) => platformApi.mobile.setConfig(d), ["app-config"], "Saved.");
+
+// ── Secondary Report parity S-0: Terms & Sub-term + periods + deadlines ──────
+export function useTerms() { return useQuery<any[]>({ queryKey: ["academic-terms"], queryFn: () => platformApi.terms.list() }); }
+export function useSubTerms() { return useQuery<any[]>({ queryKey: ["academic-sub-terms"], queryFn: () => platformApi.subTerms.list() }); }
+export const useBootstrapTerms = m(() => platformApi.terms.bootstrap(), ["academic-terms", "academic-sub-terms"], "Terms seeded.");
+export const useCreateTerm = m((d) => platformApi.terms.create(d), ["academic-terms"], "Term added.");
+export const useUpdateTerm = m((v: { id: string; data: object }) => platformApi.terms.update(v.id, v.data), ["academic-terms"], "Updated.");
+export const useDeleteTerm = m((id: string) => platformApi.terms.remove(id), ["academic-terms"], "Removed.");
+export const useCreateSubTerm = m((d) => platformApi.subTerms.create(d), ["academic-sub-terms"], "Sub-term added.");
+export const useUpdateSubTerm = m((v: { id: string; data: object }) => platformApi.subTerms.update(v.id, v.data), ["academic-sub-terms"], "Updated.");
+export const useDeleteSubTerm = m((id: string) => platformApi.subTerms.remove(id), ["academic-sub-terms"], "Removed.");
+
+export function useTermPeriods(sessionId?: string) {
+  return useQuery<any[]>({ queryKey: ["term-periods", sessionId ?? "all"], queryFn: () => platformApi.termPeriods.list(sessionId), enabled: !!sessionId });
+}
+export const useUpsertTermPeriod = m((d) => platformApi.termPeriods.upsert(d), ["term-periods"], "Saved.");
+export const useDeleteTermPeriod = m((id: string) => platformApi.termPeriods.remove(id), ["term-periods"], "Removed.");
+
+export function useReportDeadlines(sessionId?: string) {
+  return useQuery<any[]>({ queryKey: ["report-deadlines", sessionId ?? "all"], queryFn: () => platformApi.reportDeadlines.list(sessionId), enabled: !!sessionId });
+}
+export const useCreateDeadline = m((d) => platformApi.reportDeadlines.create(d), ["report-deadlines"], "Deadline added.");
+export const useUpdateDeadline = m((v: { id: string; data: object }) => platformApi.reportDeadlines.update(v.id, v.data), ["report-deadlines"], "Updated.");
+export const useDeleteDeadline = m((id: string) => platformApi.reportDeadlines.remove(id), ["report-deadlines"], "Removed.");

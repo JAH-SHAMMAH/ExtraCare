@@ -620,3 +620,97 @@ class AppConfigResponse(BaseModel):
     value: Optional[str]
     description: Optional[str]
     org_id: str
+
+
+# ── Secondary Report parity S-0: Terms & Sub-term + periods + deadlines ──────
+
+class SubTermCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    alias: Optional[str] = None
+    position: int = 0
+
+
+class SubTermUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    alias: Optional[str] = None
+    position: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class SubTermResponse(BaseModel):
+    id: str
+    name: str
+    alias: Optional[str] = None
+    position: int = 0
+    is_active: bool = True
+
+
+class TermCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    alias: Optional[str] = None
+    position: int = 0
+
+
+class TermUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    alias: Optional[str] = None
+    position: Optional[int] = None
+    is_active: Optional[bool] = None
+    active_sub_term_id: Optional[str] = None
+
+
+class TermResponse(BaseModel):
+    id: str
+    name: str
+    alias: Optional[str] = None
+    position: int = 0
+    is_active: bool = False
+    active_sub_term_id: Optional[str] = None
+    active_sub_term_name: Optional[str] = None
+    active_sub_term_position: Optional[int] = None
+
+
+class TermPeriodUpsert(BaseModel):
+    session_id: str
+    term_id: str
+    sub_term_id: str
+    begin_date: Optional[date] = None
+    end_date: Optional[date] = None
+    next_term_begins: Optional[date] = None
+    published_date: Optional[date] = None
+    excluded_days: Optional[int] = None
+    total_days: Optional[int] = None
+
+
+class TermPeriodResponse(BaseModel):
+    id: str
+    session_id: str
+    term_id: str
+    term_name: Optional[str] = None
+    sub_term_id: str
+    sub_term_name: Optional[str] = None
+    begin_date: Optional[date] = None
+    end_date: Optional[date] = None
+    next_term_begins: Optional[date] = None
+    published_date: Optional[date] = None
+    excluded_days: Optional[int] = None
+    total_days: Optional[int] = None
+
+
+class DeadlineUpsert(BaseModel):
+    session_id: str
+    term_id: str
+    sub_term_id: Optional[str] = None
+    status: str = "open"
+    submission_deadline: Optional[date] = None
+
+
+class DeadlineResponse(BaseModel):
+    id: str
+    session_id: str
+    term_id: str
+    term_name: Optional[str] = None
+    sub_term_id: Optional[str] = None
+    sub_term_name: Optional[str] = None
+    status: str = "open"
+    submission_deadline: Optional[date] = None

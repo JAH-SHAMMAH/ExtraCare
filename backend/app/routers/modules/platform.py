@@ -24,6 +24,7 @@ from app.models.modules.platform import (
     AcademicSession, AcademicWeek, SchoolHouse, GradingBand,
     SchoolSection, GradingScale, ReportTemplate, ReportSubjectAssessment,
     AssessmentDomain,
+    AcademicTerm, AcademicSubTerm, TermPeriod, ReportDeadline,
     CustomFieldDefinition, CustomFieldValue,
     Poll, PollOption, PollVote,
     MailboxMessage, MailboxRecipient,
@@ -44,6 +45,9 @@ from app.schemas.platform import (
     SubjectAssessmentResponse, SubjectAssessmentUpdate, SetCambridgeAllRequest,
     DomainCreate, DomainUpdate, DomainResponse, DOMAIN_TYPES,
     SECTION_CURRICULA, ASSESSMENT_MODES, SCALE_TYPES,
+    SubTermCreate, SubTermUpdate, SubTermResponse,
+    TermCreate, TermUpdate, TermResponse,
+    TermPeriodUpsert, TermPeriodResponse, DeadlineUpsert, DeadlineResponse,
 )
 from app.services.ledger import money  # Decimal helper for grading bands
 
@@ -1218,3 +1222,252 @@ async def set_app_config(payload: AppConfigSet, db: AsyncSession = Depends(get_d
         db.add(c)
     await db.flush()
     return AppConfigResponse(id=c.id, key=c.key, value=c.value, description=c.description, org_id=c.org_id)
+
+
+# ── Secondary Report S-0: Terms & Sub-term ───────────────────────────────────
+
+def _subterm_response(s: AcademicSubTerm) -> SubTermResponse:
+    return SubTermResponse(id=s.id, name=s.name, alias=s.alias, position=s.position, is_active=s.is_active)
+
+
+@router.get("/academic-sub-terms", response_model=list[SubTermResponse], dependencies=[_school_read])
+async def list_sub_terms(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(AcademicSubTerm).where(AcademicSubTerm.org_id == current_user.org_id)
+                             .order_by(AcademicSubTerm.position, AcademicSubTerm.name))).scalars().all()
+    return [_subterm_response(s) for s in rows]
+
+
+@router.post("/academic-sub-terms", response_model=SubTermResponse, status_code=201, dependencies=[_write])
+async def create_sub_term(payload: SubTermCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    dupe = (await db.execute(select(AcademicSubTerm.id).where(
+        AcademicSubTerm.org_id == current_user.org_id, func.lower(AcademicSubTerm.name) == payload.name.lower()))).scalar_one_or_none()
+    if dupe:
+        raise HTTPException(status_code=409, detail="A sub-term with that name already exists.")
+    s = AcademicSubTerm(org_id=current_user.org_id, **payload.model_dump())
+    db.add(s)
+    await db.flush()
+    return _subterm_response(s)
+
+
+@router.patch("/academic-sub-terms/{sub_term_id}", response_model=SubTermResponse, dependencies=[_write])
+async def update_sub_term(sub_term_id: str, payload: SubTermUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = (await db.execute(select(AcademicSubTerm).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == current_user.org_id))).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Sub-term not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(s, f, v)
+    await db.flush()
+    return _subterm_response(s)
+
+
+@router.delete("/academic-sub-terms/{sub_term_id}", status_code=204, dependencies=[_write])
+async def delete_sub_term(sub_term_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    s = (await db.execute(select(AcademicSubTerm).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == current_user.org_id))).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Sub-term not found.")
+    await db.delete(s)
+
+
+async def _term_response(db: AsyncSession, org_id: str, t: AcademicTerm, sub_names: dict) -> TermResponse:
+    st = sub_names.get(t.active_sub_term_id) if t.active_sub_term_id else None
+    return TermResponse(id=t.id, name=t.name, alias=t.alias, position=t.position, is_active=t.is_active,
+                        active_sub_term_id=t.active_sub_term_id,
+                        active_sub_term_name=(st[0] if st else None),
+                        active_sub_term_position=(st[1] if st else None))
+
+
+@router.get("/academic-terms", response_model=list[TermResponse], dependencies=[_school_read])
+async def list_terms(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(AcademicTerm).where(AcademicTerm.org_id == current_user.org_id)
+                             .order_by(AcademicTerm.position, AcademicTerm.name))).scalars().all()
+    subs = {s.id: (s.name, s.position) for s in (await db.execute(
+        select(AcademicSubTerm).where(AcademicSubTerm.org_id == current_user.org_id))).scalars().all()}
+    return [await _term_response(db, current_user.org_id, t, subs) for t in rows]
+
+
+async def _validate_sub_term(db: AsyncSession, org_id: str, sub_term_id: str | None):
+    if sub_term_id is None:
+        return
+    ok = (await db.execute(select(AcademicSubTerm.id).where(
+        AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org_id))).scalar_one_or_none()
+    if not ok:
+        raise HTTPException(status_code=422, detail="active_sub_term_id: not a sub-term in your organisation")
+
+
+async def _deactivate_other_terms(db: AsyncSession, org_id: str, keep_id: str | None):
+    await db.execute(update(AcademicTerm).where(
+        AcademicTerm.org_id == org_id, AcademicTerm.id != (keep_id or "")).values(is_active=False))
+
+
+@router.post("/academic-terms", response_model=TermResponse, status_code=201, dependencies=[_write])
+async def create_term(payload: TermCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    dupe = (await db.execute(select(AcademicTerm.id).where(
+        AcademicTerm.org_id == current_user.org_id, func.lower(AcademicTerm.name) == payload.name.lower()))).scalar_one_or_none()
+    if dupe:
+        raise HTTPException(status_code=409, detail="A term with that name already exists.")
+    t = AcademicTerm(org_id=current_user.org_id, **payload.model_dump())
+    db.add(t)
+    await db.flush()
+    subs = {s.id: (s.name, s.position) for s in (await db.execute(
+        select(AcademicSubTerm).where(AcademicSubTerm.org_id == current_user.org_id))).scalars().all()}
+    return await _term_response(db, current_user.org_id, t, subs)
+
+
+@router.patch("/academic-terms/{term_id}", response_model=TermResponse, dependencies=[_write])
+async def update_term(term_id: str, payload: TermUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    t = (await db.execute(select(AcademicTerm).where(AcademicTerm.id == term_id, AcademicTerm.org_id == current_user.org_id))).scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Term not found.")
+    data = payload.model_dump(exclude_unset=True)
+    if "active_sub_term_id" in data:
+        await _validate_sub_term(db, current_user.org_id, data["active_sub_term_id"])
+    for f, v in data.items():
+        setattr(t, f, v)
+    await db.flush()
+    # Exactly one active term: if this one just became active, deactivate the rest.
+    if data.get("is_active") is True:
+        await _deactivate_other_terms(db, current_user.org_id, t.id)
+    subs = {s.id: (s.name, s.position) for s in (await db.execute(
+        select(AcademicSubTerm).where(AcademicSubTerm.org_id == current_user.org_id))).scalars().all()}
+    return await _term_response(db, current_user.org_id, t, subs)
+
+
+@router.delete("/academic-terms/{term_id}", status_code=204, dependencies=[_write])
+async def delete_term(term_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    t = (await db.execute(select(AcademicTerm).where(AcademicTerm.id == term_id, AcademicTerm.org_id == current_user.org_id))).scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Term not found.")
+    await db.delete(t)
+
+
+@router.post("/academic-terms/bootstrap", response_model=list[TermResponse], dependencies=[_write])
+async def bootstrap_terms(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Idempotent seed of the standard terms (Autumn/Spring/Summer) + sub-terms
+    (Half-Term/Full-Term). Only adds what's missing; never duplicates."""
+    org = current_user.org_id
+    have_subs = {s.name.lower() for s in (await db.execute(
+        select(AcademicSubTerm).where(AcademicSubTerm.org_id == org))).scalars().all()}
+    for pos, name in enumerate([("Half-Term"), ("Full-Term")], start=1):
+        if name.lower() not in have_subs:
+            db.add(AcademicSubTerm(org_id=org, name=name, position=pos, is_active=True))
+    have_terms = {t.name.lower() for t in (await db.execute(
+        select(AcademicTerm).where(AcademicTerm.org_id == org))).scalars().all()}
+    for pos, name in enumerate(["Autumn", "Spring", "Summer"], start=1):
+        if name.lower() not in have_terms:
+            db.add(AcademicTerm(org_id=org, name=name, position=pos, is_active=False))
+    await db.flush()
+    return await list_terms(db=db, current_user=current_user)
+
+
+# ── S-0: Term periods (Term Begins/Ends + Attendance Setup) ──────────────────
+
+async def _term_sub_names(db: AsyncSession, org_id: str):
+    tnames = {t.id: t.name for t in (await db.execute(select(AcademicTerm).where(AcademicTerm.org_id == org_id))).scalars().all()}
+    snames = {s.id: s.name for s in (await db.execute(select(AcademicSubTerm).where(AcademicSubTerm.org_id == org_id))).scalars().all()}
+    return tnames, snames
+
+
+def _period_response(p: TermPeriod, tnames, snames) -> TermPeriodResponse:
+    return TermPeriodResponse(
+        id=p.id, session_id=p.session_id, term_id=p.term_id, term_name=tnames.get(p.term_id),
+        sub_term_id=p.sub_term_id, sub_term_name=snames.get(p.sub_term_id),
+        begin_date=p.begin_date, end_date=p.end_date, next_term_begins=p.next_term_begins,
+        published_date=p.published_date, excluded_days=p.excluded_days, total_days=p.total_days)
+
+
+@router.get("/term-periods", response_model=list[TermPeriodResponse], dependencies=[_school_read])
+async def list_term_periods(session_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = select(TermPeriod).where(TermPeriod.org_id == current_user.org_id)
+    if session_id:
+        q = q.where(TermPeriod.session_id == session_id)
+    rows = (await db.execute(q)).scalars().all()
+    tnames, snames = await _term_sub_names(db, current_user.org_id)
+    rows = sorted(rows, key=lambda p: (snames.get(p.sub_term_id) or "", tnames.get(p.term_id) or ""))
+    return [_period_response(p, tnames, snames) for p in rows]
+
+
+@router.post("/term-periods", response_model=TermPeriodResponse, status_code=201, dependencies=[_write])
+async def upsert_term_period(payload: TermPeriodUpsert, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Create or update the dates/attendance for a (session, term, sub-term)."""
+    org = current_user.org_id
+    existing = (await db.execute(select(TermPeriod).where(
+        TermPeriod.org_id == org, TermPeriod.session_id == payload.session_id,
+        TermPeriod.term_id == payload.term_id, TermPeriod.sub_term_id == payload.sub_term_id))).scalar_one_or_none()
+    data = payload.model_dump()
+    if existing:
+        for f, v in data.items():
+            setattr(existing, f, v)
+        p = existing
+    else:
+        p = TermPeriod(org_id=org, **data)
+        db.add(p)
+    await db.flush()
+    tnames, snames = await _term_sub_names(db, org)
+    return _period_response(p, tnames, snames)
+
+
+@router.patch("/term-periods/{period_id}", response_model=TermPeriodResponse, dependencies=[_write])
+async def update_term_period(period_id: str, payload: TermPeriodUpsert, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    p = (await db.execute(select(TermPeriod).where(TermPeriod.id == period_id, TermPeriod.org_id == current_user.org_id))).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Term period not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(p, f, v)
+    await db.flush()
+    tnames, snames = await _term_sub_names(db, current_user.org_id)
+    return _period_response(p, tnames, snames)
+
+
+@router.delete("/term-periods/{period_id}", status_code=204, dependencies=[_write])
+async def delete_term_period(period_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    p = (await db.execute(select(TermPeriod).where(TermPeriod.id == period_id, TermPeriod.org_id == current_user.org_id))).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Term period not found.")
+    await db.delete(p)
+
+
+# ── S-0: Deadlines ───────────────────────────────────────────────────────────
+
+def _deadline_response(d: ReportDeadline, tnames, snames) -> DeadlineResponse:
+    return DeadlineResponse(id=d.id, session_id=d.session_id, term_id=d.term_id, term_name=tnames.get(d.term_id),
+                            sub_term_id=d.sub_term_id, sub_term_name=(snames.get(d.sub_term_id) if d.sub_term_id else None),
+                            status=d.status, submission_deadline=d.submission_deadline)
+
+
+@router.get("/report-deadlines", response_model=list[DeadlineResponse], dependencies=[_school_read])
+async def list_deadlines(session_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = select(ReportDeadline).where(ReportDeadline.org_id == current_user.org_id)
+    if session_id:
+        q = q.where(ReportDeadline.session_id == session_id)
+    rows = (await db.execute(q.order_by(ReportDeadline.created_at))).scalars().all()
+    tnames, snames = await _term_sub_names(db, current_user.org_id)
+    return [_deadline_response(d, tnames, snames) for d in rows]
+
+
+@router.post("/report-deadlines", response_model=DeadlineResponse, status_code=201, dependencies=[_write])
+async def create_deadline(payload: DeadlineUpsert, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    d = ReportDeadline(org_id=current_user.org_id, **payload.model_dump())
+    db.add(d)
+    await db.flush()
+    tnames, snames = await _term_sub_names(db, current_user.org_id)
+    return _deadline_response(d, tnames, snames)
+
+
+@router.patch("/report-deadlines/{deadline_id}", response_model=DeadlineResponse, dependencies=[_write])
+async def update_deadline(deadline_id: str, payload: DeadlineUpsert, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    d = (await db.execute(select(ReportDeadline).where(ReportDeadline.id == deadline_id, ReportDeadline.org_id == current_user.org_id))).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Deadline not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(d, f, v)
+    await db.flush()
+    tnames, snames = await _term_sub_names(db, current_user.org_id)
+    return _deadline_response(d, tnames, snames)
+
+
+@router.delete("/report-deadlines/{deadline_id}", status_code=204, dependencies=[_write])
+async def delete_deadline(deadline_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    d = (await db.execute(select(ReportDeadline).where(ReportDeadline.id == deadline_id, ReportDeadline.org_id == current_user.org_id))).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Deadline not found.")
+    await db.delete(d)

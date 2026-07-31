@@ -254,7 +254,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     label: "Nursery School Report",
     icon: FileText,
     items: [
-      { href: "/dashboard/modules/school/school-setup?tab=reports", label: "Report Setup", icon: Settings2 },
+      { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/report-cards?section=Nursery", label: "Reports View", icon: FileText },
       { href: "/dashboard/modules/school/exams", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
@@ -269,7 +269,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     label: "Primary School Report",
     icon: FileText,
     items: [
-      { href: "/dashboard/modules/school/school-setup?tab=reports", label: "Report Setup", icon: Settings2 },
+      { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/report-cards?section=Primary", label: "Reports View", icon: FileText },
       { href: "/dashboard/modules/school/exams", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
@@ -283,7 +283,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     label: "Secondary School Report",
     icon: FileText,
     items: [
-      { href: "/dashboard/modules/school/school-setup?tab=reports", label: "Report Setup", icon: Settings2 },
+      { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/report-cards?section=Secondary", label: "Reports View", icon: FileText },
       { href: "/dashboard/modules/school/exams", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },

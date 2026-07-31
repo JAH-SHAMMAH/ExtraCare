@@ -160,6 +160,82 @@ class AcademicWeek(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+# ── Secondary Report parity S-0: Terms & Sub-term + dated config ─────────────
+
+class AcademicTerm(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A managed academic term (Report Setup → Terms & Sub-term), e.g. Autumn /
+    Spring / Summer. Exactly one is the active (current) term; ``active_sub_term_id``
+    is which sub-term is current within it. Distinct from the free-text
+    ``AcademicSession.term`` — this is the structured report-domain list."""
+    __tablename__ = "academic_terms"
+
+    name = Column(String(60), nullable=False)
+    alias = Column(String(60), nullable=True)
+    position = Column(Integer, default=0, nullable=False)
+    is_active = Column(Boolean, default=False, nullable=False)
+    active_sub_term_id = Column(String(36), ForeignKey("academic_sub_terms.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "name", name="uq_academic_terms_org_name"),
+        Index("ix_academic_terms_org", "org_id"),
+    )
+
+
+class AcademicSubTerm(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A sub-term applied across every term (Report Setup → Terms & Sub-term):
+    Half-Term (mid) / Full-Term. The report title + assessment scoping key off it.
+    Seeded with Half-Term + Full-Term (Mock deliberately excluded)."""
+    __tablename__ = "academic_sub_terms"
+
+    name = Column(String(60), nullable=False)
+    alias = Column(String(60), nullable=True)
+    position = Column(Integer, default=0, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "name", name="uq_academic_sub_terms_org_name"),
+        Index("ix_academic_sub_terms_org", "org_id"),
+    )
+
+
+class TermPeriod(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Dates + attendance denominators for one (session, term, sub-term) — backs
+    BOTH Report Setup → 'Term Begins/Ends Date' and 'Attendance Setup' (two views
+    of the same row). ``total_days`` is the attendance % denominator."""
+    __tablename__ = "term_periods"
+
+    session_id = Column(String(36), ForeignKey("academic_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    term_id = Column(String(36), ForeignKey("academic_terms.id", ondelete="CASCADE"), nullable=False, index=True)
+    sub_term_id = Column(String(36), ForeignKey("academic_sub_terms.id", ondelete="CASCADE"), nullable=False, index=True)
+    begin_date = Column(Date, nullable=True)          # attendance begin
+    end_date = Column(Date, nullable=True)            # attendance end + term/sub-term ends
+    next_term_begins = Column(Date, nullable=True)
+    published_date = Column(Date, nullable=True)
+    excluded_days = Column(Integer, nullable=True)    # non-school days in the window
+    total_days = Column(Integer, nullable=True)       # attendance denominator (school days)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "session_id", "term_id", "sub_term_id", name="uq_term_period"),
+        Index("ix_term_periods_org_session", "org_id", "session_id"),
+    )
+
+
+class ReportDeadline(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Result-submission deadline for a (session, term, sub-term) — Report Setup →
+    Deadline."""
+    __tablename__ = "report_deadlines"
+
+    session_id = Column(String(36), ForeignKey("academic_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    term_id = Column(String(36), ForeignKey("academic_terms.id", ondelete="CASCADE"), nullable=False, index=True)
+    sub_term_id = Column(String(36), ForeignKey("academic_sub_terms.id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(String(20), default="open", nullable=False)   # open | closed
+    submission_deadline = Column(Date, nullable=True)
+
+    __table_args__ = (
+        Index("ix_report_deadlines_org_session", "org_id", "session_id"),
+    )
+
+
 class SchoolHouse(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A school house (for the merit/conduct leaderboard + Pastoral House Setup)."""
     __tablename__ = "school_houses"

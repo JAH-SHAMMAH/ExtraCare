@@ -204,6 +204,8 @@ export const ROUTE_ACCESS: RouteAccess[] = [
 
   // ── Batch 7: Administration & Platform (settings:* — admin only) ────────
   { prefix: "/dashboard/modules/school/school-setup", permission: "settings:read" },
+  // Report Setup hub (Educare parity) — admin config, same tier as school-setup.
+  { prefix: "/dashboard/modules/school/report-setup", permission: "settings:read" },
   { prefix: "/dashboard/modules/school/biometric", permission: "settings:read" },
   { prefix: "/dashboard/modules/school/custom-fields", permission: "settings:read" },
   { prefix: "/dashboard/modules/school/voting", permission: "settings:read" },

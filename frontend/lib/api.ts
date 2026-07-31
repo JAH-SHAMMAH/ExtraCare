@@ -1680,6 +1680,32 @@ export const platformApi = {
     remove: (id: string) => api.delete(`/platform/report-templates/${id}`),
     bootstrap: () => api.post("/platform/report-config/bootstrap").then((r) => r.data),
   },
+  // Secondary Report parity S-0: Terms & Sub-term + periods + deadlines.
+  subTerms: {
+    list: () => api.get("/platform/academic-sub-terms").then((r) => r.data),
+    create: (d: object) => api.post("/platform/academic-sub-terms", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/platform/academic-sub-terms/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/academic-sub-terms/${id}`),
+  },
+  terms: {
+    list: () => api.get("/platform/academic-terms").then((r) => r.data),
+    create: (d: object) => api.post("/platform/academic-terms", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/platform/academic-terms/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/academic-terms/${id}`),
+    bootstrap: () => api.post("/platform/academic-terms/bootstrap").then((r) => r.data),
+  },
+  termPeriods: {
+    list: (session_id?: string) => api.get("/platform/term-periods", { params: session_id ? { session_id } : {} }).then((r) => r.data),
+    upsert: (d: object) => api.post("/platform/term-periods", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/platform/term-periods/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/term-periods/${id}`),
+  },
+  reportDeadlines: {
+    list: (session_id?: string) => api.get("/platform/report-deadlines", { params: session_id ? { session_id } : {} }).then((r) => r.data),
+    create: (d: object) => api.post("/platform/report-deadlines", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/platform/report-deadlines/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/report-deadlines/${id}`),
+  },
   customFields: {
     list: (entity_type?: string) => api.get("/platform/custom-fields", { params: { entity_type } }).then((r) => r.data),
     create: (d: object) => api.post("/platform/custom-fields", d).then((r) => r.data),
