@@ -714,3 +714,59 @@ class DeadlineResponse(BaseModel):
     sub_term_name: Optional[str] = None
     status: str = "open"
     submission_deadline: Optional[date] = None
+
+
+# ── Secondary Report parity S-1a: Comment types + Result Default Comments ────
+
+class CommentTypeCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    comment_type: str = "short"          # short | long
+    max_length: Optional[int] = None
+
+
+class CommentTypeUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    comment_type: Optional[str] = None
+    max_length: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class CommentTypeResponse(BaseModel):
+    id: str
+    name: str
+    comment_type: str = "short"
+    max_length: Optional[int] = None
+    is_active: bool = True
+
+
+class DefaultCommentCreate(BaseModel):
+    teacher_type: str = "class"          # subject | class | head
+    grading_scale_id: Optional[str] = None
+    year_group: Optional[str] = None
+    min_score: Optional[Decimal] = None
+    max_score: Optional[Decimal] = None
+    comment: str = Field(min_length=1)
+
+
+class DefaultCommentUpdate(BaseModel):
+    teacher_type: Optional[str] = None
+    grading_scale_id: Optional[str] = None
+    year_group: Optional[str] = None
+    min_score: Optional[Decimal] = None
+    max_score: Optional[Decimal] = None
+    comment: Optional[str] = Field(default=None, min_length=1)
+
+
+class DefaultCommentResponse(BaseModel):
+    id: str
+    teacher_type: str = "class"
+    grading_scale_id: Optional[str] = None
+    grading_scale_name: Optional[str] = None
+    year_group: Optional[str] = None
+    min_score: Optional[Decimal] = None
+    max_score: Optional[Decimal] = None
+    comment: str
+
+
+COMMENT_LENGTH_TYPES = {"short", "long"}
+TEACHER_TYPES = {"subject", "class", "head"}

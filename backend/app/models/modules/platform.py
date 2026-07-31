@@ -236,6 +236,41 @@ class ReportDeadline(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class ReportCommentType(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Report Setup → Comment: a named comment slot on the report card (e.g.
+    'Classroom Behaviour' short, "Teacher's Comment" long). ``comment_type`` sets
+    the length class; ``max_length`` caps long comments (e.g. 5000)."""
+    __tablename__ = "report_comment_types"
+
+    name = Column(String(120), nullable=False)
+    comment_type = Column(String(20), default="short", nullable=False)   # short | long
+    max_length = Column(Integer, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "name", name="uq_report_comment_types_org_name"),
+        Index("ix_report_comment_types_org", "org_id"),
+    )
+
+
+class ResultDefaultComment(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Report Setup → Result Default Comment: an auto-fill comment for a score band,
+    keyed by teacher type + grading scale (+ optional year group). When a student's
+    score falls in [min_score, max_score] it pre-fills that teacher's comment."""
+    __tablename__ = "result_default_comments"
+
+    teacher_type = Column(String(20), default="class", nullable=False)   # subject | class | head
+    grading_scale_id = Column(String(36), ForeignKey("grading_scales.id", ondelete="SET NULL"), nullable=True, index=True)
+    year_group = Column(String(60), nullable=True)   # e.g. "YEAR 7"; null = all
+    min_score = Column(Numeric(6, 2), nullable=True)
+    max_score = Column(Numeric(6, 2), nullable=True)
+    comment = Column(Text, nullable=False)
+
+    __table_args__ = (
+        Index("ix_result_default_comments_org", "org_id", "teacher_type"),
+    )
+
+
 class SchoolHouse(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A school house (for the merit/conduct leaderboard + Pastoral House Setup)."""
     __tablename__ = "school_houses"

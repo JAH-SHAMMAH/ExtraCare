@@ -1706,6 +1706,19 @@ export const platformApi = {
     update: (id: string, d: object) => api.patch(`/platform/report-deadlines/${id}`, d).then((r) => r.data),
     remove: (id: string) => api.delete(`/platform/report-deadlines/${id}`),
   },
+  // S-1a: comment types + result default comments.
+  commentTypes: {
+    list: () => api.get("/platform/report-comment-types").then((r) => r.data),
+    create: (d: object) => api.post("/platform/report-comment-types", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/platform/report-comment-types/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/report-comment-types/${id}`),
+  },
+  defaultComments: {
+    list: (p?: { teacher_type?: string; grading_scale_id?: string; year_group?: string }) => api.get("/platform/result-default-comments", { params: p }).then((r) => r.data),
+    create: (d: object) => api.post("/platform/result-default-comments", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/platform/result-default-comments/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/result-default-comments/${id}`),
+  },
   customFields: {
     list: (entity_type?: string) => api.get("/platform/custom-fields", { params: { entity_type } }).then((r) => r.data),
     create: (d: object) => api.post("/platform/custom-fields", d).then((r) => r.data),

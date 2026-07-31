@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useHasPermission } from "@/components/guards/PermissionGate";
-import { TermsTab, TermDatesTab, AttendanceTab, DeadlineTab } from "@/components/reports/ReportSetupTabs";
+import { TermsTab, TermDatesTab, AttendanceTab, DeadlineTab, CommentTab, DefaultCommentTab } from "@/components/reports/ReportSetupTabs";
 import { cn } from "@/lib/utils";
 import { Settings2 } from "lucide-react";
 
@@ -22,7 +22,7 @@ const TABS: [Tab, string][] = [
   ["photo", "Result Photo Setup"], ["exclusion", "Subjects For Score Exclusion"], ["result-view", "Result View"],
 ];
 
-const LIVE = new Set<Tab>(["terms", "term-dates", "attendance", "deadline"]);
+const LIVE = new Set<Tab>(["terms", "comment", "default-comment", "term-dates", "attendance", "deadline"]);
 
 export default function ReportSetupPage() {
   const canWrite = useHasPermission("settings:write");
@@ -41,6 +41,8 @@ export default function ReportSetupPage() {
       </div>
 
       {tab === "terms" ? <TermsTab canWrite={canWrite} />
+        : tab === "comment" ? <CommentTab canWrite={canWrite} />
+        : tab === "default-comment" ? <DefaultCommentTab canWrite={canWrite} />
         : tab === "term-dates" ? <TermDatesTab canWrite={canWrite} />
         : tab === "attendance" ? <AttendanceTab canWrite={canWrite} />
         : tab === "deadline" ? <DeadlineTab canWrite={canWrite} />

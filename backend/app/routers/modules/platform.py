@@ -25,6 +25,7 @@ from app.models.modules.platform import (
     SchoolSection, GradingScale, ReportTemplate, ReportSubjectAssessment,
     AssessmentDomain,
     AcademicTerm, AcademicSubTerm, TermPeriod, ReportDeadline,
+    ReportCommentType, ResultDefaultComment,
     CustomFieldDefinition, CustomFieldValue,
     Poll, PollOption, PollVote,
     MailboxMessage, MailboxRecipient,
@@ -48,6 +49,9 @@ from app.schemas.platform import (
     SubTermCreate, SubTermUpdate, SubTermResponse,
     TermCreate, TermUpdate, TermResponse,
     TermPeriodUpsert, TermPeriodResponse, DeadlineUpsert, DeadlineResponse,
+    CommentTypeCreate, CommentTypeUpdate, CommentTypeResponse,
+    DefaultCommentCreate, DefaultCommentUpdate, DefaultCommentResponse,
+    COMMENT_LENGTH_TYPES, TEACHER_TYPES,
 )
 from app.services.ledger import money  # Decimal helper for grading bands
 
@@ -1470,4 +1474,121 @@ async def delete_deadline(deadline_id: str, db: AsyncSession = Depends(get_db), 
     d = (await db.execute(select(ReportDeadline).where(ReportDeadline.id == deadline_id, ReportDeadline.org_id == current_user.org_id))).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Deadline not found.")
+    await db.delete(d)
+
+
+# ── Secondary Report S-1a: Comment types ─────────────────────────────────────
+
+def _comment_type_response(c: ReportCommentType) -> CommentTypeResponse:
+    return CommentTypeResponse(id=c.id, name=c.name, comment_type=c.comment_type,
+                              max_length=c.max_length, is_active=c.is_active)
+
+
+@router.get("/report-comment-types", response_model=list[CommentTypeResponse], dependencies=[_school_read])
+async def list_comment_types(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(ReportCommentType).where(ReportCommentType.org_id == current_user.org_id)
+                             .order_by(ReportCommentType.created_at))).scalars().all()
+    return [_comment_type_response(c) for c in rows]
+
+
+@router.post("/report-comment-types", response_model=CommentTypeResponse, status_code=201, dependencies=[_write])
+async def create_comment_type(payload: CommentTypeCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    if payload.comment_type not in COMMENT_LENGTH_TYPES:
+        raise HTTPException(status_code=422, detail=f"comment_type must be one of {sorted(COMMENT_LENGTH_TYPES)}")
+    dupe = (await db.execute(select(ReportCommentType.id).where(
+        ReportCommentType.org_id == current_user.org_id, func.lower(ReportCommentType.name) == payload.name.lower()))).scalar_one_or_none()
+    if dupe:
+        raise HTTPException(status_code=409, detail="A comment type with that name already exists.")
+    c = ReportCommentType(org_id=current_user.org_id, **payload.model_dump())
+    db.add(c)
+    await db.flush()
+    return _comment_type_response(c)
+
+
+@router.patch("/report-comment-types/{type_id}", response_model=CommentTypeResponse, dependencies=[_write])
+async def update_comment_type(type_id: str, payload: CommentTypeUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(ReportCommentType).where(ReportCommentType.id == type_id, ReportCommentType.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Comment type not found.")
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("comment_type") and data["comment_type"] not in COMMENT_LENGTH_TYPES:
+        raise HTTPException(status_code=422, detail=f"comment_type must be one of {sorted(COMMENT_LENGTH_TYPES)}")
+    for f, v in data.items():
+        setattr(c, f, v)
+    await db.flush()
+    return _comment_type_response(c)
+
+
+@router.delete("/report-comment-types/{type_id}", status_code=204, dependencies=[_write])
+async def delete_comment_type(type_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(ReportCommentType).where(ReportCommentType.id == type_id, ReportCommentType.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Comment type not found.")
+    await db.delete(c)
+
+
+# ── S-1a: Result Default Comments ────────────────────────────────────────────
+
+def _default_comment_response(d: ResultDefaultComment, scale_names: dict) -> DefaultCommentResponse:
+    return DefaultCommentResponse(
+        id=d.id, teacher_type=d.teacher_type, grading_scale_id=d.grading_scale_id,
+        grading_scale_name=(scale_names.get(d.grading_scale_id) if d.grading_scale_id else None),
+        year_group=d.year_group, min_score=d.min_score, max_score=d.max_score, comment=d.comment)
+
+
+@router.get("/result-default-comments", response_model=list[DefaultCommentResponse], dependencies=[_school_read])
+async def list_default_comments(teacher_type: str | None = None, grading_scale_id: str | None = None,
+                                year_group: str | None = None, db: AsyncSession = Depends(get_db),
+                                current_user: User = Depends(get_current_active_user)):
+    q = select(ResultDefaultComment).where(ResultDefaultComment.org_id == current_user.org_id)
+    if teacher_type:
+        q = q.where(ResultDefaultComment.teacher_type == teacher_type)
+    if grading_scale_id:
+        q = q.where(ResultDefaultComment.grading_scale_id == grading_scale_id)
+    if year_group:
+        q = q.where(ResultDefaultComment.year_group == year_group)
+    rows = (await db.execute(q.order_by(ResultDefaultComment.max_score.desc().nullslast()))).scalars().all()
+    scale_names = {s.id: s.name for s in (await db.execute(
+        select(GradingScale).where(GradingScale.org_id == current_user.org_id))).scalars().all()}
+    return [_default_comment_response(d, scale_names) for d in rows]
+
+
+@router.post("/result-default-comments", response_model=DefaultCommentResponse, status_code=201, dependencies=[_write])
+async def create_default_comment(payload: DefaultCommentCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    if payload.teacher_type not in TEACHER_TYPES:
+        raise HTTPException(status_code=422, detail=f"teacher_type must be one of {sorted(TEACHER_TYPES)}")
+    if payload.grading_scale_id:
+        ok = (await db.execute(select(GradingScale.id).where(
+            GradingScale.id == payload.grading_scale_id, GradingScale.org_id == current_user.org_id))).scalar_one_or_none()
+        if not ok:
+            raise HTTPException(status_code=422, detail="grading_scale_id: not a scale in your organisation")
+    d = ResultDefaultComment(org_id=current_user.org_id, **payload.model_dump())
+    db.add(d)
+    await db.flush()
+    scale_names = {s.id: s.name for s in (await db.execute(
+        select(GradingScale).where(GradingScale.org_id == current_user.org_id))).scalars().all()}
+    return _default_comment_response(d, scale_names)
+
+
+@router.patch("/result-default-comments/{comment_id}", response_model=DefaultCommentResponse, dependencies=[_write])
+async def update_default_comment(comment_id: str, payload: DefaultCommentUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    d = (await db.execute(select(ResultDefaultComment).where(ResultDefaultComment.id == comment_id, ResultDefaultComment.org_id == current_user.org_id))).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Default comment not found.")
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("teacher_type") and data["teacher_type"] not in TEACHER_TYPES:
+        raise HTTPException(status_code=422, detail=f"teacher_type must be one of {sorted(TEACHER_TYPES)}")
+    for f, v in data.items():
+        setattr(d, f, v)
+    await db.flush()
+    scale_names = {s.id: s.name for s in (await db.execute(
+        select(GradingScale).where(GradingScale.org_id == current_user.org_id))).scalars().all()}
+    return _default_comment_response(d, scale_names)
+
+
+@router.delete("/result-default-comments/{comment_id}", status_code=204, dependencies=[_write])
+async def delete_default_comment(comment_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    d = (await db.execute(select(ResultDefaultComment).where(ResultDefaultComment.id == comment_id, ResultDefaultComment.org_id == current_user.org_id))).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Default comment not found.")
     await db.delete(d)

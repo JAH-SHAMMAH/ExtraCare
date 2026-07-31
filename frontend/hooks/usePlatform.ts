@@ -200,3 +200,16 @@ export function useReportDeadlines(sessionId?: string) {
 export const useCreateDeadline = m((d) => platformApi.reportDeadlines.create(d), ["report-deadlines"], "Deadline added.");
 export const useUpdateDeadline = m((v: { id: string; data: object }) => platformApi.reportDeadlines.update(v.id, v.data), ["report-deadlines"], "Updated.");
 export const useDeleteDeadline = m((id: string) => platformApi.reportDeadlines.remove(id), ["report-deadlines"], "Removed.");
+
+// ── S-1a: Comment types + Result Default Comments ────────────────────────────
+export function useCommentTypes() { return useQuery<any[]>({ queryKey: ["comment-types"], queryFn: () => platformApi.commentTypes.list() }); }
+export const useCreateCommentType = m((d) => platformApi.commentTypes.create(d), ["comment-types"], "Comment type added.");
+export const useUpdateCommentType = m((v: { id: string; data: object }) => platformApi.commentTypes.update(v.id, v.data), ["comment-types"], "Updated.");
+export const useDeleteCommentType = m((id: string) => platformApi.commentTypes.remove(id), ["comment-types"], "Removed.");
+
+export function useDefaultComments(params?: { teacher_type?: string; grading_scale_id?: string; year_group?: string }) {
+  return useQuery<any[]>({ queryKey: ["default-comments", params], queryFn: () => platformApi.defaultComments.list(params) });
+}
+export const useCreateDefaultComment = m((d) => platformApi.defaultComments.create(d), ["default-comments"], "Comment added.");
+export const useUpdateDefaultComment = m((v: { id: string; data: object }) => platformApi.defaultComments.update(v.id, v.data), ["default-comments"], "Updated.");
+export const useDeleteDefaultComment = m((id: string) => platformApi.defaultComments.remove(id), ["default-comments"], "Removed.");
