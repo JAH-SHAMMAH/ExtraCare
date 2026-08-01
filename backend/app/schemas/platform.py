@@ -338,7 +338,16 @@ class GradingScaleCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     scale_type: str = "numeric"
     is_provisional: bool = True
+    show_in_table: bool = True
+    purpose: str = "grade"           # grade | keys | cumulative | mock
     bands: list[ScaleBandCreate] = Field(default_factory=list)
+
+
+class GradingScaleUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    is_provisional: Optional[bool] = None
+    show_in_table: Optional[bool] = None
+    purpose: Optional[str] = None
 
 
 class GradingScaleResponse(BaseModel):
@@ -346,8 +355,38 @@ class GradingScaleResponse(BaseModel):
     name: str
     scale_type: str
     is_provisional: bool
+    show_in_table: bool = True
+    purpose: str = "grade"
     bands: list[BandResponse]
     org_id: str
+
+
+SCALE_PURPOSES = {"grade", "keys", "cumulative", "mock"}
+
+
+class BrandingUpdate(BaseModel):
+    school_motto: Optional[str] = None
+    school_name_alias: Optional[str] = None
+    school_address: Optional[str] = None
+    school_website: Optional[str] = None
+    school_email: Optional[str] = None
+    school_phone: Optional[str] = None
+    class_teacher_title: Optional[str] = None
+    school_head_title: Optional[str] = None
+    school_head_name: Optional[str] = None
+    full_term_passmark: Optional[Decimal] = None
+    mid_term_passmark: Optional[Decimal] = None
+    min_average_honours: Optional[Decimal] = None
+    promotion_comment: Optional[str] = None
+    demotion_comment: Optional[str] = None
+    logo_url: Optional[str] = None
+    head_signature_url: Optional[str] = None
+    logo_background_url: Optional[str] = None
+    sponsor_url: Optional[str] = None
+
+
+class BrandingResponse(BrandingUpdate):
+    id: Optional[str] = None
 
 
 class ReportTemplateCreate(BaseModel):

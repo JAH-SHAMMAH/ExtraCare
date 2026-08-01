@@ -25,7 +25,7 @@ from app.models.modules.platform import (
     SchoolSection, GradingScale, ReportTemplate, ReportSubjectAssessment,
     AssessmentDomain,
     AcademicTerm, AcademicSubTerm, TermPeriod, ReportDeadline,
-    ReportCommentType, ResultDefaultComment,
+    ReportCommentType, ResultDefaultComment, ReportBranding,
     CustomFieldDefinition, CustomFieldValue,
     Poll, PollOption, PollVote,
     MailboxMessage, MailboxRecipient,
@@ -41,7 +41,8 @@ from app.schemas.platform import (
     MessageCreate, MessageResponse, InboxItemResponse,
     MobileDeviceRegister, MobileDeviceResponse, AppConfigSet, AppConfigResponse,
     SectionCreate, SectionUpdate, SectionResponse,
-    GradingScaleCreate, GradingScaleResponse, ScaleBandCreate,
+    GradingScaleCreate, GradingScaleResponse, GradingScaleUpdate, ScaleBandCreate,
+    SCALE_PURPOSES, BrandingUpdate, BrandingResponse,
     ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
     SubjectAssessmentResponse, SubjectAssessmentUpdate, SetCambridgeAllRequest,
     DomainCreate, DomainUpdate, DomainResponse, DOMAIN_TYPES,
@@ -333,6 +334,7 @@ def _scale_response(scale: GradingScale, bands: list[GradingBand]) -> GradingSca
     ordered = sorted(bands, key=lambda b: (b.position or 0))
     return GradingScaleResponse(
         id=scale.id, name=scale.name, scale_type=scale.scale_type, is_provisional=scale.is_provisional,
+        show_in_table=scale.show_in_table, purpose=scale.purpose,
         bands=[_band_response(b) for b in ordered], org_id=scale.org_id,
     )
 
@@ -351,7 +353,10 @@ async def list_scales(db: AsyncSession = Depends(get_db), current_user: User = D
 async def create_scale(payload: GradingScaleCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     if payload.scale_type not in SCALE_TYPES:
         raise HTTPException(status_code=422, detail=f"scale_type must be one of {sorted(SCALE_TYPES)}")
-    scale = GradingScale(name=payload.name.strip(), scale_type=payload.scale_type, is_provisional=payload.is_provisional, org_id=current_user.org_id)
+    if payload.purpose not in SCALE_PURPOSES:
+        raise HTTPException(status_code=422, detail=f"purpose must be one of {sorted(SCALE_PURPOSES)}")
+    scale = GradingScale(name=payload.name.strip(), scale_type=payload.scale_type, is_provisional=payload.is_provisional,
+                         show_in_table=payload.show_in_table, purpose=payload.purpose, org_id=current_user.org_id)
     db.add(scale)
     try:
         await db.flush()
@@ -399,12 +404,64 @@ async def replace_scale_bands(scale_id: str, bands: list[ScaleBandCreate], db: A
     return _scale_response(scale, fresh)
 
 
+@router.patch("/grading-scales/{scale_id}", response_model=GradingScaleResponse, dependencies=[_write])
+async def update_scale(scale_id: str, payload: GradingScaleUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Rename a scale or set its report role (Grading System tab): show_in_table +
+    purpose (grade|keys|cumulative|mock)."""
+    scale = (await db.execute(select(GradingScale).where(GradingScale.id == scale_id, GradingScale.org_id == current_user.org_id))).scalar_one_or_none()
+    if not scale:
+        raise HTTPException(status_code=404, detail="Scale not found.")
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("purpose") and data["purpose"] not in SCALE_PURPOSES:
+        raise HTTPException(status_code=422, detail=f"purpose must be one of {sorted(SCALE_PURPOSES)}")
+    for f, v in data.items():
+        setattr(scale, f, v)
+    await db.flush()
+    bands = (await db.execute(select(GradingBand).where(GradingBand.scale_id == scale_id, GradingBand.org_id == current_user.org_id))).scalars().all()
+    return _scale_response(scale, bands)
+
+
 @router.delete("/grading-scales/{scale_id}", status_code=204, dependencies=[_write])
 async def delete_scale(scale_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     scale = (await db.execute(select(GradingScale).where(GradingScale.id == scale_id, GradingScale.org_id == current_user.org_id))).scalar_one_or_none()
     if not scale:
         raise HTTPException(status_code=404, detail="Scale not found.")
     await db.delete(scale)   # bands CASCADE; templates.grading_scale_id → SET NULL
+
+
+# ── Secondary Report S-1b: School Motto, Seal & Sponsor (report branding) ────
+
+def _branding_response(b: ReportBranding | None) -> BrandingResponse:
+    if not b:
+        return BrandingResponse()
+    return BrandingResponse(
+        id=b.id, school_motto=b.school_motto, school_name_alias=b.school_name_alias,
+        school_address=b.school_address, school_website=b.school_website, school_email=b.school_email,
+        school_phone=b.school_phone, class_teacher_title=b.class_teacher_title,
+        school_head_title=b.school_head_title, school_head_name=b.school_head_name,
+        full_term_passmark=b.full_term_passmark, mid_term_passmark=b.mid_term_passmark,
+        min_average_honours=b.min_average_honours, promotion_comment=b.promotion_comment,
+        demotion_comment=b.demotion_comment, logo_url=b.logo_url, head_signature_url=b.head_signature_url,
+        logo_background_url=b.logo_background_url, sponsor_url=b.sponsor_url,
+    )
+
+
+@router.get("/report-branding", response_model=BrandingResponse, dependencies=[_school_read])
+async def get_report_branding(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    b = (await db.execute(select(ReportBranding).where(ReportBranding.org_id == current_user.org_id))).scalar_one_or_none()
+    return _branding_response(b)
+
+
+@router.put("/report-branding", response_model=BrandingResponse, dependencies=[_write])
+async def update_report_branding(payload: BrandingUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    b = (await db.execute(select(ReportBranding).where(ReportBranding.org_id == current_user.org_id))).scalar_one_or_none()
+    if not b:
+        b = ReportBranding(org_id=current_user.org_id)
+        db.add(b)
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(b, f, v)
+    await db.flush()
+    return _branding_response(b)
 
 
 # ── School Reports R2: report templates ───────────────────────────────────────────

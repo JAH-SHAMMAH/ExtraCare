@@ -9,7 +9,8 @@ import {
   useReportDeadlines, useCreateDeadline, useUpdateDeadline, useDeleteDeadline,
   useCommentTypes, useCreateCommentType, useUpdateCommentType, useDeleteCommentType,
   useDefaultComments, useCreateDefaultComment, useDeleteDefaultComment,
-  useGradingScales,
+  useGradingScales, useCreateScale, useUpdateScale, useReplaceScaleBands, useDeleteScale,
+  useReportBranding, useUpdateReportBranding,
 } from "@/hooks/usePlatform";
 import { cn } from "@/lib/utils";
 import { Plus, Trash2, Loader2, Power, Check, X, Sparkles } from "lucide-react";
@@ -385,6 +386,157 @@ export function DefaultCommentTab({ canWrite }: { canWrite: boolean }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// ── S-1b: Grading System ─────────────────────────────────────────────────────
+
+const PURPOSES: [string, string][] = [["grade", "Main Grade"], ["keys", "Keys / Legend"], ["cumulative", "Cumulative"], ["mock", "Mock"]];
+
+export function GradingSystemTab({ canWrite }: { canWrite: boolean }) {
+  const { data: scales = [], isLoading } = useGradingScales();
+  const create = useCreateScale();
+  const update = useUpdateScale();
+  const del = useDeleteScale();
+  const [f, setF] = useState({ name: "", scale_type: "numeric", purpose: "grade" });
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-400">Grading scales used on the report. <b>Scored</b> scales map a percentage to a grade; <b>Non-Scored</b> scales are descriptor labels. <b>Show in table</b> prints the scale legend on the report.</p>
+      {canWrite && (
+        <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[160px]"><label className="label">Grading name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className="input" placeholder="e.g. Grading Scale" /></div>
+          <div><label className="label">Type</label><select value={f.scale_type} onChange={(e) => setF({ ...f, scale_type: e.target.value })} className="input"><option value="numeric">Scored</option><option value="descriptor">Non-Scored</option></select></div>
+          <div><label className="label">Purpose</label><select value={f.purpose} onChange={(e) => setF({ ...f, purpose: e.target.value })} className="input">{PURPOSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+          <button onClick={() => f.name.trim() && create.mutate({ name: f.name.trim(), scale_type: f.scale_type, purpose: f.purpose, bands: [] }, { onSuccess: () => setF({ name: "", scale_type: "numeric", purpose: "grade" }) })} disabled={!f.name.trim() || create.isPending} className="btn-primary gap-2"><Plus size={15} /> Add Grading</button>
+        </div>
+      )}
+      {isLoading ? <div className="py-10 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
+        : (scales as any[]).length === 0 ? <p className="text-sm text-slate-400 py-6 text-center bg-white rounded-xl border border-slate-200">No grading scales yet.</p>
+        : <div className="space-y-3">{(scales as any[]).map((sc) => <GradingScaleRow key={sc.id} scale={sc} canWrite={canWrite} update={update} del={del} />)}</div>}
+    </div>
+  );
+}
+
+function GradingScaleRow({ scale, canWrite, update, del }: { scale: any; canWrite: boolean; update: any; del: any }) {
+  const [open, setOpen] = useState(false);
+  const replace = useReplaceScaleBands();
+  const numeric = scale.scale_type === "numeric";
+  const [bands, setBands] = useState<any[]>(scale.bands || []);
+
+  const addBand = () => setBands((b) => [...b, { grade: "", min_score: "", max_score: "", remark: "", position: b.length }]);
+  const setBand = (i: number, k: string, v: string) => setBands((b) => b.map((x, j) => j === i ? { ...x, [k]: v } : x));
+  const rmBand = (i: number) => setBands((b) => b.filter((_, j) => j !== i));
+  const saveBands = () => replace.mutate({ id: scale.id, bands: bands.map((b, i) => ({
+    grade: b.grade, min_score: b.min_score === "" ? null : Number(b.min_score),
+    max_score: b.max_score === "" ? null : Number(b.max_score), remark: b.remark || null, position: i,
+  })) }, { onSuccess: () => setOpen(false) });
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-slate-800">{scale.name} {scale.is_provisional && <span className="badge bg-amber-50 text-amber-700 border-amber-200">provisional</span>}</p>
+          <p className="text-xs text-slate-400">{numeric ? "Scored" : "Non-Scored"} · {(scale.bands || []).length} bands</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {canWrite ? (
+            <select value={scale.purpose} onChange={(e) => update.mutate({ id: scale.id, data: { purpose: e.target.value } })} className="input py-1 text-sm w-auto">{PURPOSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+          ) : <span className="badge bg-slate-50 text-slate-600 border-slate-200 capitalize">{scale.purpose}</span>}
+          <button disabled={!canWrite} onClick={() => update.mutate({ id: scale.id, data: { show_in_table: !scale.show_in_table } })}
+            className={cn("text-xs font-semibold rounded-md px-2.5 py-1", scale.show_in_table ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400")}>
+            {scale.show_in_table ? "In table" : "Hidden"}
+          </button>
+          <button onClick={() => { setBands(scale.bands || []); setOpen((o) => !o); }} className="btn-secondary py-1 text-sm">Bands</button>
+          {canWrite && <button onClick={() => { if (confirm("Delete " + scale.name + "?")) del.mutate(scale.id); }} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={15} /></button>}
+        </div>
+      </div>
+      {open && (
+        <div className="border-t border-slate-100 p-4 space-y-2">
+          {bands.map((b, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-2">
+              <input value={b.grade} onChange={(e) => setBand(i, "grade", e.target.value)} className="input w-24 py-1 text-sm" placeholder="Grade" disabled={!canWrite} />
+              {numeric && <><input value={b.min_score ?? ""} onChange={(e) => setBand(i, "min_score", e.target.value)} className="input w-20 py-1 text-sm" placeholder="Min" disabled={!canWrite} />
+              <input value={b.max_score ?? ""} onChange={(e) => setBand(i, "max_score", e.target.value)} className="input w-20 py-1 text-sm" placeholder="Max" disabled={!canWrite} /></>}
+              <input value={b.remark ?? ""} onChange={(e) => setBand(i, "remark", e.target.value)} className="input flex-1 min-w-[120px] py-1 text-sm" placeholder="Remark" disabled={!canWrite} />
+              {canWrite && <button onClick={() => rmBand(i)} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>}
+            </div>
+          ))}
+          {canWrite && (
+            <div className="flex items-center gap-3 pt-2">
+              <button onClick={addBand} className="btn-secondary py-1 text-sm gap-1"><Plus size={14} /> Add band</button>
+              <button onClick={saveBands} disabled={replace.isPending} className="btn-primary py-1 text-sm gap-1">{replace.isPending && <Loader2 size={13} className="animate-spin" />} Save bands</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── S-1b: School Motto, Seal & Sponsor (report branding) ─────────────────────
+
+const BRAND_TEXT: [string, string, string][] = [
+  ["school_motto", "School Motto", "text"],
+  ["school_name_alias", "School Name Alias", "text"],
+  ["school_head_title", "School Head Title", "text"],
+  ["school_head_name", "School Head Full Name", "text"],
+  ["class_teacher_title", "Class Teacher Title", "text"],
+  ["school_address", "School Address", "text"],
+  ["school_email", "School Email", "text"],
+  ["school_website", "School Website", "text"],
+  ["school_phone", "School Phone Number", "text"],
+  ["promotion_comment", "Promotion Comment", "text"],
+  ["demotion_comment", "Demotion Comment", "text"],
+];
+const BRAND_NUM: [string, string][] = [
+  ["full_term_passmark", "Full Term Passmark"],
+  ["mid_term_passmark", "Mid Term Passmark"],
+  ["min_average_honours", "Min Average For Honours Roll"],
+];
+const BRAND_IMG: [string, string][] = [
+  ["logo_url", "School Logo (image URL)"],
+  ["head_signature_url", "School Head Signature (image URL)"],
+  ["logo_background_url", "School Logo Background (image URL)"],
+  ["sponsor_url", "School Sponsor (image URL)"],
+];
+
+export function BrandingTab({ canWrite }: { canWrite: boolean }) {
+  const { data, isLoading } = useReportBranding();
+  const save = useUpdateReportBranding();
+  const [form, setForm] = useState<any>(null);
+  useEffect(() => { if (data && !form) setForm({ ...data }); }, [data, form]);
+
+  if (isLoading || !form) return <div className="py-10 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>;
+  const set = (k: string, v: string) => setForm((p: any) => ({ ...p, [k]: v }));
+
+  const submit = () => {
+    const payload: any = {};
+    for (const [k] of BRAND_TEXT) payload[k] = form[k] || null;
+    for (const [k] of BRAND_IMG) payload[k] = form[k] || null;
+    for (const [k] of BRAND_NUM) payload[k] = form[k] === "" || form[k] == null ? null : Number(form[k]);
+    save.mutate(payload);
+  };
+
+  return (
+    <div className="space-y-5">
+      <p className="text-xs text-slate-400">The branding block printed at the top of the report card. Passmarks feed the pass/fail on the card. Images take a URL (upload the image elsewhere, then paste its address).</p>
+      <div className="bg-white rounded-xl border border-slate-200 p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+        {BRAND_TEXT.map(([k, label]) => (
+          <div key={k}><label className="label">{label}</label><input value={form[k] ?? ""} onChange={(e) => set(k, e.target.value)} className="input" disabled={!canWrite} /></div>
+        ))}
+        {BRAND_NUM.map(([k, label]) => (
+          <div key={k}><label className="label">{label}</label><input type="number" value={form[k] ?? ""} onChange={(e) => set(k, e.target.value)} className="input" disabled={!canWrite} /></div>
+        ))}
+      </div>
+      <div className="bg-white rounded-xl border border-slate-200 p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <h3 className="md:col-span-2 text-sm font-bold text-slate-800">Seal &amp; Sponsor images</h3>
+        {BRAND_IMG.map(([k, label]) => (
+          <div key={k}><label className="label">{label}</label><input value={form[k] ?? ""} onChange={(e) => set(k, e.target.value)} className="input" placeholder="https://…" disabled={!canWrite} /></div>
+        ))}
+      </div>
+      {canWrite && <div className="flex justify-end"><button onClick={submit} disabled={save.isPending} className="btn-primary gap-2">{save.isPending && <Loader2 size={15} className="animate-spin" />} Save Branding</button></div>}
     </div>
   );
 }

@@ -213,3 +213,8 @@ export function useDefaultComments(params?: { teacher_type?: string; grading_sca
 export const useCreateDefaultComment = m((d) => platformApi.defaultComments.create(d), ["default-comments"], "Comment added.");
 export const useUpdateDefaultComment = m((v: { id: string; data: object }) => platformApi.defaultComments.update(v.id, v.data), ["default-comments"], "Updated.");
 export const useDeleteDefaultComment = m((id: string) => platformApi.defaultComments.remove(id), ["default-comments"], "Removed.");
+
+// ── S-1b: Grading scale update + report branding ─────────────────────────────
+export const useUpdateScale = m((v: { id: string; data: object }) => platformApi.gradingScales.update(v.id, v.data), ["grading-scales"], "Updated.");
+export function useReportBranding() { return useQuery<any>({ queryKey: ["report-branding"], queryFn: () => platformApi.reportBranding.get() }); }
+export const useUpdateReportBranding = m((d) => platformApi.reportBranding.update(d), ["report-branding"], "Branding saved.");

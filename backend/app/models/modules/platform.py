@@ -271,6 +271,37 @@ class ResultDefaultComment(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class ReportBranding(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Report Setup → School Motto, Seal & Sponsor: the branding + heading block
+    printed on the report card (one row per org). Passmarks feed the card's
+    pass/fail; the images are the seal, head signature, logo background and
+    sponsor strip."""
+    __tablename__ = "report_branding"
+
+    school_motto = Column(String(200), nullable=True)
+    school_name_alias = Column(String(150), nullable=True)      # e.g. "FAIRVIEW SECONDARY SCHOOL"
+    school_address = Column(Text, nullable=True)
+    school_website = Column(String(200), nullable=True)
+    school_email = Column(String(200), nullable=True)
+    school_phone = Column(String(60), nullable=True)
+    class_teacher_title = Column(String(80), nullable=True, default="Class Teacher")
+    school_head_title = Column(String(80), nullable=True, default="Principal")
+    school_head_name = Column(String(150), nullable=True)
+    full_term_passmark = Column(Numeric(6, 2), nullable=True)
+    mid_term_passmark = Column(Numeric(6, 2), nullable=True)
+    min_average_honours = Column(Numeric(6, 2), nullable=True)
+    promotion_comment = Column(String(120), nullable=True, default="Promoted")
+    demotion_comment = Column(String(120), nullable=True, default="Not Promoted")
+    logo_url = Column(String(500), nullable=True)
+    head_signature_url = Column(String(500), nullable=True)
+    logo_background_url = Column(String(500), nullable=True)
+    sponsor_url = Column(String(500), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", name="uq_report_branding_org"),
+    )
+
+
 class SchoolHouse(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A school house (for the merit/conduct leaderboard + Pastoral House Setup)."""
     __tablename__ = "school_houses"
@@ -319,6 +350,11 @@ class GradingScale(Base, UUIDMixin, TimestampMixin, TenantMixin):
     name = Column(String(80), nullable=False)
     scale_type = Column(String(20), default="numeric", nullable=False)  # numeric | descriptor
     is_provisional = Column(Boolean, default=True, nullable=False)
+    # Report Setup → Grading System: whether this scale's legend prints in the
+    # report table, and what it is used for (main grade / keys legend / cumulative
+    # / mock). Several scales can coexist; the report picks by purpose.
+    show_in_table = Column(Boolean, default=True, nullable=False)
+    purpose = Column(String(20), default="grade", nullable=False)  # grade | keys | cumulative | mock
 
     __table_args__ = (
         UniqueConstraint("org_id", "name", name="uq_grading_scales_org_name"),

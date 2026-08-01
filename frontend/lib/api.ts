@@ -1670,8 +1670,13 @@ export const platformApi = {
   gradingScales: {
     list: () => api.get("/platform/grading-scales").then((r) => r.data),
     create: (d: object) => api.post("/platform/grading-scales", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/platform/grading-scales/${id}`, d).then((r) => r.data),
     replaceBands: (id: string, bands: object[]) => api.put(`/platform/grading-scales/${id}/bands`, bands).then((r) => r.data),
     remove: (id: string) => api.delete(`/platform/grading-scales/${id}`),
+  },
+  reportBranding: {
+    get: () => api.get("/platform/report-branding").then((r) => r.data),
+    update: (d: object) => api.put("/platform/report-branding", d).then((r) => r.data),
   },
   reportTemplates: {
     list: () => api.get("/platform/report-templates").then((r) => r.data),
