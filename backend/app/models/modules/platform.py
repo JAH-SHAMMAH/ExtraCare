@@ -333,6 +333,42 @@ class ReportSubjectExclusion(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class AssessmentGroup(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Report Setup → Assessment Group: a named grouping for assessments (e.g. a
+    'Continuous Assessment' bucket). Optional label on assessments."""
+    __tablename__ = "assessment_groups"
+
+    name = Column(String(120), nullable=False)
+    position = Column(Integer, default=0, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "name", name="uq_assessment_groups_org_name"),
+        Index("ix_assessment_groups_org", "org_id"),
+    )
+
+
+class Assessment(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Report Setup → Assessment: a leaf mark component (CBT / Theory / PRJ / PBT /
+    EXAM) scored out of ``max_score``, scoped to a (term, sub-term) and a level
+    (year_group NULL = all levels). Cumulatives (S-3) compose these into the
+    report columns. ``decimal_places`` controls display rounding."""
+    __tablename__ = "assessments"
+
+    name = Column(String(80), nullable=False)
+    code = Column(String(40), nullable=True)
+    max_score = Column(Numeric(6, 2), nullable=False, default=100)
+    term_id = Column(String(36), ForeignKey("academic_terms.id", ondelete="CASCADE"), nullable=False, index=True)
+    sub_term_id = Column(String(36), ForeignKey("academic_sub_terms.id", ondelete="CASCADE"), nullable=False, index=True)
+    year_group = Column(String(60), nullable=True)          # NULL = All Levels
+    decimal_places = Column(Integer, default=0, nullable=False)
+    group_id = Column(String(36), ForeignKey("assessment_groups.id", ondelete="SET NULL"), nullable=True)
+    position = Column(Integer, default=0, nullable=False)
+
+    __table_args__ = (
+        Index("ix_assessments_org_term", "org_id", "term_id"),
+    )
+
+
 class SchoolHouse(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A school house (for the merit/conduct leaderboard + Pastoral House Setup)."""
     __tablename__ = "school_houses"

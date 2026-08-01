@@ -27,6 +27,7 @@ from app.models.modules.platform import (
     AcademicTerm, AcademicSubTerm, TermPeriod, ReportDeadline,
     ReportCommentType, ResultDefaultComment, ReportBranding,
     ReportLevelSetting, ReportSubjectExclusion,
+    AssessmentGroup, Assessment,
     CustomFieldDefinition, CustomFieldValue,
     Poll, PollOption, PollVote,
     MailboxMessage, MailboxRecipient,
@@ -46,6 +47,8 @@ from app.schemas.platform import (
     SCALE_PURPOSES, BrandingUpdate, BrandingResponse,
     RESULT_TYPES, LevelSettingUpsert, LevelSettingResponse,
     SubjectExclusionCreate, SubjectExclusionResponse,
+    AssessmentGroupCreate, AssessmentGroupUpdate, AssessmentGroupResponse,
+    AssessmentCreate, AssessmentUpdate, AssessmentResponse,
     ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
     SubjectAssessmentResponse, SubjectAssessmentUpdate, SetCambridgeAllRequest,
     DomainCreate, DomainUpdate, DomainResponse, DOMAIN_TYPES,
@@ -1724,3 +1727,161 @@ async def delete_subject_exclusion(exclusion_id: str, db: AsyncSession = Depends
     if not r:
         raise HTTPException(status_code=404, detail="Exclusion not found.")
     await db.delete(r)
+
+
+# ── Secondary Report S-2: Assessment Group ───────────────────────────────────
+
+def _agroup_response(g: AssessmentGroup) -> AssessmentGroupResponse:
+    return AssessmentGroupResponse(id=g.id, name=g.name, position=g.position)
+
+
+@router.get("/assessment-groups", response_model=list[AssessmentGroupResponse], dependencies=[_school_read])
+async def list_assessment_groups(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(AssessmentGroup).where(AssessmentGroup.org_id == current_user.org_id)
+                             .order_by(AssessmentGroup.position, AssessmentGroup.name))).scalars().all()
+    return [_agroup_response(g) for g in rows]
+
+
+@router.post("/assessment-groups", response_model=AssessmentGroupResponse, status_code=201, dependencies=[_write])
+async def create_assessment_group(payload: AssessmentGroupCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    dupe = (await db.execute(select(AssessmentGroup.id).where(
+        AssessmentGroup.org_id == current_user.org_id, func.lower(AssessmentGroup.name) == payload.name.lower()))).scalar_one_or_none()
+    if dupe:
+        raise HTTPException(status_code=409, detail="An assessment group with that name already exists.")
+    g = AssessmentGroup(org_id=current_user.org_id, **payload.model_dump())
+    db.add(g)
+    await db.flush()
+    return _agroup_response(g)
+
+
+@router.patch("/assessment-groups/{group_id}", response_model=AssessmentGroupResponse, dependencies=[_write])
+async def update_assessment_group(group_id: str, payload: AssessmentGroupUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    g = (await db.execute(select(AssessmentGroup).where(AssessmentGroup.id == group_id, AssessmentGroup.org_id == current_user.org_id))).scalar_one_or_none()
+    if not g:
+        raise HTTPException(status_code=404, detail="Assessment group not found.")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(g, f, v)
+    await db.flush()
+    return _agroup_response(g)
+
+
+@router.delete("/assessment-groups/{group_id}", status_code=204, dependencies=[_write])
+async def delete_assessment_group(group_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    g = (await db.execute(select(AssessmentGroup).where(AssessmentGroup.id == group_id, AssessmentGroup.org_id == current_user.org_id))).scalar_one_or_none()
+    if not g:
+        raise HTTPException(status_code=404, detail="Assessment group not found.")
+    await db.delete(g)
+
+
+# ── Secondary Report S-2: Assessment (leaf components) ───────────────────────
+
+async def _assessment_name_maps(db: AsyncSession, org_id: str):
+    terms = {t.id: t.name for t in (await db.execute(select(AcademicTerm).where(AcademicTerm.org_id == org_id))).scalars().all()}
+    subs = {s.id: s.name for s in (await db.execute(select(AcademicSubTerm).where(AcademicSubTerm.org_id == org_id))).scalars().all()}
+    groups = {g.id: g.name for g in (await db.execute(select(AssessmentGroup).where(AssessmentGroup.org_id == org_id))).scalars().all()}
+    return terms, subs, groups
+
+
+def _assessment_response(a: Assessment, terms, subs, groups) -> AssessmentResponse:
+    return AssessmentResponse(
+        id=a.id, name=a.name, code=a.code, max_score=a.max_score,
+        term_id=a.term_id, term_name=terms.get(a.term_id),
+        sub_term_id=a.sub_term_id, sub_term_name=subs.get(a.sub_term_id),
+        year_group=a.year_group, decimal_places=a.decimal_places,
+        group_id=a.group_id, group_name=(groups.get(a.group_id) if a.group_id else None),
+        position=a.position,
+    )
+
+
+async def _validate_assessment_fks(db, org_id, term_id, sub_term_id, group_id):
+    if term_id is not None:
+        ok = (await db.execute(select(AcademicTerm.id).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org_id))).scalar_one_or_none()
+        if not ok:
+            raise HTTPException(status_code=422, detail="term_id: not a term in your organisation")
+    if sub_term_id is not None:
+        ok = (await db.execute(select(AcademicSubTerm.id).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org_id))).scalar_one_or_none()
+        if not ok:
+            raise HTTPException(status_code=422, detail="sub_term_id: not a sub-term in your organisation")
+    if group_id:
+        ok = (await db.execute(select(AssessmentGroup.id).where(AssessmentGroup.id == group_id, AssessmentGroup.org_id == org_id))).scalar_one_or_none()
+        if not ok:
+            raise HTTPException(status_code=422, detail="group_id: not an assessment group in your organisation")
+
+
+@router.get("/assessments", response_model=list[AssessmentResponse], dependencies=[_school_read])
+async def list_assessments(term_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = select(Assessment).where(Assessment.org_id == current_user.org_id)
+    if term_id:
+        q = q.where(Assessment.term_id == term_id)
+    rows = (await db.execute(q.order_by(Assessment.position, Assessment.name))).scalars().all()
+    terms, subs, groups = await _assessment_name_maps(db, current_user.org_id)
+    return [_assessment_response(a, terms, subs, groups) for a in rows]
+
+
+@router.post("/assessments", response_model=AssessmentResponse, status_code=201, dependencies=[_write])
+async def create_assessment(payload: AssessmentCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    await _validate_assessment_fks(db, current_user.org_id, payload.term_id, payload.sub_term_id, payload.group_id)
+    a = Assessment(org_id=current_user.org_id, **payload.model_dump())
+    db.add(a)
+    await db.flush()
+    terms, subs, groups = await _assessment_name_maps(db, current_user.org_id)
+    return _assessment_response(a, terms, subs, groups)
+
+
+@router.patch("/assessments/{assessment_id}", response_model=AssessmentResponse, dependencies=[_write])
+async def update_assessment(assessment_id: str, payload: AssessmentUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    a = (await db.execute(select(Assessment).where(Assessment.id == assessment_id, Assessment.org_id == current_user.org_id))).scalar_one_or_none()
+    if not a:
+        raise HTTPException(status_code=404, detail="Assessment not found.")
+    data = payload.model_dump(exclude_unset=True)
+    await _validate_assessment_fks(db, current_user.org_id, data.get("term_id"), data.get("sub_term_id"), data.get("group_id"))
+    for f, v in data.items():
+        setattr(a, f, v)
+    await db.flush()
+    terms, subs, groups = await _assessment_name_maps(db, current_user.org_id)
+    return _assessment_response(a, terms, subs, groups)
+
+
+@router.delete("/assessments/{assessment_id}", status_code=204, dependencies=[_write])
+async def delete_assessment(assessment_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    a = (await db.execute(select(Assessment).where(Assessment.id == assessment_id, Assessment.org_id == current_user.org_id))).scalar_one_or_none()
+    if not a:
+        raise HTTPException(status_code=404, detail="Assessment not found.")
+    await db.delete(a)
+
+
+# Fairview's curated component set per term: CBT+THEORY (20 each) at Half-Term,
+# PRJ+PBT (10) + EXAM (60) at Full-Term. This is the "HALF TERM TOTAL 40" card.
+_BOOTSTRAP_HALF = [("CBT", "CBT", 20), ("THEORY", "THY", 20)]
+_BOOTSTRAP_FULL = [("PRJ", "PRJ", 10), ("PBT", "PBT", 10), ("EXAM", "EXM", 60)]
+
+
+@router.post("/assessments/bootstrap", response_model=list[AssessmentResponse], dependencies=[_write])
+async def bootstrap_assessments(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Idempotently seed the curated Fairview assessment set for every term:
+    CBT+Theory at the Half-Term sub-term, PRJ+PBT+EXAM at the Full-Term. Requires
+    terms + sub-terms to exist (Terms & Sub-term bootstrap first)."""
+    org = current_user.org_id
+    terms = (await db.execute(select(AcademicTerm).where(AcademicTerm.org_id == org))).scalars().all()
+    subs = (await db.execute(select(AcademicSubTerm).where(AcademicSubTerm.org_id == org))).scalars().all()
+    half = next((s for s in subs if "half" in s.name.lower() or "mid" in s.name.lower()), None)
+    full = next((s for s in subs if "full" in s.name.lower()), None)
+    if not terms or not half or not full:
+        raise HTTPException(status_code=422, detail="Seed Terms & Sub-term (Half-Term + Full-Term) first.")
+
+    existing = (await db.execute(select(Assessment).where(Assessment.org_id == org))).scalars().all()
+    have = {(e.term_id, e.sub_term_id, (e.name or "").lower()) for e in existing}
+
+    for t in terms:
+        for pos, (name, code, mx) in enumerate(_BOOTSTRAP_HALF):
+            if (t.id, half.id, name.lower()) not in have:
+                db.add(Assessment(org_id=org, name=name, code=code, max_score=mx, term_id=t.id,
+                                  sub_term_id=half.id, decimal_places=0, position=pos))
+        for pos, (name, code, mx) in enumerate(_BOOTSTRAP_FULL):
+            if (t.id, full.id, name.lower()) not in have:
+                db.add(Assessment(org_id=org, name=name, code=code, max_score=mx, term_id=t.id,
+                                  sub_term_id=full.id, decimal_places=0, position=pos))
+    await db.flush()
+    rows = (await db.execute(select(Assessment).where(Assessment.org_id == org).order_by(Assessment.position, Assessment.name))).scalars().all()
+    tmap, smap, gmap = await _assessment_name_maps(db, org)
+    return [_assessment_response(a, tmap, smap, gmap) for a in rows]

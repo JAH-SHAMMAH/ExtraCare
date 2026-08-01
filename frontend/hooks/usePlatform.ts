@@ -225,3 +225,12 @@ export const useUpsertLevelSetting = m((d) => platformApi.levelSettings.upsert(d
 export function useSubjectExclusions(yearGroup?: string) { return useQuery<any[]>({ queryKey: ["subject-exclusions", yearGroup], queryFn: () => platformApi.subjectExclusions.list(yearGroup) }); }
 export const useCreateSubjectExclusion = m((d) => platformApi.subjectExclusions.create(d), ["subject-exclusions"], "Excluded.");
 export const useDeleteSubjectExclusion = m((id: string) => platformApi.subjectExclusions.remove(id), ["subject-exclusions"], "Removed.");
+
+// ── S-2: Assessment Group + Assessment ───────────────────────────────────────
+export function useAssessmentGroups() { return useQuery<any[]>({ queryKey: ["assessment-groups"], queryFn: () => platformApi.assessmentGroups.list() }); }
+export const useCreateAssessmentGroup = m((d) => platformApi.assessmentGroups.create(d), ["assessment-groups"], "Group added.");
+export const useDeleteAssessmentGroup = m((id: string) => platformApi.assessmentGroups.remove(id), ["assessment-groups"], "Removed.");
+export function useAssessments(termId?: string) { return useQuery<any[]>({ queryKey: ["assessments", termId], queryFn: () => platformApi.assessments.list(termId) }); }
+export const useCreateAssessment = m((d) => platformApi.assessments.create(d), ["assessments"], "Assessment added.");
+export const useDeleteAssessment = m((id: string) => platformApi.assessments.remove(id), ["assessments"], "Removed.");
+export const useBootstrapAssessments = m(() => platformApi.assessments.bootstrap(), ["assessments"], "Seeded Fairview assessment set.");

@@ -1687,6 +1687,19 @@ export const platformApi = {
     create: (d: object) => api.post("/platform/report-subject-exclusions", d).then((r) => r.data),
     remove: (id: string) => api.delete(`/platform/report-subject-exclusions/${id}`),
   },
+  assessmentGroups: {
+    list: () => api.get("/platform/assessment-groups").then((r) => r.data),
+    create: (d: object) => api.post("/platform/assessment-groups", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/platform/assessment-groups/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/assessment-groups/${id}`),
+  },
+  assessments: {
+    list: (term_id?: string) => api.get("/platform/assessments", { params: term_id ? { term_id } : {} }).then((r) => r.data),
+    create: (d: object) => api.post("/platform/assessments", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/platform/assessments/${id}`, d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/assessments/${id}`),
+    bootstrap: () => api.post("/platform/assessments/bootstrap").then((r) => r.data),
+  },
   reportTemplates: {
     list: () => api.get("/platform/report-templates").then((r) => r.data),
     create: (d: object) => api.post("/platform/report-templates", d).then((r) => r.data),

@@ -841,3 +841,61 @@ class SubjectExclusionResponse(BaseModel):
     year_group: str
     subject_id: str
     subject_name: Optional[str] = None
+
+
+# ── Secondary Report parity S-2: Assessment Group + Assessment ───────────────
+
+class AssessmentGroupCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    position: int = 0
+
+
+class AssessmentGroupUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    position: Optional[int] = None
+
+
+class AssessmentGroupResponse(BaseModel):
+    id: str
+    name: str
+    position: int = 0
+
+
+class AssessmentCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    code: Optional[str] = None
+    max_score: Decimal = Decimal("100")
+    term_id: str
+    sub_term_id: str
+    year_group: Optional[str] = None      # None = All Levels
+    decimal_places: int = 0
+    group_id: Optional[str] = None
+    position: int = 0
+
+
+class AssessmentUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    code: Optional[str] = None
+    max_score: Optional[Decimal] = None
+    term_id: Optional[str] = None
+    sub_term_id: Optional[str] = None
+    year_group: Optional[str] = None
+    decimal_places: Optional[int] = None
+    group_id: Optional[str] = None
+    position: Optional[int] = None
+
+
+class AssessmentResponse(BaseModel):
+    id: str
+    name: str
+    code: Optional[str] = None
+    max_score: Decimal
+    term_id: str
+    term_name: Optional[str] = None
+    sub_term_id: str
+    sub_term_name: Optional[str] = None
+    year_group: Optional[str] = None
+    decimal_places: int = 0
+    group_id: Optional[str] = None
+    group_name: Optional[str] = None
+    position: int = 0
