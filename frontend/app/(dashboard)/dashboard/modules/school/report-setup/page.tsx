@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useHasPermission } from "@/components/guards/PermissionGate";
-import { TermsTab, TermDatesTab, AttendanceTab, DeadlineTab, CommentTab, DefaultCommentTab, GradingSystemTab, BrandingTab } from "@/components/reports/ReportSetupTabs";
+import { TermsTab, TermDatesTab, AttendanceTab, DeadlineTab, CommentTab, DefaultCommentTab, GradingSystemTab, BrandingTab, ResultTypeTab, ResultPhotoTab, ExclusionTab } from "@/components/reports/ReportSetupTabs";
 import { cn } from "@/lib/utils";
 import { Settings2 } from "lucide-react";
 
@@ -22,7 +22,7 @@ const TABS: [Tab, string][] = [
   ["photo", "Result Photo Setup"], ["exclusion", "Subjects For Score Exclusion"], ["result-view", "Result View"],
 ];
 
-const LIVE = new Set<Tab>(["terms", "comment", "grading", "default-comment", "term-dates", "attendance", "deadline", "branding"]);
+const LIVE = new Set<Tab>(["terms", "comment", "grading", "default-comment", "term-dates", "attendance", "deadline", "branding", "result-type", "photo", "exclusion"]);
 
 export default function ReportSetupPage() {
   const canWrite = useHasPermission("settings:write");
@@ -48,6 +48,9 @@ export default function ReportSetupPage() {
         : tab === "attendance" ? <AttendanceTab canWrite={canWrite} />
         : tab === "deadline" ? <DeadlineTab canWrite={canWrite} />
         : tab === "branding" ? <BrandingTab canWrite={canWrite} />
+        : tab === "result-type" ? <ResultTypeTab canWrite={canWrite} />
+        : tab === "photo" ? <ResultPhotoTab canWrite={canWrite} />
+        : tab === "exclusion" ? <ExclusionTab canWrite={canWrite} />
         : <Placeholder label={TABS.find(([k]) => k === tab)?.[1] ?? ""} />}
     </div>
   );

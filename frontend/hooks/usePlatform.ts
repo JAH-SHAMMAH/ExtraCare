@@ -218,3 +218,10 @@ export const useDeleteDefaultComment = m((id: string) => platformApi.defaultComm
 export const useUpdateScale = m((v: { id: string; data: object }) => platformApi.gradingScales.update(v.id, v.data), ["grading-scales"], "Updated.");
 export function useReportBranding() { return useQuery<any>({ queryKey: ["report-branding"], queryFn: () => platformApi.reportBranding.get() }); }
 export const useUpdateReportBranding = m((d) => platformApi.reportBranding.update(d), ["report-branding"], "Branding saved.");
+
+// ── S-1c: Result Type / Photo (level settings) + subject exclusions ──────────
+export function useLevelSettings() { return useQuery<any[]>({ queryKey: ["level-settings"], queryFn: () => platformApi.levelSettings.list() }); }
+export const useUpsertLevelSetting = m((d) => platformApi.levelSettings.upsert(d), ["level-settings"], "Saved.");
+export function useSubjectExclusions(yearGroup?: string) { return useQuery<any[]>({ queryKey: ["subject-exclusions", yearGroup], queryFn: () => platformApi.subjectExclusions.list(yearGroup) }); }
+export const useCreateSubjectExclusion = m((d) => platformApi.subjectExclusions.create(d), ["subject-exclusions"], "Excluded.");
+export const useDeleteSubjectExclusion = m((id: string) => platformApi.subjectExclusions.remove(id), ["subject-exclusions"], "Removed.");

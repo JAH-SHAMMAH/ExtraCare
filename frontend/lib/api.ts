@@ -1678,6 +1678,15 @@ export const platformApi = {
     get: () => api.get("/platform/report-branding").then((r) => r.data),
     update: (d: object) => api.put("/platform/report-branding", d).then((r) => r.data),
   },
+  levelSettings: {
+    list: () => api.get("/platform/report-level-settings").then((r) => r.data),
+    upsert: (d: object) => api.put("/platform/report-level-settings", d).then((r) => r.data),
+  },
+  subjectExclusions: {
+    list: (year_group?: string) => api.get("/platform/report-subject-exclusions", { params: year_group ? { year_group } : {} }).then((r) => r.data),
+    create: (d: object) => api.post("/platform/report-subject-exclusions", d).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/report-subject-exclusions/${id}`),
+  },
   reportTemplates: {
     list: () => api.get("/platform/report-templates").then((r) => r.data),
     create: (d: object) => api.post("/platform/report-templates", d).then((r) => r.data),

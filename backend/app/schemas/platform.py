@@ -809,3 +809,35 @@ class DefaultCommentResponse(BaseModel):
 
 COMMENT_LENGTH_TYPES = {"short", "long"}
 TEACHER_TYPES = {"subject", "class", "head"}
+
+
+# ── Secondary Report parity S-1c: Result Type/Photo + Subject Exclusion ──────
+
+RESULT_TYPES = {"junior", "senior"}
+
+
+class LevelSettingUpsert(BaseModel):
+    year_group: str = Field(min_length=1, max_length=60)
+    result_type: str = "junior"
+    show_position: bool = True
+    show_photo: bool = True
+
+
+class LevelSettingResponse(BaseModel):
+    id: str
+    year_group: str
+    result_type: str = "junior"
+    show_position: bool = True
+    show_photo: bool = True
+
+
+class SubjectExclusionCreate(BaseModel):
+    year_group: str = Field(min_length=1, max_length=60)
+    subject_id: str
+
+
+class SubjectExclusionResponse(BaseModel):
+    id: str
+    year_group: str
+    subject_id: str
+    subject_name: Optional[str] = None

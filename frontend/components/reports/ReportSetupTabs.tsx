@@ -11,7 +11,10 @@ import {
   useDefaultComments, useCreateDefaultComment, useDeleteDefaultComment,
   useGradingScales, useCreateScale, useUpdateScale, useReplaceScaleBands, useDeleteScale,
   useReportBranding, useUpdateReportBranding,
+  useLevelSettings, useUpsertLevelSetting,
+  useSubjectExclusions, useCreateSubjectExclusion, useDeleteSubjectExclusion,
 } from "@/hooks/usePlatform";
+import { useYearGroups, useSubjects } from "@/hooks/useSchool";
 import { cn } from "@/lib/utils";
 import { Plus, Trash2, Loader2, Power, Check, X, Sparkles } from "lucide-react";
 
@@ -537,6 +540,120 @@ export function BrandingTab({ canWrite }: { canWrite: boolean }) {
         ))}
       </div>
       {canWrite && <div className="flex justify-end"><button onClick={submit} disabled={save.isPending} className="btn-primary gap-2">{save.isPending && <Loader2 size={15} className="animate-spin" />} Save Branding</button></div>}
+    </div>
+  );
+}
+
+// ── S-1c: Result Type + Result Photo (per year-group level settings) ─────────
+
+function useLevelSettingHelpers() {
+  const { data: years = [] } = useYearGroups();
+  const { data: settings = [] } = useLevelSettings();
+  const upsert = useUpsertLevelSetting();
+  const byYear: Record<string, any> = {};
+  for (const s of settings as any[]) byYear[s.year_group] = s;
+  const settingFor = (yg: string) => byYear[yg] || { year_group: yg, result_type: "junior", show_position: true, show_photo: true };
+  const save = (yg: string, patch: any) => { const cur = settingFor(yg); upsert.mutate({ year_group: yg, result_type: cur.result_type, show_position: cur.show_position, show_photo: cur.show_photo, ...patch }); };
+  return { years: years as any[], settingFor, save, saving: upsert.isPending };
+}
+
+export function ResultTypeTab({ canWrite }: { canWrite: boolean }) {
+  const { years, settingFor, save } = useLevelSettingHelpers();
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-400">Per year group: classify the result as <b>Junior</b> or <b>Senior</b>, and choose whether the pupil&apos;s <b>position in class</b> is printed on the report.</p>
+      {years.length === 0 ? <p className="text-sm text-slate-400 py-6 text-center bg-white rounded-xl border border-slate-200">No year groups defined yet. Add year groups under Classes/YearGroups first.</p> : (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          <table className="w-full text-left">
+            <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Year group", "Result type", "Position in class"].map((h) => <th key={h} className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>)}</tr></thead>
+            <tbody className="divide-y divide-slate-50">
+              {years.map((y) => { const s = settingFor(y.name); return (
+                <tr key={y.id || y.name} className="hover:bg-slate-50/70">
+                  <td className="px-4 py-3 text-sm font-semibold text-slate-800">{y.name}</td>
+                  <td className="px-4 py-3">
+                    {canWrite ? <select value={s.result_type} onChange={(e) => save(y.name, { result_type: e.target.value })} className="input py-1 text-sm w-auto"><option value="junior">Junior</option><option value="senior">Senior</option></select>
+                      : <span className="text-sm capitalize text-slate-600">{s.result_type}</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button disabled={!canWrite} onClick={() => save(y.name, { show_position: !s.show_position })} className={cn("text-xs font-semibold rounded-md px-2.5 py-1", s.show_position ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400")}>{s.show_position ? "Shown" : "Hidden"}</button>
+                  </td>
+                </tr>
+              ); })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ResultPhotoTab({ canWrite }: { canWrite: boolean }) {
+  const { years, settingFor, save } = useLevelSettingHelpers();
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-400">Per year group: choose whether the pupil&apos;s photo appears on the printed report.</p>
+      {years.length === 0 ? <p className="text-sm text-slate-400 py-6 text-center bg-white rounded-xl border border-slate-200">No year groups defined yet.</p> : (
+        <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-50">
+          {years.map((y) => { const s = settingFor(y.name); return (
+            <div key={y.id || y.name} className="flex items-center justify-between px-5 py-3">
+              <span className="text-sm font-semibold text-slate-800">{y.name}</span>
+              <button disabled={!canWrite} onClick={() => save(y.name, { show_photo: !s.show_photo })} className={cn("text-xs font-semibold rounded-md px-2.5 py-1", s.show_photo ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400")}>{s.show_photo ? "Enabled" : "Disabled"}</button>
+            </div>
+          ); })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── S-1c: Subjects For Score Exclusion ───────────────────────────────────────
+
+export function ExclusionTab({ canWrite }: { canWrite: boolean }) {
+  const { data: years = [] } = useYearGroups();
+  const subjectsData: any = useSubjects({ page_size: 200 }).data;
+  const subjects: any[] = subjectsData?.items ?? subjectsData ?? [];
+  const [yearGroup, setYearGroup] = useState("");
+  const { data: rows = [], isLoading } = useSubjectExclusions(yearGroup || undefined);
+  const create = useCreateSubjectExclusion();
+  const del = useDeleteSubjectExclusion();
+  const [subjectId, setSubjectId] = useState("");
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-400">Subjects listed here still appear on the report but do <b>not</b> count toward totals or class position, for the chosen year group.</p>
+      <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3">
+        <div><label className="label">Year group</label>
+          <select value={yearGroup} onChange={(e) => setYearGroup(e.target.value)} className="input">
+            <option value="">— Select —</option>
+            {(years as any[]).map((y) => <option key={y.id || y.name} value={y.name}>{y.name}</option>)}
+          </select>
+        </div>
+        {canWrite && yearGroup && (
+          <>
+            <div className="flex-1 min-w-[180px]"><label className="label">Subject</label>
+              <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className="input">
+                <option value="">— Select —</option>
+                {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <button onClick={() => subjectId && create.mutate({ year_group: yearGroup, subject_id: subjectId }, { onSuccess: () => setSubjectId("") })} disabled={!subjectId || create.isPending} className="btn-primary gap-2"><Plus size={15} /> Exclude</button>
+          </>
+        )}
+      </div>
+
+      {!yearGroup ? <p className="text-sm text-slate-400 py-6 text-center bg-white rounded-xl border border-slate-200">Select a year group to view its excluded subjects.</p>
+        : isLoading ? <div className="py-8 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
+        : (rows as any[]).length === 0 ? <p className="text-sm text-slate-400 py-6 text-center bg-white rounded-xl border border-slate-200">No excluded subjects for this year group.</p>
+        : (
+          <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-50">
+            {(rows as any[]).map((r) => (
+              <div key={r.id} className="flex items-center justify-between px-5 py-3">
+                <span className="text-sm font-semibold text-slate-800">{r.subject_name || r.subject_id.slice(0, 8)}</span>
+                {canWrite && <button onClick={() => del.mutate(r.id)} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={15} /></button>}
+              </div>
+            ))}
+          </div>
+        )}
     </div>
   );
 }

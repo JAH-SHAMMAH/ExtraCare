@@ -26,6 +26,7 @@ from app.models.modules.platform import (
     AssessmentDomain,
     AcademicTerm, AcademicSubTerm, TermPeriod, ReportDeadline,
     ReportCommentType, ResultDefaultComment, ReportBranding,
+    ReportLevelSetting, ReportSubjectExclusion,
     CustomFieldDefinition, CustomFieldValue,
     Poll, PollOption, PollVote,
     MailboxMessage, MailboxRecipient,
@@ -43,6 +44,8 @@ from app.schemas.platform import (
     SectionCreate, SectionUpdate, SectionResponse,
     GradingScaleCreate, GradingScaleResponse, GradingScaleUpdate, ScaleBandCreate,
     SCALE_PURPOSES, BrandingUpdate, BrandingResponse,
+    RESULT_TYPES, LevelSettingUpsert, LevelSettingResponse,
+    SubjectExclusionCreate, SubjectExclusionResponse,
     ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
     SubjectAssessmentResponse, SubjectAssessmentUpdate, SetCambridgeAllRequest,
     DomainCreate, DomainUpdate, DomainResponse, DOMAIN_TYPES,
@@ -1649,3 +1652,75 @@ async def delete_default_comment(comment_id: str, db: AsyncSession = Depends(get
     if not d:
         raise HTTPException(status_code=404, detail="Default comment not found.")
     await db.delete(d)
+
+
+# ── Secondary Report S-1c: Result Type + Result Photo (per year-group) ───────
+
+def _level_setting_response(s: ReportLevelSetting) -> LevelSettingResponse:
+    return LevelSettingResponse(id=s.id, year_group=s.year_group, result_type=s.result_type,
+                                show_position=s.show_position, show_photo=s.show_photo)
+
+
+@router.get("/report-level-settings", response_model=list[LevelSettingResponse], dependencies=[_school_read])
+async def list_level_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(ReportLevelSetting).where(ReportLevelSetting.org_id == current_user.org_id)
+                             .order_by(ReportLevelSetting.year_group))).scalars().all()
+    return [_level_setting_response(s) for s in rows]
+
+
+@router.put("/report-level-settings", response_model=LevelSettingResponse, dependencies=[_write])
+async def upsert_level_setting(payload: LevelSettingUpsert, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Set a year-group's report options (Result Type + Result Photo tabs). Upserts
+    the single row per (org, year_group)."""
+    if payload.result_type not in RESULT_TYPES:
+        raise HTTPException(status_code=422, detail=f"result_type must be one of {sorted(RESULT_TYPES)}")
+    s = (await db.execute(select(ReportLevelSetting).where(
+        ReportLevelSetting.org_id == current_user.org_id, ReportLevelSetting.year_group == payload.year_group))).scalar_one_or_none()
+    if not s:
+        s = ReportLevelSetting(org_id=current_user.org_id, year_group=payload.year_group)
+        db.add(s)
+    s.result_type = payload.result_type
+    s.show_position = payload.show_position
+    s.show_photo = payload.show_photo
+    await db.flush()
+    return _level_setting_response(s)
+
+
+# ── S-1c: Subjects For Score Exclusion (per year-group) ──────────────────────
+
+@router.get("/report-subject-exclusions", response_model=list[SubjectExclusionResponse], dependencies=[_school_read])
+async def list_subject_exclusions(year_group: str | None = None, db: AsyncSession = Depends(get_db),
+                                  current_user: User = Depends(get_current_active_user)):
+    q = select(ReportSubjectExclusion).where(ReportSubjectExclusion.org_id == current_user.org_id)
+    if year_group:
+        q = q.where(ReportSubjectExclusion.year_group == year_group)
+    rows = (await db.execute(q.order_by(ReportSubjectExclusion.year_group))).scalars().all()
+    names = {s.id: s.name for s in (await db.execute(
+        select(Subject).where(Subject.org_id == current_user.org_id))).scalars().all()}
+    return [SubjectExclusionResponse(id=r.id, year_group=r.year_group, subject_id=r.subject_id,
+                                     subject_name=names.get(r.subject_id)) for r in rows]
+
+
+@router.post("/report-subject-exclusions", response_model=SubjectExclusionResponse, status_code=201, dependencies=[_write])
+async def create_subject_exclusion(payload: SubjectExclusionCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    subj = (await db.execute(select(Subject).where(Subject.id == payload.subject_id, Subject.org_id == current_user.org_id))).scalar_one_or_none()
+    if not subj:
+        raise HTTPException(status_code=422, detail="subject_id: not a subject in your organisation")
+    dupe = (await db.execute(select(ReportSubjectExclusion.id).where(
+        ReportSubjectExclusion.org_id == current_user.org_id, ReportSubjectExclusion.year_group == payload.year_group,
+        ReportSubjectExclusion.subject_id == payload.subject_id))).scalar_one_or_none()
+    if dupe:
+        raise HTTPException(status_code=409, detail="That subject is already excluded for this year group.")
+    r = ReportSubjectExclusion(org_id=current_user.org_id, year_group=payload.year_group, subject_id=payload.subject_id)
+    db.add(r)
+    await db.flush()
+    return SubjectExclusionResponse(id=r.id, year_group=r.year_group, subject_id=r.subject_id, subject_name=subj.name)
+
+
+@router.delete("/report-subject-exclusions/{exclusion_id}", status_code=204, dependencies=[_write])
+async def delete_subject_exclusion(exclusion_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    r = (await db.execute(select(ReportSubjectExclusion).where(
+        ReportSubjectExclusion.id == exclusion_id, ReportSubjectExclusion.org_id == current_user.org_id))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Exclusion not found.")
+    await db.delete(r)

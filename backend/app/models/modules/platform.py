@@ -302,6 +302,37 @@ class ReportBranding(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class ReportLevelSetting(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Report Setup → Result Type + Result Photo Setup: per year-group report
+    options — Junior/Senior classification, whether class position prints, and
+    whether the pupil photo shows on the card. One row per (org, year_group)."""
+    __tablename__ = "report_level_settings"
+
+    year_group = Column(String(60), nullable=False)      # e.g. "YEAR 7"
+    result_type = Column(String(20), default="junior", nullable=False)   # junior | senior
+    show_position = Column(Boolean, default=True, nullable=False)
+    show_photo = Column(Boolean, default=True, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "year_group", name="uq_report_level_setting"),
+        Index("ix_report_level_settings_org", "org_id"),
+    )
+
+
+class ReportSubjectExclusion(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Report Setup → Subjects For Score Exclusion: a subject that still shows on
+    the report for a year-group but does NOT count toward totals / position."""
+    __tablename__ = "report_subject_exclusions"
+
+    year_group = Column(String(60), nullable=False)
+    subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "year_group", "subject_id", name="uq_report_subject_exclusion"),
+        Index("ix_report_subject_exclusions_org", "org_id", "year_group"),
+    )
+
+
 class SchoolHouse(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A school house (for the merit/conduct leaderboard + Pastoral House Setup)."""
     __tablename__ = "school_houses"
