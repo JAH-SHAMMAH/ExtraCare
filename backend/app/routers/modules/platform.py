@@ -27,7 +27,7 @@ from app.models.modules.platform import (
     AcademicTerm, AcademicSubTerm, TermPeriod, ReportDeadline,
     ReportCommentType, ResultDefaultComment, ReportBranding,
     ReportLevelSetting, ReportSubjectExclusion,
-    AssessmentGroup, Assessment,
+    AssessmentGroup, Assessment, Cumulative, CumulativeComponent,
     CustomFieldDefinition, CustomFieldValue,
     Poll, PollOption, PollVote,
     MailboxMessage, MailboxRecipient,
@@ -49,6 +49,8 @@ from app.schemas.platform import (
     SubjectExclusionCreate, SubjectExclusionResponse,
     AssessmentGroupCreate, AssessmentGroupUpdate, AssessmentGroupResponse,
     AssessmentCreate, AssessmentUpdate, AssessmentResponse,
+    CUMUL_TYPES, REF_TYPES, CumulComponentIn, CumulComponentOut,
+    CumulativeCreate, CumulativeUpdate, CumulativeResponse,
     ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
     SubjectAssessmentResponse, SubjectAssessmentUpdate, SetCambridgeAllRequest,
     DomainCreate, DomainUpdate, DomainResponse, DOMAIN_TYPES,
@@ -1885,3 +1887,157 @@ async def bootstrap_assessments(db: AsyncSession = Depends(get_db), current_user
     rows = (await db.execute(select(Assessment).where(Assessment.org_id == org).order_by(Assessment.position, Assessment.name))).scalars().all()
     tmap, smap, gmap = await _assessment_name_maps(db, org)
     return [_assessment_response(a, tmap, smap, gmap) for a in rows]
+
+
+# ── Secondary Report S-3: Cumulative curated engine ──────────────────────────
+
+async def _cumul_label_maps(db: AsyncSession, org_id: str):
+    terms = {t.id: t.name for t in (await db.execute(select(AcademicTerm).where(AcademicTerm.org_id == org_id))).scalars().all()}
+    subs = {s.id: s.name for s in (await db.execute(select(AcademicSubTerm).where(AcademicSubTerm.org_id == org_id))).scalars().all()}
+    a_names = {a.id: a.name for a in (await db.execute(select(Assessment).where(Assessment.org_id == org_id))).scalars().all()}
+    c_names = {c.id: c.name for c in (await db.execute(select(Cumulative).where(Cumulative.org_id == org_id))).scalars().all()}
+    return terms, subs, a_names, c_names
+
+
+def _component_label(comp: CumulativeComponent, a_names, c_names) -> str | None:
+    return (a_names if comp.ref_type == "assessment" else c_names).get(comp.ref_id)
+
+
+async def _cumulative_response(db, org_id, c: Cumulative, terms, subs, a_names, c_names) -> CumulativeResponse:
+    comps = (await db.execute(select(CumulativeComponent).where(
+        CumulativeComponent.cumulative_id == c.id, CumulativeComponent.org_id == org_id)
+        .order_by(CumulativeComponent.position))).scalars().all()
+    return CumulativeResponse(
+        id=c.id, name=c.name, code=c.code, term_id=c.term_id, term_name=terms.get(c.term_id),
+        sub_term_id=c.sub_term_id, sub_term_name=subs.get(c.sub_term_id), year_group=c.year_group,
+        cumul_type=c.cumul_type, max_percent=c.max_percent, decimal_places=c.decimal_places, position=c.position,
+        components=[CumulComponentOut(ref_type=cm.ref_type, ref_id=cm.ref_id, label=_component_label(cm, a_names, c_names)) for cm in comps],
+    )
+
+
+async def _validate_component(db, org_id, comp: CumulComponentIn):
+    if comp.ref_type not in REF_TYPES:
+        raise HTTPException(status_code=422, detail=f"ref_type must be one of {sorted(REF_TYPES)}")
+    model = Assessment if comp.ref_type == "assessment" else Cumulative
+    ok = (await db.execute(select(model.id).where(model.id == comp.ref_id, model.org_id == org_id))).scalar_one_or_none()
+    if not ok:
+        raise HTTPException(status_code=422, detail=f"{comp.ref_type} component not found in your organisation")
+
+
+@router.get("/cumulatives", response_model=list[CumulativeResponse], dependencies=[_school_read])
+async def list_cumulatives(term_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = select(Cumulative).where(Cumulative.org_id == current_user.org_id)
+    if term_id:
+        q = q.where(Cumulative.term_id == term_id)
+    rows = (await db.execute(q.order_by(Cumulative.position, Cumulative.name))).scalars().all()
+    terms, subs, a_names, c_names = await _cumul_label_maps(db, current_user.org_id)
+    return [await _cumulative_response(db, current_user.org_id, c, terms, subs, a_names, c_names) for c in rows]
+
+
+@router.post("/cumulatives", response_model=CumulativeResponse, status_code=201, dependencies=[_write])
+async def create_cumulative(payload: CumulativeCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org = current_user.org_id
+    if payload.cumul_type not in CUMUL_TYPES:
+        raise HTTPException(status_code=422, detail=f"cumul_type must be one of {sorted(CUMUL_TYPES)}")
+    await _validate_assessment_fks(db, org, payload.term_id, payload.sub_term_id, None)
+    for comp in payload.components:
+        await _validate_component(db, org, comp)
+    data = payload.model_dump(exclude={"components"})
+    c = Cumulative(org_id=org, **data)
+    db.add(c)
+    await db.flush()
+    for i, comp in enumerate(payload.components):
+        db.add(CumulativeComponent(org_id=org, cumulative_id=c.id, ref_type=comp.ref_type, ref_id=comp.ref_id, position=i))
+    await db.flush()
+    terms, subs, a_names, c_names = await _cumul_label_maps(db, org)
+    return await _cumulative_response(db, org, c, terms, subs, a_names, c_names)
+
+
+@router.patch("/cumulatives/{cumulative_id}", response_model=CumulativeResponse, dependencies=[_write])
+async def update_cumulative(cumulative_id: str, payload: CumulativeUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(Cumulative).where(Cumulative.id == cumulative_id, Cumulative.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Cumulative not found.")
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("cumul_type") and data["cumul_type"] not in CUMUL_TYPES:
+        raise HTTPException(status_code=422, detail=f"cumul_type must be one of {sorted(CUMUL_TYPES)}")
+    for f, v in data.items():
+        setattr(c, f, v)
+    await db.flush()
+    terms, subs, a_names, c_names = await _cumul_label_maps(db, current_user.org_id)
+    return await _cumulative_response(db, current_user.org_id, c, terms, subs, a_names, c_names)
+
+
+@router.put("/cumulatives/{cumulative_id}/components", response_model=CumulativeResponse, dependencies=[_write])
+async def replace_cumulative_components(cumulative_id: str, components: list[CumulComponentIn], db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org = current_user.org_id
+    c = (await db.execute(select(Cumulative).where(Cumulative.id == cumulative_id, Cumulative.org_id == org))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Cumulative not found.")
+    for comp in components:
+        await _validate_component(db, org, comp)
+    existing = (await db.execute(select(CumulativeComponent).where(CumulativeComponent.cumulative_id == cumulative_id, CumulativeComponent.org_id == org))).scalars().all()
+    for e in existing:
+        await db.delete(e)
+    await db.flush()
+    for i, comp in enumerate(components):
+        db.add(CumulativeComponent(org_id=org, cumulative_id=cumulative_id, ref_type=comp.ref_type, ref_id=comp.ref_id, position=i))
+    await db.flush()
+    terms, subs, a_names, c_names = await _cumul_label_maps(db, org)
+    return await _cumulative_response(db, org, c, terms, subs, a_names, c_names)
+
+
+@router.delete("/cumulatives/{cumulative_id}", status_code=204, dependencies=[_write])
+async def delete_cumulative(cumulative_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    c = (await db.execute(select(Cumulative).where(Cumulative.id == cumulative_id, Cumulative.org_id == current_user.org_id))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Cumulative not found.")
+    await db.delete(c)
+
+
+@router.post("/cumulatives/bootstrap", response_model=list[CumulativeResponse], dependencies=[_write])
+async def bootstrap_cumulatives(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Seed Fairview's curated cumulative columns per term over the S-2 assessments:
+    HALF TERM TOTAL(CBT+Theory), %(CBT+Theory), CA 1 = custom% max 20 of HALF TERM
+    TOTAL, and TOTAL(CA 1 + PRJ + PBT + EXAM). Needs the assessment set seeded first."""
+    org = current_user.org_id
+    terms = (await db.execute(select(AcademicTerm).where(AcademicTerm.org_id == org))).scalars().all()
+    assessments = (await db.execute(select(Assessment).where(Assessment.org_id == org))).scalars().all()
+    if not terms or not assessments:
+        raise HTTPException(status_code=422, detail="Seed Terms and the Assessment set first.")
+
+    existing = (await db.execute(select(Cumulative).where(Cumulative.org_id == org))).scalars().all()
+    have = {(e.term_id, (e.name or "").lower()) for e in existing}
+
+    def asmt(term_id, name):
+        return next((a for a in assessments if a.term_id == term_id and (a.name or "").lower() == name.lower()), None)
+
+    async def make(term_id, sub_term_id, name, cumul_type, comps, max_percent=None):
+        if (term_id, name.lower()) in have:
+            return next(c for c in (await db.execute(select(Cumulative).where(
+                Cumulative.org_id == org, Cumulative.term_id == term_id, func.lower(Cumulative.name) == name.lower()))).scalars().all())
+        c = Cumulative(org_id=org, name=name, term_id=term_id, sub_term_id=sub_term_id,
+                       cumul_type=cumul_type, max_percent=max_percent, decimal_places=0)
+        db.add(c)
+        await db.flush()
+        for i, (rt, rid) in enumerate(comps):
+            db.add(CumulativeComponent(org_id=org, cumulative_id=c.id, ref_type=rt, ref_id=rid, position=i))
+        await db.flush()
+        have.add((term_id, name.lower()))
+        return c
+
+    for t in terms:
+        cbt, thy = asmt(t.id, "CBT"), asmt(t.id, "THEORY")
+        prj, pbt, exam = asmt(t.id, "PRJ"), asmt(t.id, "PBT"), asmt(t.id, "EXAM")
+        if not all([cbt, thy, prj, pbt, exam]):
+            continue
+        half_sub, full_sub = cbt.sub_term_id, exam.sub_term_id
+        htt = await make(t.id, half_sub, "HALF TERM TOTAL", "score", [("assessment", cbt.id), ("assessment", thy.id)])
+        await make(t.id, half_sub, "%", "percentage", [("assessment", cbt.id), ("assessment", thy.id)])
+        ca1 = await make(t.id, half_sub, "CA 1", "custom_percentage", [("cumulative", htt.id)], max_percent=20)
+        await make(t.id, full_sub, "TOTAL", "score",
+                   [("cumulative", ca1.id), ("assessment", prj.id), ("assessment", pbt.id), ("assessment", exam.id)])
+
+    rows = (await db.execute(select(Cumulative).where(Cumulative.org_id == org).order_by(Cumulative.position, Cumulative.name))).scalars().all()
+    tmap, smap, amap, cmap = await _cumul_label_maps(db, org)
+    return [await _cumulative_response(db, org, c, tmap, smap, amap, cmap) for c in rows]

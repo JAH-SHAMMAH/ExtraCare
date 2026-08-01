@@ -234,3 +234,9 @@ export function useAssessments(termId?: string) { return useQuery<any[]>({ query
 export const useCreateAssessment = m((d) => platformApi.assessments.create(d), ["assessments"], "Assessment added.");
 export const useDeleteAssessment = m((id: string) => platformApi.assessments.remove(id), ["assessments"], "Removed.");
 export const useBootstrapAssessments = m(() => platformApi.assessments.bootstrap(), ["assessments"], "Seeded Fairview assessment set.");
+
+// ── S-3: Cumulative engine ───────────────────────────────────────────────────
+export function useCumulatives(termId?: string) { return useQuery<any[]>({ queryKey: ["cumulatives", termId], queryFn: () => platformApi.cumulatives.list(termId) }); }
+export const useCreateCumulative = m((d) => platformApi.cumulatives.create(d), ["cumulatives"], "Cumulative added.");
+export const useDeleteCumulative = m((id: string) => platformApi.cumulatives.remove(id), ["cumulatives"], "Removed.");
+export const useBootstrapCumulatives = m(() => platformApi.cumulatives.bootstrap(), ["cumulatives"], "Seeded cumulative columns.");

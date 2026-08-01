@@ -899,3 +899,58 @@ class AssessmentResponse(BaseModel):
     group_id: Optional[str] = None
     group_name: Optional[str] = None
     position: int = 0
+
+
+# ── Secondary Report parity S-3: Cumulative curated engine ───────────────────
+
+CUMUL_TYPES = {"score", "percentage", "custom_percentage"}
+REF_TYPES = {"assessment", "cumulative"}
+
+
+class CumulComponentIn(BaseModel):
+    ref_type: str          # assessment | cumulative
+    ref_id: str
+
+
+class CumulComponentOut(BaseModel):
+    ref_type: str
+    ref_id: str
+    label: Optional[str] = None
+
+
+class CumulativeCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    code: Optional[str] = None
+    term_id: str
+    sub_term_id: str
+    year_group: Optional[str] = None
+    cumul_type: str = "score"
+    max_percent: Optional[Decimal] = None
+    decimal_places: int = 0
+    position: int = 0
+    components: list[CumulComponentIn] = Field(default_factory=list)
+
+
+class CumulativeUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    code: Optional[str] = None
+    cumul_type: Optional[str] = None
+    max_percent: Optional[Decimal] = None
+    decimal_places: Optional[int] = None
+    position: Optional[int] = None
+
+
+class CumulativeResponse(BaseModel):
+    id: str
+    name: str
+    code: Optional[str] = None
+    term_id: str
+    term_name: Optional[str] = None
+    sub_term_id: str
+    sub_term_name: Optional[str] = None
+    year_group: Optional[str] = None
+    cumul_type: str = "score"
+    max_percent: Optional[Decimal] = None
+    decimal_places: int = 0
+    position: int = 0
+    components: list[CumulComponentOut] = Field(default_factory=list)

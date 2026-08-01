@@ -369,6 +369,45 @@ class Assessment(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class Cumulative(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Report Setup → Result View → Assessment Cumulative Setup: a named report
+    column composed from assessments and/or other cumulatives (a small DAG).
+      • cumul_type: score (sum) | percentage (sum/max*100) | custom_percentage
+        (sum rescaled to ``max_percent``).
+    Scoped to (term, sub-term, level). The evaluator (S-4) resolves components
+    per student."""
+    __tablename__ = "cumulatives"
+
+    name = Column(String(120), nullable=False)
+    code = Column(String(40), nullable=True)
+    term_id = Column(String(36), ForeignKey("academic_terms.id", ondelete="CASCADE"), nullable=False, index=True)
+    sub_term_id = Column(String(36), ForeignKey("academic_sub_terms.id", ondelete="CASCADE"), nullable=False, index=True)
+    year_group = Column(String(60), nullable=True)                 # NULL = All Levels
+    cumul_type = Column(String(20), default="score", nullable=False)   # score | percentage | custom_percentage
+    max_percent = Column(Numeric(6, 2), nullable=True)             # for custom_percentage
+    decimal_places = Column(Integer, default=0, nullable=False)
+    position = Column(Integer, default=0, nullable=False)
+
+    __table_args__ = (
+        Index("ix_cumulatives_org_term", "org_id", "term_id"),
+    )
+
+
+class CumulativeComponent(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A member of a Cumulative — a reference to either an assessment or another
+    cumulative (``ref_type``). Ordered by ``position``."""
+    __tablename__ = "cumulative_components"
+
+    cumulative_id = Column(String(36), ForeignKey("cumulatives.id", ondelete="CASCADE"), nullable=False, index=True)
+    ref_type = Column(String(20), nullable=False)   # assessment | cumulative
+    ref_id = Column(String(36), nullable=False)
+    position = Column(Integer, default=0, nullable=False)
+
+    __table_args__ = (
+        Index("ix_cumulative_components_cumulative", "cumulative_id"),
+    )
+
+
 class SchoolHouse(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A school house (for the merit/conduct leaderboard + Pastoral House Setup)."""
     __tablename__ = "school_houses"

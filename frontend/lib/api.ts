@@ -1700,6 +1700,14 @@ export const platformApi = {
     remove: (id: string) => api.delete(`/platform/assessments/${id}`),
     bootstrap: () => api.post("/platform/assessments/bootstrap").then((r) => r.data),
   },
+  cumulatives: {
+    list: (term_id?: string) => api.get("/platform/cumulatives", { params: term_id ? { term_id } : {} }).then((r) => r.data),
+    create: (d: object) => api.post("/platform/cumulatives", d).then((r) => r.data),
+    update: (id: string, d: object) => api.patch(`/platform/cumulatives/${id}`, d).then((r) => r.data),
+    replaceComponents: (id: string, comps: object[]) => api.put(`/platform/cumulatives/${id}/components`, comps).then((r) => r.data),
+    remove: (id: string) => api.delete(`/platform/cumulatives/${id}`),
+    bootstrap: () => api.post("/platform/cumulatives/bootstrap").then((r) => r.data),
+  },
   reportTemplates: {
     list: () => api.get("/platform/report-templates").then((r) => r.data),
     create: (d: object) => api.post("/platform/report-templates", d).then((r) => r.data),
