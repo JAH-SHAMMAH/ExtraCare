@@ -27,13 +27,13 @@ from app.models.modules.platform import (
     AcademicTerm, AcademicSubTerm, TermPeriod, ReportDeadline,
     ReportCommentType, ResultDefaultComment, ReportBranding,
     ReportLevelSetting, ReportSubjectExclusion,
-    AssessmentGroup, Assessment, Cumulative, CumulativeComponent,
+    AssessmentGroup, Assessment, Cumulative, CumulativeComponent, StudentAssessmentScore,
     CustomFieldDefinition, CustomFieldValue,
     Poll, PollOption, PollVote,
     MailboxMessage, MailboxRecipient,
     MobileDevice, MobileAppConfig,
 )
-from app.models.modules.school import SchoolClass, Subject
+from app.models.modules.school import SchoolClass, Subject, Student
 from app.schemas.platform import (
     SessionCreate, SessionUpdate, SessionResponse, CurrentSessionResponse,
     HouseCreate, HouseUpdate, HouseResponse, BandCreate, BandResponse,
@@ -51,6 +51,7 @@ from app.schemas.platform import (
     AssessmentCreate, AssessmentUpdate, AssessmentResponse,
     CUMUL_TYPES, REF_TYPES, CumulComponentIn, CumulComponentOut,
     CumulativeCreate, CumulativeUpdate, CumulativeResponse,
+    ReportEntryGrid, ReportEntryAssessment, ReportEntryStudent, ScoreItem, ReportEntrySave,
     ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
     SubjectAssessmentResponse, SubjectAssessmentUpdate, SetCambridgeAllRequest,
     DomainCreate, DomainUpdate, DomainResponse, DOMAIN_TYPES,
@@ -71,6 +72,9 @@ _write = Depends(PermissionChecker("settings:write"))
 # The current-session resolver is read by term-consuming features (exam/grade/CBT
 # forms), so it rides the broad school:read rather than the admin settings scope.
 _school_read = Depends(PermissionChecker("school:read"))
+# Report Entry is grade entry, not admin config — gate it on the reports scope
+# (teachers hold school:write, which reaches school:reports:write via the hierarchy).
+_reports_write = Depends(PermissionChecker("school:reports:write"))
 
 
 # ── School Setup ────────────────────────────────────────────────────────────────
@@ -2041,3 +2045,70 @@ async def bootstrap_cumulatives(db: AsyncSession = Depends(get_db), current_user
     rows = (await db.execute(select(Cumulative).where(Cumulative.org_id == org).order_by(Cumulative.position, Cumulative.name))).scalars().all()
     tmap, smap, amap, cmap = await _cumul_label_maps(db, org)
     return [await _cumulative_response(db, org, c, tmap, smap, amap, cmap) for c in rows]
+
+
+# ── Secondary Report S-4a: Report Entry (assessment scores) ──────────────────
+
+async def _entry_assessments(db, org_id, term_id, level):
+    """Assessments for a term that apply to a class level (year_group NULL = all)."""
+    q = select(Assessment).where(Assessment.org_id == org_id, Assessment.term_id == term_id)
+    rows = (await db.execute(q.order_by(Assessment.position, Assessment.name))).scalars().all()
+    return [a for a in rows if not a.year_group or a.year_group == level]
+
+
+@router.get("/report-entry", response_model=ReportEntryGrid, dependencies=[_school_read])
+async def report_entry_grid(class_id: str, subject_id: str, term_id: str,
+                            db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org = current_user.org_id
+    cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found.")
+    subs = {s.id: s.name for s in (await db.execute(select(AcademicSubTerm).where(AcademicSubTerm.org_id == org))).scalars().all()}
+    assessments = await _entry_assessments(db, org, term_id, getattr(cls, "level", None))
+    students = (await db.execute(
+        select(Student).where(
+            Student.org_id == org, Student.class_id == class_id, Student.is_deleted == False)  # noqa: E712
+        .order_by(Student.first_name, Student.last_name)
+    )).scalars().all()
+    a_ids = [a.id for a in assessments]
+    s_ids = [s.id for s in students]
+    scores: dict[str, dict[str, object]] = {sid: {} for sid in s_ids}
+    if a_ids and s_ids:
+        rows = (await db.execute(select(StudentAssessmentScore).where(
+            StudentAssessmentScore.org_id == org, StudentAssessmentScore.subject_id == subject_id,
+            StudentAssessmentScore.assessment_id.in_(a_ids), StudentAssessmentScore.student_id.in_(s_ids)))).scalars().all()
+        for r in rows:
+            scores.setdefault(r.student_id, {})[r.assessment_id] = r.score
+    return ReportEntryGrid(
+        class_id=class_id, subject_id=subject_id, term_id=term_id,
+        assessments=[ReportEntryAssessment(id=a.id, name=a.name, max_score=a.max_score, sub_term_name=subs.get(a.sub_term_id)) for a in assessments],
+        students=[ReportEntryStudent(id=s.id, name=f"{s.first_name} {s.last_name}".strip()) for s in students],
+        scores=scores,
+    )
+
+
+@router.post("/report-entry", dependencies=[_reports_write])
+async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org = current_user.org_id
+    subj = (await db.execute(select(Subject.id).where(Subject.id == payload.subject_id, Subject.org_id == org))).scalar_one_or_none()
+    if not subj:
+        raise HTTPException(status_code=422, detail="subject_id: not a subject in your organisation")
+    valid_assessments = set((await db.execute(select(Assessment.id).where(Assessment.org_id == org))).scalars().all())
+    keys = {(i.student_id, i.assessment_id) for i in payload.items}
+    existing = {(r.student_id, r.assessment_id): r for r in (await db.execute(select(StudentAssessmentScore).where(
+        StudentAssessmentScore.org_id == org, StudentAssessmentScore.subject_id == payload.subject_id))).scalars().all()
+        if (r.student_id, r.assessment_id) in keys}
+    saved = 0
+    for it in payload.items:
+        if it.assessment_id not in valid_assessments:
+            continue
+        row = existing.get((it.student_id, it.assessment_id))
+        if row:
+            row.score = it.score
+            row.recorded_by = current_user.id
+        else:
+            db.add(StudentAssessmentScore(org_id=org, student_id=it.student_id, subject_id=payload.subject_id,
+                                          assessment_id=it.assessment_id, score=it.score, recorded_by=current_user.id))
+        saved += 1
+    await db.flush()
+    return {"saved": saved}

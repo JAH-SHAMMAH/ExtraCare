@@ -1708,6 +1708,10 @@ export const platformApi = {
     remove: (id: string) => api.delete(`/platform/cumulatives/${id}`),
     bootstrap: () => api.post("/platform/cumulatives/bootstrap").then((r) => r.data),
   },
+  reportEntry: {
+    grid: (p: { class_id: string; subject_id: string; term_id: string }) => api.get("/platform/report-entry", { params: p }).then((r) => r.data),
+    save: (d: object) => api.post("/platform/report-entry", d).then((r) => r.data),
+  },
   reportTemplates: {
     list: () => api.get("/platform/report-templates").then((r) => r.data),
     create: (d: object) => api.post("/platform/report-templates", d).then((r) => r.data),

@@ -240,3 +240,13 @@ export function useCumulatives(termId?: string) { return useQuery<any[]>({ query
 export const useCreateCumulative = m((d) => platformApi.cumulatives.create(d), ["cumulatives"], "Cumulative added.");
 export const useDeleteCumulative = m((id: string) => platformApi.cumulatives.remove(id), ["cumulatives"], "Removed.");
 export const useBootstrapCumulatives = m(() => platformApi.cumulatives.bootstrap(), ["cumulatives"], "Seeded cumulative columns.");
+
+// ── S-4a: Report Entry (assessment scores) ───────────────────────────────────
+export function useReportEntryGrid(p: { class_id: string; subject_id: string; term_id: string }) {
+  return useQuery<any>({
+    queryKey: ["report-entry", p],
+    queryFn: () => platformApi.reportEntry.grid(p),
+    enabled: !!p.class_id && !!p.subject_id && !!p.term_id,
+  });
+}
+export const useSaveReportEntry = m((d) => platformApi.reportEntry.save(d), ["report-entry"], "Scores saved.");

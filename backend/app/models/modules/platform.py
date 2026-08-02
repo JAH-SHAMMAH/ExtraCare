@@ -408,6 +408,25 @@ class CumulativeComponent(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class StudentAssessmentScore(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """Report Entry: a pupil's raw score for one assessment component in one
+    subject (e.g. CBT=18 in Mathematics). The (term, sub-term, max) come from the
+    Assessment. Cumulatives (S-3) are computed from these — not stored. One row
+    per (student, subject, assessment)."""
+    __tablename__ = "student_assessment_scores"
+
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False, index=True)
+    assessment_id = Column(String(36), ForeignKey("assessments.id", ondelete="CASCADE"), nullable=False, index=True)
+    score = Column(Numeric(6, 2), nullable=True)
+    recorded_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "student_id", "subject_id", "assessment_id", name="uq_student_assessment_score"),
+        Index("ix_student_assessment_scores_subj", "subject_id", "assessment_id"),
+    )
+
+
 class SchoolHouse(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A school house (for the merit/conduct leaderboard + Pastoral House Setup)."""
     __tablename__ = "school_houses"

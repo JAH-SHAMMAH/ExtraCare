@@ -148,6 +148,9 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/subject-selection", permission: "school:subjects:read" },
   { prefix: "/dashboard/modules/school/mark-books", permission: "school:grades:read" },
   { prefix: "/dashboard/modules/school/report-workflow", permission: "school:reports:write" },
+  // Report Entry: enter pupils' assessment marks (the new report engine) — mark-
+  // enterers only (teachers hold school:write -> reports:write via the hierarchy).
+  { prefix: "/dashboard/modules/school/report-entry", permission: "school:reports:write" },
   { prefix: "/dashboard/modules/school/merits", permission: "school:behaviour:read" },
 
   // ── Batch 4: Pastoral, Boarding & Health ───────────────────────────────

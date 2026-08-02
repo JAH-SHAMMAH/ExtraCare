@@ -256,7 +256,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/report-cards?section=Nursery", label: "Reports View", icon: FileText },
-      { href: "/dashboard/modules/school/exams", label: "Report Entry", icon: NotebookPen },
+      { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
       { href: "/dashboard/modules/school/promotion", label: "Promotion Manager", icon: BarChart3 },
@@ -271,7 +271,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/report-cards?section=Primary", label: "Reports View", icon: FileText },
-      { href: "/dashboard/modules/school/exams", label: "Report Entry", icon: NotebookPen },
+      { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
       { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: BookOpen },
@@ -285,7 +285,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/report-cards?section=Secondary", label: "Reports View", icon: FileText },
-      { href: "/dashboard/modules/school/exams", label: "Report Entry", icon: NotebookPen },
+      { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
       { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: BookOpen },

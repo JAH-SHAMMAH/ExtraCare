@@ -954,3 +954,38 @@ class CumulativeResponse(BaseModel):
     decimal_places: int = 0
     position: int = 0
     components: list[CumulComponentOut] = Field(default_factory=list)
+
+
+# ── Secondary Report parity S-4a: Report Entry (assessment scores) ───────────
+
+class ReportEntryAssessment(BaseModel):
+    id: str
+    name: str
+    max_score: Decimal
+    sub_term_name: Optional[str] = None
+
+
+class ReportEntryStudent(BaseModel):
+    id: str
+    name: str
+
+
+class ReportEntryGrid(BaseModel):
+    class_id: str
+    subject_id: str
+    term_id: str
+    assessments: list[ReportEntryAssessment] = Field(default_factory=list)
+    students: list[ReportEntryStudent] = Field(default_factory=list)
+    # scores[student_id][assessment_id] = score
+    scores: dict[str, dict[str, Optional[Decimal]]] = Field(default_factory=dict)
+
+
+class ScoreItem(BaseModel):
+    student_id: str
+    assessment_id: str
+    score: Optional[Decimal] = None
+
+
+class ReportEntrySave(BaseModel):
+    subject_id: str
+    items: list[ScoreItem] = Field(default_factory=list)
