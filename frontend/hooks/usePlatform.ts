@@ -268,3 +268,13 @@ export function useReportCard(p: { student_id: string; term_id: string; sub_term
     enabled: !!p.student_id && !!p.term_id && !!p.sub_term_id,
   });
 }
+
+// ── S-4d: report-card comment grids ──────────────────────────────────────────
+export function useCommentGrid(p: { class_id: string; term_id: string; sub_term_id: string; kind: string }) {
+  return useQuery<any>({
+    queryKey: ["report-comments", p],
+    queryFn: () => platformApi.reportComments.grid(p),
+    enabled: !!p.class_id && !!p.term_id && !!p.sub_term_id && !!p.kind,
+  });
+}
+export const useSaveComments = m((d) => platformApi.reportComments.save(d), ["report-comments", "report-card-v2"], "Comments saved.");

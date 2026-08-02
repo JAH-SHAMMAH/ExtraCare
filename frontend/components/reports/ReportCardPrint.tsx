@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useClasses } from "@/hooks/useSchool";
-import { useTerms, useSubTerms, useBroadsheet, useReportCard } from "@/hooks/usePlatform";
-import { Loader2, Printer, FileText } from "lucide-react";
+import { useTerms, useSubTerms, useBroadsheet, useReportCard, useCommentGrid, useSaveComments } from "@/hooks/usePlatform";
+import { Loader2, Printer, FileText, Save } from "lucide-react";
 
 export function BulkPrintTab() {
   const classesData: any = useClasses({ page_size: 200 }).data;
@@ -121,10 +121,72 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
         </div>
       )}
 
+      {(card.pc_comment || card.head_comment) && (
+        <table className="w-full text-xs mt-3 border border-slate-300">
+          <tbody>
+            {card.pc_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 w-40 align-top">PC Teacher's Comment</td><td className="border border-slate-300 px-2 py-1">{card.pc_comment}</td></tr>}
+            {card.head_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 align-top">{b.school_head_title || "Head"}'s Comment</td><td className="border border-slate-300 px-2 py-1">{card.head_comment}</td></tr>}
+          </tbody>
+        </table>
+      )}
+
       <div className="grid grid-cols-2 gap-6 mt-6 text-xs">
         <div><p className="border-t border-slate-400 pt-1 mt-8">{b.class_teacher_title || "Class Teacher"} Signature</p></div>
         <div><p className="border-t border-slate-400 pt-1 mt-8">{b.school_head_title || "Principal"}{b.school_head_name ? ` — ${b.school_head_name}` : ""}</p></div>
       </div>
     </>
+  );
+}
+
+// ── S-4d: Head / PC comment grids ────────────────────────────────────────────
+
+export function CommentGridTab({ kind, label }: { kind: "head" | "pc"; label: string }) {
+  const classesData: any = useClasses({ page_size: 200 }).data;
+  const classes: any[] = classesData?.items ?? classesData ?? [];
+  const { data: terms = [] } = useTerms();
+  const { data: subs = [] } = useSubTerms();
+  const [classId, setClassId] = useState("");
+  const [termId, setTermId] = useState("");
+  const [subTermId, setSubTermId] = useState("");
+  const { data: grid, isLoading } = useCommentGrid({ class_id: classId, term_id: termId, sub_term_id: subTermId, kind });
+  const save = useSaveComments();
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const seed: Record<string, string> = {};
+    (grid?.rows ?? []).forEach((r: any) => { seed[r.student_id] = r.text || ""; });
+    setDraft(seed);
+  }, [grid]);
+
+  const submit = () => save.mutate({
+    term_id: termId, sub_term_id: subTermId, kind,
+    items: (grid?.rows ?? []).map((r: any) => ({ student_id: r.student_id, text: draft[r.student_id] ?? "" })),
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3">
+        <div><label className="label">Class</label><select value={classId} onChange={(e) => setClassId(e.target.value)} className="input"><option value="">— Select —</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+        <div><label className="label">Term</label><select value={termId} onChange={(e) => setTermId(e.target.value)} className="input"><option value="">— Select —</option>{(terms as any[]).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+        <div><label className="label">Sub-term</label><select value={subTermId} onChange={(e) => setSubTermId(e.target.value)} className="input"><option value="">— Select —</option>{(subs as any[]).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+        {grid && (grid.rows?.length ?? 0) > 0 && <button onClick={submit} disabled={save.isPending} className="btn-primary gap-2 ml-auto">{save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save {label}</button>}
+      </div>
+
+      {!classId || !termId || !subTermId ? (
+        <div className="bg-white rounded-xl border border-dashed border-slate-200 py-14 text-center text-slate-400"><p className="text-sm">Choose a class, term and sub-term to enter {label.toLowerCase()}s.</p></div>
+      ) : isLoading ? (
+        <div className="py-14 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
+      ) : (grid?.rows ?? []).length === 0 ? (
+        <p className="text-sm text-slate-400 py-10 text-center bg-white rounded-xl border border-slate-200">No pupils in this class.</p>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-50">
+          {(grid.rows as any[]).map((r) => (
+            <div key={r.student_id} className="flex flex-col sm:flex-row sm:items-start gap-3 px-5 py-3">
+              <span className="text-sm font-semibold text-slate-800 sm:w-48 shrink-0 pt-2">{r.student_name}</span>
+              <textarea value={draft[r.student_id] ?? ""} onChange={(e) => setDraft((p) => ({ ...p, [r.student_id]: e.target.value }))} className="input flex-1" rows={2} placeholder={`${label}…`} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

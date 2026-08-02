@@ -1070,3 +1070,36 @@ class ReportCardResponse(BaseModel):
     # attendance (from the existing StudentReport, if authored)
     attendance_present: Optional[int] = None
     attendance_total: Optional[int] = None
+    head_comment: Optional[str] = None
+    pc_comment: Optional[str] = None
+
+
+# ── Secondary Report parity S-4d: report-card comments (Head / PC) ───────────
+
+REPORT_COMMENT_KINDS = {"head", "pc"}
+
+
+class CommentGridRow(BaseModel):
+    student_id: str
+    student_name: str
+    text: Optional[str] = None
+
+
+class CommentGridResponse(BaseModel):
+    class_id: str
+    term_id: str
+    sub_term_id: str
+    kind: str
+    rows: list[CommentGridRow] = Field(default_factory=list)
+
+
+class CommentItem(BaseModel):
+    student_id: str
+    text: Optional[str] = None
+
+
+class CommentGridSave(BaseModel):
+    term_id: str
+    sub_term_id: str
+    kind: str
+    items: list[CommentItem] = Field(default_factory=list)

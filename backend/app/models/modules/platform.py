@@ -427,6 +427,25 @@ class StudentAssessmentScore(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class StudentReportComment(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A report-card comment for one pupil for a (term, sub-term): the School Head
+    comment or the PC (pastoral-care) Teacher comment. One row per
+    (student, term, sub-term, kind)."""
+    __tablename__ = "student_report_comments"
+
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    term_id = Column(String(36), ForeignKey("academic_terms.id", ondelete="CASCADE"), nullable=False, index=True)
+    sub_term_id = Column(String(36), ForeignKey("academic_sub_terms.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String(20), nullable=False)   # head | pc
+    text = Column(Text, nullable=True)
+    recorded_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "student_id", "term_id", "sub_term_id", "kind", name="uq_student_report_comment"),
+        Index("ix_student_report_comments_term", "org_id", "term_id", "sub_term_id"),
+    )
+
+
 class SchoolHouse(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A school house (for the merit/conduct leaderboard + Pastoral House Setup)."""
     __tablename__ = "school_houses"

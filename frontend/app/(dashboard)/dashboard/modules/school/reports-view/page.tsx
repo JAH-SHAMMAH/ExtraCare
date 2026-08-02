@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useClasses } from "@/hooks/useSchool";
 import { useTerms, useSubTerms, useBroadsheet } from "@/hooks/usePlatform";
-import { BulkPrintTab } from "@/components/reports/ReportCardPrint";
+import { BulkPrintTab, CommentGridTab } from "@/components/reports/ReportCardPrint";
 import { cn } from "@/lib/utils";
 import { Loader2, LayoutGrid, BarChart3 } from "lucide-react";
 
@@ -11,8 +11,8 @@ type Tab = "broadsheet" | "bulk" | "head" | "pc" | "insight";
 const TABS: [Tab, string, boolean][] = [
   ["broadsheet", "Result Broadsheet", true],
   ["bulk", "Result Bulk Print", true],
-  ["head", "School Head Comment", false],
-  ["pc", "PC Teachers Comment", false],
+  ["head", "School Head Comment", true],
+  ["pc", "PC Teachers Comment", true],
   ["insight", "Result Insight", false],
 ];
 
@@ -30,7 +30,9 @@ export default function ReportsViewPage() {
         ))}
       </div>
 
-      {tab === "broadsheet" ? <Broadsheet /> : tab === "bulk" ? <BulkPrintTab /> : (
+      {tab === "broadsheet" ? <Broadsheet /> : tab === "bulk" ? <BulkPrintTab />
+        : tab === "head" ? <CommentGridTab kind="head" label="Head Comment" />
+        : tab === "pc" ? <CommentGridTab kind="pc" label="PC Comment" /> : (
         <div className="bg-white rounded-xl border border-dashed border-slate-200 p-12 text-center">
           <BarChart3 size={30} className="mx-auto mb-3 text-slate-300" />
           <p className="text-sm font-semibold text-slate-600">{TABS.find(([k]) => k === tab)?.[1]}</p>

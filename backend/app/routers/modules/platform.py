@@ -28,6 +28,7 @@ from app.models.modules.platform import (
     ReportCommentType, ResultDefaultComment, ReportBranding,
     ReportLevelSetting, ReportSubjectExclusion,
     AssessmentGroup, Assessment, Cumulative, CumulativeComponent, StudentAssessmentScore,
+    StudentReportComment,
     CustomFieldDefinition, CustomFieldValue,
     Poll, PollOption, PollVote,
     MailboxMessage, MailboxRecipient,
@@ -54,6 +55,7 @@ from app.schemas.platform import (
     ReportEntryGrid, ReportEntryAssessment, ReportEntryStudent, ScoreItem, ReportEntrySave,
     BroadsheetResponse, BroadsheetRow, BroadsheetCell, BroadsheetSubject, BroadsheetBand,
     CardColumn, CardSubjectRow, ReportCardResponse,
+    REPORT_COMMENT_KINDS, CommentGridRow, CommentGridResponse, CommentItem, CommentGridSave,
     ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
     SubjectAssessmentResponse, SubjectAssessmentUpdate, SetCambridgeAllRequest,
     DomainCreate, DomainUpdate, DomainResponse, DOMAIN_TYPES,
@@ -2342,6 +2344,11 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     sr = (await db.execute(select(StudentReport).where(
         StudentReport.org_id == org, StudentReport.student_id == student_id))).scalars().first()
 
+    comment_rows = (await db.execute(select(StudentReportComment).where(
+        StudentReportComment.org_id == org, StudentReportComment.student_id == student_id,
+        StudentReportComment.term_id == term_id, StudentReportComment.sub_term_id == sub_term_id))).scalars().all()
+    comments = {c.kind: c.text for c in comment_rows}
+
     title = " ".join(x for x in [(term_name or "").upper(), (sub_name or "").upper(), "REPORT"] if x).strip()
     return ReportCardResponse(
         student_id=student_id, student_name=f"{student.first_name} {student.last_name}".strip(),
@@ -2352,4 +2359,52 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         total=round_dp(my_total, 2), average=round_dp(average, 2), grade=_grade_for(average, bands) if n else None,
         position=position, class_size=len(classmates),
         attendance_present=(sr.attendance_present if sr else None), attendance_total=(sr.attendance_total if sr else None),
+        head_comment=comments.get("head"), pc_comment=comments.get("pc"),
     )
+
+
+# ── Secondary Report S-4d: report-card comment grids (Head / PC Teacher) ─────
+
+@router.get("/report-comments", response_model=CommentGridResponse, dependencies=[_reports_write])
+async def report_comment_grid(class_id: str, term_id: str, sub_term_id: str, kind: str,
+                              db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org = current_user.org_id
+    if kind not in REPORT_COMMENT_KINDS:
+        raise HTTPException(status_code=422, detail=f"kind must be one of {sorted(REPORT_COMMENT_KINDS)}")
+    students = (await db.execute(
+        select(Student).where(Student.org_id == org, Student.class_id == class_id, Student.is_deleted == False)  # noqa: E712
+        .order_by(Student.first_name, Student.last_name)
+    )).scalars().all()
+    existing = {c.student_id: c.text for c in (await db.execute(select(StudentReportComment).where(
+        StudentReportComment.org_id == org, StudentReportComment.term_id == term_id,
+        StudentReportComment.sub_term_id == sub_term_id, StudentReportComment.kind == kind))).scalars().all()}
+    return CommentGridResponse(
+        class_id=class_id, term_id=term_id, sub_term_id=sub_term_id, kind=kind,
+        rows=[CommentGridRow(student_id=s.id, student_name=f"{s.first_name} {s.last_name}".strip(),
+                             text=existing.get(s.id)) for s in students],
+    )
+
+
+@router.post("/report-comments", dependencies=[_reports_write])
+async def save_report_comments(payload: CommentGridSave, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org = current_user.org_id
+    if payload.kind not in REPORT_COMMENT_KINDS:
+        raise HTTPException(status_code=422, detail=f"kind must be one of {sorted(REPORT_COMMENT_KINDS)}")
+    ids = [i.student_id for i in payload.items]
+    existing = {c.student_id: c for c in (await db.execute(select(StudentReportComment).where(
+        StudentReportComment.org_id == org, StudentReportComment.term_id == payload.term_id,
+        StudentReportComment.sub_term_id == payload.sub_term_id, StudentReportComment.kind == payload.kind,
+        StudentReportComment.student_id.in_(ids or ["_none_"])))).scalars().all()}
+    saved = 0
+    for it in payload.items:
+        row = existing.get(it.student_id)
+        if row:
+            row.text = it.text
+            row.recorded_by = current_user.id
+        else:
+            db.add(StudentReportComment(org_id=org, student_id=it.student_id, term_id=payload.term_id,
+                                        sub_term_id=payload.sub_term_id, kind=payload.kind, text=it.text,
+                                        recorded_by=current_user.id))
+        saved += 1
+    await db.flush()
+    return {"saved": saved}
