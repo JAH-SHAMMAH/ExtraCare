@@ -45,7 +45,7 @@ export default function ReportEntryPage() {
         items.push({ student_id: s.id, assessment_id: a.id, score: raw === "" || raw == null ? null : Number(raw) });
       }
     }
-    save.mutate({ subject_id: subjectId, items });
+    save.mutate({ subject_id: subjectId, class_id: classId, items });
   };
 
   const ready = grid && grid.assessments.length > 0 && grid.students.length > 0;

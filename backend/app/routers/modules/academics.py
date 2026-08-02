@@ -55,7 +55,9 @@ _subj_read = Depends(PermissionChecker("school:subjects:read"))
 _subj_write = Depends(PermissionChecker("school:subjects:write"))
 _grade_read = Depends(PermissionChecker("school:grades:read"))
 _grade_write = Depends(PermissionChecker("school:grades:write"))
-_report_write = Depends(PermissionChecker("school:reports:write"))
+# Report Approve/Process is an ADMIN action (not a teacher one): school_admin:write
+# excludes teachers (who hold school:write => school:reports:write but not school_admin).
+_report_write = Depends(PermissionChecker("school_admin:write"))
 _beh_read = Depends(PermissionChecker("school:behaviour:read"))
 _beh_write = Depends(PermissionChecker("school:behaviour:write"))
 

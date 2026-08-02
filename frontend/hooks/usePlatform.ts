@@ -301,3 +301,8 @@ export function useReportUpload() {
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Upload failed."),
   });
 }
+
+// ── T-1: teacher's own (class, subject) assignments (for Make Report) ─────────
+export function useMyTeachingAssignments() {
+  return useQuery<any[]>({ queryKey: ["my-teaching-assignments"], queryFn: () => platformApi.myTeachingAssignments() });
+}

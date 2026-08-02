@@ -1712,6 +1712,7 @@ export const platformApi = {
     grid: (p: { class_id: string; subject_id: string; term_id: string }) => api.get("/platform/report-entry", { params: p }).then((r) => r.data),
     save: (d: object) => api.post("/platform/report-entry", d).then((r) => r.data),
   },
+  myTeachingAssignments: () => api.get("/platform/my-teaching-assignments").then((r) => r.data),
   broadsheet: (p: { class_id: string; term_id: string; sub_term_id: string }) => api.get("/platform/report-broadsheet", { params: p }).then((r) => r.data),
   reportCard: (p: { student_id: string; term_id: string; sub_term_id: string }) => api.get("/platform/report-card", { params: p }).then((r) => r.data),
   reportComments: {

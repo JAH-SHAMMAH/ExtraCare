@@ -3,21 +3,27 @@
 import { useState } from "react";
 import { useClasses } from "@/hooks/useSchool";
 import { useTerms, useSubTerms, useBroadsheet } from "@/hooks/usePlatform";
+import { useHasPermission } from "@/components/guards/PermissionGate";
 import { BulkPrintTab, CommentGridTab } from "@/components/reports/ReportCardPrint";
 import { ReportInsightTab } from "@/components/reports/ReportInsightTab";
 import { cn } from "@/lib/utils";
 import { Loader2, LayoutGrid, BarChart3 } from "lucide-react";
 
 type Tab = "broadsheet" | "bulk" | "head" | "pc" | "insight";
+// adminOnly tabs (School Head Comment, Result Insight) are hidden from teachers,
+// matching the API gates (school_admin) — a class teacher sees Broadsheet / Bulk
+// Print / PC Comment, scoped server-side to their class.
 const TABS: [Tab, string, boolean][] = [
-  ["broadsheet", "Result Broadsheet", true],
-  ["bulk", "Result Bulk Print", true],
+  ["broadsheet", "Result Broadsheet", false],
+  ["bulk", "Result Bulk Print", false],
   ["head", "School Head Comment", true],
-  ["pc", "PC Teachers Comment", true],
+  ["pc", "PC Teachers Comment", false],
   ["insight", "Result Insight", true],
 ];
 
 export default function ReportsViewPage() {
+  const isAdmin = useHasPermission("school_admin:read");
+  const visible = TABS.filter(([, , adminOnly]) => isAdmin || !adminOnly);
   const [tab, setTab] = useState<Tab>("broadsheet");
   return (
     <div className="p-8 max-w-full mx-auto">
@@ -26,8 +32,8 @@ export default function ReportsViewPage() {
       <p className="text-slate-500 text-sm mb-5">Class results built from the Report Entry marks and the cumulative columns.</p>
 
       <div className="flex flex-wrap gap-1 border-b border-slate-200 mb-6">
-        {TABS.map(([k, l, live]) => (
-          <button key={k} onClick={() => setTab(k)} className={cn("px-3.5 py-2 text-sm font-semibold border-b-2 -mb-px transition whitespace-nowrap", tab === k ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-700", !live && "opacity-60")}>{l}</button>
+        {visible.map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} className={cn("px-3.5 py-2 text-sm font-semibold border-b-2 -mb-px transition whitespace-nowrap", tab === k ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-700")}>{l}</button>
         ))}
       </div>
 

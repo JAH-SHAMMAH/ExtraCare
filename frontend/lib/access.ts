@@ -147,13 +147,21 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // stay staff-only. subject-selection/mark-books use subjects/grades read.
   { prefix: "/dashboard/modules/school/subject-selection", permission: "school:subjects:read" },
   { prefix: "/dashboard/modules/school/mark-books", permission: "school:grades:read" },
-  { prefix: "/dashboard/modules/school/report-workflow", permission: "school:reports:write" },
-  // Report Entry: enter pupils' assessment marks (the new report engine) — mark-
-  // enterers only (teachers hold school:write -> reports:write via the hierarchy).
-  { prefix: "/dashboard/modules/school/report-entry", permission: "school:reports:write" },
-  // Reports View (broadsheet etc.) — staff results view, on the reports scope.
+  // Approve/Process is an ADMIN action — school_admin (teachers hold school:write
+  // => reports:write but NOT school_admin, so they're excluded). Matches the
+  // re-gated report-workflow API (school_admin:write).
+  { prefix: "/dashboard/modules/school/report-workflow", permission: "school_admin:read" },
+  // Report Entry = the ADMIN score-entry desk (any class/subject). Teachers use
+  // Make Report (their own timetable subjects) instead.
+  { prefix: "/dashboard/modules/school/report-entry", permission: "school_admin:read" },
+  // Make Report = the TEACHER score-entry page — scoped server-side to the
+  // teacher's Timetable (class, subject) assignments.
+  { prefix: "/dashboard/modules/school/make-report", permission: "school:reports:write" },
+  // Reports View (broadsheet etc.) — results view; the API further class-teacher-
+  // gates it (a non-class-teacher is blocked for that class).
   { prefix: "/dashboard/modules/school/reports-view", permission: "school:reports:read" },
-  { prefix: "/dashboard/modules/school/reports-upload", permission: "school:reports:write" },
+  // Reports Upload = ADMIN bulk import — school_admin only.
+  { prefix: "/dashboard/modules/school/reports-upload", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/merits", permission: "school:behaviour:read" },
 
   // ── Batch 4: Pastoral, Boarding & Health ───────────────────────────────
@@ -254,7 +262,9 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/week-entries", permission: "settings:read" },
   // Result Publish is a grade operation — gate on school:write (its publish endpoint
   // is school:write), so managers + org_admin (school:*) see it, not just settings holders.
-  { prefix: "/dashboard/modules/school/result-publish", permission: "school:write" },
+  // Publish Report is an ADMIN action — hidden from teachers. (It drives the shared
+  // gradebook publish; teachers still publish their own grades from the Gradebook.)
+  { prefix: "/dashboard/modules/school/result-publish", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/user-roles", permission: "roles:write" },
   // ── Medicals module (confidential — medical:read) ───────────────────────
   { prefix: "/dashboard/modules/school/medical-dashboard", permission: "medical:read" },

@@ -28,13 +28,13 @@ from app.models.modules.platform import (
     ReportCommentType, ResultDefaultComment, ReportBranding,
     ReportLevelSetting, ReportSubjectExclusion,
     AssessmentGroup, Assessment, Cumulative, CumulativeComponent, StudentAssessmentScore,
-    StudentReportComment,
+    StudentReportComment, ClassPcTeacher,
     CustomFieldDefinition, CustomFieldValue,
     Poll, PollOption, PollVote,
     MailboxMessage, MailboxRecipient,
     MobileDevice, MobileAppConfig,
 )
-from app.models.modules.school import SchoolClass, Subject, Student, StudentReport
+from app.models.modules.school import SchoolClass, Subject, Student, StudentReport, Timetable
 from app.schemas.platform import (
     SessionCreate, SessionUpdate, SessionResponse, CurrentSessionResponse,
     HouseCreate, HouseUpdate, HouseResponse, BandCreate, BandResponse,
@@ -52,7 +52,7 @@ from app.schemas.platform import (
     AssessmentCreate, AssessmentUpdate, AssessmentResponse,
     CUMUL_TYPES, REF_TYPES, CumulComponentIn, CumulComponentOut,
     CumulativeCreate, CumulativeUpdate, CumulativeResponse,
-    ReportEntryGrid, ReportEntryAssessment, ReportEntryStudent, ScoreItem, ReportEntrySave,
+    ReportEntryGrid, ReportEntryAssessment, ReportEntryStudent, ScoreItem, ReportEntrySave, TeachingAssignment,
     BroadsheetResponse, BroadsheetRow, BroadsheetCell, BroadsheetSubject, BroadsheetBand,
     CardColumn, CardSubjectRow, ReportCardResponse,
     REPORT_COMMENT_KINDS, CommentGridRow, CommentGridResponse, CommentItem, CommentGridSave,
@@ -83,6 +83,49 @@ _school_read = Depends(PermissionChecker("school:read"))
 # Report Entry is grade entry, not admin config — gate it on the reports scope
 # (teachers hold school:write, which reaches school:reports:write via the hierarchy).
 _reports_write = Depends(PermissionChecker("school:reports:write"))
+# Admin-only report actions (Approve/Process, Reports Upload) — teachers hold
+# school:write (=> school:reports:write) but NOT school_admin, so this excludes them.
+_report_admin_write = Depends(PermissionChecker("school_admin:write"))
+
+
+def _report_admin(user: User) -> bool:
+    """A report ADMIN (org_admin / manager / principal / head / super) — bypasses
+    the class-teacher / subject-teacher scoping that constrains ordinary teachers.
+    Teachers hold school:write (not school_admin) so this is False for them."""
+    return user.has_permission("school_admin:read")
+
+
+async def _teacher_assignments(db: AsyncSession, org_id: str, user_id: str) -> set[tuple[str, str]]:
+    """The (class_id, subject_id) pairs a teacher actually teaches — from the
+    Timetable (the real per-class-per-subject assignment)."""
+    rows = (await db.execute(select(Timetable.class_id, Timetable.subject_id).where(
+        Timetable.org_id == org_id, Timetable.teacher_id == user_id))).all()
+    return {(r.class_id, r.subject_id) for r in rows}
+
+
+async def _class_teacher_id(db: AsyncSession, org_id: str, class_id: str) -> str | None:
+    return (await db.execute(select(SchoolClass.teacher_id).where(
+        SchoolClass.id == class_id, SchoolClass.org_id == org_id))).scalar_one_or_none()
+
+
+async def _pc_teacher_id(db: AsyncSession, org_id: str, class_id: str) -> str | None:
+    """The class's PC teacher — the ClassPcTeacher lookup, else the class/form
+    teacher (today's default). Data-driven, reassignable later."""
+    pc = (await db.execute(select(ClassPcTeacher.teacher_id).where(
+        ClassPcTeacher.org_id == org_id, ClassPcTeacher.class_id == class_id))).scalar_one_or_none()
+    return pc or await _class_teacher_id(db, org_id, class_id)
+
+
+async def _gate_comment_access(db: AsyncSession, org_id: str, user: User, class_id: str | None, kind: str):
+    """Report-card comment access: admins pass. Otherwise the School Head comment
+    (kind=head) is admin-only, and the PC Teacher comment (kind=pc) is limited to
+    the class's PC teacher."""
+    if _report_admin(user):
+        return
+    if kind == "head":
+        raise HTTPException(status_code=403, detail="Only an administrator can enter the school head's comment.")
+    if not class_id or await _pc_teacher_id(db, org_id, class_id) != user.id:
+        raise HTTPException(status_code=403, detail="You are not the PC teacher for this class.")
 
 
 # ── School Setup ────────────────────────────────────────────────────────────────
@@ -2066,6 +2109,22 @@ async def _entry_assessments(db, org_id, term_id, level):
     return [a for a in rows if not a.year_group or a.year_group == level]
 
 
+@router.get("/my-teaching-assignments", response_model=list[TeachingAssignment], dependencies=[_school_read])
+async def my_teaching_assignments(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """The (class, subject) pairs the signed-in teacher teaches (from the Timetable)
+    — the source for the teacher-facing Make Report page."""
+    org = current_user.org_id
+    pairs = await _teacher_assignments(db, org, current_user.id)
+    if not pairs:
+        return []
+    cls_names = {c.id: c.name for c in (await db.execute(select(SchoolClass).where(SchoolClass.org_id == org))).scalars().all()}
+    subj_names = {s.id: s.name for s in (await db.execute(select(Subject).where(Subject.org_id == org))).scalars().all()}
+    out = [TeachingAssignment(class_id=cid, class_name=cls_names.get(cid), subject_id=sid, subject_name=subj_names.get(sid))
+           for (cid, sid) in pairs]
+    out.sort(key=lambda a: (a.class_name or "", a.subject_name or ""))
+    return out
+
+
 @router.get("/report-entry", response_model=ReportEntryGrid, dependencies=[_school_read])
 async def report_entry_grid(class_id: str, subject_id: str, term_id: str,
                             db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
@@ -2073,6 +2132,9 @@ async def report_entry_grid(class_id: str, subject_id: str, term_id: str,
     cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
     if not cls:
         raise HTTPException(status_code=404, detail="Class not found.")
+    # Teacher scoping: a non-admin may only touch subjects they teach in this class.
+    if not _report_admin(current_user) and (class_id, subject_id) not in await _teacher_assignments(db, org, current_user.id):
+        raise HTTPException(status_code=403, detail="You do not teach this subject in this class.")
     subs = {s.id: s.name for s in (await db.execute(select(AcademicSubTerm).where(AcademicSubTerm.org_id == org))).scalars().all()}
     assessments = await _entry_assessments(db, org, term_id, getattr(cls, "level", None))
     students = (await db.execute(
@@ -2103,6 +2165,13 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
     subj = (await db.execute(select(Subject.id).where(Subject.id == payload.subject_id, Subject.org_id == org))).scalar_one_or_none()
     if not subj:
         raise HTTPException(status_code=422, detail="subject_id: not a subject in your organisation")
+    # Teacher scoping: a non-admin may only save scores for a (class, subject) they
+    # actually teach. class_id is required for a non-admin so the scope is checkable.
+    if not _report_admin(current_user):
+        if not payload.class_id:
+            raise HTTPException(status_code=422, detail="class_id is required.")
+        if (payload.class_id, payload.subject_id) not in await _teacher_assignments(db, org, current_user.id):
+            raise HTTPException(status_code=403, detail="You do not teach this subject in this class.")
     valid_assessments = set((await db.execute(select(Assessment.id).where(Assessment.org_id == org))).scalars().all())
     keys = {(i.student_id, i.assessment_id) for i in payload.items}
     existing = {(r.student_id, r.assessment_id): r for r in (await db.execute(select(StudentAssessmentScore).where(
@@ -2157,6 +2226,10 @@ async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
     cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
     if not cls:
         raise HTTPException(status_code=404, detail="Class not found.")
+    # Class-teacher gate: a non-admin sees a class's results only if they are its
+    # class/form teacher (Educare: "You are not a class teacher").
+    if not _report_admin(current_user) and cls.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You are not the class teacher for this class.")
     level = getattr(cls, "level", None)
     term_name = (await db.execute(select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org))).scalar_one_or_none()
     sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
@@ -2252,6 +2325,10 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     if not student:
         raise HTTPException(status_code=404, detail="Student not found.")
     cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == student.class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+    # Class-teacher gate: a non-admin may only open a card for a pupil in the class
+    # they are the class/form teacher of.
+    if not _report_admin(current_user) and (not cls or cls.teacher_id != current_user.id):
+        raise HTTPException(status_code=403, detail="You are not the class teacher for this pupil's class.")
     term_name = (await db.execute(select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org))).scalar_one_or_none()
     sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
     branding = _branding_response((await db.execute(select(ReportBranding).where(ReportBranding.org_id == org))).scalar_one_or_none())
@@ -2374,6 +2451,7 @@ async def report_comment_grid(class_id: str, term_id: str, sub_term_id: str, kin
     org = current_user.org_id
     if kind not in REPORT_COMMENT_KINDS:
         raise HTTPException(status_code=422, detail=f"kind must be one of {sorted(REPORT_COMMENT_KINDS)}")
+    await _gate_comment_access(db, org, current_user, class_id, kind)
     students = (await db.execute(
         select(Student).where(Student.org_id == org, Student.class_id == class_id, Student.is_deleted == False)  # noqa: E712
         .order_by(Student.first_name, Student.last_name)
@@ -2393,6 +2471,9 @@ async def save_report_comments(payload: CommentGridSave, db: AsyncSession = Depe
     org = current_user.org_id
     if payload.kind not in REPORT_COMMENT_KINDS:
         raise HTTPException(status_code=422, detail=f"kind must be one of {sorted(REPORT_COMMENT_KINDS)}")
+    if not _report_admin(current_user) and not payload.class_id:
+        raise HTTPException(status_code=422, detail="class_id is required.")
+    await _gate_comment_access(db, org, current_user, payload.class_id, payload.kind)
     ids = [i.student_id for i in payload.items]
     existing = {c.student_id: c for c in (await db.execute(select(StudentReportComment).where(
         StudentReportComment.org_id == org, StudentReportComment.term_id == payload.term_id,
@@ -2419,7 +2500,7 @@ def _mean(vals):
     return round_dp(sum(vals) / len(vals), 1) if vals else None
 
 
-@router.get("/report-insight", response_model=InsightResponse, dependencies=[Depends(PermissionChecker("school:reports:read"))])
+@router.get("/report-insight", response_model=InsightResponse, dependencies=[Depends(PermissionChecker("school_admin:read"))])
 async def report_insight(term_id: str, sub_term_id: str,
                          db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """School-wide performance for a (term, sub-term): per-subject average, the same
@@ -2500,7 +2581,7 @@ async def report_insight(term_id: str, sub_term_id: str,
 _UPLOAD_SKIP_COLS = {"student", "name", "student name", "admission_no", "admission", "admission no", "subject"}
 
 
-@router.post("/report-upload", response_model=ScoreUploadResult, dependencies=[_reports_write])
+@router.post("/report-upload", response_model=ScoreUploadResult, dependencies=[_report_admin_write])
 async def report_upload(term_id: str, file: UploadFile = File(...),
                         db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Bulk-import scores from a CSV / Excel / Word / PDF grid. Columns

@@ -7,6 +7,7 @@ from decimal import Decimal
 import pytest
 
 from app.models.user import User, UserStatus
+from app.models.role import Role
 from app.models.modules.school import Subject, SchoolClass, Student
 from app.models.modules.platform import AcademicTerm, AcademicSubTerm, GradingScale, GradingBand
 from app.routers.modules.platform import (
@@ -22,7 +23,9 @@ pytestmark = pytest.mark.asyncio
 async def _admin(db, org) -> User:
     u = User(id=str(uuid.uuid4()), email=f"a-{uuid.uuid4().hex[:6]}@x.com", full_name="Officer",
              status=UserStatus.ACTIVE, org_id=org.id)
-    u.roles = []
+    _r = Role(id=str(uuid.uuid4()), name="admin", slug="super_user", permissions=["*"], org_id=org.id, is_system=False)
+    db.add(_r)
+    u.roles = [_r]
     db.add(u)
     await db.commit()
     return u

@@ -256,6 +256,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/make-report", label: "Make Report", icon: NotebookPen },
       { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
@@ -272,6 +273,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/make-report", label: "Make Report", icon: NotebookPen },
       { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
@@ -287,6 +289,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/make-report", label: "Make Report", icon: NotebookPen },
       { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },

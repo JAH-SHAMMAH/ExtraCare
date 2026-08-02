@@ -446,6 +446,21 @@ class StudentReportComment(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class ClassPcTeacher(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """The Pastoral-Care (PC) teacher for a class — a DATA lookup, not a hardcoded
+    rule. When no row exists the resolver falls back to the class/form teacher
+    (SchoolClass.teacher_id), so 'PC = class teacher' is today's default but can be
+    reassigned per class later without a code change. Gates 'Teacher Comments'."""
+    __tablename__ = "class_pc_teachers"
+
+    class_id = Column(String(36), ForeignKey("school_classes.id", ondelete="CASCADE"), nullable=False, index=True)
+    teacher_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "class_id", name="uq_class_pc_teacher"),
+    )
+
+
 class SchoolHouse(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A school house (for the merit/conduct leaderboard + Pastoral House Setup)."""
     __tablename__ = "school_houses"

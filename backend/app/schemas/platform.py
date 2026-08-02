@@ -988,7 +988,15 @@ class ScoreItem(BaseModel):
 
 class ReportEntrySave(BaseModel):
     subject_id: str
+    class_id: Optional[str] = None      # required for teacher (timetable) scoping
     items: list[ScoreItem] = Field(default_factory=list)
+
+
+class TeachingAssignment(BaseModel):
+    class_id: str
+    class_name: Optional[str] = None
+    subject_id: str
+    subject_name: Optional[str] = None
 
 
 # ── Secondary Report parity S-4b: Broadsheet ─────────────────────────────────
@@ -1102,6 +1110,7 @@ class CommentGridSave(BaseModel):
     term_id: str
     sub_term_id: str
     kind: str
+    class_id: Optional[str] = None      # required for teacher (PC / class) scoping
     items: list[CommentItem] = Field(default_factory=list)
 
 
