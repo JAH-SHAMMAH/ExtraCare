@@ -1132,3 +1132,11 @@ class InsightResponse(BaseModel):
     subjects: list[InsightSubject] = Field(default_factory=list)
     gender: list[InsightGender] = Field(default_factory=list)
     classes: list[InsightClass] = Field(default_factory=list)
+
+
+# ── Secondary Report parity S-6: Reports Upload (bulk score import) ──────────
+
+class ScoreUploadResult(BaseModel):
+    rows: int = 0
+    imported: int = 0
+    errors: list[str] = Field(default_factory=list)

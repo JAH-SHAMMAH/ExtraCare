@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import select, func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,6 +57,7 @@ from app.schemas.platform import (
     CardColumn, CardSubjectRow, ReportCardResponse,
     REPORT_COMMENT_KINDS, CommentGridRow, CommentGridResponse, CommentItem, CommentGridSave,
     InsightResponse, InsightSubject, InsightGender, InsightClass,
+    ScoreUploadResult,
     ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
     SubjectAssessmentResponse, SubjectAssessmentUpdate, SetCambridgeAllRequest,
     DomainCreate, DomainUpdate, DomainResponse, DOMAIN_TYPES,
@@ -70,6 +71,7 @@ from app.schemas.platform import (
 )
 from app.services.ledger import money  # Decimal helper for grading bands
 from app.services.report_engine import evaluate_cumulative, round_dp
+from app.services.import_files import rows_from_upload
 
 router = APIRouter(prefix="/platform", tags=["Administration & Platform"], dependencies=[Depends(require_module("school"))])
 
@@ -2491,3 +2493,83 @@ async def report_insight(term_id: str, sub_term_id: str,
 
     return InsightResponse(term_name=term_name, sub_term_name=sub_name,
                            subjects=subj_out, gender=gender_out, classes=class_out)
+
+
+# ── Secondary Report S-6: Reports Upload (bulk score import) ─────────────────
+
+_UPLOAD_SKIP_COLS = {"student", "name", "student name", "admission_no", "admission", "admission no", "subject"}
+
+
+@router.post("/report-upload", response_model=ScoreUploadResult, dependencies=[_reports_write])
+async def report_upload(term_id: str, file: UploadFile = File(...),
+                        db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Bulk-import scores from a CSV / Excel / Word / PDF grid. Columns
+    (case-insensitive): student (name) or admission_no, subject, then one column per
+    assessment (CBT, THEORY, PRJ, PBT, EXAM). Rows are matched to the term's
+    assessments by name; unknown students/subjects/assessments are reported, not fatal."""
+    from decimal import Decimal, InvalidOperation
+    org = current_user.org_id
+    content = await file.read()
+    try:
+        parsed = rows_from_upload(file.filename or "", content)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    students = (await db.execute(select(Student).where(Student.org_id == org, Student.is_deleted == False))).scalars().all()  # noqa: E712
+    by_adm = {(s.student_id or "").strip().lower(): s for s in students if s.student_id}
+    by_name = {f"{s.first_name} {s.last_name}".strip().lower(): s for s in students}
+    subjects_by_name = {s.name.strip().lower(): s for s in (await db.execute(select(Subject).where(Subject.org_id == org))).scalars().all()}
+    assessments_by_name = {a.name.strip().lower(): a for a in (await db.execute(
+        select(Assessment).where(Assessment.org_id == org, Assessment.term_id == term_id))).scalars().all()}
+
+    # Preload existing scores for this term's assessments to upsert in place.
+    a_ids = [a.id for a in assessments_by_name.values()]
+    existing: dict[tuple, object] = {}
+    if a_ids:
+        for r in (await db.execute(select(StudentAssessmentScore).where(
+                StudentAssessmentScore.org_id == org, StudentAssessmentScore.assessment_id.in_(a_ids)))).scalars().all():
+            existing[(r.student_id, r.subject_id, r.assessment_id)] = r
+
+    imported = 0
+    errors: list[str] = []
+    for i, raw in enumerate(parsed, start=2):
+        row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items()}
+        adm = (row.get("admission_no") or row.get("admission") or row.get("admission no") or "").lower()
+        name = (row.get("student") or row.get("name") or row.get("student name") or "").lower()
+        student = (by_adm.get(adm) if adm else None) or (by_name.get(name) if name else None)
+        if not student:
+            errors.append(f"row {i}: student not found ({row.get('student') or row.get('admission_no') or '—'})")
+            continue
+        subj = subjects_by_name.get((row.get("subject") or "").lower())
+        if not subj:
+            errors.append(f"row {i}: subject not found ({row.get('subject') or '—'})")
+            continue
+        wrote_any = False
+        for col, val in row.items():
+            if col in _UPLOAD_SKIP_COLS or val == "":
+                continue
+            a = assessments_by_name.get(col)
+            if not a:
+                continue
+            try:
+                score = Decimal(val)
+            except (InvalidOperation, ValueError):
+                errors.append(f"row {i}: '{val}' is not a number for {a.name}")
+                continue
+            key = (student.id, subj.id, a.id)
+            row_obj = existing.get(key)
+            if row_obj:
+                row_obj.score = score
+                row_obj.recorded_by = current_user.id
+            else:
+                new = StudentAssessmentScore(org_id=org, student_id=student.id, subject_id=subj.id,
+                                             assessment_id=a.id, score=score, recorded_by=current_user.id)
+                db.add(new)
+                existing[key] = new
+            wrote_any = True
+        if wrote_any:
+            imported += 1
+        elif not any(assessments_by_name.get(c) for c in row):
+            errors.append(f"row {i}: no matching assessment columns")
+    await db.flush()
+    return ScoreUploadResult(rows=len(parsed), imported=imported, errors=errors[:50])

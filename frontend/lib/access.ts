@@ -153,6 +153,7 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/report-entry", permission: "school:reports:write" },
   // Reports View (broadsheet etc.) — staff results view, on the reports scope.
   { prefix: "/dashboard/modules/school/reports-view", permission: "school:reports:read" },
+  { prefix: "/dashboard/modules/school/reports-upload", permission: "school:reports:write" },
   { prefix: "/dashboard/modules/school/merits", permission: "school:behaviour:read" },
 
   // ── Batch 4: Pastoral, Boarding & Health ───────────────────────────────

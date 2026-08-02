@@ -287,3 +287,17 @@ export function useReportInsight(p: { term_id: string; sub_term_id: string }) {
     enabled: !!p.term_id && !!p.sub_term_id,
   });
 }
+
+// ── S-6: Reports Upload ──────────────────────────────────────────────────────
+export function useReportUpload() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { term_id: string; formData: FormData }) => platformApi.reportUpload(v.term_id, v.formData),
+    onSuccess: (r: any) => {
+      qc.invalidateQueries({ queryKey: ["broadsheet"] });
+      qc.invalidateQueries({ queryKey: ["report-card-v2"] });
+      toast.success(`Imported ${r?.imported ?? 0} row(s).${r?.errors?.length ? ` ${r.errors.length} skipped.` : ""}`);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Upload failed."),
+  });
+}

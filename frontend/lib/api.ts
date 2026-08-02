@@ -1719,6 +1719,7 @@ export const platformApi = {
     save: (d: object) => api.post("/platform/report-comments", d).then((r) => r.data),
   },
   reportInsight: (p: { term_id: string; sub_term_id: string }) => api.get("/platform/report-insight", { params: p }).then((r) => r.data),
+  reportUpload: (term_id: string, formData: FormData) => api.post("/platform/report-upload", formData, { params: { term_id }, headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data),
   reportTemplates: {
     list: () => api.get("/platform/report-templates").then((r) => r.data),
     create: (d: object) => api.post("/platform/report-templates", d).then((r) => r.data),

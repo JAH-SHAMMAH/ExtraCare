@@ -8,7 +8,7 @@ import {
   GraduationCap, Heart, Briefcase, Package, DollarSign,
   HelpCircle, ChevronDown, Building2, Stethoscope,
   Calendar, ClipboardList, ClipboardCheck, Users2, BookOpen, Bell, Shield, ShieldCheck,
-  FileText, Wallet, Clock, UserCheck, Award, PlusCircle,
+  FileText, Wallet, Clock, UserCheck, Award, PlusCircle, Upload,
   BookMarked, School, Microscope, Pill, BedDouble, Activity,
   Receipt, BadgeDollarSign, FolderOpen, BarChart, Star,
   UserCog, ShoppingCart, Truck, Contact, HandshakeIcon, UserPlus, Palette, CalendarRange,
@@ -256,6 +256,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
@@ -271,6 +272,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
@@ -285,6 +287,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
