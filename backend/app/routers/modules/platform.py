@@ -52,6 +52,7 @@ from app.schemas.platform import (
     CUMUL_TYPES, REF_TYPES, CumulComponentIn, CumulComponentOut,
     CumulativeCreate, CumulativeUpdate, CumulativeResponse,
     ReportEntryGrid, ReportEntryAssessment, ReportEntryStudent, ScoreItem, ReportEntrySave,
+    BroadsheetResponse, BroadsheetRow, BroadsheetCell, BroadsheetSubject, BroadsheetBand,
     ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
     SubjectAssessmentResponse, SubjectAssessmentUpdate, SetCambridgeAllRequest,
     DomainCreate, DomainUpdate, DomainResponse, DOMAIN_TYPES,
@@ -64,6 +65,7 @@ from app.schemas.platform import (
     COMMENT_LENGTH_TYPES, TEACHER_TYPES,
 )
 from app.services.ledger import money  # Decimal helper for grading bands
+from app.services.report_engine import evaluate_cumulative, round_dp
 
 router = APIRouter(prefix="/platform", tags=["Administration & Platform"], dependencies=[Depends(require_module("school"))])
 
@@ -2112,3 +2114,121 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
         saved += 1
     await db.flush()
     return {"saved": saved}
+
+
+# ── Secondary Report S-4b: Broadsheet (class results grid) ───────────────────
+
+def _grade_for(pct, bands):
+    """First numeric band whose [min,max] contains pct (max None = open top)."""
+    from decimal import Decimal as _Dec
+    p = _Dec(str(pct))
+    for b in bands:
+        lo = b.min_score if b.min_score is not None else _Dec("-999999")
+        hi = b.max_score if b.max_score is not None else _Dec("999999")
+        if lo <= p <= hi:
+            return b.grade
+    return None
+
+
+def _pick_display_cumulative(cumulatives, sub_term_id):
+    for_sub = [c for c in cumulatives if c.sub_term_id == sub_term_id]
+    for c in for_sub:
+        if (c.name or "").strip().upper() == "TOTAL":
+            return c
+    if for_sub:
+        return max(for_sub, key=lambda c: (c.position or 0))
+    if cumulatives:
+        return max(cumulatives, key=lambda c: (c.position or 0))
+    return None
+
+
+@router.get("/report-broadsheet", response_model=BroadsheetResponse, dependencies=[Depends(PermissionChecker("school:reports:read"))])
+async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
+                            db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org = current_user.org_id
+    cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found.")
+    level = getattr(cls, "level", None)
+    term_name = (await db.execute(select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org))).scalar_one_or_none()
+    sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
+
+    students = (await db.execute(
+        select(Student).where(Student.org_id == org, Student.class_id == class_id, Student.is_deleted == False)  # noqa: E712
+        .order_by(Student.first_name, Student.last_name)
+    )).scalars().all()
+    s_ids = [s.id for s in students]
+
+    # Config for the term: assessments, cumulatives (+ components), grade scale.
+    assessments = {a.id: a for a in (await db.execute(select(Assessment).where(
+        Assessment.org_id == org, Assessment.term_id == term_id))).scalars().all()}
+    cumulatives = (await db.execute(select(Cumulative).where(Cumulative.org_id == org, Cumulative.term_id == term_id))).scalars().all()
+    cumul_by_id = {c.id: c for c in cumulatives}
+    comp_rows = (await db.execute(select(CumulativeComponent).where(CumulativeComponent.org_id == org)
+                                  .order_by(CumulativeComponent.position))).scalars().all()
+    components: dict[str, list] = {}
+    for cr in comp_rows:
+        components.setdefault(cr.cumulative_id, []).append((cr.ref_type, cr.ref_id))
+
+    scale = (await db.execute(select(GradingScale).where(
+        GradingScale.org_id == org, GradingScale.scale_type == "numeric", GradingScale.purpose == "grade")
+        .order_by(GradingScale.show_in_table.desc()))).scalars().first()
+    bands = []
+    if scale:
+        bands = sorted((await db.execute(select(GradingBand).where(GradingBand.scale_id == scale.id, GradingBand.org_id == org))).scalars().all(),
+                       key=lambda b: -(b.max_score or 0))
+
+    display = _pick_display_cumulative(cumulatives, sub_term_id)
+
+    # All scores for this class's pupils, indexed by (student, subject, assessment).
+    score_map: dict[tuple, object] = {}
+    subj_ids: set[str] = set()
+    if s_ids and assessments:
+        rows = (await db.execute(select(StudentAssessmentScore).where(
+            StudentAssessmentScore.org_id == org, StudentAssessmentScore.student_id.in_(s_ids),
+            StudentAssessmentScore.assessment_id.in_(list(assessments.keys()))))).scalars().all()
+        for r in rows:
+            score_map[(r.student_id, r.subject_id, r.assessment_id)] = r.score
+            subj_ids.add(r.subject_id)
+
+    subj_names = {s.id: s.name for s in (await db.execute(select(Subject).where(Subject.org_id == org, Subject.id.in_(subj_ids or ["_none_"])))).scalars().all()}
+    subjects = sorted(({"id": sid, "name": subj_names.get(sid, sid)} for sid in subj_ids), key=lambda x: x["name"])
+
+    band_out = [BroadsheetBand(grade=b.grade, min_score=b.min_score, max_score=b.max_score, remark=b.remark) for b in bands]
+    rows_out: list[BroadsheetRow] = []
+    for s in students:
+        cells: dict[str, BroadsheetCell] = {}
+        total = money(0)
+        pct_sum = money(0)
+        n = 0
+        for sub in subjects:
+            sid = sub["id"]
+            if not display:
+                continue
+            scores = {aid: score_map.get((s.id, sid, aid)) for aid in assessments}
+            val, mx = evaluate_cumulative(display.id, cumul_by_id, components, assessments, scores)
+            has_any = any(score_map.get((s.id, sid, aid)) is not None for aid in assessments)
+            if not has_any:
+                cells[sid] = BroadsheetCell(value=None, grade=None)
+                continue
+            pct = (val / mx * 100) if mx else money(0)
+            g = _grade_for(pct, bands)
+            cells[sid] = BroadsheetCell(value=round_dp(val, display.decimal_places or 0), grade=g)
+            total += val
+            pct_sum += pct
+            n += 1
+        average = (pct_sum / n) if n else money(0)
+        rows_out.append(BroadsheetRow(
+            student_id=s.id, student_name=f"{s.first_name} {s.last_name}".strip(), subjects=cells,
+            total=round_dp(total, 2), average=round_dp(average, 2), grade=_grade_for(average, bands) if n else None,
+        ))
+
+    rows_out.sort(key=lambda r: r.total, reverse=True)
+    for i, r in enumerate(rows_out, start=1):
+        r.position = i
+
+    return BroadsheetResponse(
+        class_id=class_id, class_name=cls.name, term_name=term_name, sub_term_name=sub_name,
+        display_cumulative=(display.name if display else None),
+        subjects=[BroadsheetSubject(**s) for s in subjects], bands=band_out, rows=rows_out,
+    )

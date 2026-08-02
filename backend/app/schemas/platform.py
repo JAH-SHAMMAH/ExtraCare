@@ -989,3 +989,43 @@ class ScoreItem(BaseModel):
 class ReportEntrySave(BaseModel):
     subject_id: str
     items: list[ScoreItem] = Field(default_factory=list)
+
+
+# ── Secondary Report parity S-4b: Broadsheet ─────────────────────────────────
+
+class BroadsheetSubject(BaseModel):
+    id: str
+    name: str
+
+
+class BroadsheetCell(BaseModel):
+    value: Optional[Decimal] = None
+    grade: Optional[str] = None
+
+
+class BroadsheetRow(BaseModel):
+    student_id: str
+    student_name: str
+    subjects: dict[str, BroadsheetCell] = Field(default_factory=dict)
+    total: Decimal = Decimal("0")
+    average: Decimal = Decimal("0")
+    grade: Optional[str] = None
+    position: int = 0
+
+
+class BroadsheetBand(BaseModel):
+    grade: str
+    min_score: Optional[Decimal] = None
+    max_score: Optional[Decimal] = None
+    remark: Optional[str] = None
+
+
+class BroadsheetResponse(BaseModel):
+    class_id: str
+    class_name: Optional[str] = None
+    term_name: Optional[str] = None
+    sub_term_name: Optional[str] = None
+    display_cumulative: Optional[str] = None
+    subjects: list[BroadsheetSubject] = Field(default_factory=list)
+    bands: list[BroadsheetBand] = Field(default_factory=list)
+    rows: list[BroadsheetRow] = Field(default_factory=list)

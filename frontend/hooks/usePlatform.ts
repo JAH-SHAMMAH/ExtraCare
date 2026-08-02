@@ -250,3 +250,12 @@ export function useReportEntryGrid(p: { class_id: string; subject_id: string; te
   });
 }
 export const useSaveReportEntry = m((d) => platformApi.reportEntry.save(d), ["report-entry"], "Scores saved.");
+
+// ── S-4b: Broadsheet ─────────────────────────────────────────────────────────
+export function useBroadsheet(p: { class_id: string; term_id: string; sub_term_id: string }) {
+  return useQuery<any>({
+    queryKey: ["broadsheet", p],
+    queryFn: () => platformApi.broadsheet(p),
+    enabled: !!p.class_id && !!p.term_id && !!p.sub_term_id,
+  });
+}

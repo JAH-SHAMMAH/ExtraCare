@@ -255,7 +255,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: FileText,
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
-      { href: "/dashboard/modules/school/report-cards?section=Nursery", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
@@ -270,7 +270,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: FileText,
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
-      { href: "/dashboard/modules/school/report-cards?section=Primary", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
@@ -284,7 +284,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: FileText,
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
-      { href: "/dashboard/modules/school/report-cards?section=Secondary", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
