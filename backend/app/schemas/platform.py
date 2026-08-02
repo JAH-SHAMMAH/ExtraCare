@@ -1029,3 +1029,44 @@ class BroadsheetResponse(BaseModel):
     subjects: list[BroadsheetSubject] = Field(default_factory=list)
     bands: list[BroadsheetBand] = Field(default_factory=list)
     rows: list[BroadsheetRow] = Field(default_factory=list)
+
+
+# ── Secondary Report parity S-4c: printable report card ──────────────────────
+
+class CardColumn(BaseModel):
+    key: str            # assessment/cumulative id
+    name: str
+    kind: str           # assessment | cumulative
+    max_score: Optional[Decimal] = None
+
+
+class CardSubjectRow(BaseModel):
+    subject_id: str
+    subject_name: str
+    values: dict[str, Optional[Decimal]] = Field(default_factory=dict)   # column key -> value
+    grade: Optional[str] = None
+    remark: Optional[str] = None
+    subject_arm_average: Optional[Decimal] = None
+
+
+class ReportCardResponse(BaseModel):
+    student_id: str
+    student_name: Optional[str] = None
+    admission_no: Optional[str] = None
+    photo_url: Optional[str] = None
+    class_name: Optional[str] = None
+    term_name: Optional[str] = None
+    sub_term_name: Optional[str] = None
+    report_title: Optional[str] = None
+    branding: BrandingResponse = Field(default_factory=BrandingResponse)
+    columns: list[CardColumn] = Field(default_factory=list)
+    subjects: list[CardSubjectRow] = Field(default_factory=list)
+    bands: list[BroadsheetBand] = Field(default_factory=list)
+    total: Decimal = Decimal("0")
+    average: Decimal = Decimal("0")
+    grade: Optional[str] = None
+    position: int = 0
+    class_size: int = 0
+    # attendance (from the existing StudentReport, if authored)
+    attendance_present: Optional[int] = None
+    attendance_total: Optional[int] = None

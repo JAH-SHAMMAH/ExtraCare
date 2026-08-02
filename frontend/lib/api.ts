@@ -1713,6 +1713,7 @@ export const platformApi = {
     save: (d: object) => api.post("/platform/report-entry", d).then((r) => r.data),
   },
   broadsheet: (p: { class_id: string; term_id: string; sub_term_id: string }) => api.get("/platform/report-broadsheet", { params: p }).then((r) => r.data),
+  reportCard: (p: { student_id: string; term_id: string; sub_term_id: string }) => api.get("/platform/report-card", { params: p }).then((r) => r.data),
   reportTemplates: {
     list: () => api.get("/platform/report-templates").then((r) => r.data),
     create: (d: object) => api.post("/platform/report-templates", d).then((r) => r.data),

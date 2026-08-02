@@ -33,7 +33,7 @@ from app.models.modules.platform import (
     MailboxMessage, MailboxRecipient,
     MobileDevice, MobileAppConfig,
 )
-from app.models.modules.school import SchoolClass, Subject, Student
+from app.models.modules.school import SchoolClass, Subject, Student, StudentReport
 from app.schemas.platform import (
     SessionCreate, SessionUpdate, SessionResponse, CurrentSessionResponse,
     HouseCreate, HouseUpdate, HouseResponse, BandCreate, BandResponse,
@@ -53,6 +53,7 @@ from app.schemas.platform import (
     CumulativeCreate, CumulativeUpdate, CumulativeResponse,
     ReportEntryGrid, ReportEntryAssessment, ReportEntryStudent, ScoreItem, ReportEntrySave,
     BroadsheetResponse, BroadsheetRow, BroadsheetCell, BroadsheetSubject, BroadsheetBand,
+    CardColumn, CardSubjectRow, ReportCardResponse,
     ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
     SubjectAssessmentResponse, SubjectAssessmentUpdate, SetCambridgeAllRequest,
     DomainCreate, DomainUpdate, DomainResponse, DOMAIN_TYPES,
@@ -2040,7 +2041,9 @@ async def bootstrap_cumulatives(db: AsyncSession = Depends(get_db), current_user
         half_sub, full_sub = cbt.sub_term_id, exam.sub_term_id
         htt = await make(t.id, half_sub, "HALF TERM TOTAL", "score", [("assessment", cbt.id), ("assessment", thy.id)])
         await make(t.id, half_sub, "%", "percentage", [("assessment", cbt.id), ("assessment", thy.id)])
-        ca1 = await make(t.id, half_sub, "CA 1", "custom_percentage", [("cumulative", htt.id)], max_percent=20)
+        # CA 1 (the continuous-assessment carried into the full-term result) is a
+        # FULL-TERM column even though it rescales the half-term total.
+        ca1 = await make(t.id, full_sub, "CA 1", "custom_percentage", [("cumulative", htt.id)], max_percent=20)
         await make(t.id, full_sub, "TOTAL", "score",
                    [("cumulative", ca1.id), ("assessment", prj.id), ("assessment", pbt.id), ("assessment", exam.id)])
 
@@ -2231,4 +2234,122 @@ async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
         class_id=class_id, class_name=cls.name, term_name=term_name, sub_term_name=sub_name,
         display_cumulative=(display.name if display else None),
         subjects=[BroadsheetSubject(**s) for s in subjects], bands=band_out, rows=rows_out,
+    )
+
+
+# ── Secondary Report S-4c: printable report card (one pupil) ─────────────────
+
+@router.get("/report-card", response_model=ReportCardResponse, dependencies=[Depends(PermissionChecker("school:reports:read"))])
+async def report_card(student_id: str, term_id: str, sub_term_id: str,
+                      db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    org = current_user.org_id
+    student = (await db.execute(select(Student).where(Student.id == student_id, Student.org_id == org))).scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found.")
+    cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == student.class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+    term_name = (await db.execute(select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org))).scalar_one_or_none()
+    sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
+    branding = _branding_response((await db.execute(select(ReportBranding).where(ReportBranding.org_id == org))).scalar_one_or_none())
+
+    # Config: assessments + cumulatives for the term; the columns for this sub-term.
+    assessments = {a.id: a for a in (await db.execute(select(Assessment).where(Assessment.org_id == org, Assessment.term_id == term_id))).scalars().all()}
+    cumulatives = (await db.execute(select(Cumulative).where(Cumulative.org_id == org, Cumulative.term_id == term_id))).scalars().all()
+    cumul_by_id = {c.id: c for c in cumulatives}
+    comp_rows = (await db.execute(select(CumulativeComponent).where(CumulativeComponent.org_id == org).order_by(CumulativeComponent.position))).scalars().all()
+    components: dict[str, list] = {}
+    for cr in comp_rows:
+        components.setdefault(cr.cumulative_id, []).append((cr.ref_type, cr.ref_id))
+
+    scale = (await db.execute(select(GradingScale).where(
+        GradingScale.org_id == org, GradingScale.scale_type == "numeric", GradingScale.purpose == "grade")
+        .order_by(GradingScale.show_in_table.desc()))).scalars().first()
+    bands = sorted((await db.execute(select(GradingBand).where(GradingBand.scale_id == scale.id, GradingBand.org_id == org))).scalars().all(),
+                   key=lambda b: -(b.max_score or 0)) if scale else []
+
+    asmt_cols = sorted([a for a in assessments.values() if a.sub_term_id == sub_term_id], key=lambda a: (a.position or 0, a.name))
+    cumul_cols = sorted([c for c in cumulatives if c.sub_term_id == sub_term_id], key=lambda c: (c.position or 0, c.name))
+    display = _pick_display_cumulative(cumulatives, sub_term_id)
+    columns = ([CardColumn(key=a.id, name=a.name, kind="assessment", max_score=a.max_score) for a in asmt_cols]
+               + [CardColumn(key=c.id, name=c.name, kind="cumulative") for c in cumul_cols])
+
+    # All classmates' scores (for arm average + position).
+    classmates = (await db.execute(select(Student).where(
+        Student.org_id == org, Student.class_id == student.class_id, Student.is_deleted == False))).scalars().all()  # noqa: E712
+    cm_ids = [s.id for s in classmates]
+    score_map: dict[tuple, object] = {}
+    subj_ids: set[str] = set()
+    if cm_ids and assessments:
+        rows = (await db.execute(select(StudentAssessmentScore).where(
+            StudentAssessmentScore.org_id == org, StudentAssessmentScore.student_id.in_(cm_ids),
+            StudentAssessmentScore.assessment_id.in_(list(assessments.keys()))))).scalars().all()
+        for r in rows:
+            score_map[(r.student_id, r.subject_id, r.assessment_id)] = r.score
+            subj_ids.add(r.subject_id)
+
+    subj_names = {s.id: s.name for s in (await db.execute(select(Subject).where(Subject.org_id == org, Subject.id.in_(subj_ids or ["_none_"])))).scalars().all()}
+    subjects = sorted(subj_ids, key=lambda sid: subj_names.get(sid, sid))
+
+    def display_val(sid_student, sid_subject):
+        if not display:
+            return None, None
+        if not any(score_map.get((sid_student, sid_subject, aid)) is not None for aid in assessments):
+            return None, None
+        scores = {aid: score_map.get((sid_student, sid_subject, aid)) for aid in assessments}
+        return evaluate_cumulative(display.id, cumul_by_id, components, assessments, scores)
+
+    # Per-classmate totals (for position) + per-subject class values (arm average).
+    totals: dict[str, object] = {}
+    arm: dict[str, list] = {}
+    for st in classmates:
+        tot = money(0)
+        for sid in subjects:
+            v, _mx = display_val(st.id, sid)
+            if v is not None:
+                tot += v
+                arm.setdefault(sid, []).append(v)
+        totals[st.id] = tot
+    ranking = sorted(classmates, key=lambda s: totals.get(s.id, money(0)), reverse=True)
+    position = next((i for i, s in enumerate(ranking, start=1) if s.id == student_id), 0)
+
+    # This pupil's detailed rows.
+    subj_rows: list[CardSubjectRow] = []
+    pct_sum = money(0)
+    n = 0
+    my_total = money(0)
+    for sid in subjects:
+        if not any(score_map.get((student_id, sid, aid)) is not None for aid in assessments):
+            continue
+        scores = {aid: score_map.get((student_id, sid, aid)) for aid in assessments}
+        values: dict[str, object] = {}
+        for a in asmt_cols:
+            values[a.id] = scores.get(a.id)
+        for c in cumul_cols:
+            v, _m = evaluate_cumulative(c.id, cumul_by_id, components, assessments, scores)
+            values[c.id] = round_dp(v, c.decimal_places or 0)
+        dval, dmax = evaluate_cumulative(display.id, cumul_by_id, components, assessments, scores) if display else (money(0), money(0))
+        pct = (dval / dmax * 100) if dmax else money(0)
+        g = _grade_for(pct, bands)
+        remark = next((b.remark for b in bands if b.grade == g), None)
+        vals_list = arm.get(sid, [])
+        arm_avg = round_dp(sum(vals_list) / len(vals_list), 2) if vals_list else None
+        subj_rows.append(CardSubjectRow(subject_id=sid, subject_name=subj_names.get(sid, sid), values=values,
+                                        grade=g, remark=remark, subject_arm_average=arm_avg))
+        my_total += dval
+        pct_sum += pct
+        n += 1
+    average = (pct_sum / n) if n else money(0)
+
+    sr = (await db.execute(select(StudentReport).where(
+        StudentReport.org_id == org, StudentReport.student_id == student_id))).scalars().first()
+
+    title = " ".join(x for x in [(term_name or "").upper(), (sub_name or "").upper(), "REPORT"] if x).strip()
+    return ReportCardResponse(
+        student_id=student_id, student_name=f"{student.first_name} {student.last_name}".strip(),
+        admission_no=student.student_id, photo_url=getattr(student, "photo_url", None),
+        class_name=(cls.name if cls else None), term_name=term_name, sub_term_name=sub_name, report_title=title,
+        branding=branding, columns=columns,
+        subjects=subj_rows, bands=[BroadsheetBand(grade=b.grade, min_score=b.min_score, max_score=b.max_score, remark=b.remark) for b in bands],
+        total=round_dp(my_total, 2), average=round_dp(average, 2), grade=_grade_for(average, bands) if n else None,
+        position=position, class_size=len(classmates),
+        attendance_present=(sr.attendance_present if sr else None), attendance_total=(sr.attendance_total if sr else None),
     )

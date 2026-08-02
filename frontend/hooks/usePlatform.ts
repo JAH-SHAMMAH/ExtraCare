@@ -259,3 +259,12 @@ export function useBroadsheet(p: { class_id: string; term_id: string; sub_term_i
     enabled: !!p.class_id && !!p.term_id && !!p.sub_term_id,
   });
 }
+
+// ── S-4c: printable report card ──────────────────────────────────────────────
+export function useReportCard(p: { student_id: string; term_id: string; sub_term_id: string }) {
+  return useQuery<any>({
+    queryKey: ["report-card-v2", p],
+    queryFn: () => platformApi.reportCard(p),
+    enabled: !!p.student_id && !!p.term_id && !!p.sub_term_id,
+  });
+}
