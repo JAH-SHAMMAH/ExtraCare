@@ -1103,3 +1103,32 @@ class CommentGridSave(BaseModel):
     sub_term_id: str
     kind: str
     items: list[CommentItem] = Field(default_factory=list)
+
+
+# ── Secondary Report parity S-5: Result Insight (performance charts) ──────────
+
+class InsightSubject(BaseModel):
+    subject_id: str
+    subject_name: str
+    average: Decimal = Decimal("0")
+
+
+class InsightGender(BaseModel):
+    subject_id: str
+    subject_name: str
+    male: Optional[Decimal] = None
+    female: Optional[Decimal] = None
+
+
+class InsightClass(BaseModel):
+    class_id: str
+    class_name: str
+    average: Decimal = Decimal("0")
+
+
+class InsightResponse(BaseModel):
+    term_name: Optional[str] = None
+    sub_term_name: Optional[str] = None
+    subjects: list[InsightSubject] = Field(default_factory=list)
+    gender: list[InsightGender] = Field(default_factory=list)
+    classes: list[InsightClass] = Field(default_factory=list)

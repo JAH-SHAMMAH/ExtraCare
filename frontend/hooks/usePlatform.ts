@@ -278,3 +278,12 @@ export function useCommentGrid(p: { class_id: string; term_id: string; sub_term_
   });
 }
 export const useSaveComments = m((d) => platformApi.reportComments.save(d), ["report-comments", "report-card-v2"], "Comments saved.");
+
+// ── S-5: Result Insight ──────────────────────────────────────────────────────
+export function useReportInsight(p: { term_id: string; sub_term_id: string }) {
+  return useQuery<any>({
+    queryKey: ["report-insight", p],
+    queryFn: () => platformApi.reportInsight(p),
+    enabled: !!p.term_id && !!p.sub_term_id,
+  });
+}

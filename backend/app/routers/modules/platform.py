@@ -56,6 +56,7 @@ from app.schemas.platform import (
     BroadsheetResponse, BroadsheetRow, BroadsheetCell, BroadsheetSubject, BroadsheetBand,
     CardColumn, CardSubjectRow, ReportCardResponse,
     REPORT_COMMENT_KINDS, CommentGridRow, CommentGridResponse, CommentItem, CommentGridSave,
+    InsightResponse, InsightSubject, InsightGender, InsightClass,
     ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
     SubjectAssessmentResponse, SubjectAssessmentUpdate, SetCambridgeAllRequest,
     DomainCreate, DomainUpdate, DomainResponse, DOMAIN_TYPES,
@@ -2408,3 +2409,85 @@ async def save_report_comments(payload: CommentGridSave, db: AsyncSession = Depe
         saved += 1
     await db.flush()
     return {"saved": saved}
+
+
+# ── Secondary Report S-5: Result Insight (performance charts) ────────────────
+
+def _mean(vals):
+    return round_dp(sum(vals) / len(vals), 1) if vals else None
+
+
+@router.get("/report-insight", response_model=InsightResponse, dependencies=[Depends(PermissionChecker("school:reports:read"))])
+async def report_insight(term_id: str, sub_term_id: str,
+                         db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """School-wide performance for a (term, sub-term): per-subject average, the same
+    split by gender, and per-class average — computed through the cumulative
+    evaluator over every entered score."""
+    org = current_user.org_id
+    term_name = (await db.execute(select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org))).scalar_one_or_none()
+    sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
+
+    assessments = {a.id: a for a in (await db.execute(select(Assessment).where(Assessment.org_id == org, Assessment.term_id == term_id))).scalars().all()}
+    cumulatives = (await db.execute(select(Cumulative).where(Cumulative.org_id == org, Cumulative.term_id == term_id))).scalars().all()
+    cumul_by_id = {c.id: c for c in cumulatives}
+    comp_rows = (await db.execute(select(CumulativeComponent).where(CumulativeComponent.org_id == org).order_by(CumulativeComponent.position))).scalars().all()
+    components: dict[str, list] = {}
+    for cr in comp_rows:
+        components.setdefault(cr.cumulative_id, []).append((cr.ref_type, cr.ref_id))
+    display = _pick_display_cumulative(cumulatives, sub_term_id)
+
+    empty = InsightResponse(term_name=term_name, sub_term_name=sub_name)
+    if not display or not assessments:
+        return empty
+
+    rows = (await db.execute(select(StudentAssessmentScore).where(
+        StudentAssessmentScore.org_id == org,
+        StudentAssessmentScore.assessment_id.in_(list(assessments.keys()))))).scalars().all()
+    if not rows:
+        return empty
+
+    # scores[(student, subject)][assessment] = score
+    by_pair: dict[tuple, dict] = {}
+    for r in rows:
+        by_pair.setdefault((r.student_id, r.subject_id), {})[r.assessment_id] = r.score
+
+    student_ids = {sid for sid, _ in by_pair}
+    subj_ids = {sub for _, sub in by_pair}
+    students = {s.id: s for s in (await db.execute(select(Student).where(Student.org_id == org, Student.id.in_(student_ids or ["_none_"])))).scalars().all()}
+    subj_names = {s.id: s.name for s in (await db.execute(select(Subject).where(Subject.org_id == org, Subject.id.in_(subj_ids or ["_none_"])))).scalars().all()}
+    cls_ids = {s.class_id for s in students.values() if s.class_id}
+    cls_names = {c.id: c.name for c in (await db.execute(select(SchoolClass).where(SchoolClass.org_id == org, SchoolClass.id.in_(cls_ids or ["_none_"])))).scalars().all()}
+
+    def norm_gender(g):
+        g = (g or "").strip().lower()
+        return "male" if g.startswith("m") else "female" if g.startswith("f") else None
+
+    subj_pcts: dict[str, list] = {}
+    gender_pcts: dict[str, dict] = {}
+    student_pcts: dict[str, list] = {}     # student -> their subject pcts (for class average)
+    for (sid, sub), scores in by_pair.items():
+        full = {aid: scores.get(aid) for aid in assessments}
+        val, mx = evaluate_cumulative(display.id, cumul_by_id, components, assessments, full)
+        pct = (val / mx * 100) if mx else money(0)
+        subj_pcts.setdefault(sub, []).append(pct)
+        student_pcts.setdefault(sid, []).append(pct)
+        g = norm_gender(getattr(students.get(sid), "gender", None))
+        if g:
+            gender_pcts.setdefault(sub, {"male": [], "female": []})[g].append(pct)
+
+    subjects = sorted(subj_ids, key=lambda s: subj_names.get(s, s))
+    subj_out = [InsightSubject(subject_id=s, subject_name=subj_names.get(s, s), average=_mean(subj_pcts.get(s, [])) or money(0)) for s in subjects]
+    gender_out = [InsightGender(subject_id=s, subject_name=subj_names.get(s, s),
+                                male=_mean(gender_pcts.get(s, {}).get("male", [])),
+                                female=_mean(gender_pcts.get(s, {}).get("female", []))) for s in subjects]
+
+    class_pcts: dict[str, list] = {}
+    for sid, pcts in student_pcts.items():
+        st = students.get(sid)
+        if st and st.class_id and pcts:
+            class_pcts.setdefault(st.class_id, []).append(sum(pcts) / len(pcts))
+    classes = sorted(class_pcts.keys(), key=lambda c: cls_names.get(c, c))
+    class_out = [InsightClass(class_id=c, class_name=cls_names.get(c, c), average=_mean(class_pcts.get(c, [])) or money(0)) for c in classes]
+
+    return InsightResponse(term_name=term_name, sub_term_name=sub_name,
+                           subjects=subj_out, gender=gender_out, classes=class_out)

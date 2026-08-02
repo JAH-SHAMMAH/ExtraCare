@@ -1718,6 +1718,7 @@ export const platformApi = {
     grid: (p: { class_id: string; term_id: string; sub_term_id: string; kind: string }) => api.get("/platform/report-comments", { params: p }).then((r) => r.data),
     save: (d: object) => api.post("/platform/report-comments", d).then((r) => r.data),
   },
+  reportInsight: (p: { term_id: string; sub_term_id: string }) => api.get("/platform/report-insight", { params: p }).then((r) => r.data),
   reportTemplates: {
     list: () => api.get("/platform/report-templates").then((r) => r.data),
     create: (d: object) => api.post("/platform/report-templates", d).then((r) => r.data),
