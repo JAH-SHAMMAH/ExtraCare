@@ -37,7 +37,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.models.organization import Organization                       # noqa: E402
-from app.models.user import User                                       # noqa: E402
+from app.models.user import User, UserStatus                           # noqa: E402
+from app.models.role import Role, permission_presets_for_industry      # noqa: E402
+from app.core.security import hash_password                            # noqa: E402
 from app.models.modules.school import SchoolClass, Subject, Student, Timetable  # noqa: E402
 from app.models.modules.platform import (                             # noqa: E402
     AcademicTerm, AcademicSubTerm, GradingScale, GradingBand, StudentAssessmentScore,
@@ -45,6 +47,12 @@ from app.models.modules.platform import (                             # noqa: E4
 from app.routers.modules.platform import (                            # noqa: E402
     bootstrap_assessments, bootstrap_cumulatives, list_assessments,
 )
+
+# Seed logins live on a DELIBERATELY FAKE domain so this script can only ever
+# create/update its own accounts — never a real user (and thus never a real
+# password). The four demo accounts share one password.
+SEED_DOMAIN = "fairview.seed"
+SEED_PASSWORD = "FairviewSeed#2026"
 
 NINE_BAND = [("A*", 95, 100), ("A", 90, 94), ("B+", 85, 89), ("B", 80, 84),
              ("C", 70, 79), ("D", 60, 69), ("E", 50, 59), ("P", 40, 49), ("F", 0, 39)]
@@ -124,6 +132,37 @@ async def _pick_assignment(db, org_id):
     return cls.id, subj.id, teacher, True
 
 
+async def _ensure_role(db, org_id, slug):
+    """Reuse the org's role by slug, else create it with the industry preset perms."""
+    r = (await db.execute(select(Role).where(Role.org_id == org_id, Role.slug == slug))).scalars().first()
+    if r:
+        return r
+    perms = permission_presets_for_industry("school").get(slug, [])
+    r = Role(id=str(uuid.uuid4()), name=slug.replace("_", " ").title(), slug=slug,
+             permissions=list(perms), org_id=org_id, is_system=False)
+    db.add(r)
+    await db.flush()
+    return r
+
+
+async def _ensure_seed_user(db, org_id, email, name, role):
+    """Create/refresh a SEED login (fake @fairview.seed domain only). Sets a known
+    password; NEVER touches a real user or a real password."""
+    if not email.endswith("@" + SEED_DOMAIN):
+        raise SystemExit(f"Refusing to touch non-seed email {email!r}.")
+    u = (await db.execute(select(User).where(User.org_id == org_id, User.email == email))).scalars().first()
+    if not u:
+        u = User(id=str(uuid.uuid4()), email=email, full_name=name, status=UserStatus.ACTIVE,
+                 org_id=org_id, is_superadmin=False)
+        db.add(u)
+    u.full_name = name
+    u.status = UserStatus.ACTIVE
+    u.hashed_password = hash_password(SEED_PASSWORD)   # seed account only
+    u.roles = [role]
+    await db.flush()
+    return u
+
+
 async def main():
     url = os.environ.get("SEED_DATABASE_URL")
     if not url:
@@ -166,21 +205,44 @@ async def main():
 
         cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == class_id))).scalar_one()
         subj = (await db.execute(select(Subject).where(Subject.id == subject_id))).scalar_one()
-        ct = (await db.execute(select(User).where(User.id == cls.teacher_id))).scalar_one_or_none() if cls.teacher_id else None
-        st = (await db.execute(select(User).where(User.id == teacher_id))).scalar_one_or_none()
+
+        # ── Four demo login accounts (fake @fairview.seed domain only) ──────────
+        super_role = await _ensure_role(db, org.id, "super_user")
+        teacher_role = await _ensure_role(db, org.id, "teacher")
+        hr_role = await _ensure_role(db, org.id, "hr_manager")
+
+        su = await _ensure_seed_user(db, org.id, f"superuser@{SEED_DOMAIN}", "Seed Super User", super_role)
+        ct = await _ensure_seed_user(db, org.id, f"classteacher@{SEED_DOMAIN}", "Seed Class Teacher", teacher_role)
+        st = await _ensure_seed_user(db, org.id, f"subjectteacher@{SEED_DOMAIN}", "Seed Subject Teacher", teacher_role)
+        hr = await _ensure_seed_user(db, org.id, f"hr@{SEED_DOMAIN}", "Seed HR Manager", hr_role)
+
+        # Wire the demo class so the four roles resolve deterministically:
+        #  - class/form teacher (and PC teacher by fallback) = the class-teacher login
+        #  - the subject-teacher login teaches the demo subject here (Timetable), but is
+        #    NOT the class teacher and NOT the PC teacher.
+        cls.teacher_id = ct.id
+        has_tt = (await db.execute(select(Timetable.id).where(
+            Timetable.org_id == org.id, Timetable.class_id == cls.id,
+            Timetable.subject_id == subj.id, Timetable.teacher_id == st.id))).scalars().first()
+        if not has_tt:
+            db.add(Timetable(id=str(uuid.uuid4()), class_id=cls.id, subject_id=subj.id, teacher_id=st.id,
+                             day_of_week=1, start_time="09:00", end_time="10:00", org_id=org.id))
+        await db.commit()
 
         print("\n=== SEED COMPLETE ===")
         print(f"Org:              {org.name} ({org.id})")
         print(f"Active term:      {term.name} / Full-Term")
-        print(f"Demo class:       {cls.name} ({cls.id}) — {len(students)} pupils, scores entered in EXAM")
+        print(f"Demo class:       {cls.name} ({cls.id}) — {len(students)} pupils, EXAM scores entered")
         print(f"Demo subject:     {subj.name} ({subj.id})")
-        print(f"Timetable assignment {'CREATED' if created else 'reused'}")
-        print(f"CLASS teacher:    {getattr(ct,'email',None)}  (Reports View should work for {cls.name})")
-        print(f"SUBJECT teacher:  {getattr(st,'email',None)}  (Make Report should show {subj.name} in {cls.name})")
-        print("\nFor the four-role click-through use: a Super User; the CLASS teacher above;")
-        print("the SUBJECT teacher above (if different — a non-class-teacher); and any other")
-        print("teacher for the 'non-PC' block. Passwords are unchanged — this script never")
-        print("touches credentials.\n")
+        print(f"Timetable assignment {'CREATED' if created else 'reused'} for the base data")
+        print("\n--- FOUR DEMO LOGINS (all share this password) ---")
+        print(f"Password:         {SEED_PASSWORD}")
+        print(f"Super User:       superuser@{SEED_DOMAIN}      -> full report nav; any class/subject")
+        print(f"Class teacher:    classteacher@{SEED_DOMAIN}   -> Reports View works for {cls.name}; is PC teacher")
+        print(f"Subject teacher:  subjectteacher@{SEED_DOMAIN} -> Make Report shows {subj.name} in {cls.name};")
+        print(f"                  blocked from Reports View + PC comments for {cls.name} (not class/PC teacher)")
+        print(f"HR manager:       hr@{SEED_DOMAIN}             -> HR nav only; NO Secondary-Report admin tools")
+        print("\nThese are NEW accounts on a fake domain; no existing user or password was touched.\n")
 
     await engine.dispose()
 
