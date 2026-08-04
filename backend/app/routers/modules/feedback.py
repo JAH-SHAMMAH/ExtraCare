@@ -63,6 +63,13 @@ _staff_write = Depends(PermissionChecker("school:feedback:write"))
 # the same "reports" visibility parents already have for the report card.
 _reports_read = Depends(PermissionChecker("school:reports:read"))
 
+# Feedback Settings (org-wide configuration) — admin-only, separate from the
+# classroom-tier feedback scopes that teachers use to author daily reports.
+# Matches the nav gate (settings:read|write) and prevents teachers from
+# configuring org-wide feedback taxonomy/rules.
+_settings_read = Depends(PermissionChecker("settings:read"))
+_settings_write = Depends(PermissionChecker("settings:write"))
+
 
 @router.post("", status_code=201, dependencies=[_can_read])
 async def submit_feedback(
@@ -191,12 +198,12 @@ async def _get_settings(db: AsyncSession, org_id: str) -> FeedbackSettings:
     return s
 
 
-@router.get("/settings", dependencies=[_can_read])
+@router.get("/settings", dependencies=[_settings_read])
 async def get_feedback_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     return FeedbackSettingsResponse.model_validate(await _get_settings(db, current_user.org_id)).model_dump()
 
 
-@router.put("/settings", dependencies=[_can_write])
+@router.put("/settings", dependencies=[_settings_write])
 async def update_feedback_settings(payload: FeedbackSettingsUpdate, request: Request = None,
                                    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     s = await _get_settings(db, current_user.org_id)

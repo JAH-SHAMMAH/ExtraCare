@@ -57,6 +57,13 @@ router = APIRouter(
 _can_read = Depends(PermissionChecker("school:clubs:read"))
 _can_write = Depends(PermissionChecker("school:clubs:write"))
 
+# Clubs administration (create/update club config, grades, coordinators, deadlines) —
+# strict admin-only scope to prevent teachers from configuring clubs. Teachers use
+# school:clubs:write to manage enrollment (their students joining/dropping), but not
+# to create/modify clubs themselves. Matches the nav gate (school_admin:read).
+_admin_read = Depends(PermissionChecker("school_admin:read"))
+_admin_write = Depends(PermissionChecker("school_admin:write"))
+
 
 @router.get("", dependencies=[_can_read])
 async def list_clubs(
@@ -107,7 +114,7 @@ async def list_clubs(
     }
 
 
-@router.post("", status_code=201, dependencies=[_can_write])
+@router.post("", status_code=201, dependencies=[_admin_write])
 async def create_club(
     payload: ClubCreate,
     db: AsyncSession = Depends(get_db),
@@ -132,13 +139,13 @@ async def _get_or_create_club_settings(db: AsyncSession, org_id: str) -> ClubSet
     return s
 
 
-@router.get("/settings", dependencies=[_can_read])
+@router.get("/settings", dependencies=[_admin_read])
 async def get_club_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     s = await _get_or_create_club_settings(db, current_user.org_id)
     return ClubSettingsResponse.model_validate(s).model_dump()
 
 
-@router.put("/settings", dependencies=[_can_write])
+@router.put("/settings", dependencies=[_admin_write])
 async def update_club_settings(payload: ClubSettingsUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     s = await _get_or_create_club_settings(db, current_user.org_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
@@ -149,13 +156,13 @@ async def update_club_settings(payload: ClubSettingsUpdate, db: AsyncSession = D
 
 # ── Manage Clubs: Grades ──────────────────────────────────────────────────────
 
-@router.get("/grades", dependencies=[_can_read])
+@router.get("/grades", dependencies=[_admin_read])
 async def list_club_grades(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     rows = (await db.execute(select(ClubGrade).where(ClubGrade.org_id == current_user.org_id).order_by(ClubGrade.grade_letter))).scalars().all()
     return {"items": [ClubGradeResponse.model_validate(g).model_dump() for g in rows]}
 
 
-@router.post("/grades", status_code=201, dependencies=[_can_write])
+@router.post("/grades", status_code=201, dependencies=[_admin_write])
 async def create_club_grade(payload: ClubGradeCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     g = ClubGrade(**payload.model_dump(), org_id=current_user.org_id)
     db.add(g)
@@ -163,7 +170,7 @@ async def create_club_grade(payload: ClubGradeCreate, db: AsyncSession = Depends
     return ClubGradeResponse.model_validate(g).model_dump()
 
 
-@router.patch("/grades/{grade_id}", dependencies=[_can_write])
+@router.patch("/grades/{grade_id}", dependencies=[_admin_write])
 async def update_club_grade(grade_id: str, payload: ClubGradeUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     g = (await db.execute(select(ClubGrade).where(ClubGrade.id == grade_id, ClubGrade.org_id == current_user.org_id))).scalar_one_or_none()
     if not g:
@@ -174,7 +181,7 @@ async def update_club_grade(grade_id: str, payload: ClubGradeUpdate, db: AsyncSe
     return ClubGradeResponse.model_validate(g).model_dump()
 
 
-@router.delete("/grades/{grade_id}", status_code=204, dependencies=[_can_write])
+@router.delete("/grades/{grade_id}", status_code=204, dependencies=[_admin_write])
 async def delete_club_grade(grade_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     g = (await db.execute(select(ClubGrade).where(ClubGrade.id == grade_id, ClubGrade.org_id == current_user.org_id))).scalar_one_or_none()
     if not g:
@@ -202,7 +209,7 @@ async def list_club_coordinators(db: AsyncSession = Depends(get_db), current_use
     return {"items": items}
 
 
-@router.post("/coordinators", status_code=201, dependencies=[_can_write])
+@router.post("/coordinators", status_code=201, dependencies=[_admin_write])
 async def create_club_coordinator(payload: ClubCoordinatorCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     club = await _get_club_or_404(db, payload.club_id, current_user.org_id)
     user = (await db.execute(select(User).where(User.id == payload.coordinator_id, User.org_id == current_user.org_id))).scalar_one_or_none()
@@ -223,7 +230,7 @@ async def create_club_coordinator(payload: ClubCoordinatorCreate, db: AsyncSessi
     return d
 
 
-@router.delete("/coordinators/{coordinator_row_id}", status_code=204, dependencies=[_can_write])
+@router.delete("/coordinators/{coordinator_row_id}", status_code=204, dependencies=[_admin_write])
 async def delete_club_coordinator(coordinator_row_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     c = (await db.execute(select(ClubCoordinator).where(ClubCoordinator.id == coordinator_row_id, ClubCoordinator.org_id == current_user.org_id))).scalar_one_or_none()
     if not c:
@@ -239,7 +246,7 @@ async def list_club_deadlines(db: AsyncSession = Depends(get_db), current_user: 
     return {"items": [ClubDeadlineResponse.model_validate(d).model_dump() for d in rows]}
 
 
-@router.post("/deadlines", status_code=201, dependencies=[_can_write])
+@router.post("/deadlines", status_code=201, dependencies=[_admin_write])
 async def create_club_deadline(payload: ClubDeadlineCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     d = ClubEnrollmentDeadline(**payload.model_dump(), org_id=current_user.org_id)
     db.add(d)
@@ -247,7 +254,7 @@ async def create_club_deadline(payload: ClubDeadlineCreate, db: AsyncSession = D
     return ClubDeadlineResponse.model_validate(d).model_dump()
 
 
-@router.delete("/deadlines/{deadline_id}", status_code=204, dependencies=[_can_write])
+@router.delete("/deadlines/{deadline_id}", status_code=204, dependencies=[_admin_write])
 async def delete_club_deadline(deadline_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     d = (await db.execute(select(ClubEnrollmentDeadline).where(ClubEnrollmentDeadline.id == deadline_id, ClubEnrollmentDeadline.org_id == current_user.org_id))).scalar_one_or_none()
     if not d:
@@ -304,7 +311,7 @@ async def get_club(
     return ClubResponse.model_validate(club).model_dump()
 
 
-@router.patch("/{club_id}", dependencies=[_can_write])
+@router.patch("/{club_id}", dependencies=[_admin_write])
 async def update_club(
     club_id: str,
     payload: ClubUpdate,
@@ -318,7 +325,7 @@ async def update_club(
     return ClubResponse.model_validate(club).model_dump()
 
 
-@router.delete("/{club_id}", status_code=204, dependencies=[_can_write])
+@router.delete("/{club_id}", status_code=204, dependencies=[_admin_write])
 async def delete_club(
     club_id: str,
     db: AsyncSession = Depends(get_db),
