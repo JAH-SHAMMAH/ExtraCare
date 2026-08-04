@@ -122,11 +122,16 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/cbt/question-bank", permission: "school:cbt:manage" },
   // Result Manager exposes every student's scores + correct answers — staff-only.
   { prefix: "/dashboard/modules/school/cbt/results", permission: "school:cbt:manage" },
-  // Interventions surface flagged students' scores; Setup edits org-wide defaults — staff-only.
+  // Interventions surface flagged students' scores; Setup edits org-wide defaults — admin-only.
+  // The backend gates allow access via school:read OR school:cbt:manage, but the test/nav
+  // intentionally restrict these to admins only (teachers see Question Bank + Results but not
+  // these admin operations). Backend FIX: split these to use a strict gate (school:read only,
+  // no AnyPermissionChecker with school:cbt:manage).
   { prefix: "/dashboard/modules/school/cbt/interventions", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt/settings", permission: "school:read" },
-  // Admin CBT ops (import / export / reset / remark) — staff-only, like the bank
-  // and Result Manager (NOT the student cbt scope which sits tests).
+  // Admin CBT ops (import / export / reset / remark) — admin-only.
+  // Same backend gate issue as above: currently allow school:read OR school:cbt:manage,
+  // but should be school:read only.
   { prefix: "/dashboard/modules/school/cbt/import", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt/export", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt/reset", permission: "school:read" },

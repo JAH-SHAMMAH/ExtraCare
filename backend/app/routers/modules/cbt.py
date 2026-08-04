@@ -93,6 +93,14 @@ _can_write = Depends(PermissionChecker("school:cbt:write"))
 _bank_read = Depends(AnyPermissionChecker("school:read", "school:cbt:manage"))
 _bank_write = Depends(AnyPermissionChecker("school:write", "school:cbt:manage"))
 
+# Admin-only CBT operations (import/export/reset/remark/settings/interventions) — the
+# broad school:read/write ONLY, not the school:cbt:manage feature scope. This keeps
+# question-bank and results accessible to narrowly-scoped Exam Officers, while
+# keeping import/export/reset/remark/settings/interventions (destructive + org-wide)
+# strictly admin-only. Matches the nav gating on school:read (no AnyOf).
+_admin_read = Depends(PermissionChecker("school:read"))
+_admin_write = Depends(PermissionChecker("school:write"))
+
 
 # ── Exams ─────────────────────────────────────────────────────────────────────
 
@@ -824,7 +832,7 @@ async def delete_bank_item(
     )
 
 
-@router.post("/question-bank/import", dependencies=[_bank_write])
+@router.post("/question-bank/import", dependencies=[_admin_write])
 async def import_bank(
     file: UploadFile = File(...),
     request: Request = None,
@@ -1230,7 +1238,7 @@ async def feed_gradebook(
     return {"fed": fed, "term": exam.term, "subject_id": exam.subject_id}
 
 
-@router.get("/exams/{exam_id}/results/export", dependencies=[_bank_read])
+@router.get("/exams/{exam_id}/results/export", dependencies=[_admin_read])
 async def export_results(exam_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Download the exam's results as CSV."""
     org_id = current_user.org_id
@@ -1305,7 +1313,7 @@ async def review_attempt(attempt_id: str, db: AsyncSession = Depends(get_db), cu
     }
 
 
-@router.post("/attempts/{attempt_id}/remark", dependencies=[_bank_write])
+@router.post("/attempts/{attempt_id}/remark", dependencies=[_admin_write])
 async def remark_attempt(
     attempt_id: str,
     payload: list[RemarkItem],
@@ -1351,7 +1359,7 @@ async def remark_attempt(
 # Staff-only ops: reset an attempt for a retake, flag a student for follow-up,
 # and set org-level CBT defaults.
 
-@router.post("/attempts/{attempt_id}/reset", dependencies=[_bank_write])
+@router.post("/attempts/{attempt_id}/reset", dependencies=[_admin_write])
 async def reset_attempt(
     attempt_id: str,
     request: Request = None,
@@ -1472,7 +1480,7 @@ async def _intervention_in_scope(db: AsyncSession, user: User, iv: CBTInterventi
     return student_class in taught
 
 
-@router.get("/interventions", dependencies=[_bank_read])
+@router.get("/interventions", dependencies=[_admin_read])
 async def list_interventions(
     status: str | None = None,
     student_id: str | None = None,
@@ -1602,12 +1610,12 @@ def _settings_dict(s: CBTSettings) -> dict:
     }
 
 
-@router.get("/settings", dependencies=[_bank_read])
+@router.get("/settings", dependencies=[_admin_read])
 async def get_cbt_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     return _settings_dict(await _get_or_create_settings(db, current_user.org_id))
 
 
-@router.put("/settings", dependencies=[_bank_write])
+@router.put("/settings", dependencies=[_admin_write])
 async def update_cbt_settings(
     payload: CBTSettingsUpdate,
     request: Request = None,
