@@ -15,7 +15,7 @@ from sqlalchemy import select
 
 from app.models.user import User, UserStatus
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
-from app.core.permissions import PermissionChecker
+from app.core.permissions import AnyPermissionChecker, PermissionChecker
 from app.models.live import LiveSession
 from app.routers.modules.eclassroom import (
     get_settings, update_settings,
@@ -106,10 +106,13 @@ async def test_org_isolation(db, org, teacher):
     assert exc.value.status_code == 404
 
 
-# ── RBAC (admin writes gated school:write) ────────────────────────────────────
+# ── RBAC ──────────────────────────────────────────────────────────────────────
+# Setup + Programs are ADMIN config (school:write). The Schedules cluster — the
+# teacher's own virtual classrooms — rides the staff-only school:classroom:manage
+# (NOT school:classroom:write: students hold that to submit classwork).
 
-async def _run_gate(user, org, db):
-    checker = PermissionChecker("school:write")
+async def _run_gate(user, org, db, checker=None):
+    checker = checker or PermissionChecker("school:write")
     request = SimpleNamespace(state=SimpleNamespace(org=org, org_id=org.id))
     return await checker(request=request, current_user=user, db=db)
 
@@ -120,5 +123,23 @@ async def test_eclassroom_write_rbac(db, org):
     with pytest.raises(HTTPException) as exc:
         await _run_gate(parent, org, db)
     assert exc.value.status_code == 403
+
+    # A teacher is NOT an eClassroom admin: Setup/Programs stay out of reach.
     tchr = await _preset_user(db, org, "teacher")
-    assert (await _run_gate(tchr, org, db)).id == tchr.id
+    with pytest.raises(HTTPException) as exc:
+        await _run_gate(tchr, org, db)
+    assert exc.value.status_code == 403
+
+    # …but the schedules cluster (their own classrooms) is theirs.
+    rooms = AnyPermissionChecker("school:write", "school:classroom:manage")
+    assert (await _run_gate(tchr, org, db, rooms)).id == tchr.id
+    admin = await _preset_user(db, org, "org_admin")
+    assert (await _run_gate(admin, org, db, rooms)).id == admin.id
+
+    # Students submit classwork (school:classroom:write) but must never reach the
+    # schedule/go-live controls.
+    pupil = await _preset_user(db, org, "student")
+    assert pupil.has_permission("school:classroom:write")
+    with pytest.raises(HTTPException) as exc:
+        await _run_gate(pupil, org, db, rooms)
+    assert exc.value.status_code == 403

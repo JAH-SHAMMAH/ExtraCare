@@ -164,10 +164,19 @@ async def test_operations_rbac(db, org):
         u = await _preset_user(db, org, slug)
         assert u.has_permission("school:write")
         assert u.has_permission("school_admin:write")   # facility + visitor
+    # The calendar is a STAFF surface on its own feature scope: a teacher reads
+    # and authors events (as they did under the old broad grant) without holding
+    # school:write. Facility + Visitor stay admin tier.
     teacher = await _preset_user(db, org, "teacher")
-    assert teacher.has_permission("school:write")        # calendar yes
-    assert not teacher.has_permission("school_admin:write")  # facility/visitor NO
+    assert teacher.has_permission("school:calendar:read")     # calendar yes
+    assert teacher.has_permission("school:calendar:write")    # …including authoring
+    assert not teacher.has_permission("school:write")         # but no broad grant
+    assert not teacher.has_permission("school_admin:write")   # facility/visitor NO
     for slug in ("student", "parent"):
         u = await _preset_user(db, org, slug)
         assert not u.has_permission("school:write")
         assert not u.has_permission("school_admin:read")
+        # Unchanged by the calendar re-gate: they held no broad grant before, and
+        # hold no calendar scope now.
+        assert not u.has_permission("school:calendar:read")
+        assert not u.has_permission("school:calendar:write")

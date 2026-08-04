@@ -233,10 +233,16 @@ async def test_academics_tenant_scoped(db, org, teacher, student):
 async def test_rbac_academics_scopes(db, org):
     for slug in ("org_admin", "manager", "teacher"):
         u = await _preset_user(db, org, slug)
-        assert u.has_permission("school:subjects:write")
         assert u.has_permission("school:grades:write")
         assert u.has_permission("school:reports:write")
         assert u.has_permission("school:behaviour:write")
+        assert u.has_permission("school:subjects:read")
+    # Subject CRUD is academic TAXONOMY — admin-side. A teacher teaches subjects
+    # and reads them for its pickers, but does not create/rename/delete them
+    # (see the classroom preset in models/role.py).
+    for slug in ("org_admin", "manager"):
+        assert (await _preset_user(db, org, slug)).has_permission("school:subjects:write")
+    assert not (await _preset_user(db, org, "teacher")).has_permission("school:subjects:write")
     # Students/parents: hold reports:read for their OWN card, but never the
     # admin academic tools (subjects/grades/reports:write/behaviour).
     for slug in ("student", "parent"):

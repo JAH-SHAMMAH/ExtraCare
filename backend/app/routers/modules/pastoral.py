@@ -90,6 +90,11 @@ router = APIRouter(
 
 _hostel_read = Depends(PermissionChecker("school:hostel:read"))
 _hostel_write = Depends(PermissionChecker("school:hostel:write"))
+# The NON-boarding pastoral slice (a form/pastoral teacher's own group: dashboard,
+# students, report, remarks). Split out of school:hostel:read so the classroom tier
+# can reach it WITHOUT gaining the boarding cluster (hostels, allocations, exeats,
+# roll-call, house masters). Admin/manager still reach both via school:read.
+_pastoral_read = Depends(PermissionChecker("school:pastoral:read"))
 _approve = Depends(PermissionChecker("school_admin:write"))  # explicit exeat approver tier
 _beh_read = Depends(PermissionChecker("school:behaviour:read"))
 _beh_write = Depends(PermissionChecker("school:behaviour:write"))
@@ -745,7 +750,7 @@ async def _pastoral_rows(db: AsyncSession, org_id: str, section: str | None, cla
     return out
 
 
-@router.get("/students", response_model=list[PastoralStudentRow], dependencies=[_hostel_read])
+@router.get("/students", response_model=list[PastoralStudentRow], dependencies=[_pastoral_read])
 async def list_pastoral_students(
     section: str | None = None, class_id: str | None = None, house: str | None = None, search: str | None = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
@@ -820,7 +825,7 @@ async def sync_pastoral_students(db: AsyncSession = Depends(get_db), current_use
     return {"synced": len(missing)}
 
 
-@router.get("/students/export", dependencies=[_hostel_read])
+@router.get("/students/export", dependencies=[_pastoral_read])
 async def export_pastoral_students(
     section: str | None = None, db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -1733,7 +1738,7 @@ async def _count(db: AsyncSession, model, *conds) -> int:
     return (await db.execute(q)).scalar() or 0
 
 
-@router.get("/head-dashboard", response_model=HeadDashboard, dependencies=[_hostel_read])
+@router.get("/head-dashboard", response_model=HeadDashboard, dependencies=[_pastoral_read])
 async def head_dashboard(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     org = current_user.org_id
     hostels = await _count(db, Hostel, Hostel.org_id == org, Hostel.is_deleted == False)          # noqa: E712
@@ -1824,7 +1829,7 @@ def _rb_response(r: PastoralRemarkBank) -> RemarkBankResponse:
     return RemarkBankResponse(id=r.id, text=r.text, category=r.category, is_active=r.is_active)
 
 
-@router.get("/remark-bank", response_model=list[RemarkBankResponse], dependencies=[_hostel_read])
+@router.get("/remark-bank", response_model=list[RemarkBankResponse], dependencies=[_pastoral_read])
 async def list_remark_bank(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     rows = (await db.execute(select(PastoralRemarkBank).where(PastoralRemarkBank.org_id == current_user.org_id)
                              .order_by(PastoralRemarkBank.category.nullslast(), PastoralRemarkBank.created_at))).scalars().all()
@@ -1860,7 +1865,7 @@ async def delete_remark_bank(remark_id: str, db: AsyncSession = Depends(get_db),
 
 # ── Pastoral Remarks (per-student term remark) ───────────────────────────────
 
-@router.get("/pastoral-remarks", response_model=list[PastoralRemarkResponse], dependencies=[_hostel_read])
+@router.get("/pastoral-remarks", response_model=list[PastoralRemarkResponse], dependencies=[_pastoral_read])
 async def list_pastoral_remarks(student_id: str | None = None, term: str | None = None,
                                 db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     q = select(PastoralRemark).where(PastoralRemark.org_id == current_user.org_id)
@@ -1902,7 +1907,7 @@ async def delete_pastoral_remark(remark_id: str, db: AsyncSession = Depends(get_
 
 # ── Pastoral Report (per-student aggregation) ────────────────────────────────
 
-@router.get("/pastoral-report", response_model=PastoralReport, dependencies=[_hostel_read])
+@router.get("/pastoral-report", response_model=PastoralReport, dependencies=[_pastoral_read])
 async def pastoral_report(student_id: str, term: str | None = None,
                           db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     org = current_user.org_id

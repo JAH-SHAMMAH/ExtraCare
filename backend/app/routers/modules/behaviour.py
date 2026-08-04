@@ -42,6 +42,11 @@ router = APIRouter(
 
 _can_read = Depends(PermissionChecker("school:behaviour:read"))
 _can_write = Depends(PermissionChecker("school:behaviour:write"))
+# Taxonomy CONFIG (categories / sub-categories / levels / settings) is admin
+# setup, not classroom logging: the classroom tier holds school:behaviour:write
+# so it can LOG a record, but must not redefine the school's behaviour scheme.
+# Config READS stay on behaviour:read — the logging form needs the category list.
+_admin_write = Depends(PermissionChecker("school_admin:write"))
 
 
 @router.get("/records", dependencies=[_can_read])
@@ -293,7 +298,7 @@ async def list_categories(
     return {"items": [CategoryResponse.model_validate(r).model_dump() for r in rows]}
 
 
-@router.post("/categories", status_code=201, dependencies=[_can_write])
+@router.post("/categories", status_code=201, dependencies=[_admin_write])
 async def create_category(
     payload: CategoryCreate, request: Request = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
@@ -307,7 +312,7 @@ async def create_category(
     return CategoryResponse.model_validate(cat).model_dump()
 
 
-@router.patch("/categories/{category_id}", dependencies=[_can_write])
+@router.patch("/categories/{category_id}", dependencies=[_admin_write])
 async def update_category(
     category_id: str, payload: CategoryUpdate, request: Request = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
@@ -322,7 +327,7 @@ async def update_category(
     return CategoryResponse.model_validate(cat).model_dump()
 
 
-@router.delete("/categories/{category_id}", status_code=204, dependencies=[_can_write])
+@router.delete("/categories/{category_id}", status_code=204, dependencies=[_admin_write])
 async def delete_category(
     category_id: str, request: Request = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
@@ -356,7 +361,7 @@ async def list_subcategories(
     return {"items": [SubCategoryResponse.model_validate(r).model_dump() for r in rows]}
 
 
-@router.post("/subcategories", status_code=201, dependencies=[_can_write])
+@router.post("/subcategories", status_code=201, dependencies=[_admin_write])
 async def create_subcategory(
     payload: SubCategoryCreate, request: Request = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
@@ -372,7 +377,7 @@ async def create_subcategory(
     return SubCategoryResponse.model_validate(sub).model_dump()
 
 
-@router.patch("/subcategories/{sub_id}", dependencies=[_can_write])
+@router.patch("/subcategories/{sub_id}", dependencies=[_admin_write])
 async def update_subcategory(
     sub_id: str, payload: SubCategoryUpdate, request: Request = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
@@ -390,7 +395,7 @@ async def update_subcategory(
     return SubCategoryResponse.model_validate(sub).model_dump()
 
 
-@router.delete("/subcategories/{sub_id}", status_code=204, dependencies=[_can_write])
+@router.delete("/subcategories/{sub_id}", status_code=204, dependencies=[_admin_write])
 async def delete_subcategory(
     sub_id: str, request: Request = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
@@ -419,7 +424,7 @@ async def list_levels(
     return {"items": [LevelResponse.model_validate(r).model_dump() for r in rows]}
 
 
-@router.post("/levels", status_code=201, dependencies=[_can_write])
+@router.post("/levels", status_code=201, dependencies=[_admin_write])
 async def create_level(
     payload: LevelCreate, request: Request = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
@@ -435,7 +440,7 @@ async def create_level(
     return LevelResponse.model_validate(lv).model_dump()
 
 
-@router.patch("/levels/{level_id}", dependencies=[_can_write])
+@router.patch("/levels/{level_id}", dependencies=[_admin_write])
 async def update_level(
     level_id: str, payload: LevelUpdate, request: Request = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
@@ -452,7 +457,7 @@ async def update_level(
     return LevelResponse.model_validate(lv).model_dump()
 
 
-@router.delete("/levels/{level_id}", status_code=204, dependencies=[_can_write])
+@router.delete("/levels/{level_id}", status_code=204, dependencies=[_admin_write])
 async def delete_level(
     level_id: str, request: Request = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
@@ -474,7 +479,7 @@ async def get_settings(
     return SettingsResponse.model_validate(s).model_dump()
 
 
-@router.put("/settings", dependencies=[_can_write])
+@router.put("/settings", dependencies=[_admin_write])
 async def update_settings(
     payload: SettingsUpdate, request: Request = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),

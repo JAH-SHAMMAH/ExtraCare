@@ -35,7 +35,7 @@ from app.models.sms import (
 )
 from app.core.tenant import require_role_module
 from app.core.school_identity import teacher_identity_filter
-from app.core.permissions import PermissionChecker
+from app.core.permissions import AnyPermissionChecker, PermissionChecker
 from app.core.workspace import effective_modules_for_org, workspace_for
 
 
@@ -44,7 +44,10 @@ router = APIRouter(
     tags=["Executive Dashboard"],
 )
 
-_can_read = Depends(PermissionChecker("school:read"))
+# The school dashboard is every staff member's landing page, so it accepts the
+# classroom tier too (`school:classes:read`) — that tier no longer carries the
+# broad `school:read`. Widening only; students/parents still hold neither.
+_can_read = Depends(AnyPermissionChecker("school:read", "school:classes:read"))
 _can_analytics_read = Depends(PermissionChecker("analytics:read"))
 
 ADMIN_SLUGS = {"org_admin", "manager", "super_admin"}

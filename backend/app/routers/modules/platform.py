@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import get_current_active_user
 from app.core.tenant import require_module
-from app.core.permissions import PermissionChecker
+from app.core.permissions import AnyPermissionChecker, PermissionChecker
 from app.models.user import User, UserStatus
 from app.models.modules.platform import (
     AcademicSession, AcademicWeek, SchoolHouse, GradingBand,
@@ -77,14 +77,17 @@ router = APIRouter(prefix="/platform", tags=["Administration & Platform"], depen
 
 _read = Depends(PermissionChecker("settings:read"))
 _write = Depends(PermissionChecker("settings:write"))
-# The current-session resolver is read by term-consuming features (exam/grade/CBT
-# forms), so it rides the broad school:read rather than the admin settings scope.
-_school_read = Depends(PermissionChecker("school:read"))
-# Report Entry is grade entry, not admin config — gate it on the reports scope
-# (teachers hold school:write, which reaches school:reports:write via the hierarchy).
+# The current-session resolver + report CONFIG reads are consumed by term-aware
+# features (exam/grade/CBT forms) and by every teacher-facing report page, so they
+# ride a staff-read tier rather than the admin settings scope. AnyPermission:
+# `school:reports:read` keeps them reachable for the classroom tier, which no
+# longer holds the broad `school:read` (see role.py — that grant reached every
+# fine-grained child). Widening only; no role loses access.
+_school_read = Depends(AnyPermissionChecker("school:read", "school:reports:read"))
+# Report Entry is grade entry, not admin config — gate it on the reports scope.
 _reports_write = Depends(PermissionChecker("school:reports:write"))
-# Admin-only report actions (Approve/Process, Reports Upload) — teachers hold
-# school:write (=> school:reports:write) but NOT school_admin, so this excludes them.
+# Admin-only report actions (Approve/Process, Reports Upload) — the classroom tier
+# holds school:reports:write but NOT school_admin, so this excludes them.
 _report_admin_write = Depends(PermissionChecker("school_admin:write"))
 
 

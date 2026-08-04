@@ -122,14 +122,57 @@ SCHOOL_PERMISSION_PRESETS = {
     # it its own namespace makes "org_admin only" real. See ENCRYPTION_SERVICE_SPEC.md §9.
     "org_admin": _dedupe(CORE_ADMIN_PERMISSIONS + ["school:*", "school_admin:*", "payments:*", "payment_gateways:read", "payment_gateways:write", "store:*", "medical:*", "wallet:*"]),
     "manager": _dedupe(CORE_MANAGER_PERMISSIONS + ["school:read", "school:write", "school:cbt:manage", "school_admin:read", "school_admin:write", "payments:read", "payments:write", "wallet:spend"]),
-    # Teacher holds broad school read/write (covers every fine-grained school
-    # feature via the hierarchy) but NOT `school_admin:*` or `payments:*`, so
-    # bulk SMS / transport / tuckshop / fee administration stay out of reach.
+    # Teacher = CLASSROOM tier: an ENUMERATED set of fine-grained scopes, never
+    # the broad `school:read`/`school:write`.
+    #
+    # Why enumerated: the scope hierarchy (User.has_permission) makes a two-part
+    # grant cover EVERY three-part child, so a teacher holding `school:write`
+    # also held school:students:write, school:admissions:write,
+    # school:timetable:write, school:library:write … i.e. the entire school
+    # module minus `school_admin:*`. That is how a teacher could delete a pupil,
+    # run promotions, edit the timetable structure and administer Voting. The
+    # fine-grained rollout only becomes real once the broad grant is gone.
+    #
+    # Benchmarked against Educare's teacher nav: classroom + own-group pastoral +
+    # self-service, and NO Students / Admissions / TimeTable-structure / Voting /
+    # Library / Staff surfaces. Data scoping (own class, own subjects) is the
+    # follow-up batch — this preset is the permission half.
     # `users:read` is RETAINED for the Messenger "new conversation" picker.
     # `hr:read` is a self-service marker (My HRM Info / My Leave nav); HR
     # mutations + the admin HR dashboard stay on users:*/hr:write, which the
-    # teacher does NOT hold.
-    "teacher": _dedupe(["users:read", "school:read", "school:write", "school:cbt:manage", "analytics:read", "hr:read"]),
+    # teacher does NOT hold. `analytics:read` is deliberately DROPPED (the
+    # Analytics dashboard is school-wide management reporting).
+    "teacher": _dedupe([
+        "users:read", "hr:read",
+        # Lookups the classroom pickers/rosters need (read-only).
+        "school:classes:read", "school:teachers:read", "school:students:read",
+        "school:subjects:read", "school:timetable:read",
+        # Marking + reporting.
+        "school:grades:read", "school:grades:write",
+        "school:exams:read", "school:exams:write",
+        "school:reports:read", "school:reports:write",
+        "school:attendance:read", "school:attendance:write",
+        # Teaching tools: lesson plans, CBT (bank/tests/results), own eClassrooms.
+        "school:lessons:read", "school:lessons:write",
+        "school:cbt:read", "school:cbt:write", "school:cbt:manage",
+        "school:classroom:read", "school:classroom:write",
+        # Staff-only manage scope for the teacher's own eClassrooms. Deliberately
+        # NOT school:classroom:write — students hold that to submit classwork, so
+        # the schedule/go-live controls need a scope pupils never carry (the same
+        # pattern as school:cbt:manage).
+        "school:classroom:manage",
+        # Pastoral for their own group: remarks/report/students + conduct points
+        # and discipline logging. `school:pastoral:read` is the NON-boarding slice
+        # — the hostel cluster stays on `school:hostel:*`, which teachers lack.
+        "school:pastoral:read",
+        "school:behaviour:read", "school:behaviour:write",
+        "school:journals:read", "school:journals:write",
+        "school:feedback:read", "school:feedback:write",
+        "school:clubs:read", "school:clubs:write",
+        # School calendar: teachers read the term's events/deadlines and author
+        # their own (they did so under the old broad grant — this keeps it).
+        "school:calendar:read", "school:calendar:write",
+    ]),
     # Frontline staff (e.g. tuckshop till) hold the dedicated, constrained
     # `wallet:spend` so they can ring up spends in real time — but NOT cash
     # movement or general ledger posting.
@@ -172,12 +215,17 @@ SCHOOL_PERMISSION_PRESETS = {
 # creation without adding roles later. Permission sets reuse the tiers above:
 #   • _ADMIN  = full org admin (school:* + payments:* + admin)   — leadership
 #   • _MGR    = senior admin (school:r/w + school_admin:r/w + payments:read + hr:r/w)
-#   • _TCH    = teaching/academic (school:r/w + hr:read)
+#   • _TCH    = teaching/academic — the ENUMERATED classroom scope set (NOT the
+#               broad school:r/w). Every role on this tier is teacher-shaped, so
+#               narrowing the tier closed the over-permissioning for all of them
+#               at once (instructor, head_teacher, HODs, SPA, …).
 #   • _MIN    = self-service only (own profile / leave)
-# Specialist roles get narrow, function-specific scopes. FLAGGED as broad (can be
-# tightened later): exam_officer / admission_officer / guidance_counsellor sit at
-# _TCH (full school r/w) rather than a narrow exams/admissions/pastoral scope,
-# because those routes are partly gated on the broad school:read/write today.
+# Specialist roles get narrow, function-specific scopes: exam_officer,
+# admission_officer and guidance_counsellor each carry their own function's
+# scopes instead of the classroom tier. Academic LEADERSHIP (head_teacher,
+# academic_coordinator, HODs) sits on the classroom tier too — if a school needs
+# them to see school-wide data, assign the manager tier explicitly rather than
+# widening _TCH again.
 _ADMIN = SCHOOL_PERMISSION_PRESETS["org_admin"]
 _MGR = SCHOOL_PERMISSION_PRESETS["manager"]
 _TCH = SCHOOL_PERMISSION_PRESETS["teacher"]

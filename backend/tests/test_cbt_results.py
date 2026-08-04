@@ -123,8 +123,12 @@ async def test_review_404(db, org, teacher):
 # ── RBAC: staff-only (students hold cbt:* to sit, not school:* to see results) ──
 
 async def test_results_rbac_excludes_students(db, org):
-    for slug in ("manager", "teacher"):
-        u = await _preset_user(db, org, slug)
-        assert u.has_permission("school:read") and u.has_permission("school:write")
+    # Result Manager rides the same accept-either gate as the bank: broad school
+    # scopes for admins, school:cbt:manage for the classroom tier.
+    manager = await _preset_user(db, org, "manager")
+    assert manager.has_permission("school:read") and manager.has_permission("school:write")
+    teacher_u = await _preset_user(db, org, "teacher")
+    assert teacher_u.has_permission("school:cbt:manage")
+    assert not teacher_u.has_permission("school:read") and not teacher_u.has_permission("school:write")
     student = await _preset_user(db, org, "student")
     assert not student.has_permission("school:read") and not student.has_permission("school:write")

@@ -91,10 +91,11 @@ async def test_reallocation_deactivates_prior(db, org, teacher, student):
 # ── Exeat: approver gating + audit ─────────────────────────────────────────────
 
 async def test_exeat_approver_is_explicit_tier(db, org):
-    # Teacher can REQUEST but cannot APPROVE; admin/manager can approve.
+    # Exeat is BOARDING: the classroom tier reaches neither side of it (a house
+    # master holds school:hostel:*), and authorising leave is admin tier.
     teacher = await _preset_user(db, org, "teacher")
-    assert teacher.has_permission("school:hostel:write") is True   # may request
-    assert teacher.has_permission("school_admin:write") is False   # may NOT authorise leave
+    assert teacher.has_permission("school:hostel:write") is False   # not boarding staff
+    assert teacher.has_permission("school_admin:write") is False    # may NOT authorise leave
     for slug in ("org_admin", "manager"):
         approver = await _preset_user(db, org, slug)
         assert approver.has_permission("school_admin:write") is True
@@ -195,11 +196,19 @@ async def test_mentor_report_crud(db, org, teacher, student):
 async def test_pastoral_rbac_scopes(db, org):
     # Hostel/exeat ride school:hostel:* (covered by school:read/write hierarchy);
     # mentor reports ride school:behaviour:*. Students/parents hold neither.
-    for slug in ("org_admin", "manager", "teacher"):
+    for slug in ("org_admin", "manager"):
         u = await _preset_user(db, org, slug)
         assert u.has_permission("school:hostel:read")
         assert u.has_permission("school:hostel:write")
         assert u.has_permission("school:behaviour:write")
+    # A teacher does PASTORAL work for their own group but is not boarding staff:
+    # they hold the non-boarding school:pastoral:read slice + behaviour logging,
+    # and none of the hostel cluster.
+    teacher_u = await _preset_user(db, org, "teacher")
+    assert teacher_u.has_permission("school:pastoral:read")
+    assert teacher_u.has_permission("school:behaviour:write")
+    assert not teacher_u.has_permission("school:hostel:read")
+    assert not teacher_u.has_permission("school:hostel:write")
     staff = await _preset_user(db, org, "staff")
     assert staff.has_permission("school:hostel:read")
     assert not staff.has_permission("school:hostel:write")

@@ -4,7 +4,8 @@ Setup (settings), Programs, and Schedules. A schedule going live REUSES the
 existing LiveSession/WebRTC stack — go-live creates a LiveSession and links it, so
 the frontend joins the same live room the rest of the portal already uses.
 
-Gating: reads school:read, admin writes school:write.
+Gating: Setup + Programs are admin config (school:read / school:write); the
+Schedules cluster is the teacher's own classrooms (school:classroom:read|write).
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import get_current_active_user
-from app.core.permissions import PermissionChecker
+from app.core.permissions import AnyPermissionChecker, PermissionChecker
 from app.models.user import User
 from app.models.live import LiveSession
 from app.models.modules.platform import SchoolSection, AcademicSession
@@ -30,8 +31,18 @@ from app.schemas.eclassroom import (
 
 router = APIRouter(prefix="/eclassroom", tags=["eClassroom"])
 
+# Setup + Programs are admin config (broad school scopes). The SCHEDULES cluster is
+# the teacher's own virtual classrooms ("Manage eClassrooms" in the reference nav),
+# so it rides school:classroom:* — the classroom tier holds those but not the broad
+# grants. Admin/manager reach both via school:read|write in the scope hierarchy.
 _can_read = Depends(PermissionChecker("school:read"))
 _can_write = Depends(PermissionChecker("school:write"))
+# NOT school:classroom:read|write — STUDENTS hold both (they submit classwork), so
+# gating schedules on them would hand pupils the go-live/delete controls. This uses
+# the staff-only `:manage` pattern already established by school:cbt:manage, with
+# school:read|write as the admin alternative.
+_room_read = Depends(AnyPermissionChecker("school:read", "school:classroom:manage"))
+_room_write = Depends(AnyPermissionChecker("school:write", "school:classroom:manage"))
 
 
 async def _names(db: AsyncSession, org_id: str) -> tuple[dict, dict, dict]:
@@ -158,7 +169,7 @@ def _schedule_response(s: EClassroomSchedule, sections: dict, sessions: dict, yg
     )
 
 
-@router.get("/schedules", response_model=list[ScheduleResponse], dependencies=[_can_read])
+@router.get("/schedules", response_model=list[ScheduleResponse], dependencies=[_room_read])
 async def list_schedules(
     status: str | None = Query(default=None),
     year_group_id: str | None = Query(default=None),
@@ -179,7 +190,7 @@ async def list_schedules(
     return [_schedule_response(s, sections, sessions, ygs) for s in rows]
 
 
-@router.post("/schedules", response_model=ScheduleResponse, status_code=201, dependencies=[_can_write])
+@router.post("/schedules", response_model=ScheduleResponse, status_code=201, dependencies=[_room_write])
 async def create_schedule(payload: ScheduleCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     s = EClassroomSchedule(
         org_id=current_user.org_id, title=payload.title.strip(), description=(payload.description or None),
@@ -200,7 +211,7 @@ async def _get_schedule(db, org_id, sid) -> EClassroomSchedule:
     return s
 
 
-@router.patch("/schedules/{sid}", response_model=ScheduleResponse, dependencies=[_can_write])
+@router.patch("/schedules/{sid}", response_model=ScheduleResponse, dependencies=[_room_write])
 async def update_schedule(sid: str, payload: ScheduleUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     s = await _get_schedule(db, current_user.org_id, sid)
     data = payload.model_dump(exclude_unset=True)
@@ -213,7 +224,7 @@ async def update_schedule(sid: str, payload: ScheduleUpdate, db: AsyncSession = 
     return _schedule_response(s, sections, sessions, ygs)
 
 
-@router.delete("/schedules/{sid}", status_code=204, dependencies=[_can_write])
+@router.delete("/schedules/{sid}", status_code=204, dependencies=[_room_write])
 async def delete_schedule(sid: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     s = await _get_schedule(db, current_user.org_id, sid)
     s.is_deleted = True
@@ -221,7 +232,7 @@ async def delete_schedule(sid: str, db: AsyncSession = Depends(get_db), current_
     await db.flush()
 
 
-@router.post("/schedules/{sid}/go-live", response_model=ScheduleResponse, dependencies=[_can_write])
+@router.post("/schedules/{sid}/go-live", response_model=ScheduleResponse, dependencies=[_room_write])
 async def go_live(sid: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Start a broadcast: create a real LiveSession (existing WebRTC infra), link
     it, and flip status → live. The frontend then joins the live room."""
@@ -242,7 +253,7 @@ async def go_live(sid: str, db: AsyncSession = Depends(get_db), current_user: Us
     return _schedule_response(s, sections, sessions, ygs)
 
 
-@router.post("/schedules/{sid}/end", response_model=ScheduleResponse, dependencies=[_can_write])
+@router.post("/schedules/{sid}/end", response_model=ScheduleResponse, dependencies=[_room_write])
 async def end_broadcast(sid: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     s = await _get_schedule(db, current_user.org_id, sid)
     now = datetime.now(timezone.utc)

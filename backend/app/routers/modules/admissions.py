@@ -71,6 +71,11 @@ _adm_read = Depends(PermissionChecker("school:admissions:read"))
 _adm_write = Depends(PermissionChecker("school:admissions:write"))
 _stu_read = Depends(PermissionChecker("school:students:read"))
 _stu_write = Depends(PermissionChecker("school:students:write"))
+# Promotion / Transfer are ROSTER ADMIN surfaces, not classroom ones. Their reads
+# rode school:students:read, which teachers legitimately hold for their pupils —
+# so the admin LISTS get the admin scope explicitly (writes already sit on
+# school:students:write, which the classroom tier does not hold).
+_roster_admin_read = Depends(PermissionChecker("school_admin:read"))
 
 
 # ── shared helpers ────────────────────────────────────────────────────────────
@@ -549,7 +554,7 @@ async def _load_promotion_students(db: AsyncSession, org_id: str, student_ids: l
     return [by_id[sid] for sid in ordered]
 
 
-@router.get("/promotions", response_model=PromotionListResponse, dependencies=[_stu_read])
+@router.get("/promotions", response_model=PromotionListResponse, dependencies=[_roster_admin_read])
 async def list_promotions(
     student_id: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -575,7 +580,7 @@ async def list_promotions(
     )
 
 
-@router.post("/promotions/preview", response_model=PromotionPreviewResponse, dependencies=[_stu_read])
+@router.post("/promotions/preview", response_model=PromotionPreviewResponse, dependencies=[_roster_admin_read])
 async def preview_promotions(
     payload: PromotionCreate,
     db: AsyncSession = Depends(get_db),
@@ -757,7 +762,7 @@ async def _load_transfer(db: AsyncSession, transfer_id: str, org_id: str) -> Tra
     return t
 
 
-@router.get("/transfers", response_model=TransferListResponse, dependencies=[_stu_read])
+@router.get("/transfers", response_model=TransferListResponse, dependencies=[_roster_admin_read])
 async def list_transfers(
     status: str | None = Query(default=None),
     transfer_type: str | None = None,  # transfer_out | withdrawal

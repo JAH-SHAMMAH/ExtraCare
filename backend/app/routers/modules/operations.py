@@ -46,8 +46,14 @@ router = APIRouter(
     dependencies=[Depends(require_role_module("school"))],
 )
 
-_cal_read = Depends(PermissionChecker("school:read"))
-_cal_write = Depends(PermissionChecker("school:write"))
+# The school calendar is a STAFF surface, not an admin one — teachers read the
+# term's events/deadlines and author their own (staff reminders, class events),
+# which they did under the old broad school:write. Its own feature scope keeps
+# that working now the classroom tier carries no broad grant; admin/manager still
+# reach it through school:read|write in the hierarchy, and students/parents (who
+# hold neither) stay excluded exactly as before.
+_cal_read = Depends(PermissionChecker("school:calendar:read"))
+_cal_write = Depends(PermissionChecker("school:calendar:write"))
 _adm_read = Depends(PermissionChecker("school_admin:read"))
 _adm_write = Depends(PermissionChecker("school_admin:write"))
 

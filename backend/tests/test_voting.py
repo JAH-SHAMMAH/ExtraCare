@@ -203,10 +203,15 @@ async def _run_gate(user, org, db):
 
 
 async def test_voting_admin_rbac(db, org):
-    parent = await _preset_user(db, org, "parent")
-    assert not parent.has_permission("school:write")
-    with pytest.raises(HTTPException) as exc:
-        await _run_gate(parent, org, db)
-    assert exc.value.status_code == 403
-    tchr = await _preset_user(db, org, "teacher")
-    assert (await _run_gate(tchr, org, db)).id == tchr.id
+    # Running staff-award votes (periods, categories, sessions, candidates) is
+    # ADMIN work — it rides the broad school:write. Neither a parent nor a
+    # teacher administers it; the voter-facing My Votes page is separate.
+    for slug in ("parent", "teacher"):
+        u = await _preset_user(db, org, slug)
+        assert not u.has_permission("school:write"), f"{slug} must not administer voting"
+        with pytest.raises(HTTPException) as exc:
+            await _run_gate(u, org, db)
+        assert exc.value.status_code == 403
+    for slug in ("org_admin", "manager"):
+        u = await _preset_user(db, org, slug)
+        assert (await _run_gate(u, org, db)).id == u.id

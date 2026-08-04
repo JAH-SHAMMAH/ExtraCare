@@ -585,11 +585,20 @@ async def test_acceptance_accept_stamps_without_admitting(db, org, teacher, scho
 # ── RBAC contract ─────────────────────────────────────────────────────────────
 
 async def test_rbac_admissions_and_roster_scopes(db, org):
-    for slug in ("org_admin", "manager", "teacher"):
+    for slug in ("org_admin", "manager"):
         u = await _preset_user(db, org, slug)
         assert u.has_permission("school:admissions:read")
         assert u.has_permission("school:admissions:write")
         assert u.has_permission("school:students:write")  # promotion/transfer
+    # A TEACHER is not an admissions or roster administrator: they read their
+    # pupils' records, but cannot enquire/admit, promote, transfer or withdraw.
+    # (This is the over-permissioning the classroom preset closed — see
+    # models/role.py and tests/test_teacher_role_rbac.py.)
+    teacher_u = await _preset_user(db, org, "teacher")
+    assert teacher_u.has_permission("school:students:read")
+    assert not teacher_u.has_permission("school:admissions:read")
+    assert not teacher_u.has_permission("school:admissions:write")
+    assert not teacher_u.has_permission("school:students:write")
     staff = await _preset_user(db, org, "staff")
     assert staff.has_permission("school:admissions:read")
     assert not staff.has_permission("school:admissions:write")

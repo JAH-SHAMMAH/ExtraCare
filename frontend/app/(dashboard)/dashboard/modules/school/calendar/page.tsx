@@ -17,7 +17,7 @@ const CAT_STYLE: Record<string, string> = {
 };
 
 export default function CalendarPage() {
-  const canWrite = useHasPermission("school:write");
+  const canWrite = useHasPermission("school:calendar:write");
   const { data, isLoading, isError, refetch } = useCalendar();
   const create = useCreateEvent();
   const del = useDeleteEvent();

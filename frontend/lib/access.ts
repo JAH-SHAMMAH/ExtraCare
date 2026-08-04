@@ -59,13 +59,18 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/hrm", permission: "hr:write" },
 
   // ── School module (fine-grained per feature) ───────────────────────
-  { prefix: "/dashboard/modules/school/students", permission: "school:students:read" },
+  // The Students MODULE (roster admin: withdrawal, inactive, pickup) is an
+  // admin surface — the classroom tier keeps `school:students:read` for its
+  // pupils' records (marking, attendance, pastoral) but has no Students nav.
+  { prefix: "/dashboard/modules/school/students", permission: "school_admin:read" },
   // Teachers module is Admin/Super-User-only (settings:read) — covers View
   // Teachers + Assign To School. (The shared /school/teachers API stays
   // school:read for Lesson Planner / Ratings.)
   { prefix: "/dashboard/modules/school/teachers", permission: "settings:read" },
   { prefix: "/dashboard/modules/school/staff", permission: "school_admin:read" },
-  { prefix: "/dashboard/modules/school/classes", permission: "school:classes:read" },
+  // Class + YearGroup MANAGEMENT is admin taxonomy. The classroom tier keeps
+  // `school:classes:read` so its class pickers resolve, but gets no nav item.
+  { prefix: "/dashboard/modules/school/classes", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/subjects", permission: "school:subjects:read" },
   // Insights dashboard is admin-only; the marking page needs write.
   { prefix: "/dashboard/modules/school/attendance/dashboard", permission: "school_admin:read" },
@@ -76,7 +81,22 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/attendance", permission: "school:attendance:write" },
   { prefix: "/dashboard/modules/school/exams", permission: "school:exams:read" },
   { prefix: "/dashboard/modules/school/grades", permission: "school:grades:read" },
+  // TimeTable: STRUCTURE editing (setup, periods, activities, schedules, the
+  // Time Tabler, curriculum, subject attendance) is admin — it requires the
+  // write scope, which the classroom tier does not hold. Viewing rides
+  // `school:timetable:read`, which it does.
+  { prefix: "/dashboard/modules/school/timetable/setup", permission: "school:timetable:write" },
+  { prefix: "/dashboard/modules/school/timetable/periods", permission: "school:timetable:write" },
+  { prefix: "/dashboard/modules/school/timetable/activities", permission: "school:timetable:write" },
+  { prefix: "/dashboard/modules/school/timetable/schedules", permission: "school:timetable:write" },
+  { prefix: "/dashboard/modules/school/timetable/tabler", permission: "school:timetable:write" },
+  { prefix: "/dashboard/modules/school/timetable/curriculum", permission: "school:timetable:write" },
+  { prefix: "/dashboard/modules/school/timetable/subject-attendance", permission: "school:timetable:write" },
   { prefix: "/dashboard/modules/school/timetable", permission: "school:timetable:read" },
+  // Lesson Planner: authoring is the teacher's; Setup (categories/weeks/settings/
+  // supervisors/clone/schedules) and the Approve queue are supervisor/admin.
+  { prefix: "/dashboard/modules/school/lessons/setup", permission: "school_admin:read" },
+  { prefix: "/dashboard/modules/school/lessons/approve", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/lessons", permission: "school:lessons:write" },
   { prefix: "/dashboard/modules/school/library", permission: "school:library:read" },
   { prefix: "/dashboard/modules/school/sms", permission: "school_admin:read" },
@@ -87,16 +107,21 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/eclassroom", permission: "school:classroom:read" },
   // eClassroom (virtual classroom) — admin module, coarse school:write (excludes
   // students, who hold only school:classroom:*). Matches the router gate.
+  // "Manage eClassrooms" is the teacher's own virtual classrooms (the schedules
+  // cluster, gated school:classroom:write server-side); Setup / Programs /
+  // Broadcast stay admin. Longest-prefix wins.
+  { prefix: "/dashboard/modules/eclassroom/manage", permission: "school:classroom:manage" },
   { prefix: "/dashboard/modules/eclassroom", permission: "school:write" },
   // Voting System — admin children school:write; My Votes is voter-facing so
   // eligible students (school:classroom:read) can reach it. Longest-prefix wins.
   { prefix: "/dashboard/modules/voting/my-votes", permission: "school:classroom:read" },
   { prefix: "/dashboard/modules/voting", permission: "school:write" },
-  // Question Bank holds correct answers — staff-only (school:read), stricter than
-  // the cbt scope students hold to sit tests. Longer prefix wins over /cbt above.
-  { prefix: "/dashboard/modules/school/cbt/question-bank", permission: "school:read" },
+  // Question Bank holds correct answers — staff-only, on the dedicated
+  // `school:cbt:manage` scope (teachers + exam officers hold it; students hold
+  // only the cbt scope that sits tests). Longer prefix wins over /cbt above.
+  { prefix: "/dashboard/modules/school/cbt/question-bank", permission: "school:cbt:manage" },
   // Result Manager exposes every student's scores + correct answers — staff-only.
-  { prefix: "/dashboard/modules/school/cbt/results", permission: "school:read" },
+  { prefix: "/dashboard/modules/school/cbt/results", permission: "school:cbt:manage" },
   // Interventions surface flagged students' scores; Setup edits org-wide defaults — staff-only.
   { prefix: "/dashboard/modules/school/cbt/interventions", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt/settings", permission: "school:read" },
@@ -107,18 +132,31 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/cbt/reset", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt/remark", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt", permission: "school:cbt:read" },
+  // Behaviour Tracker TAXONOMY (categories / sub-categories / levels / settings)
+  // defines the school's scheme — admin config. Logging a record stays on
+  // school:behaviour:* so teachers can record conduct. Longest-prefix wins.
+  { prefix: "/dashboard/modules/school/behaviour/categories", permission: "school_admin:read" },
+  { prefix: "/dashboard/modules/school/behaviour/subcategories", permission: "school_admin:read" },
+  { prefix: "/dashboard/modules/school/behaviour/levels", permission: "school_admin:read" },
+  { prefix: "/dashboard/modules/school/behaviour/settings", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/behaviour", permission: "school:behaviour:read" },
   // Feedback section: Form / My Feedback inherit feedback:read (self-service);
   // Settings / Manager require feedback:write; Daily/Student-Daily/CRM are staff
   // surfaces on the broad school scopes. Longest-prefix match wins.
-  { prefix: "/dashboard/modules/school/feedback/settings", permission: "school:feedback:write" },
+  // Feedback SETTINGS is org-wide config — admin tier, like every other Setup page.
+  { prefix: "/dashboard/modules/school/feedback/settings", permission: "settings:read" },
   { prefix: "/dashboard/modules/school/feedback/manage", permission: "school:feedback:write" },
-  { prefix: "/dashboard/modules/school/feedback/daily-reports", permission: "school:read" },
-  { prefix: "/dashboard/modules/school/feedback/student-daily-reports", permission: "school:read" },
+  // Daily reports are AUTHORED by teachers — they ride the feedback scope (the
+  // classroom tier holds it), matching the re-gated endpoints.
+  { prefix: "/dashboard/modules/school/feedback/daily-reports", permission: "school:feedback:write" },
+  { prefix: "/dashboard/modules/school/feedback/student-daily-reports", permission: "school:feedback:write" },
   // CRM is a view over Admissions data — gate it on the admissions scope.
   { prefix: "/dashboard/modules/school/feedback/crm", permission: "school:admissions:read" },
   { prefix: "/dashboard/modules/school/feedback", permission: "school:feedback:read" },
-  { prefix: "/dashboard/modules/school/clubs", permission: "school:clubs:read" },
+  // Club Enrollment is the teacher-facing action; Manage Clubs / Membership /
+  // Assessment are club administration. Longest-prefix wins.
+  { prefix: "/dashboard/modules/school/clubs/enrollment", permission: "school:clubs:write" },
+  { prefix: "/dashboard/modules/school/clubs", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/journals", permission: "school:journals:read" },
   { prefix: "/dashboard/modules/school/remarks", permission: "school:journals:write" },
   { prefix: "/dashboard/modules/school/tuckshop", permission: "school_admin:read" },
@@ -168,10 +206,13 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // Hostel + Exeat ride school:hostel; Mentor reports ride school:behaviour.
   // Medicals is CONFIDENTIAL: gated by the dedicated `medical` namespace, which
   // the broad school:read hierarchy does NOT reach — only org_admin + nurse.
-  { prefix: "/dashboard/modules/school/pastoral-dashboard", permission: "school:hostel:read" },
-  { prefix: "/dashboard/modules/school/pastoral-report", permission: "school:hostel:read" },
+  // A form/pastoral teacher's OWN-GROUP surfaces ride the non-boarding
+  // `school:pastoral:read` slice; Pastoral Setup (org-wide config) and the whole
+  // boarding cluster stay on school:hostel:read, which the classroom tier lacks.
+  { prefix: "/dashboard/modules/school/pastoral-dashboard", permission: "school:pastoral:read" },
+  { prefix: "/dashboard/modules/school/pastoral-report", permission: "school:pastoral:read" },
+  { prefix: "/dashboard/modules/school/pastoral-students", permission: "school:pastoral:read" },
   { prefix: "/dashboard/modules/school/pastoral-setup", permission: "school:hostel:read" },
-  { prefix: "/dashboard/modules/school/pastoral-students", permission: "school:hostel:read" },
   // Point Entry + Points Analysis ride the Recognition ledger → school:behaviour.
   { prefix: "/dashboard/modules/school/point-entry", permission: "school:behaviour:read" },
   { prefix: "/dashboard/modules/school/points-analysis", permission: "school:behaviour:read" },
@@ -180,7 +221,8 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/hostel-reports", permission: "school:hostel:read" },
   { prefix: "/dashboard/modules/school/hostel", permission: "school:hostel:read" },
   { prefix: "/dashboard/modules/school/exeat", permission: "school:hostel:read" },
-  { prefix: "/dashboard/modules/school/mentor", permission: "school:behaviour:read" },
+  // Mentor Reports is a pastoral-management review surface (not in a teacher's nav).
+  { prefix: "/dashboard/modules/school/mentor", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/behaviour-sanction", permission: "school:behaviour:read" },
   { prefix: "/dashboard/modules/school/medicals", permission: "medical:read" },
 
@@ -210,7 +252,7 @@ export const ROUTE_ACCESS: RouteAccess[] = [
 
   // ── Batch 6 non-financial ──────────────────────────────────────────────
   // Calendar rides school:read; Facility + Visitor (safeguarding) are admin-tier.
-  { prefix: "/dashboard/modules/school/calendar", permission: "school:read" },
+  { prefix: "/dashboard/modules/school/calendar", permission: "school:calendar:read" },
   // Facility Management: its own fine-grained scope so the dedicated `facilities`
   // role reaches it (org_admin + manager inherit via broad school_admin:read).
   { prefix: "/dashboard/modules/school/facility", permission: "school_admin:facility:read" },

@@ -153,9 +153,14 @@ async def test_from_bank_copies_to_exam(db, org, teacher):
 # ── RBAC: bank is staff-only (students hold cbt:* but NOT school:* — no answer leak) ──
 
 async def test_bank_rbac_excludes_students(db, org):
-    for slug in ("manager", "teacher"):
-        u = await _preset_user(db, org, slug)
-        assert u.has_permission("school:read") and u.has_permission("school:write")
+    # The bank gates accept school:read|write OR the dedicated school:cbt:manage.
+    # A manager clears them on the broad grants; a teacher on cbt:manage, which is
+    # how the classroom tier keeps the bank without any broad school access.
+    manager = await _preset_user(db, org, "manager")
+    assert manager.has_permission("school:read") and manager.has_permission("school:write")
+    teacher_u = await _preset_user(db, org, "teacher")
+    assert teacher_u.has_permission("school:cbt:manage")
+    assert not teacher_u.has_permission("school:read") and not teacher_u.has_permission("school:write")
     student = await _preset_user(db, org, "student")
     assert student.has_permission("school:cbt:read") and student.has_permission("school:cbt:write")
     assert not student.has_permission("school:read") and not student.has_permission("school:write")

@@ -122,11 +122,13 @@ async def test_get_class_404(db, org, teacher):
 # ── RBAC ────────────────────────────────────────────────────────────────────────
 
 async def test_classes_rbac(db, org):
-    # Managers/admins read+write; teachers hold school:read+write (self-serve teaching);
-    # parents/students hold neither.
-    for slug in ("manager", "teacher"):
-        u = await _preset_user(db, org, slug)
-        assert u.has_permission("school:read") and u.has_permission("school:write")
+    # Class CRUD is admin taxonomy. A teacher READS classes (its pickers resolve
+    # class names) but does not create, rename or delete them.
+    manager = await _preset_user(db, org, "manager")
+    assert manager.has_permission("school:read") and manager.has_permission("school:write")
+    teacher_u = await _preset_user(db, org, "teacher")
+    assert teacher_u.has_permission("school:classes:read")
+    assert not teacher_u.has_permission("school:write")
     for slug in ("parent", "student"):
         u = await _preset_user(db, org, slug)
         assert not u.has_permission("school:read") and not u.has_permission("school:write")

@@ -80,6 +80,16 @@ _subjects_read = Depends(PermissionChecker("school:subjects:read"))
 _classes_read = Depends(PermissionChecker("school:classes:read"))
 _exams_read = Depends(PermissionChecker("school:exams:read"))
 _exams_write = Depends(PermissionChecker("school:exams:write"))
+# Classroom-tier scopes. A teacher no longer holds the broad school:read/write
+# (that grant reached every fine-grained child, incl. student deletion and
+# timetable structure), so the endpoints a teacher legitimately uses are gated on
+# their own feature scope. Admin/manager still reach them via school:read|write.
+_teachers_read = Depends(PermissionChecker("school:teachers:read"))
+_timetable_read = Depends(PermissionChecker("school:timetable:read"))
+_attendance_write = Depends(PermissionChecker("school:attendance:write"))
+_grades_read = Depends(PermissionChecker("school:grades:read"))
+_grades_write = Depends(PermissionChecker("school:grades:write"))
+_lessons_write = Depends(PermissionChecker("school:lessons:write"))
 # Attendance Setup (config) is admin-only; reading the reason list is broader so
 # teachers can pick a reason while marking (school:attendance:read, above).
 _settings_read = Depends(PermissionChecker("settings:read"))
@@ -480,7 +490,7 @@ async def list_classes(
     }
 
 
-@router.get("/classes/{class_id}", dependencies=[_can_read])
+@router.get("/classes/{class_id}", dependencies=[_classes_read])
 async def get_class(class_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     c = await _load_class(db, class_id, current_user.org_id)
     counts = await _class_student_counts(db, current_user.org_id, [c.id])
@@ -628,7 +638,7 @@ async def list_subjects(
     }
 
 
-@router.get("/subjects/{subject_id}", dependencies=[_can_read])
+@router.get("/subjects/{subject_id}", dependencies=[_subjects_read])
 async def get_subject(subject_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     return _subject_dict(await _load_subject(db, subject_id, current_user.org_id))
 
@@ -709,7 +719,7 @@ async def delete_subject(
 
 # ── Attendance ────────────────────────────────────────────────────────────────
 
-@router.post("/attendance", dependencies=[_can_write])
+@router.post("/attendance", dependencies=[_attendance_write])
 async def mark_attendance(
     records: list[dict],  # [{"student_id": ..., "class_id": ..., "status": "present"}]
     attendance_date: date = Query(default=None),
@@ -742,7 +752,7 @@ async def mark_attendance(
     return {"marked": len(created), "date": target_date.isoformat()}
 
 
-@router.get("/attendance", dependencies=[_can_read])
+@router.get("/attendance", dependencies=[_attendance_read])
 async def list_attendance(
     class_id: str | None = None,
     attendance_date: date | None = Query(default=None, alias="date"),
@@ -775,7 +785,7 @@ async def list_attendance(
     }
 
 
-@router.get("/attendance/summary", dependencies=[_can_read])
+@router.get("/attendance/summary", dependencies=[_attendance_read])
 async def attendance_summary(
     class_id: str,
     start_date: date,
@@ -953,7 +963,7 @@ async def delete_absence_reason(
 
 # ── Grades ────────────────────────────────────────────────────────────────────
 
-@router.post("/grades", status_code=201, dependencies=[_can_write])
+@router.post("/grades", status_code=201, dependencies=[_grades_write])
 async def submit_grades(
     grades: list[dict],
     request: Request = None,
@@ -1472,7 +1482,7 @@ def _grades_in_scope(org_id: str, term: str, class_id: str | None,
     return query
 
 
-@router.get("/grades/publish-status", dependencies=[_can_read])
+@router.get("/grades/publish-status", dependencies=[_grades_read])
 async def grade_publish_status(
     term: str,
     class_id: str | None = None,
@@ -1490,7 +1500,7 @@ async def grade_publish_status(
     return {"term": term, "total": len(rows), "published": published, "draft": len(rows) - published}
 
 
-@router.post("/grades/publish", dependencies=[_can_write])
+@router.post("/grades/publish", dependencies=[_grades_write])
 async def publish_grades(
     payload: GradePublish,
     request: Request = None,
@@ -1937,7 +1947,7 @@ async def teacher_rating_average(
 # ── Timetable ─────────────────────────────────────────────────────────────────
 
 
-@router.get("/timetable", dependencies=[_can_read])
+@router.get("/timetable", dependencies=[_timetable_read])
 async def list_timetable(
     class_id: str | None = None,
     teacher_id: str | None = None,
@@ -2195,7 +2205,7 @@ def _teacher_list_query(org_id: str, search: str | None, section: str | None):
     return query
 
 
-@router.get("/teachers", dependencies=[_can_read])
+@router.get("/teachers", dependencies=[_teachers_read])
 async def list_teachers(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
@@ -2252,7 +2262,7 @@ async def export_teachers(
     )
 
 
-@router.get("/teachers/{id}", dependencies=[_can_read])
+@router.get("/teachers/{id}", dependencies=[_teachers_read])
 async def get_teacher(
     id: str,
     db: AsyncSession = Depends(get_db),
@@ -2673,7 +2683,7 @@ async def list_lessons(
     }
 
 
-@router.post("/lessons", status_code=201, dependencies=[_can_write])
+@router.post("/lessons", status_code=201, dependencies=[_lessons_write])
 async def create_lesson(
     payload: dict,
     request: Request = None,
@@ -2760,7 +2770,7 @@ async def _load_plan_or_404(db: AsyncSession, plan_id: str, user: User) -> Lesso
     return plan
 
 
-@router.patch("/lessons/{plan_id}", dependencies=[_can_write])
+@router.patch("/lessons/{plan_id}", dependencies=[_lessons_write])
 async def update_lesson(
     plan_id: str,
     payload: dict,
@@ -2810,7 +2820,7 @@ async def update_lesson(
     return _lesson_dict(plan)
 
 
-@router.post("/lessons/{plan_id}/publish", dependencies=[_can_write])
+@router.post("/lessons/{plan_id}/publish", dependencies=[_lessons_write])
 async def publish_lesson(
     plan_id: str,
     request: Request = None,
@@ -2833,7 +2843,7 @@ async def publish_lesson(
     return _lesson_dict(plan)
 
 
-@router.delete("/lessons/{plan_id}", status_code=204, dependencies=[_can_write])
+@router.delete("/lessons/{plan_id}", status_code=204, dependencies=[_lessons_write])
 async def delete_lesson(
     plan_id: str,
     request: Request = None,
@@ -3017,7 +3027,7 @@ async def remove_lesson_supervisor(supervisor_row_id: str, db: AsyncSession = De
     await db.flush()
 
 
-@router.post("/lessons/clone", response_model=CloneLessonsResult, dependencies=[_can_write])
+@router.post("/lessons/clone", response_model=CloneLessonsResult, dependencies=[_lessons_write])
 async def clone_lessons(payload: CloneLessonsRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Copy plans dated in [source_start, source_end] to new drafts anchored at
     target_start, preserving each plan's day-offset. Skips a target that already
@@ -3214,7 +3224,7 @@ def _year_group_dict(y: YearGroup) -> dict:
             "position": y.position, "is_mock": y.is_mock, "org_id": y.org_id}
 
 
-@router.get("/year-groups", response_model=list[YearGroupResponse], dependencies=[_can_read])
+@router.get("/year-groups", response_model=list[YearGroupResponse], dependencies=[_classes_read])
 async def list_year_groups(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     rows = (await db.execute(select(YearGroup).where(
         YearGroup.org_id == current_user.org_id).order_by(YearGroup.position, YearGroup.name))).scalars().all()

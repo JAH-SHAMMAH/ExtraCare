@@ -52,10 +52,13 @@ router = APIRouter(
 
 _can_read = Depends(PermissionChecker("school:feedback:read"))
 _can_write = Depends(PermissionChecker("school:feedback:write"))
-# Daily reports are staff surfaces grouped under Feedback in the reference; they
-# ride the broad school scopes so students/parents (narrow scopes) are excluded.
-_staff_read = Depends(PermissionChecker("school:read"))
-_staff_write = Depends(PermissionChecker("school:write"))
+# Daily reports are staff surfaces grouped under Feedback in the reference.
+# Teachers AUTHOR them, so they ride the feedback scopes (which the classroom tier
+# holds) rather than the broad school:read/write it no longer carries. Students and
+# parents hold neither feedback scope, so they stay excluded; a single student's
+# reports remain parent-visible via _reports_read below.
+_staff_read = Depends(PermissionChecker("school:feedback:read"))
+_staff_write = Depends(PermissionChecker("school:feedback:write"))
 # A single student's daily reports are parent/student-visible, ownership-scoped —
 # the same "reports" visibility parents already have for the report card.
 _reports_read = Depends(PermissionChecker("school:reports:read"))

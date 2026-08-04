@@ -138,7 +138,12 @@ async def test_switch_role_end_to_end(client: AsyncClient):
     assert sw.status_code == 200, sw.text
     body = sw.json()
     assert body["user"]["active_role_id"] == tch_id
-    assert "*" not in body["user"]["permissions"] and "school:read" in body["user"]["permissions"]
+    # Scoped DOWN to the classroom tier: the `*` wildcard is gone and what remains
+    # is the teacher's enumerated set (no broad school:read/write in it at all).
+    scoped_perms = body["user"]["permissions"]
+    assert "*" not in scoped_perms
+    assert "school:reports:write" in scoped_perms
+    assert "school:read" not in scoped_perms and "school:write" not in scoped_perms
     scoped_tok = body["access_token"]
 
     # The scoped token really is scoped on the next request.

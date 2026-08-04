@@ -123,9 +123,12 @@ async def test_average_no_ratings(db, org, teacher):
 # ── RBAC ────────────────────────────────────────────────────────────────────────
 
 async def test_ratings_rbac(db, org):
-    for slug in ("manager", "teacher"):
-        u = await _preset_user(db, org, slug)
-        assert u.has_permission("school:read") and u.has_permission("school:write")
+    # Teacher Ratings is a management review surface (the nav gates it
+    # school_admin:read): the classroom tier does not administer it.
+    manager = await _preset_user(db, org, "manager")
+    assert manager.has_permission("school:read") and manager.has_permission("school:write")
+    teacher_u = await _preset_user(db, org, "teacher")
+    assert not teacher_u.has_permission("school:read") and not teacher_u.has_permission("school:write")
     for slug in ("parent", "student"):
         u = await _preset_user(db, org, slug)
         assert not u.has_permission("school:read") and not u.has_permission("school:write")

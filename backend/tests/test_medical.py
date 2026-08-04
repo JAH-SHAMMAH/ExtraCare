@@ -42,9 +42,14 @@ async def _preset_user(db, org, slug: str) -> User:
 
 async def test_teacher_cannot_read_or_write_medical(db, org):
     teacher = await _preset_user(db, org, "teacher")
-    assert teacher.has_permission("school:read") is True       # broad school access…
-    assert teacher.has_permission("medical:read") is False     # …does NOT reach medical
+    assert teacher.has_permission("school:students:read") is True   # sees their pupils…
+    assert teacher.has_permission("medical:read") is False          # …but NOT medical
     assert teacher.has_permission("medical:write") is False
+    # The stronger statement: even a holder of the BROAD school grant is excluded,
+    # because `medical` is its own namespace outside the school hierarchy.
+    manager = await _preset_user(db, org, "manager")
+    assert manager.has_permission("school:read") is True
+    assert manager.has_permission("medical:read") is False
 
 
 async def test_staff_and_low_trust_cannot_read_medical(db, org):

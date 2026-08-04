@@ -244,11 +244,14 @@ async def test_patch_session_edits_fields(db, org):
 
 
 async def test_current_session_read_scope_is_broad(db, org):
-    # The resolver is read by term-consuming forms: teachers hold school:read but
-    # NOT settings:read, so gating it at school:read (not settings:read) is what
-    # lets them default from it while session management stays settings:write.
+    # The resolver is read by term-consuming forms, so it accepts EITHER the broad
+    # school:read (admins) or school:reports:read (the classroom tier, which holds
+    # no broad school grant). Session MANAGEMENT stays settings:write either way.
     teacher = await _preset(db, org, "teacher")
-    assert teacher.has_permission("school:read") and not teacher.has_permission("settings:read")
+    assert teacher.has_permission("school:reports:read")
+    assert not teacher.has_permission("school:read") and not teacher.has_permission("settings:read")
+    manager = await _preset(db, org, "manager")
+    assert manager.has_permission("school:read") and not manager.has_permission("settings:read")
 
 
 # ── RBAC: platform config is admin-only (settings:*) ─────────────────────────────

@@ -154,11 +154,17 @@ async def test_list_is_tenant_scoped(db, org, teacher, unlinked_user, student):
 # ── RBAC contract ─────────────────────────────────────────────────────────────
 
 async def test_rbac_parents_scope_visibility(db, org):
-    # Staff-side roles reach the directory (via the school:read/write hierarchy).
-    for slug in ("org_admin", "manager", "teacher"):
+    # Admin-side roles reach the directory (via the school:read/write hierarchy).
+    for slug in ("org_admin", "manager"):
         u = await _preset_user(db, org, slug)
         assert u.has_permission("school:parents:read"), f"{slug} should read"
         assert u.has_permission("school:parents:write"), f"{slug} should write"
+    # A TEACHER does not: the directory is guardian PII for the whole school, and
+    # the classroom tier carries no parents scope (contact happens through the
+    # Messenger picker + their own pupils' records instead).
+    teacher_u = await _preset_user(db, org, "teacher")
+    assert not teacher_u.has_permission("school:parents:read")
+    assert not teacher_u.has_permission("school:parents:write")
     # Read-only staff: read yes, write no.
     for slug in ("staff", "viewer"):
         u = await _preset_user(db, org, slug)

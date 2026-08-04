@@ -137,11 +137,17 @@ async def test_settings_get_creates_default_then_update(db, org, teacher):
 # ── RBAC ────────────────────────────────────────────────────────────────────────
 
 async def test_phase_c_rbac_staff_only(db, org):
-    for slug in ("manager", "teacher"):
-        u = await _preset_user(db, org, slug)
-        assert u.has_permission("school:read") and u.has_permission("school:write")
+    # Phase C rides the CBT scopes (the bank gates accept school:read|write OR the
+    # dedicated school:cbt:manage). A manager holds the broad grants; a teacher
+    # holds cbt:manage instead — it no longer carries school:read/write at all.
+    manager = await _preset_user(db, org, "manager")
+    assert manager.has_permission("school:read") and manager.has_permission("school:write")
+    teacher_u = await _preset_user(db, org, "teacher")
+    assert not teacher_u.has_permission("school:read") and not teacher_u.has_permission("school:write")
+    assert teacher_u.has_permission("school:cbt:manage") and teacher_u.has_permission("school:cbt:write")
     student = await _preset_user(db, org, "student")
     assert not student.has_permission("school:read") and not student.has_permission("school:write")
+    assert not student.has_permission("school:cbt:manage")
 
 
 # ── T1: RBAC enforced at the HTTP layer (not just has_permission on presets) ──────

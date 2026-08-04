@@ -115,9 +115,12 @@ async def test_delete_blocked_when_graded(db, org, teacher, student):
 # ── RBAC ────────────────────────────────────────────────────────────────────────
 
 async def test_subjects_rbac(db, org):
-    for slug in ("manager", "teacher"):
-        u = await _preset_user(db, org, slug)
-        assert u.has_permission("school:read") and u.has_permission("school:write")
+    # Subject CRUD is admin taxonomy; a teacher teaches subjects and reads them.
+    manager = await _preset_user(db, org, "manager")
+    assert manager.has_permission("school:read") and manager.has_permission("school:write")
+    teacher_u = await _preset_user(db, org, "teacher")
+    assert teacher_u.has_permission("school:subjects:read")
+    assert not teacher_u.has_permission("school:subjects:write")
     for slug in ("parent", "student"):
         u = await _preset_user(db, org, slug)
         assert not u.has_permission("school:read") and not u.has_permission("school:write")

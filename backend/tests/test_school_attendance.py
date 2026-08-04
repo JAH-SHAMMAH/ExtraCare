@@ -66,9 +66,15 @@ async def test_no_date_returns_all_for_class(db, org, teacher, school_class, stu
 
 
 async def test_attendance_rbac(db, org):
+    # Marking rides school:attendance:* — a manager reaches it through the broad
+    # grant, the classroom tier through the feature scope it holds directly.
     for slug in ("manager", "teacher"):
         u = await _preset_user(db, org, slug)
-        assert u.has_permission("school:read")
+        assert u.has_permission("school:attendance:read")
+        assert u.has_permission("school:attendance:write")
+    assert (await _preset_user(db, org, "manager")).has_permission("school:read")
+    assert not (await _preset_user(db, org, "teacher")).has_permission("school:read")
     for slug in ("parent", "student"):
         u = await _preset_user(db, org, slug)
         assert not u.has_permission("school:read")
+        assert not u.has_permission("school:attendance:write")
