@@ -11,16 +11,29 @@ import os
 # A URL containing any of these is treated as production.
 FORBIDDEN = ("onyz", "prod", "render.com", "amazonaws")
 
-# Demo logins live on a DELIBERATELY FAKE domain so the scripts can only ever
-# create / update / delete their OWN accounts — never a real user or password.
-SEED_DOMAIN = "fairview.seed"
+# Demo logins must be on the school's real login domain to pass the auth
+# email-domain gate — so the domain is NO LONGER the "fake" marker. The
+# authoritative marker is User.is_seed_account (set only by the seed script);
+# the reserved "seed-" local-part prefix is a secondary, human-visible sanity
+# check. Both scripts require is_seed_account=True AND a seed email.
+SEED_EMAIL_DOMAIN = "fairviewschoolng.com"
+SEED_PREFIX = "seed-"
+LEGACY_SEED_DOMAIN = "fairview.seed"      # the earlier run's fake domain (still purge-able)
 SEED_PASSWORD = "FairviewSeed#2026"
 SEED_EMAILS = (
-    f"superuser@{SEED_DOMAIN}",
-    f"classteacher@{SEED_DOMAIN}",
-    f"subjectteacher@{SEED_DOMAIN}",
-    f"hr@{SEED_DOMAIN}",
+    f"{SEED_PREFIX}superuser@{SEED_EMAIL_DOMAIN}",
+    f"{SEED_PREFIX}classteacher@{SEED_EMAIL_DOMAIN}",
+    f"{SEED_PREFIX}subjectteacher@{SEED_EMAIL_DOMAIN}",
+    f"{SEED_PREFIX}hr@{SEED_EMAIL_DOMAIN}",
 )
+
+
+def is_seed_email(email: str | None) -> bool:
+    """Secondary sanity marker: a provably-seed address — the reserved 'seed-'
+    prefix on the school domain, OR the legacy fake @fairview.seed domain. Never
+    true for a real staff/student address."""
+    e = (email or "").strip().lower()
+    return (e.startswith(SEED_PREFIX) and e.endswith("@" + SEED_EMAIL_DOMAIN)) or e.endswith("@" + LEGACY_SEED_DOMAIN)
 
 # Every non-account demo row is name-marked so teardown can find exactly its own
 # data and nothing real.

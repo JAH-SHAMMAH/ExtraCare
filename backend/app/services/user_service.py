@@ -138,7 +138,10 @@ async def get_users_paginated(
     role_slug: str | None = None,
     minimal: bool = False,
 ) -> UserListResponse:
-    query = select(User).options(selectinload(User.roles)).where(User.org_id == org_id, User.is_deleted == False)
+    # Seed/demo accounts (is_seed_account) are hidden from the Users/staff roster —
+    # they are not real staff and shouldn't clutter admin views.
+    query = select(User).options(selectinload(User.roles)).where(
+        User.org_id == org_id, User.is_deleted == False, User.is_seed_account == False)
 
     if search:
         term = f"%{search}%"

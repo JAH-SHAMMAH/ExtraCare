@@ -55,6 +55,7 @@ async def list_accounts(
     q = select(User).where(
         User.org_id == current_user.org_id,
         User.is_deleted == False,  # noqa: E712
+        User.is_seed_account == False,  # seed/demo logins aren't employees  # noqa: E712
         User.id.notin_(_non_employee_ids()),
     )
     if search:

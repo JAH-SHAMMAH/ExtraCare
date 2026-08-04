@@ -3,9 +3,11 @@ end-to-end AS EACH ROLE (Super User / class teacher / subject teacher / HR).
 
 SAFE BY DEFAULT: refuses a production-looking database unless you explicitly opt
 in (see _seed_common.target_url_or_exit + SEED_ALLOW_PRODUCTION). It only ever
-creates/updates its OWN demo rows — the four @fairview.seed accounts and a marked
-demo class/subject/pupils. It NEVER modifies a real user, a real password, or any
-real class/pupil/subject.
+creates/updates its OWN demo rows — the four `seed-*` accounts (marked
+is_seed_account, so they stay out of every staff roster) and a marked demo
+class/subject/pupils. It NEVER modifies a real user, a real password, or any
+real class/pupil/subject: it refuses an address that isn't a reserved seed
+address, and refuses to touch one that already belongs to a non-seed account.
 
 Idempotent: re-running updates the same demo accounts + rows in place.
 
@@ -16,7 +18,8 @@ What it does:
      HALF TERM TOTAL/%/CA 1/TOTAL) + a 9-band grade scale.
   3. Creates a MARKED demo class "[SEED] Report Demo Class" with three demo pupils
      and a "[SEED] Report Demo Subject" (nothing real touched).
-  4. Creates the four @fairview.seed logins and wires them: the class-teacher login
+  4. Creates the four `seed-*@<school domain>` logins (they must be on the real
+     login domain to pass the auth domain gate) and wires them: the class-teacher login
      is the demo class's class/form (and PC-by-fallback) teacher; the subject-teacher
      login teaches the demo subject there via the Timetable (but is NOT class/PC
      teacher). Enters sample scores.
@@ -47,7 +50,7 @@ sys.path.insert(0, os.path.dirname(_HERE))   # backend/ (for app...)
 sys.path.insert(0, _HERE)                    # scripts/ (for _seed_common)
 
 from _seed_common import (                                              # noqa: E402
-    target_url_or_exit, SEED_DOMAIN, SEED_PASSWORD,
+    target_url_or_exit, is_seed_email, SEED_EMAIL_DOMAIN, SEED_PREFIX, SEED_PASSWORD,
     DEMO_CLASS_NAME, DEMO_SUBJECT_NAME, DEMO_STUDENT_PREFIX,
 )
 from app.models.organization import Organization                       # noqa: E402
@@ -129,16 +132,21 @@ async def _ensure_role(db, org_id, slug):
 
 
 async def _ensure_seed_user(db, org_id, email, name, role):
-    if not email.endswith("@" + SEED_DOMAIN):
+    # Secondary guard: refuse any address that isn't provably a seed email.
+    if not is_seed_email(email):
         raise SystemExit(f"Refusing to touch non-seed email {email!r}.")
     u = (await db.execute(select(User).where(User.org_id == org_id, User.email == email))).scalars().first()
+    if u and not u.is_seed_account:
+        # An existing NON-seed account already owns this email — never touch it.
+        raise SystemExit(f"Refusing: {email!r} exists and is not a seed account.")
     if not u:
         u = User(id=str(uuid.uuid4()), email=email, full_name=name, status=UserStatus.ACTIVE,
                  org_id=org_id, is_superadmin=False)
         db.add(u)
     u.full_name = name
     u.status = UserStatus.ACTIVE
-    u.hashed_password = hash_password(SEED_PASSWORD)   # seed account only
+    u.is_seed_account = True                            # the authoritative fake marker
+    u.hashed_password = hash_password(SEED_PASSWORD)    # seed account only
     u.roles = [role]
     await db.flush()
     return u
@@ -186,11 +194,11 @@ async def main():
         await bootstrap_assessments(db=db, current_user=admin)
         await bootstrap_cumulatives(db=db, current_user=admin)
 
-        # Four demo logins (fake @fairview.seed domain only).
-        su = await _ensure_seed_user(db, org.id, f"superuser@{SEED_DOMAIN}", "Seed Super User", await _ensure_role(db, org.id, "super_user"))
-        ct = await _ensure_seed_user(db, org.id, f"classteacher@{SEED_DOMAIN}", "Seed Class Teacher", await _ensure_role(db, org.id, "teacher"))
-        st = await _ensure_seed_user(db, org.id, f"subjectteacher@{SEED_DOMAIN}", "Seed Subject Teacher", await _ensure_role(db, org.id, "teacher"))
-        hr = await _ensure_seed_user(db, org.id, f"hr@{SEED_DOMAIN}", "Seed HR Manager", await _ensure_role(db, org.id, "hr_manager"))
+        # Four demo logins (reserved seed- addresses only, marked is_seed_account).
+        su = await _ensure_seed_user(db, org.id, f"{SEED_PREFIX}superuser@{SEED_EMAIL_DOMAIN}", "Seed Super User", await _ensure_role(db, org.id, "super_user"))
+        ct = await _ensure_seed_user(db, org.id, f"{SEED_PREFIX}classteacher@{SEED_EMAIL_DOMAIN}", "Seed Class Teacher", await _ensure_role(db, org.id, "teacher"))
+        st = await _ensure_seed_user(db, org.id, f"{SEED_PREFIX}subjectteacher@{SEED_EMAIL_DOMAIN}", "Seed Subject Teacher", await _ensure_role(db, org.id, "teacher"))
+        hr = await _ensure_seed_user(db, org.id, f"{SEED_PREFIX}hr@{SEED_EMAIL_DOMAIN}", "Seed HR Manager", await _ensure_role(db, org.id, "hr_manager"))
         await db.commit()
 
         cls, subj, students = await _ensure_demo_data(db, org.id, ct.id)
@@ -226,12 +234,12 @@ async def main():
         print(f"Demo subject:     {subj.name}")
         print("\n--- FOUR DEMO LOGINS (all share this password) ---")
         print(f"Password:         {SEED_PASSWORD}")
-        print(f"Super User:       superuser@{SEED_DOMAIN}      -> full report nav; any class/subject")
-        print(f"Class teacher:    classteacher@{SEED_DOMAIN}   -> Reports View works for the demo class; is PC teacher")
-        print(f"Subject teacher:  subjectteacher@{SEED_DOMAIN} -> Make Report shows the demo subject;")
+        print(f"Super User:       {su.email}      -> full report nav; any class/subject")
+        print(f"Class teacher:    {ct.email}   -> Reports View works for the demo class; is PC teacher")
+        print(f"Subject teacher:  {st.email} -> Make Report shows the demo subject;")
         print(f"                  blocked from Reports View + PC comments for the demo class")
-        print(f"HR manager:       hr@{SEED_DOMAIN}             -> HR nav only; NO Secondary-Report admin tools")
-        print("\nAll demo rows are marked ('[SEED]' names / SEED- pupil IDs). No real user,")
+        print(f"HR manager:       {hr.email}             -> HR nav only; NO Secondary-Report admin tools")
+        print("\nMarked is_seed_account=True (hidden from the Users list). No real user,")
         print("password, class, pupil or subject was modified. Remove later with:")
         print("    ./venv/Scripts/python.exe scripts/remove_report_demo.py\n")
 

@@ -52,6 +52,7 @@ async def global_search(
         rows = (await db.execute(
             select(User).where(
                 User.org_id == org_id,
+                User.is_seed_account == False,  # seed/demo logins stay out of search  # noqa: E712
                 or_(User.full_name.ilike(term), User.email.ilike(term)))
             .order_by(User.full_name).limit(_PER_BUCKET)
         )).scalars().all()

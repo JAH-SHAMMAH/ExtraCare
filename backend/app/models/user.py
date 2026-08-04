@@ -29,6 +29,11 @@ class User(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     # Auth
     status = Column(Enum(UserStatus), default=UserStatus.PENDING, nullable=False, index=True)
     is_superadmin = Column(Boolean, default=False)  # platform-level superadmin
+    # Marks a seed/demo login created by scripts/seed_report_demo.py. The ONLY
+    # authoritative "this account is fake" marker (set solely by that script) — the
+    # seed/teardown scripts key their safety off this, and it is hidden from the
+    # Users/staff roster so demo accounts never clutter real admin views.
+    is_seed_account = Column(Boolean, default=False, nullable=False)
     email_verified = Column(Boolean, default=False)
     mfa_enabled = Column(Boolean, default=False)
     mfa_secret = Column(String(255), nullable=True)

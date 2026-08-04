@@ -1,6 +1,7 @@
 """Remove EXACTLY the report-demo data created by seed_report_demo.py — the four
-@fairview.seed logins and the marked demo class / subject / pupils / timetable /
-scores. Touches nothing real.
+seed logins (is_seed_account AND a reserved seed address, so a real account can
+never match) and the marked demo class / subject / pupils / timetable / scores.
+Touches nothing real.
 
 Same safety guard as the seed: refuses a production-looking database unless BOTH
 SEED_DATABASE_URL and SEED_ALLOW_PRODUCTION=yes-i-mean-it are set.
@@ -28,7 +29,7 @@ sys.path.insert(0, os.path.dirname(_HERE))
 sys.path.insert(0, _HERE)
 
 from _seed_common import (                                              # noqa: E402
-    target_url_or_exit, SEED_DOMAIN, DEMO_CLASS_NAME, DEMO_SUBJECT_NAME, DEMO_STUDENT_PREFIX,
+    target_url_or_exit, is_seed_email, DEMO_CLASS_NAME, DEMO_SUBJECT_NAME, DEMO_STUDENT_PREFIX,
 )
 from app.models.organization import Organization                       # noqa: E402
 from app.models.user import User                                       # noqa: E402
@@ -47,10 +48,12 @@ async def main():
         if not org:
             raise SystemExit("No organisation in this database.")
 
-        # Locate ONLY the seed-marked rows.
+        # Locate ONLY seed-marked accounts: is_seed_account=True (authoritative) AND
+        # a provably-seed email (secondary guard). Catches the new seed-* logins and
+        # the legacy @fairview.seed logins (backfilled to the flag by migration 117).
         seed_users = [u for u in (await db.execute(select(User).where(
-            User.org_id == org.id, User.email.like(f"%@{SEED_DOMAIN}")))).scalars().all()
-            if u.email.endswith("@" + SEED_DOMAIN)]      # belt-and-suspenders guard
+            User.org_id == org.id, User.is_seed_account == True))).scalars().all()  # noqa: E712
+            if is_seed_email(u.email)]
         seed_uids = [u.id for u in seed_users]
         demo_students = (await db.execute(select(Student).where(
             Student.org_id == org.id, Student.student_id.like(f"{DEMO_STUDENT_PREFIX}%")))).scalars().all()

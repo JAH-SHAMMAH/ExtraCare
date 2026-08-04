@@ -143,7 +143,8 @@ async def list_staff(
     q = (
         select(User)
         .options(selectinload(User.roles))
-        .where(User.org_id == current_user.org_id, User.is_deleted == False)  # noqa: E712
+        .where(User.org_id == current_user.org_id, User.is_deleted == False,  # noqa: E712
+               User.is_seed_account == False)  # seed/demo logins aren't real staff  # noqa: E712
     )
     if search:
         term = f"%{search.strip()}%"
