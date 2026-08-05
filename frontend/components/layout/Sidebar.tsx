@@ -222,23 +222,24 @@ const MODULE_SECTIONS: ModuleSection[] = [
     ],
   },
   {
-    // CBT — its own top-level module (Educare parity). These were already distinct
-    // routes under Academics; grouped here. Educare children we have no page for
-    // yet (Test Remark, Test Export, CBT Import, CBT Reset) are omitted, not dead-linked.
+    // CBT — its own top-level module (Educare parity). Teachers access via school:cbt:manage
+    // (Question Bank + Result Manager); admin operations (import/export/reset/remark/settings)
+    // require school:write and won't appear in teacher sidebar. "Admin" prefixes removed from
+    // teacher-accessible items to match Educare labeling (plain names).
     key: "cbt",
     requiredModule: "school",
     label: "CBT",
     icon: MonitorCheck,
     items: [
       { href: "/dashboard/modules/school/cbt/settings", label: "CBT Setup", icon: Settings2 },
-      { href: "/dashboard/modules/school/cbt/question-bank", label: "Admin Question Bank", icon: FileQuestion },
-      { href: "/dashboard/modules/school/cbt", label: "Admin Test Manager", icon: MonitorCheck },
-      { href: "/dashboard/modules/school/cbt/results", label: "Admin Result Manager", icon: BarChart3 },
-      { href: "/dashboard/modules/school/cbt/interventions", label: "Admin Intervention", icon: LifeBuoy },
-      { href: "/dashboard/modules/school/cbt/remark", label: "Admin Test Remark", icon: MessageSquare },
-      { href: "/dashboard/modules/school/cbt/export", label: "Admin Test Export", icon: FileText },
-      { href: "/dashboard/modules/school/cbt/import", label: "Admin Cbt Import", icon: FolderOpen },
-      { href: "/dashboard/modules/school/cbt/reset", label: "Admin CBT Reset", icon: Wrench },
+      { href: "/dashboard/modules/school/cbt/question-bank", label: "Question Bank", icon: FileQuestion },
+      { href: "/dashboard/modules/school/cbt", label: "Manage CBT", icon: MonitorCheck },
+      { href: "/dashboard/modules/school/cbt/results", label: "Result Manager", icon: BarChart3 },
+      { href: "/dashboard/modules/school/cbt/interventions", label: "Intervention", icon: LifeBuoy },
+      { href: "/dashboard/modules/school/cbt/remark", label: "Test Remark", icon: MessageSquare },
+      { href: "/dashboard/modules/school/cbt/export", label: "Test Export", icon: FileText },
+      { href: "/dashboard/modules/school/cbt/import", label: "CBT Import", icon: FolderOpen },
+      { href: "/dashboard/modules/school/cbt/reset", label: "CBT Reset", icon: Wrench },
       { href: "/dashboard/modules/school/cbt/live", label: "Live Classes", icon: Radio },
     ],
   },
