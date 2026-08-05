@@ -347,19 +347,34 @@ app.include_router(upload_router.router, prefix=API_V1)
 # configurable via UPLOAD_DIR. We ensure the dir exists so the mount doesn't
 # 500 in fresh environments.
 _upload_root = Path(settings.UPLOAD_DIR)
+logging.getLogger("extracare").info(f"[STARTUP] Attempting to create UPLOAD_DIR={settings.UPLOAD_DIR}")
 try:
     _upload_root.mkdir(parents=True, exist_ok=True)
+    logging.getLogger("extracare").info(f"[STARTUP] ✅ UPLOAD_DIR created successfully: {_upload_root.resolve()}")
 except (PermissionError, OSError) as e:
     # If the configured path is not writable (e.g., /var/uploads on Render without
-    # a mounted persistent disk), fall back to a relative path and warn. This allows
-    # the container to start even if the upload path is misconfigured, so uploads can
-    # be debugged rather than blocking deployment entirely.
-    logging.getLogger("extracare").warning(
-        f"Failed to create UPLOAD_DIR={settings.UPLOAD_DIR}: {e}. "
-        f"Falling back to ./uploads. Uploaded media may be lost on redeploy."
+    # a mounted persistent disk), fall back to a relative path and warn loudly.
+    # This allows the container to start even if the upload path is misconfigured,
+    # so the issue can be debugged rather than blocking deployment entirely.
+    #
+    # ⚠️  WARNING: This is a TEMPORARY safety valve, not a production solution.
+    # If CLOUDINARY_URL is not set AND UPLOAD_DIR is not writable, files are being
+    # stored on an EPHEMERAL filesystem and will be LOST on every redeploy.
+    # FIX (pick one):
+    #   1. Set CLOUDINARY_URL to a durable CDN (recommended for multi-instance)
+    #   2. Attach a Render Persistent Disk and grant write access to /var/uploads
+    # See DEPLOYMENT.md §5b for details.
+    msg = (
+        f"CRITICAL: Failed to create UPLOAD_DIR={settings.UPLOAD_DIR}: {e}. "
+        f"Falling back to ./uploads (EPHEMERAL).\n"
+        f"⚠️  PRODUCTION FILES WILL BE LOST ON REDEPLOY.\n"
+        f"Set CLOUDINARY_URL or mount a persistent disk. See DEPLOYMENT.md §5b."
     )
+    logging.getLogger("extracare").critical(msg)
+    logging.getLogger("extracare").exception(f"[STARTUP] Exception details: {type(e).__name__}: {e}")
     _upload_root = Path("./uploads")
     _upload_root.mkdir(parents=True, exist_ok=True)
+    logging.getLogger("extracare").info(f"[STARTUP] ✅ Fallback UPLOAD_DIR created: {_upload_root.resolve()}")
 # Durability guardrail: on Render/containers the filesystem is EPHEMERAL — a
 # relative or /tmp UPLOAD_DIR is wiped on every redeploy, silently losing every
 # uploaded image/document/avatar. In prod/staging that must be an absolute path
