@@ -347,7 +347,19 @@ app.include_router(upload_router.router, prefix=API_V1)
 # configurable via UPLOAD_DIR. We ensure the dir exists so the mount doesn't
 # 500 in fresh environments.
 _upload_root = Path(settings.UPLOAD_DIR)
-_upload_root.mkdir(parents=True, exist_ok=True)
+try:
+    _upload_root.mkdir(parents=True, exist_ok=True)
+except (PermissionError, OSError) as e:
+    # If the configured path is not writable (e.g., /var/uploads on Render without
+    # a mounted persistent disk), fall back to a relative path and warn. This allows
+    # the container to start even if the upload path is misconfigured, so uploads can
+    # be debugged rather than blocking deployment entirely.
+    logging.getLogger("extracare").warning(
+        f"Failed to create UPLOAD_DIR={settings.UPLOAD_DIR}: {e}. "
+        f"Falling back to ./uploads. Uploaded media may be lost on redeploy."
+    )
+    _upload_root = Path("./uploads")
+    _upload_root.mkdir(parents=True, exist_ok=True)
 # Durability guardrail: on Render/containers the filesystem is EPHEMERAL — a
 # relative or /tmp UPLOAD_DIR is wiped on every redeploy, silently losing every
 # uploaded image/document/avatar. In prod/staging that must be an absolute path
