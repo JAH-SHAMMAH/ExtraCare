@@ -37,13 +37,27 @@ class BrandingService:
     def __init__(self, upload_base_dir: Optional[str] = None):
         """Initialize branding service."""
         self.upload_base_dir = upload_base_dir or os.path.join(os.getcwd(), "uploads")
-        Path(self.upload_base_dir).mkdir(parents=True, exist_ok=True)
-        _logger.info("branding_service.initialized upload_dir=%s", self.upload_base_dir)
+        try:
+            Path(self.upload_base_dir).mkdir(parents=True, exist_ok=True)
+            _logger.info("branding_service.initialized upload_dir=%s", self.upload_base_dir)
+        except (PermissionError, OSError) as e:
+            # If the configured path is not writable (e.g., /var/uploads on Render without
+            # a persistent disk), fall back to a relative path and warn loudly.
+            _logger.warning(
+                f"Failed to create UPLOAD_DIR={self.upload_base_dir}: {e}. "
+                f"Falling back to ./uploads (ephemeral)."
+            )
+            self.upload_base_dir = os.path.join(os.getcwd(), "uploads")
+            Path(self.upload_base_dir).mkdir(parents=True, exist_ok=True)
+            _logger.info("branding_service.initialized (fallback) upload_dir=%s", self.upload_base_dir)
 
     def _get_org_upload_dir(self, org_id: str) -> str:
         """Get isolated upload directory for an organization."""
         org_dir = os.path.join(self.upload_base_dir, org_id, "branding")
-        Path(org_dir).mkdir(parents=True, exist_ok=True)
+        try:
+            Path(org_dir).mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as e:
+            _logger.error(f"Failed to create org branding dir {org_dir}: {e}. Branding uploads may fail.")
         return org_dir
 
     def _sanitize_filename(self, filename: str, prefix: str = "") -> str:
