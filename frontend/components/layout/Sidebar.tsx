@@ -701,17 +701,50 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   // school:read reveals the core teaching items; admin-only items (Staff, Bulk
   // SMS, Transport, Tuckshop, Ratings, Insights) require school_admin/payments
   // which teachers don't hold, so they stay hidden.
+  //
+  // Report section-scoping: Teachers see ONLY the report sections matching their
+  // assigned sections (e.g., Secondary teacher sees only "Secondary School Report").
   const visibleSections = useMemo(() => {
     if (!enabled) return [] as ModuleSection[];
+
+    // Map section names to report section keys for filtering.
+    const sectionNameToReportKey: Record<string, string> = {
+      "Nursery": "nursery-report",
+      "Primary": "primary-report",
+      "Secondary": "secondary-report",
+    };
+    const teacherSections = (user as any)?.teacher_sections || [];
+    const teacherSectionNames = new Set(teacherSections.map((s: any) => s.name));
+    const isTeacher = !hasPermission("school_admin:write") && hasPermission("school:reports:write");
+
     return MODULE_SECTIONS
       .filter((s) => moduleAllowedForOrg(org, s.requiredModule as "school" | "business" | "hospital"))
+      .filter((s) => {
+        // Voting System and Operations are admin-only (per Educare parity). Teachers
+        // should not see these sections, even if they have classroom:read (which allows
+        // My Votes). Hide them for non-admin users.
+        if (isTeacher && (s.key === "voting-system" || s.key === "operations")) {
+          return false;
+        }
+
+        // If this is a report section and user is a teacher, only show if section matches.
+        const reportKey = Object.values(sectionNameToReportKey).find(key => key === s.key);
+        if (isTeacher && reportKey) {
+          // Find which section name maps to this report key, then check if teacher teaches it.
+          const sectionName = Object.entries(sectionNameToReportKey).find(
+            ([, key]) => key === s.key
+          )?.[0];
+          return sectionName && teacherSectionNames.has(sectionName);
+        }
+        return true;
+      })
       .map((s) => ({
         ...s,
         items: s.items.filter((it) => navItemVisible(it, roleScope ?? null, hasPermission)),
       }))
       .filter((s) => s.items.length > 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, org, roleScope, user]);
+  }, [enabled, org, roleScope, user, hasPermission]);
 
   return (
     <>
