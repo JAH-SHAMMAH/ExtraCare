@@ -322,37 +322,32 @@ const MODULE_SECTIONS: ModuleSection[] = [
     ],
   },
   {
+    // Pastoral — exactly 6 children per Educare parity. Setup moved to school:read accessible
+    // Pastoral Setup tab (not a distinct nav item). Hostel/Boarding/Exeat/Mentor moved to
+    // dedicated top-level sections (not nested here). Photo Journals is standalone.
+    // Merits moved to standalone Merit & Awards section.
     key: "pastoral",
     requiredModule: "school",
-    label: "Pastoral & Welfare",
+    label: "Pastoral",
     icon: HeartHandshake,
     items: [
-      // Pastoral parity build-out (A–F). Setup is the tabbed config hub.
       { href: "/dashboard/modules/school/pastoral-dashboard", label: "Pastoral Dashboard", icon: LayoutDashboard },
-      { href: "/dashboard/modules/school/pastoral-setup", label: "Pastoral Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/pastoral-students", label: "Pastoral Students", icon: Users2 },
-      // Batch C — Point System (conduct points via the Recognition ledger).
-      { href: "/dashboard/modules/school/point-entry", label: "Point Entry", icon: PlusCircle },
-      { href: "/dashboard/modules/school/points-analysis", label: "Points Analysis", icon: BarChart3 },
-      { href: "/dashboard/modules/school/behaviour", label: "Pastoral Care", icon: HeartHandshake },
-      { href: "/dashboard/modules/school/journals", label: "Photo Journals", icon: Camera },
-      { href: "/dashboard/modules/school/remarks", label: "Weekly Remarks", icon: MessageCircle },
-      // Batch 3 — shipped. Merit & Awards (conduct points + academic awards),
-      // gated school:behaviour:read (staff-only; students/parents lack it).
-      { href: "/dashboard/modules/school/merits", label: "Merit & Awards", icon: Award },
-      // Batch 4 (Pastoral, Boarding & Health) — shipped. hostel/exeat →
-      // school:hostel:read; mentor → school:behaviour:read; medicals →
-      // medical:read (confidential: org_admin + nurse only, NOT general staff).
-      { href: "/dashboard/modules/school/hostel", label: "Hostel / Boarding", icon: BedDouble },
-      { href: "/dashboard/modules/school/hostel-students", label: "Hostel Students", icon: Users2 },
-      { href: "/dashboard/modules/school/hostel-life", label: "Hostel Life", icon: Heart },
-      { href: "/dashboard/modules/school/hostel-reports", label: "Hostel Reports", icon: FileText },
       { href: "/dashboard/modules/school/pastoral-report", label: "Pastoral Report", icon: FileText },
-      { href: "/dashboard/modules/school/exeat", label: "Exeat Requests", icon: FileText },
-      { href: "/dashboard/modules/school/mentor", label: "Mentor Reports", icon: UserCheck },
-      // Batch E — Discipline (setup lives in the Pastoral Setup hub; this is the
-      // operational Behaviour & Sanction case log). Gated school:behaviour:read.
-      { href: "/dashboard/modules/school/behaviour-sanction", label: "Behaviour & Sanction", icon: Gavel },
+      { href: "/dashboard/modules/school/remarks", label: "Pastoral Remarks", icon: MessageCircle },
+      { href: "/dashboard/modules/school/behaviour-sanction", label: "Pastoral Discipline", icon: Gavel },
+      { href: "/dashboard/modules/school/point-entry", label: "Activity Point", icon: PlusCircle },
+    ],
+  },
+  {
+    // Weekly Remarks — standalone top-level module (Educare parity). One child:
+    // Create Reports. Gated school:behaviour:read.
+    key: "weekly-remarks",
+    requiredModule: "school",
+    label: "Weekly Remarks",
+    icon: MessageCircle,
+    items: [
+      { href: "/dashboard/modules/school/remarks", label: "Create Reports", icon: NotebookPen },
     ],
   },
   {
