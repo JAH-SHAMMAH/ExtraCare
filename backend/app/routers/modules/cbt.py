@@ -1516,14 +1516,18 @@ async def list_interventions(
     return {"items": [_intervention_dict(iv, names.get(iv.student_id)) for iv in rows]}
 
 
-@router.post("/interventions", status_code=201, dependencies=[_bank_write])
+@router.post("/interventions", status_code=201, dependencies=[_admin_write])
 async def create_intervention(
     payload: InterventionCreate,
     request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Flag a student for follow-up (e.g. from a low score on the Result Manager)."""
+    """Flag a student for follow-up (e.g. from a low score on the Result Manager).
+
+    Admin-only operation: requires school:write, not the narrower school:cbt:manage
+    feature scope. This ensures interventions (destructive + org-wide) stay admin-only
+    even when narrowly-scoped roles like Exam Officers have school:cbt:manage."""
     org_id = current_user.org_id
     student = (await db.execute(
         select(Student).where(

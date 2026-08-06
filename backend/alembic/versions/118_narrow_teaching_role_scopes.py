@@ -24,8 +24,6 @@ would silently skip exactly the accounts used to re-verify the fix). Every other
 tier and every non-teaching slug is left exactly as it is. Downgrade restores the
 previous broad grant.
 """
-import json
-
 from alembic import op
 import sqlalchemy as sa
 
@@ -69,10 +67,18 @@ OLD_PERMISSIONS = [
 
 
 def _apply(permissions: list[str]) -> None:
-    slugs = ", ".join(f"'{s}'" for s in TEACHING_SLUGS)
-    op.execute(sa.text(
-        f"UPDATE roles SET permissions = :perms WHERE slug IN ({slugs})"
-    ).bindparams(perms=json.dumps(permissions)))
+    # Use SQLAlchemy's typed table API so the JSON encoding and Postgres
+    # dialect casting (::JSON) happen automatically. Raw sa.text() + bindparams
+    # without explicit type info causes Postgres to infer VARCHAR and reject
+    # the write to a JSON column (it needs ::json or ::jsonb).
+    roles = sa.table("roles",
+        sa.column("slug", sa.String),
+        sa.column("permissions", sa.JSON),
+    )
+    stmt = roles.update().where(
+        roles.c.slug.in_(TEACHING_SLUGS)
+    ).values(permissions=permissions)
+    op.execute(stmt)
 
 
 def upgrade() -> None:

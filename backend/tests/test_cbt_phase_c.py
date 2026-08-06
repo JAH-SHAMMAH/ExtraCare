@@ -173,8 +173,8 @@ async def test_rbac_enforced_at_http_layer(db, org, teacher, student, http_app):
     org.subscription_tier = SubscriptionTier.ENTERPRISE
     db.add(org)
     await db.commit()
-    readonly = await _preset_user(db, org, "staff")   # school:read, NOT school:write
-    writer = await _preset_user(db, org, "teacher")   # school:read + school:write
+    readonly = await _preset_user(db, org, "staff")      # school:read, NOT school:write
+    admin_user = await _preset_user(db, org, "manager")  # school:write (admin-only interventions)
 
     # read-only staff: every Phase C mutation is a real 403 from the endpoint gate
     ro = _bearer(readonly)
@@ -184,9 +184,10 @@ async def test_rbac_enforced_at_http_layer(db, org, teacher, student, http_app):
     assert (await http_app.put("/api/v1/cbt/settings",
                                json={"default_duration_minutes": 45}, headers=ro)).status_code == 403
 
-    # writer clears the gate (create succeeds) — proves the 403s were the gate, not a fluke
+    # Admin user clears the gate (create succeeds) — proves the 403s were the gate, not a fluke.
+    # Note: POST /interventions now requires school:write (admin-only), not school:cbt:manage.
     assert (await http_app.post("/api/v1/cbt/interventions",
-                                json={"student_id": student.id, "reason": "x"}, headers=_bearer(writer))).status_code == 201
+                                json={"student_id": student.id, "reason": "x"}, headers=_bearer(admin_user))).status_code == 201
 
 
 # ── T2: cross-org isolation (org B can't touch org A's Phase C data) ──────────────

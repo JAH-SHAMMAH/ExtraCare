@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import DOMPurify from "dompurify";
 import {
   useLessonPlans, usePublishLessonPlan, useUpdateLessonPlan,
   useClasses, useSubjects, useTeachers,
@@ -12,6 +13,41 @@ import {
   ClipboardCheck, Loader2, CheckCircle2, Undo2, Eye, X, Filter,
   Target, ListChecks, Wrench, BookOpen, FileText,
 } from "lucide-react";
+
+// Sanitization config (defense in depth)
+const SANITIZE_CONFIG = {
+  ALLOWED_TAGS: ["p", "br", "strong", "em", "u", "ol", "ul", "li", "a", "table", "tr", "td", "th", "thead", "tbody"],
+  ALLOWED_ATTR: ["href", "target"],
+  KEEP_CONTENT: true,
+};
+
+function sanitizeHTML(html: string): string {
+  return DOMPurify.sanitize(html, SANITIZE_CONFIG);
+}
+
+// Detect if content is plain text (no HTML tags) for backwards compatibility
+function isPlainText(content: string): boolean {
+  return !/<[^>]+>/.test(content);
+}
+
+// Convert plain text newlines to HTML for proper rendering
+function renderContent(content: string | undefined): string {
+  if (!content) return "";
+
+  if (isPlainText(content)) {
+    // Old plain-text content: preserve newlines as <br> tags
+    return content
+      .split("\n")
+      .map(line => {
+        const sanitized = DOMPurify.sanitize(line, { ALLOWED_TAGS: [] });
+        return `<p>${sanitized}</p>`;
+      })
+      .join("");
+  }
+
+  // New HTML content: sanitize directly
+  return sanitizeHTML(content);
+}
 
 /**
  * Approve Lesson Plans — supervisor queue over the shared lesson-plan lifecycle.
@@ -217,7 +253,14 @@ function PlanViewModal({ plan, canWrite, busy, onApprove, onReturn, onClose }: {
           {sections.map((s) => (
             <div key={s.label}>
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5 mb-1"><s.icon size={12} /> {s.label}</p>
-              <p className="text-sm text-slate-700 whitespace-pre-wrap">{s.value || <span className="text-slate-300">—</span>}</p>
+              {s.value ? (
+                <div
+                  className="text-sm text-slate-700 prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ __html: renderContent(s.value) }}
+                />
+              ) : (
+                <span className="text-slate-300">—</span>
+              )}
             </div>
           ))}
         </div>

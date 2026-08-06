@@ -1,10 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
+import DOMPurify from "dompurify";
+import { useEditor, EditorContent } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Link from "@tiptap/extension-link";
+import TextAlign from "@tiptap/extension-text-align";
 import {
   Plus, ChevronLeft, ChevronRight, Calendar, X, Loader2, CheckCircle2,
   Pencil, Trash2, BookOpen, Target, ListChecks, Wrench, FileText,
-  ArrowRight,
+  ArrowRight, Bold, Italic, Underline, List, ListOrdered, Link as LinkIcon,
+  AlignLeft, AlignCenter, AlignRight, Undo2, Redo2,
 } from "lucide-react";
 import {
   useLessonPlans, useCreateLessonPlan, useUpdateLessonPlan,
@@ -430,35 +436,35 @@ function PlanDrawer({
             </div>
           </div>
 
-          <TextField
+          <RichTextField
             icon={Target}
             label="Objectives"
             placeholder="What will students know or be able to do by the end?"
             value={form.objectives}
             onChange={(v) => setForm({ ...form, objectives: v })}
           />
-          <TextField
+          <RichTextField
             icon={ListChecks}
             label="Activities"
             placeholder="Step-by-step flow of the lesson."
             value={form.activities}
             onChange={(v) => setForm({ ...form, activities: v })}
           />
-          <TextField
+          <RichTextField
             icon={Wrench}
             label="Materials"
             placeholder="Books, handouts, equipment, slides…"
             value={form.materials}
             onChange={(v) => setForm({ ...form, materials: v })}
           />
-          <TextField
+          <RichTextField
             icon={BookOpen}
             label="Homework"
             placeholder="What students take home."
             value={form.homework}
             onChange={(v) => setForm({ ...form, homework: v })}
           />
-          <TextField
+          <RichTextField
             icon={FileText}
             label="Private notes"
             placeholder="Just for you — won't be shared with students or parents."
@@ -517,7 +523,28 @@ function PlanDrawer({
   );
 }
 
-function TextField({
+// Sanitization config (defense in depth)
+const SANITIZE_CONFIG = {
+  ALLOWED_TAGS: ["p", "br", "strong", "em", "u", "ol", "ul", "li", "a", "table", "tr", "td", "th", "thead", "tbody"],
+  ALLOWED_ATTR: ["href", "target"],
+  KEEP_CONTENT: true,
+};
+
+function sanitizeHTML(html: string): string {
+  return DOMPurify.sanitize(html, SANITIZE_CONFIG);
+}
+
+// Detect if content is plain text (no HTML tags) for backwards compatibility
+function isPlainText(content: string): boolean {
+  return !/<[^>]+>/.test(content);
+}
+
+// Convert plain text newlines to <br> for HTML rendering
+function plainTextToHTML(text: string): string {
+  return text.split("\n").map(line => `<p>${DOMPurify.sanitize(line)}</p>`).join("");
+}
+
+function RichTextField({
   icon: Icon, label, placeholder, value, onChange,
 }: {
   icon: typeof Target;
@@ -526,18 +553,133 @@ function TextField({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Link.configure({ openOnClick: false }),
+      TextAlign.configure({ types: ["heading", "paragraph"] }),
+    ],
+    content: value,
+    onUpdate: ({ editor }) => {
+      const html = editor.getHTML();
+      const sanitized = sanitizeHTML(html);
+      onChange(sanitized);
+    },
+  });
+
+  if (!editor) return null;
+
   return (
     <div>
       <label className="label flex items-center gap-1.5">
         <Icon size={13} className="text-slate-400" /> {label}
       </label>
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        rows={3}
-        className="input resize-y min-h-[84px]"
-      />
+
+      {/* Toolbar */}
+      <div className="border border-b-0 border-slate-200 rounded-t-lg bg-slate-50 p-2 flex flex-wrap gap-1">
+        <button
+          onClick={() => editor.chain().focus().toggleBold().run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("bold") && "bg-slate-200")}
+          title="Bold"
+        >
+          <Bold size={14} />
+        </button>
+        <button
+          onClick={() => editor.chain().focus().toggleItalic().run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("italic") && "bg-slate-200")}
+          title="Italic"
+        >
+          <Italic size={14} />
+        </button>
+        <button
+          onClick={() => editor.chain().focus().toggleUnderline().run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("underline") && "bg-slate-200")}
+          title="Underline"
+        >
+          <Underline size={14} />
+        </button>
+
+        <div className="w-px bg-slate-300 mx-1" />
+
+        <button
+          onClick={() => editor.chain().focus().setTextAlign("left").run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive({ textAlign: "left" }) && "bg-slate-200")}
+          title="Align left"
+        >
+          <AlignLeft size={14} />
+        </button>
+        <button
+          onClick={() => editor.chain().focus().setTextAlign("center").run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive({ textAlign: "center" }) && "bg-slate-200")}
+          title="Align center"
+        >
+          <AlignCenter size={14} />
+        </button>
+        <button
+          onClick={() => editor.chain().focus().setTextAlign("right").run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive({ textAlign: "right" }) && "bg-slate-200")}
+          title="Align right"
+        >
+          <AlignRight size={14} />
+        </button>
+
+        <div className="w-px bg-slate-300 mx-1" />
+
+        <button
+          onClick={() => editor.chain().focus().toggleBulletList().run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("bulletList") && "bg-slate-200")}
+          title="Bullet list"
+        >
+          <List size={14} />
+        </button>
+        <button
+          onClick={() => editor.chain().focus().toggleOrderedList().run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("orderedList") && "bg-slate-200")}
+          title="Numbered list"
+        >
+          <ListOrdered size={14} />
+        </button>
+
+        <div className="w-px bg-slate-300 mx-1" />
+
+        <button
+          onClick={() => {
+            const url = window.prompt("Enter URL:");
+            if (url) editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+          }}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("link") && "bg-slate-200")}
+          title="Link"
+        >
+          <LinkIcon size={14} />
+        </button>
+
+        <div className="w-px bg-slate-300 mx-1" />
+
+        <button
+          onClick={() => editor.chain().focus().undo().run()}
+          disabled={!editor.can().undo()}
+          className="p-2 rounded hover:bg-slate-200 disabled:opacity-50 transition"
+          title="Undo"
+        >
+          <Undo2 size={14} />
+        </button>
+        <button
+          onClick={() => editor.chain().focus().redo().run()}
+          disabled={!editor.can().redo()}
+          className="p-2 rounded hover:bg-slate-200 disabled:opacity-50 transition"
+          title="Redo"
+        >
+          <Redo2 size={14} />
+        </button>
+      </div>
+
+      {/* Editor */}
+      <div className="border border-slate-200 rounded-b-lg overflow-hidden prose prose-sm max-w-none">
+        <EditorContent
+          editor={editor}
+          className="p-3 min-h-[84px] bg-white text-slate-700 focus:outline-none"
+        />
+      </div>
     </div>
   );
 }

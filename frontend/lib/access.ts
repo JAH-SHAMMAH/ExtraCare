@@ -110,6 +110,11 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // "Manage eClassrooms" is the teacher's own virtual classrooms (the schedules
   // cluster, gated school:classroom:write server-side); Setup / Programs /
   // Broadcast stay admin. Longest-prefix wins.
+  // eClassroom admin configuration (setup, programs, broadcast) — admin-only.
+  // Teacher's own classroom management (manage) uses school:classroom:manage.
+  { prefix: "/dashboard/modules/eclassroom/setup", permission: "school_admin:read" },
+  { prefix: "/dashboard/modules/eclassroom/programs", permission: "school_admin:read" },
+  { prefix: "/dashboard/modules/eclassroom/broadcast", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/eclassroom/manage", permission: "school:classroom:manage" },
   { prefix: "/dashboard/modules/eclassroom", permission: "school:write" },
   // Voting System — admin children school:write; My Votes is voter-facing so

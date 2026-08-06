@@ -111,6 +111,9 @@ async def delete_journal(
     journal = result.scalar_one_or_none()
     if not journal:
         raise HTTPException(status_code=404, detail="Journal entry not found.")
+    # Ownership check: non-admin can only delete their own journals.
+    if not current_user.has_permission("school:write") and journal.posted_by != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only delete your own journal entries.")
     journal.is_deleted = True
 
 

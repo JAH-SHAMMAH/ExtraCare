@@ -2135,6 +2135,16 @@ async def report_entry_grid(class_id: str, subject_id: str, term_id: str,
     cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
     if not cls:
         raise HTTPException(status_code=404, detail="Class not found.")
+    # Section-scoping: a teacher may only access classes in their assigned section(s).
+    if not _report_admin(current_user) and cls.section_id:
+        teacher_sections = (await db.execute(
+            select(TeacherSection.section_id).where(
+                TeacherSection.teacher_id == current_user.id,
+                TeacherSection.org_id == org,
+            )
+        )).scalars().all()
+        if cls.section_id not in teacher_sections:
+            raise HTTPException(status_code=403, detail="You do not teach in this academic section.")
     # Teacher scoping: a non-admin may only touch subjects they teach in this class.
     if not _report_admin(current_user) and (class_id, subject_id) not in await _teacher_assignments(db, org, current_user.id):
         raise HTTPException(status_code=403, detail="You do not teach this subject in this class.")
@@ -2173,6 +2183,17 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
     if not _report_admin(current_user):
         if not payload.class_id:
             raise HTTPException(status_code=422, detail="class_id is required.")
+        # Section-scoping: teacher may only save scores for classes in their assigned section(s).
+        cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == payload.class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+        if cls and cls.section_id:
+            teacher_sections = (await db.execute(
+                select(TeacherSection.section_id).where(
+                    TeacherSection.teacher_id == current_user.id,
+                    TeacherSection.org_id == org,
+                )
+            )).scalars().all()
+            if cls.section_id not in teacher_sections:
+                raise HTTPException(status_code=403, detail="You do not teach in this academic section.")
         if (payload.class_id, payload.subject_id) not in await _teacher_assignments(db, org, current_user.id):
             raise HTTPException(status_code=403, detail="You do not teach this subject in this class.")
     valid_assessments = set((await db.execute(select(Assessment.id).where(Assessment.org_id == org))).scalars().all())
@@ -2233,6 +2254,16 @@ async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
     # class/form teacher (Educare: "You are not a class teacher").
     if not _report_admin(current_user) and cls.teacher_id != current_user.id:
         raise HTTPException(status_code=403, detail="You are not the class teacher for this class.")
+    # Section-scoping: a teacher may only view reports for their assigned section(s).
+    if not _report_admin(current_user) and cls.section_id:
+        teacher_sections = (await db.execute(
+            select(TeacherSection.section_id).where(
+                TeacherSection.teacher_id == current_user.id,
+                TeacherSection.org_id == org,
+            )
+        )).scalars().all()
+        if cls.section_id not in teacher_sections:
+            raise HTTPException(status_code=403, detail="You do not teach in this academic section.")
     level = getattr(cls, "level", None)
     term_name = (await db.execute(select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org))).scalar_one_or_none()
     sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
@@ -2332,6 +2363,17 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     # they are the class/form teacher of.
     if not _report_admin(current_user) and (not cls or cls.teacher_id != current_user.id):
         raise HTTPException(status_code=403, detail="You are not the class teacher for this pupil's class.")
+    # Section-scoping: a teacher may only view reports for their assigned section(s).
+    # For example, a Secondary teacher should not access Primary/Nursery report data.
+    if not _report_admin(current_user) and cls and cls.section_id:
+        teacher_sections = (await db.execute(
+            select(TeacherSection.section_id).where(
+                TeacherSection.teacher_id == current_user.id,
+                TeacherSection.org_id == org,
+            )
+        )).scalars().all()
+        if cls.section_id not in teacher_sections:
+            raise HTTPException(status_code=403, detail="You do not teach in this academic section.")
     term_name = (await db.execute(select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org))).scalar_one_or_none()
     sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
     branding = _branding_response((await db.execute(select(ReportBranding).where(ReportBranding.org_id == org))).scalar_one_or_none())

@@ -355,13 +355,36 @@ async def get_me(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.models.modules.school import TeacherSection
+    from app.models.modules.platform import SchoolSection
+    from app.schemas.auth import SectionBrief
+
     org = (await db.execute(select(Organization).where(Organization.id == current_user.org_id))).scalar_one_or_none()
     if org is not None:
         # Auto-advance onboarding from DB state — lets imports, direct SQL,
         # or sibling admin actions progress the flow without a PATCH.
         from app.services.onboarding import evaluate as evaluate_onboarding
         await evaluate_onboarding(db, org)
-    return UserMeResponse.from_user(current_user, org)
+
+    # Fetch teacher's assigned sections (for report nav filtering).
+    teacher_sections = []
+    if current_user.has_permission("school:reports:write"):  # teachers have this
+        section_ids = (await db.execute(
+            select(TeacherSection.section_id).where(
+                TeacherSection.teacher_id == current_user.id,
+                TeacherSection.org_id == current_user.org_id,
+            )
+        )).scalars().all()
+        if section_ids:
+            sections = (await db.execute(
+                select(SchoolSection).where(
+                    SchoolSection.id.in_(section_ids),
+                    SchoolSection.org_id == current_user.org_id,
+                )
+            )).scalars().all()
+            teacher_sections = [SectionBrief(id=s.id, name=s.name) for s in sections]
+
+    return UserMeResponse.from_user(current_user, org, teacher_sections)
 
 
 @router.post("/change-password", summary="Change your own password")
