@@ -99,11 +99,36 @@ def _report_admin(user: User) -> bool:
 
 
 async def _teacher_assignments(db: AsyncSession, org_id: str, user_id: str) -> set[tuple[str, str]]:
-    """The (class_id, subject_id) pairs a teacher actually teaches — from the
-    Timetable (the real per-class-per-subject assignment)."""
-    rows = (await db.execute(select(Timetable.class_id, Timetable.subject_id).where(
+    """The (class_id, subject_id) pairs a teacher actually teaches.
+
+    Primary: from Timetable (fine-grained per-class-per-subject-per-slot assignment).
+    Fallback: if Timetable is empty for this teacher, use Subject.teacher_id assignment
+             (teacher can teach their subject in any class).
+
+    This allows Make Report to work in both modes:
+    - With Timetable: teacher can grade only their assigned (class, subject) pairs
+    - Without Timetable: teacher can grade their subject in all classes
+    """
+    # Primary: Timetable-based assignments (fine-grained)
+    timetable_rows = (await db.execute(select(Timetable.class_id, Timetable.subject_id).where(
         Timetable.org_id == org_id, Timetable.teacher_id == user_id))).all()
-    return {(r.class_id, r.subject_id) for r in rows}
+    if timetable_rows:
+        return {(r.class_id, r.subject_id) for r in timetable_rows}
+
+    # Fallback: Subject.teacher_id-based (org-wide subject assignment)
+    # Find all subjects taught by this teacher, then all (class, subject) pairs
+    subject_rows = (await db.execute(select(Subject.id).where(
+        Subject.org_id == org_id, Subject.teacher_id == user_id))).all()
+    if not subject_rows:
+        return set()
+
+    subject_ids = [r.id for r in subject_rows]
+    class_rows = (await db.execute(select(SchoolClass.id).where(
+        SchoolClass.org_id == org_id))).all()
+
+    # Return all combinations of this teacher's subjects × all classes
+    # (Teacher is org-wide subject teacher, can grade in any class taking that subject)
+    return {(c.id, s) for c in class_rows for s in subject_ids}
 
 
 async def _class_teacher_id(db: AsyncSession, org_id: str, class_id: str) -> str | None:
