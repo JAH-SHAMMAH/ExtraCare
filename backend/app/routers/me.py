@@ -453,7 +453,9 @@ async def contexts(
     """
     response.headers["Cache-Control"] = "private, max-age=30"
 
-    role_slugs = {r.slug for r in current_user.roles}
+    # Normalize role slugs to lowercase for consistent comparison
+    # (role slugs in DB may be capitalized, but we check against lowercase)
+    role_slugs = {r.slug.lower() for r in current_user.roles}
     has_admin_role = bool(role_slugs & {"org_admin", "manager", "super_admin"}) or current_user.is_superadmin
     has_teacher_role = "teacher" in role_slugs
     has_parent_role = "parent" in role_slugs
