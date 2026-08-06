@@ -455,6 +455,9 @@ async def contexts(
 
     role_slugs = {r.slug for r in current_user.roles}
     has_admin_role = bool(role_slugs & {"org_admin", "manager", "super_admin"}) or current_user.is_superadmin
+    has_teacher_role = "teacher" in role_slugs
+    has_parent_role = "parent" in role_slugs
+    has_student_role = "student" in role_slugs
 
     # Student context (resolved via FK or email fallback).
     student_row = await _resolve_student_row(db, current_user)
@@ -466,18 +469,20 @@ async def contexts(
     # Parent context (via ParentGuardian links).
     as_parent = await _parent_context(db, current_user)
 
-    # Derive the set of "real" roles this user can switch into, based on actual
-    # data linkage rather than only role slugs. This means a teacher who is
-    # also a parent can switch to parent view even if the role was never
-    # explicitly assigned — the data IS the identity.
+    # Derive the set of "real" roles this user can switch into: trust both
+    # explicit role assignments (user_roles table) AND data linkage.
+    # Rule: if a user is assigned a role slug, they should have access to that
+    # view even if data hasn't been created yet (e.g., a brand-new teacher with
+    # zero classes). Data-based roles are still included for flexibility
+    # (a teacher who is also a parent via ParentGuardian can see parent view).
     available: list[str] = []
     if has_admin_role:
         available.append("admin")
-    if as_teacher:
+    if has_teacher_role or as_teacher:
         available.append("teacher")
-    if as_parent:
+    if has_parent_role or as_parent:
         available.append("parent")
-    if as_student:
+    if has_student_role or as_student:
         available.append("student")
 
     # Default role = the most privileged they have.
