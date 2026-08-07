@@ -2161,15 +2161,20 @@ async def report_entry_grid(class_id: str, subject_id: str, term_id: str,
     if not cls:
         raise HTTPException(status_code=404, detail="Class not found.")
     # Section-scoping: a teacher may only access classes in their assigned section(s).
+    # BUT: teachers with org-wide subject assignments (via Subject.teacher_id) can teach in any section.
     if not _report_admin(current_user) and cls.section_id:
-        teacher_sections = (await db.execute(
-            select(TeacherSection.section_id).where(
-                TeacherSection.teacher_id == current_user.id,
-                TeacherSection.org_id == org,
-            )
-        )).scalars().all()
-        if cls.section_id not in teacher_sections:
-            raise HTTPException(status_code=403, detail="You do not teach in this academic section.")
+        # Check if teacher has this (class, subject) pair via Timetable or Subject assignment
+        assignments = await _teacher_assignments(db, org, current_user.id)
+        if (class_id, subject_id) not in assignments:
+            # Not assigned via Timetable or Subject — check TeacherSection as fallback
+            teacher_sections = (await db.execute(
+                select(TeacherSection.section_id).where(
+                    TeacherSection.teacher_id == current_user.id,
+                    TeacherSection.org_id == org,
+                )
+            )).scalars().all()
+            if cls.section_id not in teacher_sections:
+                raise HTTPException(status_code=403, detail="You do not teach in this academic section.")
     # Teacher scoping: a non-admin may only touch subjects they teach in this class.
     if not _report_admin(current_user) and (class_id, subject_id) not in await _teacher_assignments(db, org, current_user.id):
         raise HTTPException(status_code=403, detail="You do not teach this subject in this class.")
