@@ -163,10 +163,10 @@ export function TeacherHome() {
         <ListCard
           title="Coming Up 🎂"
           empty="No birthdays coming up this month."
-          items={birthdays.slice(0, 10).map((b) => ({
-            key: b.id,
-            primary: b.full_name,
-            secondary: b.date_formatted,
+          items={birthdays.slice(0, 10).map((b, idx) => ({
+            key: `${b.name}-${b.date_of_birth}-${idx}`,
+            primary: b.name,
+            secondary: `${b.role === "staff" ? "Staff" : "Student"} • ${new Date(b.date_of_birth).toLocaleDateString()}`,
             href: `/dashboard/modules/school/staff`,
           }))}
           icon={Cake}
