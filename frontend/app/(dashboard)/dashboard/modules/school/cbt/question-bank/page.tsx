@@ -156,7 +156,12 @@ function BankForm({ item, subjects, onClose }: { item: BankItem | null; subjects
     topic: item?.topic || "",
     difficulty: item?.difficulty || "medium",
     points: String(item?.points ?? 1),
-    a: opt("a"), b: opt("b"), c: opt("c"), d: opt("d"),
+    options: (item?.options ? item.options.map((o: any, i: number) => ({ index: i, text: o.text })) : [
+      { index: 0, text: "" },
+      { index: 1, text: "" },
+      { index: 2, text: "" },
+      { index: 3, text: "" },
+    ]) as any,
     correct_answer: item?.correct_answer || "",
   });
 
@@ -165,7 +170,12 @@ function BankForm({ item, subjects, onClose }: { item: BankItem | null; subjects
 
   const submit = () => {
     const options = isMcq
-      ? (["a", "b", "c", "d"] as const).map((k) => ({ key: k, text: (f as any)[k].trim() })).filter((o) => o.text)
+      ? f.options
+          .filter((o) => o.text.trim())
+          .map((o, i) => ({
+            key: String.fromCharCode(97 + i), // a, b, c, ...
+            text: o.text.trim()
+          }))
       : undefined;
     const payload: any = {
       question_text: f.question_text.trim(),
@@ -202,11 +212,53 @@ function BankForm({ item, subjects, onClose }: { item: BankItem | null; subjects
 
           {isMcq && (
             <div className="space-y-2">
-              <label className="label">Options</label>
-              {(["a", "b", "c", "d"] as const).map((k) => (
-                <div key={k} className="flex items-center gap-2">
-                  <span className="w-5 text-xs font-bold text-slate-400 uppercase">{k}</span>
-                  <input value={(f as any)[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} className="input flex-1" placeholder={`Option ${k.toUpperCase()}`} />
+              <div className="flex items-center justify-between">
+                <label className="label">Options</label>
+                <button
+                  type="button"
+                  onClick={() => setF({
+                    ...f,
+                    options: [...f.options, { index: f.options.length, text: "" }] as any
+                  })}
+                  disabled={f.options.length >= 26}
+                  className="text-xs text-brand-600 hover:underline disabled:opacity-50"
+                >
+                  + Add option
+                </button>
+              </div>
+              {f.options.map((opt, idx) => (
+                <div key={opt.index} className="flex items-center gap-2">
+                  <span className="w-5 text-xs font-bold text-slate-400 uppercase">
+                    {String.fromCharCode(65 + idx)}
+                  </span>
+                  <input
+                    value={opt.text}
+                    onChange={(e) => {
+                      const newOpts = [...(f.options as any)];
+                      newOpts[idx].text = e.target.value;
+                      setF({ ...f, options: newOpts as any });
+                    }}
+                    className="input flex-1"
+                    placeholder={`Option ${String.fromCharCode(65 + idx)}`}
+                  />
+                  {f.options.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (String(idx) === f.correct_answer) {
+                          alert("Can't remove the correct answer option.");
+                          return;
+                        }
+                        setF({
+                          ...f,
+                          options: (f.options as any).filter((o: any) => o.index !== opt.index) as any
+                        });
+                      }}
+                      className="p-1 text-slate-400 hover:text-red-600"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -216,7 +268,14 @@ function BankForm({ item, subjects, onClose }: { item: BankItem | null; subjects
             <div>
               <label className="label">Correct answer</label>
               {isMcq ? (
-                <select value={f.correct_answer} onChange={(e) => setF({ ...f, correct_answer: e.target.value })} className="input"><option value="">—</option>{["a", "b", "c", "d"].map((k) => (<option key={k} value={k}>{k.toUpperCase()}</option>))}</select>
+                <select value={f.correct_answer} onChange={(e) => setF({ ...f, correct_answer: e.target.value })} className="input">
+                  <option value="">—</option>
+                  {f.options.map((opt, idx) => (
+                    <option key={opt.index} value={String(idx)}>
+                      {String.fromCharCode(65 + idx)}
+                    </option>
+                  ))}
+                </select>
               ) : isTF ? (
                 <select value={f.correct_answer} onChange={(e) => setF({ ...f, correct_answer: e.target.value })} className="input"><option value="">—</option><option value="true">True</option><option value="false">False</option></select>
               ) : (

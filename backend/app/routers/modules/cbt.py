@@ -883,7 +883,13 @@ async def import_bank(
         if not qtext:
             errors.append(f"row {i}: missing question")
             continue
-        opts = [{"key": k, "text": row[f"option_{k}"].strip()} for k in "abcde" if row.get(f"option_{k}", "").strip()]
+        # Support options A-Z (26 max)
+        opts = []
+        for k in "abcdefghijklmnopqrstuvwxyz":
+            opt_text = row.get(f"option_{k}", "").strip()
+            if not opt_text:
+                break  # Stop at first empty; don't support gaps
+            opts.append({"key": k, "text": opt_text})
         qtype = (row.get("type") or row.get("question_type") or "mcq").strip().lower()
         if qtype not in _QTYPES:
             qtype = "mcq"
