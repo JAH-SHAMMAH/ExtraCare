@@ -7,6 +7,7 @@ import {
   useSubjectGroups, useCreateSubjectGroup, useDeleteSubjectGroup,
 } from "@/hooks/useTimetableModule";
 import { useSubjects } from "@/hooks/useSchool";
+import { useSections } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
 import { Clock, Plus, X, Loader2, Trash2, Edit2, Save } from "lucide-react";
@@ -39,18 +40,36 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 export default function TimetableSetupPage() {
   const canWrite = useHasPermission("school:timetable:write");
   const [tab, setTab] = useState<Tab>("general");
+  const [sectionId, setSectionId] = useState<string>("");
+  const { data: sections } = useSections();
+  const sectionsList = sections ?? [];
+
   return (
     <div className="p-8 max-w-4xl mx-auto">
       <div className="mb-6">
         <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>TimeTable</span><span>/</span><span className="text-brand-600 font-semibold">TimeTable Setup</span></nav>
         <h1 className="text-2xl font-black text-slate-900 tracking-tight">TimeTable Setup</h1>
       </div>
+
+      {/* Section Selector */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6">
+        <div className="flex items-center gap-4">
+          <label className="text-sm font-semibold text-slate-700 whitespace-nowrap">Select School Section:</label>
+          <select value={sectionId} onChange={(e) => setSectionId(e.target.value)} className="input flex-1 max-w-xs">
+            <option value="">All Sections</option>
+            {sectionsList.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       <div className="flex items-center gap-1 border-b border-slate-200 mb-6 flex-wrap">
         {TABS.map(([k, label]) => <button key={k} onClick={() => setTab(k)} className={cn("px-4 py-2.5 text-sm font-bold border-b-2 -mb-px", tab === k ? "border-brand-600 text-brand-700" : "border-transparent text-slate-400 hover:text-slate-600")}>{label}</button>)}
       </div>
       {tab === "general" && <GeneralTab canWrite={canWrite} />}
-      {tab === "subject" && <SubjectGroupTab canWrite={canWrite} />}
-      {tab === "period" && <PeriodGroupTab canWrite={canWrite} />}
+      {tab === "subject" && <SubjectGroupTab canWrite={canWrite} sectionId={sectionId} />}
+      {tab === "period" && <PeriodGroupTab canWrite={canWrite} sectionId={sectionId} />}
     </div>
   );
 }
@@ -76,7 +95,7 @@ function GeneralTab({ canWrite }: { canWrite: boolean }) {
   );
 }
 
-function SubjectGroupTab({ canWrite }: { canWrite: boolean }) {
+function SubjectGroupTab({ canWrite, sectionId }: { canWrite: boolean; sectionId: string }) {
   const { data, isLoading } = useSubjectGroups();
   const { data: subjectsData } = useSubjects({ page_size: 200 });
   const create = useCreateSubjectGroup();
@@ -86,6 +105,8 @@ function SubjectGroupTab({ canWrite }: { canWrite: boolean }) {
   const groups: SubjectGroup[] = data?.items ?? [];
   const subjects = subjectsData?.items ?? [];
   const nameOf = (id: string) => subjects.find((x: any) => x.id === id)?.name || id;
+  // Filter groups by section if one is selected
+  const filteredGroups = sectionId ? groups.filter((g: any) => g.section_id === sectionId) : groups;
 
   return (
     <div>
@@ -95,7 +116,7 @@ function SubjectGroupTab({ canWrite }: { canWrite: boolean }) {
           <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Group Name", "Year Group", "Subjects", ""].map((h) => <th key={h} className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-50">
             {isLoading ? <tr><td colSpan={4} className="px-5 py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></td></tr>
-            : groups.length > 0 ? groups.map((g) => (
+            : filteredGroups.length > 0 ? filteredGroups.map((g) => (
               <tr key={g.id} className="hover:bg-slate-50/70">
                 <td className="px-5 py-3 text-sm font-semibold text-slate-800">{g.name}</td>
                 <td className="px-5 py-3 text-sm text-slate-600">{g.year_group || "—"}</td>
@@ -124,14 +145,14 @@ function SubjectGroupTab({ canWrite }: { canWrite: boolean }) {
               </div>
             </div>
           </div>
-          <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100"><button onClick={() => setShow(false)} className="btn-secondary">Cancel</button><button onClick={() => create.mutate({ name: form.name.trim(), year_group: form.year_group || null, subject_ids: form.subject_ids }, { onSuccess: () => setShow(false) })} disabled={!form.name.trim() || create.isPending} className="btn-primary gap-2">{create.isPending && <Loader2 size={15} className="animate-spin" />}Create</button></div>
+          <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100"><button onClick={() => setShow(false)} className="btn-secondary">Cancel</button><button onClick={() => create.mutate({ name: form.name.trim(), year_group: form.year_group || null, subject_ids: form.subject_ids, section_id: sectionId || null }, { onSuccess: () => setShow(false) })} disabled={!form.name.trim() || create.isPending} className="btn-primary gap-2">{create.isPending && <Loader2 size={15} className="animate-spin" />}Create</button></div>
         </Modal>
       )}
     </div>
   );
 }
 
-function PeriodGroupTab({ canWrite }: { canWrite: boolean }) {
+function PeriodGroupTab({ canWrite, sectionId }: { canWrite: boolean; sectionId: string }) {
   const { data, isLoading } = usePeriodGroups();
   const create = useCreatePeriodGroup();
   const update = useUpdatePeriodGroup();
@@ -140,9 +161,11 @@ function PeriodGroupTab({ canWrite }: { canWrite: boolean }) {
   const [show, setShow] = useState(false);
   const [form, setForm] = useState({ name: "", year_group: "" });
   const groups: PeriodGroup[] = data?.items ?? [];
+  // Filter groups by section if one is selected
+  const filteredGroups = sectionId ? groups.filter((g: any) => g.section_id === sectionId) : groups;
 
   const submit = () => {
-    const payload = { name: form.name.trim(), year_group: form.year_group || null };
+    const payload = { name: form.name.trim(), year_group: form.year_group || null, section_id: sectionId || null };
     if (editing) update.mutate({ id: editing.id, data: payload }, { onSuccess: () => setEditing(null) });
     else create.mutate(payload, { onSuccess: () => { setShow(false); setForm({ name: "", year_group: "" }); } });
   };
@@ -155,7 +178,7 @@ function PeriodGroupTab({ canWrite }: { canWrite: boolean }) {
           <thead><tr className="bg-slate-50/80 border-b border-slate-100">{["Group Name", "Year Group", ""].map((h) => <th key={h} className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-50">
             {isLoading ? <tr><td colSpan={3} className="px-5 py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></td></tr>
-            : groups.length > 0 ? groups.map((g) => (
+            : filteredGroups.length > 0 ? filteredGroups.map((g) => (
               <tr key={g.id} className="hover:bg-slate-50/70">
                 <td className="px-5 py-3 text-sm font-semibold text-slate-800">{g.name}</td>
                 <td className="px-5 py-3 text-sm text-slate-600">{g.year_group || "All Year Group"}</td>

@@ -399,22 +399,26 @@ class TimetableSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
 class PeriodGroup(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A named group of periods scoped to a year group / level (Period Group
-    Setup). Periods (the day/time rows) belong to a group."""
+    Setup). Periods (the day/time rows) belong to a group. Optionally scoped
+    to a school section (Early Years, Primary, Secondary)."""
     __tablename__ = "period_groups"
 
     name = Column(String(100), nullable=False)                # e.g. "SECONDARY"
     year_group = Column(String(60), nullable=True)            # e.g. "All Year Group" / "YEAR 7"
+    section_id = Column(String(36), ForeignKey("school_sections.id", ondelete="SET NULL"), nullable=True, index=True)  # optional school section
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 
 class SubjectGroup(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A named grouping of subjects for a year group (Subject Group Setup) —
-    e.g. option blocks. ``subject_ids`` is a JSON list of Subject ids."""
+    e.g. option blocks. ``subject_ids`` is a JSON list of Subject ids.
+    Optionally scoped to a school section (Early Years, Primary, Secondary)."""
     __tablename__ = "subject_groups"
 
     name = Column(String(100), nullable=False)
     year_group = Column(String(60), nullable=True)
     subject_ids = Column(JSON, default=list)
+    section_id = Column(String(36), ForeignKey("school_sections.id", ondelete="SET NULL"), nullable=True, index=True)  # optional school section
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 
