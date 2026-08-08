@@ -4,11 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   GraduationCap, Clock, BookOpen, Users as UsersIcon, CheckSquare, ArrowRight,
-  ClipboardList, Award, Calendar, NotebookPen, Newspaper,
+  ClipboardList, Award, Calendar, NotebookPen, Newspaper, Cake,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { useMyContexts } from "@/hooks/useMyContexts";
 import { useDelayedFlag } from "@/hooks/useDelayedFlag";
+import { useHrBirthdays } from "@/hooks/useHrm";
 import {
   PageHeaderSkeleton, CardGridSkeleton, Skeleton,
 } from "@/components/loading/Skeleton";
@@ -20,6 +21,7 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export function TeacherHome() {
   const { user, org } = useAuthStore();
   const { data, isLoading } = useMyContexts();
+  const { data: birthdays = [], isLoading: birthdaysLoading } = useHrBirthdays();
   const showSkeleton = useDelayedFlag(isLoading);
   const [timeOfDay, setTimeOfDay] = useState("");
 
@@ -134,8 +136,8 @@ export function TeacherHome() {
         </div>
       </div>
 
-      {/* Classes + Subjects */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+      {/* Classes + Subjects + Birthdays */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
         <ListCard
           title="Classes I teach"
           empty="You are not assigned to any classes yet."
@@ -157,6 +159,17 @@ export function TeacherHome() {
             href: `/dashboard/modules/school/subjects`,
           }))}
           icon={GraduationCap}
+        />
+        <ListCard
+          title="Coming Up 🎂"
+          empty="No birthdays coming up this month."
+          items={birthdays.slice(0, 10).map((b) => ({
+            key: b.id,
+            primary: b.full_name,
+            secondary: b.date_formatted,
+            href: `/dashboard/modules/school/staff`,
+          }))}
+          icon={Cake}
         />
       </div>
 

@@ -49,6 +49,9 @@ router = APIRouter(prefix="/hr", tags=["HR"])
 _can_admin_read = Depends(PermissionChecker("users:read"))
 _can_admin_write = Depends(PermissionChecker("users:write"))
 
+# Birthdays are school-scoped so teachers + staff can see colleague/student birthdays
+_can_read_birthdays = Depends(PermissionChecker("school:read"))
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -229,7 +232,7 @@ async def get_user_profile(
 
 # ── Birthdays ────────────────────────────────────────────────────────────────
 
-@router.get("/birthdays", response_model=list[BirthdayItem], dependencies=[_can_admin_read])
+@router.get("/birthdays", response_model=list[BirthdayItem], dependencies=[_can_read_birthdays])
 async def upcoming_birthdays(
     month: Optional[int] = Query(default=None, ge=1, le=12),
     db: AsyncSession = Depends(get_db),
