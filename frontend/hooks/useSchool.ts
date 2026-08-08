@@ -503,11 +503,27 @@ export interface LessonPlanRow {
   lesson_date: string;
   period: number | null;
   duration_minutes: number;
+  // Pedagogical planning fields (rich text)
+  theme: string | null;
+  sub_topic: string | null;
+  the_hook: string | null;
+  prerequisite_knowledge: string | null;
+  rationale: string | null;
+  methodologies: string | null;
+  reference: string | null;
+  // Metadata fields
+  contact: string | null;
+  sex_demographics: string | null;
+  average_age: number | null;
+  no_in_class: number | null;
+  // Content fields
   objectives: string | null;
   activities: string | null;
   materials: string | null;
   homework: string | null;
   notes: string | null;
+  // Success criteria (JSON string)
+  success_criteria: string | null;
   status: "draft" | "published";
   created_at: string;
   updated_at: string;

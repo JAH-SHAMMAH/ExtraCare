@@ -571,6 +571,24 @@ class LessonPlan(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     homework = Column(Text, nullable=True)    # assigned tasks
     notes = Column(Text, nullable=True)       # private teacher notes
 
+    # Pedagogical planning fields (rich text, HTML sanitized).
+    theme = Column(Text, nullable=True)                         # broader unit/topic
+    sub_topic = Column(Text, nullable=True)                     # specific sub-topic
+    the_hook = Column(Text, nullable=True)                      # lesson opener/engagement (5–10 min)
+    prerequisite_knowledge = Column(Text, nullable=True)        # what students must know first
+    rationale = Column(Text, nullable=True)                     # why this teaching approach
+    methodologies = Column(Text, nullable=True)                 # 21st century methods (collaborative, critical thinking)
+    reference = Column(Text, nullable=True)                     # source materials, textbooks, URLs
+
+    # Metadata fields (demographics + lesson delivery info).
+    contact = Column(String(255), nullable=True)                # name/role of lesson deliverer if not primary teacher
+    sex_demographics = Column(String(100), nullable=True)       # All | Male | Female
+    average_age = Column(Integer, nullable=True)                # average age of students
+    no_in_class = Column(Integer, nullable=True)                # headcount
+
+    # Success criteria (JSON array: {"rows": [{"id": "...", "criteria": "...", "some": bool, "most": bool, "all": bool}]}).
+    success_criteria = Column(Text, nullable=True)              # structured success measurement table
+
     # Optional Lesson-Planner-Setup taxonomy label (Theory / Practical / …).
     category_id = Column(String(36), ForeignKey("lesson_plan_categories.id", ondelete="SET NULL"), nullable=True, index=True)
     status = Column(Enum(LessonPlanStatus), default=LessonPlanStatus.DRAFT, nullable=False)

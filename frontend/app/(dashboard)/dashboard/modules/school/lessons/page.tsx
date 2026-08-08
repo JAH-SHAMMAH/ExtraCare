@@ -10,7 +10,8 @@ import {
   Plus, ChevronLeft, ChevronRight, Calendar, X, Loader2, CheckCircle2,
   Pencil, Trash2, BookOpen, Target, ListChecks, Wrench, FileText,
   ArrowRight, Bold, Italic, Underline, List, ListOrdered, Link as LinkIcon,
-  AlignLeft, AlignCenter, AlignRight, Undo2, Redo2,
+  AlignLeft, AlignCenter, AlignRight, Undo2, Redo2, Zap, Layers, Lightbulb,
+  Sparkles, Link2, Users,
 } from "lucide-react";
 import {
   useLessonPlans, useCreateLessonPlan, useUpdateLessonPlan,
@@ -20,6 +21,7 @@ import {
 import { useMyContexts } from "@/hooks/useMyContexts";
 import { useDelayedFlag } from "@/hooks/useDelayedFlag";
 import { Skeleton } from "@/components/loading/Skeleton";
+import { SuccessCriteriaTable } from "@/components/forms/SuccessCriteriaTable";
 import { cn } from "@/lib/utils";
 
 const DAYS = [
@@ -286,6 +288,7 @@ function PlanDrawer({
   const { data: plannerSettings } = useLessonPlannerSettings();
 
   const [form, setForm] = useState(() => ({
+    // Core fields
     title: existing?.title ?? "",
     class_id: existing?.class_id ?? "",
     subject_id: existing?.subject_id ?? "",
@@ -294,11 +297,27 @@ function PlanDrawer({
       ?? formatISO(new Date()),
     period: existing?.period ?? 1,
     duration_minutes: existing?.duration_minutes ?? plannerSettings?.default_duration_minutes ?? 45,
+    // Pedagogical rich-text fields
+    theme: existing?.theme ?? "",
+    sub_topic: existing?.sub_topic ?? "",
+    the_hook: existing?.the_hook ?? "",
+    prerequisite_knowledge: existing?.prerequisite_knowledge ?? "",
+    rationale: existing?.rationale ?? "",
+    methodologies: existing?.methodologies ?? "",
+    reference: existing?.reference ?? "",
+    // Metadata fields
+    contact: existing?.contact ?? "",
+    sex_demographics: existing?.sex_demographics ?? "All",
+    average_age: existing?.average_age ?? "",
+    no_in_class: existing?.no_in_class ?? "",
+    // Content fields
     objectives: existing?.objectives ?? "",
     activities: existing?.activities ?? "",
     materials: existing?.materials ?? "",
     homework: existing?.homework ?? "",
     notes: existing?.notes ?? "",
+    // Success criteria (JSON string)
+    success_criteria: existing?.success_criteria ?? "",
   }));
 
   // Pull the teacher's own classes + subjects from /me/contexts. Intentional
@@ -400,6 +419,60 @@ function PlanDrawer({
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* Metadata fields */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Contact</label>
+              <input
+                type="text"
+                value={form.contact}
+                onChange={(e) => setForm({ ...form, contact: e.target.value })}
+                placeholder="Name or role of lesson deliverer"
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="label">Demographics</label>
+              <select
+                value={form.sex_demographics}
+                onChange={(e) => setForm({ ...form, sex_demographics: e.target.value })}
+                className="input"
+              >
+                <option value="All">All</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Average Age</label>
+              <input
+                type="number"
+                min={3}
+                max={25}
+                value={form.average_age || ""}
+                onChange={(e) => setForm({ ...form, average_age: e.target.value ? Number(e.target.value) : "" })}
+                placeholder="e.g., 12"
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="label">No. in Class</label>
+              <input
+                type="number"
+                min={1}
+                max={999}
+                value={form.no_in_class || ""}
+                onChange={(e) => setForm({ ...form, no_in_class: e.target.value ? Number(e.target.value) : "" })}
+                placeholder="e.g., 35"
+                className="input"
+              />
+            </div>
+          </div>
+
+          {/* Scheduling fields */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="label">Date *</label>
               <input
@@ -436,6 +509,29 @@ function PlanDrawer({
             </div>
           </div>
 
+          {/* Planning fields (pedagogical structure) */}
+          <RichTextField
+            icon={Layers}
+            label="Theme"
+            placeholder="The broader unit or topic this lesson belongs to"
+            value={form.theme}
+            onChange={(v) => setForm({ ...form, theme: v })}
+          />
+          <RichTextField
+            icon={Target}
+            label="Sub-Topic"
+            placeholder="The specific sub-topic covered in this lesson"
+            value={form.sub_topic}
+            onChange={(v) => setForm({ ...form, sub_topic: v })}
+          />
+          <RichTextField
+            icon={Zap}
+            label="The Hook"
+            placeholder="How you'll open and engage students (5–10 min opener)"
+            value={form.the_hook}
+            onChange={(v) => setForm({ ...form, the_hook: v })}
+          />
+
           <RichTextField
             icon={Target}
             label="Objectives"
@@ -450,12 +546,49 @@ function PlanDrawer({
             value={form.activities}
             onChange={(v) => setForm({ ...form, activities: v })}
           />
+
+          {/* Pedagogical foundations */}
+          <RichTextField
+            icon={BookOpen}
+            label="Pre-Requisite Knowledge"
+            placeholder="What students must know before starting this lesson"
+            value={form.prerequisite_knowledge}
+            onChange={(v) => setForm({ ...form, prerequisite_knowledge: v })}
+          />
+          <RichTextField
+            icon={Lightbulb}
+            label="Rationale"
+            placeholder="Why use this teaching approach?"
+            value={form.rationale}
+            onChange={(v) => setForm({ ...form, rationale: v })}
+          />
+          <RichTextField
+            icon={Sparkles}
+            label="21st Century Methodologies"
+            placeholder="Which modern teaching methods (collaborative learning, critical thinking, etc.)"
+            value={form.methodologies}
+            onChange={(v) => setForm({ ...form, methodologies: v })}
+          />
+
           <RichTextField
             icon={Wrench}
             label="Materials"
             placeholder="Books, handouts, equipment, slides…"
             value={form.materials}
             onChange={(v) => setForm({ ...form, materials: v })}
+          />
+          <RichTextField
+            icon={Link2}
+            label="Reference"
+            placeholder="Source materials, textbooks, page numbers, URLs"
+            value={form.reference}
+            onChange={(v) => setForm({ ...form, reference: v })}
+          />
+
+          {/* Success criteria matrix */}
+          <SuccessCriteriaTable
+            value={form.success_criteria}
+            onChange={(v) => setForm({ ...form, success_criteria: v })}
           />
           <RichTextField
             icon={BookOpen}

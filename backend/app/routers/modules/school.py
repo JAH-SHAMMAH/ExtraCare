@@ -2585,11 +2585,28 @@ def _lesson_dict(lp: LessonPlan, subject_name: str | None = None, class_name: st
         "lesson_date": lp.lesson_date.isoformat() if lp.lesson_date else None,
         "period": lp.period,
         "duration_minutes": lp.duration_minutes,
+        # Pedagogical planning fields (rich text)
+        "theme": lp.theme,
+        "sub_topic": lp.sub_topic,
+        "the_hook": lp.the_hook,
+        "prerequisite_knowledge": lp.prerequisite_knowledge,
+        "rationale": lp.rationale,
+        "methodologies": lp.methodologies,
+        "reference": lp.reference,
+        # Metadata fields
+        "contact": lp.contact,
+        "sex_demographics": lp.sex_demographics,
+        "average_age": lp.average_age,
+        "no_in_class": lp.no_in_class,
+        # Content fields
         "objectives": lp.objectives,
         "activities": lp.activities,
         "materials": lp.materials,
         "homework": lp.homework,
         "notes": lp.notes,
+        # Success criteria (JSON)
+        "success_criteria": lp.success_criteria,
+        # Metadata
         "category_id": lp.category_id,
         "status": lp.status.value if hasattr(lp.status, "value") else lp.status,
         "created_at": lp.created_at.isoformat() if lp.created_at else None,
@@ -2730,11 +2747,27 @@ async def create_lesson(
         lesson_date=lesson_date,
         period=int(payload["period"]) if payload.get("period") not in (None, "") else None,
         duration_minutes=int(payload.get("duration_minutes") or default_duration),
+        # Pedagogical planning fields
+        theme=(payload.get("theme") or None),
+        sub_topic=(payload.get("sub_topic") or None),
+        the_hook=(payload.get("the_hook") or None),
+        prerequisite_knowledge=(payload.get("prerequisite_knowledge") or None),
+        rationale=(payload.get("rationale") or None),
+        methodologies=(payload.get("methodologies") or None),
+        reference=(payload.get("reference") or None),
+        # Metadata fields
+        contact=(payload.get("contact") or None),
+        sex_demographics=(payload.get("sex_demographics") or None),
+        average_age=int(payload["average_age"]) if payload.get("average_age") not in (None, "") else None,
+        no_in_class=int(payload["no_in_class"]) if payload.get("no_in_class") not in (None, "") else None,
+        # Content fields
         objectives=(payload.get("objectives") or None),
         activities=(payload.get("activities") or None),
         materials=(payload.get("materials") or None),
         homework=(payload.get("homework") or None),
         notes=(payload.get("notes") or None),
+        # Success criteria (JSON string)
+        success_criteria=(payload.get("success_criteria") or None),
         category_id=(await _valid_category_id(db, current_user.org_id, payload.get("category_id"))),
         status=LessonPlanStatus(raw_status),
         org_id=current_user.org_id,
@@ -2782,7 +2815,14 @@ async def update_lesson(
 
     editable = {
         "title", "class_id", "subject_id", "period", "duration_minutes",
+        # Pedagogical planning fields (rich text)
+        "theme", "sub_topic", "the_hook", "prerequisite_knowledge", "rationale", "methodologies", "reference",
+        # Metadata fields
+        "contact", "sex_demographics", "average_age", "no_in_class",
+        # Content fields
         "objectives", "activities", "materials", "homework", "notes",
+        # Success criteria (JSON)
+        "success_criteria",
     }
 
     # "Edit Lesson Plan" setting: when disabled, a PUBLISHED plan's content is

@@ -11,7 +11,8 @@ import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
 import {
   ClipboardCheck, Loader2, CheckCircle2, Undo2, Eye, X, Filter,
-  Target, ListChecks, Wrench, BookOpen, FileText,
+  Target, ListChecks, Wrench, BookOpen, FileText, Zap, Layers, Lightbulb,
+  Sparkles, Link2, Users,
 } from "lucide-react";
 
 // Sanitization config (defense in depth)
@@ -224,12 +225,26 @@ function PlanViewModal({ plan, canWrite, busy, onApprove, onReturn, onClose }: {
   onApprove: () => void; onReturn: () => void; onClose: () => void;
 }) {
   const sections = [
-    { icon: Target, label: "Objectives", value: plan.objectives },
-    { icon: ListChecks, label: "Activities", value: plan.activities },
-    { icon: Wrench, label: "Materials", value: plan.materials },
-    { icon: BookOpen, label: "Homework", value: plan.homework },
-    { icon: FileText, label: "Teacher notes", value: plan.notes },
-  ];
+    // Metadata
+    { icon: Users, label: "Contact", value: plan.contact, highlight: false },
+    { icon: Users, label: "Demographics", value: plan.sex_demographics, highlight: false },
+    { icon: Users, label: "Class Size", value: plan.no_in_class ? `${plan.no_in_class} students` : null, highlight: false },
+    { icon: Users, label: "Average Age", value: plan.average_age ? `${plan.average_age} years` : null, highlight: false },
+    // Pedagogical planning
+    { icon: Layers, label: "Theme", value: plan.theme, highlight: true },
+    { icon: Target, label: "Sub-Topic", value: plan.sub_topic, highlight: true },
+    { icon: Zap, label: "The Hook", value: plan.the_hook, highlight: true },
+    { icon: Target, label: "Objectives", value: plan.objectives, highlight: true },
+    { icon: ListChecks, label: "Activities", value: plan.activities, highlight: true },
+    { icon: BookOpen, label: "Pre-Requisite Knowledge", value: plan.prerequisite_knowledge, highlight: true },
+    { icon: Lightbulb, label: "Rationale", value: plan.rationale, highlight: true },
+    { icon: Sparkles, label: "21st Century Methodologies", value: plan.methodologies, highlight: true },
+    { icon: Wrench, label: "Materials", value: plan.materials, highlight: true },
+    { icon: Link2, label: "Reference", value: plan.reference, highlight: true },
+    { icon: FileText, label: "Success Criteria", value: plan.success_criteria ? formatSuccessCriteria(plan.success_criteria) : null, highlight: false },
+    { icon: BookOpen, label: "Homework", value: plan.homework, highlight: true },
+    { icon: FileText, label: "Teacher notes", value: plan.notes, highlight: true },
+  ].filter((s) => s.value);
   return (
     <div className="fixed inset-0 z-50 flex">
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
@@ -250,19 +265,28 @@ function PlanViewModal({ plan, canWrite, busy, onApprove, onReturn, onClose }: {
             : "bg-amber-50 text-amber-700 border-amber-200")}>
             {plan.status === "published" ? "Approved" : "Pending approval"}
           </span>
-          {sections.map((s) => (
-            <div key={s.label}>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5 mb-1"><s.icon size={12} /> {s.label}</p>
-              {s.value ? (
-                <div
-                  className="text-sm text-slate-700 prose prose-sm max-w-none"
-                  dangerouslySetInnerHTML={{ __html: renderContent(s.value) }}
-                />
-              ) : (
-                <span className="text-slate-300">—</span>
-              )}
-            </div>
-          ))}
+          {sections.map((s) => {
+            const isRichText = s.highlight; // pedagogical fields use rich text
+            return (
+              <div key={s.label}>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5 mb-1"><s.icon size={12} /> {s.label}</p>
+                {s.value ? (
+                  isRichText ? (
+                    <div
+                      className="text-sm text-slate-700 prose prose-sm max-w-none"
+                      dangerouslySetInnerHTML={{ __html: renderContent(s.value as string) }}
+                    />
+                  ) : (
+                    <div className="text-sm text-slate-700">
+                      {DOMPurify.sanitize(String(s.value), { ALLOWED_TAGS: [] })}
+                    </div>
+                  )
+                ) : (
+                  <span className="text-slate-300">—</span>
+                )}
+              </div>
+            );
+          })}
         </div>
         {canWrite && (
           <div className="sticky bottom-0 bg-white border-t border-slate-200 px-6 py-4 flex justify-end gap-2">
@@ -278,6 +302,23 @@ function PlanViewModal({ plan, canWrite, busy, onApprove, onReturn, onClose }: {
       </div>
     </div>
   );
+}
+
+function formatSuccessCriteria(jsonStr: string): string {
+  try {
+    const data = JSON.parse(jsonStr);
+    if (!Array.isArray(data?.rows) || data.rows.length === 0) return "";
+    // Render as a simple list; supervisors see criteria + achievement levels
+    return data.rows
+      .map((r: any) => {
+        const criteria = DOMPurify.sanitize(r.criteria || "", { ALLOWED_TAGS: [] });
+        const levels = [r.some && "Some", r.most && "Most", r.all && "All"].filter(Boolean).join(" / ");
+        return `${criteria}${levels ? ` (${levels})` : ""}`;
+      })
+      .join("\n");
+  } catch {
+    return "";
+  }
 }
 
 function fmtDate(iso: string): string {
