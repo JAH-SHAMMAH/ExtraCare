@@ -49,8 +49,9 @@ router = APIRouter(prefix="/hr", tags=["HR"])
 _can_admin_read = Depends(PermissionChecker("users:read"))
 _can_admin_write = Depends(PermissionChecker("users:write"))
 
-# Birthdays are school-scoped so teachers + staff can see colleague/student birthdays
-_can_read_birthdays = Depends(PermissionChecker("school:read"))
+# Birthdays gated by hr:read so teachers (who hold hr:read post-mig-118)
+# can see colleague/student birthdays without broad school:read access.
+_can_read_birthdays = Depends(PermissionChecker("hr:read"))
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
