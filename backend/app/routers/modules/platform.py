@@ -34,7 +34,7 @@ from app.models.modules.platform import (
     MailboxMessage, MailboxRecipient,
     MobileDevice, MobileAppConfig,
 )
-from app.models.modules.school import SchoolClass, Subject, Student, StudentReport, Timetable
+from app.models.modules.school import SchoolClass, Subject, Student, StudentReport, Timetable, TeacherSection
 from app.schemas.platform import (
     SessionCreate, SessionUpdate, SessionResponse, CurrentSessionResponse,
     HouseCreate, HouseUpdate, HouseResponse, BandCreate, BandResponse,
