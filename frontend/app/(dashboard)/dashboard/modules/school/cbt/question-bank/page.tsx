@@ -2,12 +2,20 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
+import DOMPurify from "dompurify";
+import { useEditor, EditorContent } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import TiptapLink from "@tiptap/extension-link";
+import TextAlign from "@tiptap/extension-text-align";
 import {
   useBankItems, useCreateBankItem, useUpdateBankItem, useDeleteBankItem, useImportBank,
 } from "@/hooks/useSchoolExperience";
 import { useSubjects } from "@/hooks/useSchool";
 import { cn } from "@/lib/utils";
-import { FileQuestion, Plus, Search, Upload, X, Loader2, Edit2, Trash2, ArrowLeft } from "lucide-react";
+import {
+  FileQuestion, Plus, Search, Upload, X, Loader2, Edit2, Trash2, ArrowLeft,
+  Bold, Italic, Underline, List, ListOrdered, Link as LinkIcon, AlignLeft, AlignCenter, AlignRight, Undo2, Redo2,
+} from "lucide-react";
 import type { Subject } from "@/types";
 
 const DIFFICULTIES = ["easy", "medium", "hard"];
@@ -22,6 +30,16 @@ const DIFF_STYLE: Record<string, string> = {
   medium: "bg-amber-50 text-amber-700 border-amber-200",
   hard: "bg-red-50 text-red-700 border-red-200",
 };
+
+const SANITIZE_CONFIG = {
+  ALLOWED_TAGS: ["p", "br", "strong", "em", "u", "ol", "ul", "li", "a", "table", "tr", "td", "th", "thead", "tbody"],
+  ALLOWED_ATTR: ["href", "target"],
+  KEEP_CONTENT: true,
+};
+
+function sanitizeHTML(html: string): string {
+  return DOMPurify.sanitize(html, SANITIZE_CONFIG);
+}
 
 interface BankItem {
   id: string; subject_id: string | null; subject_name: string | null; topic: string | null;
@@ -174,7 +192,7 @@ function BankForm({ item, subjects, onClose }: { item: BankItem | null; subjects
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
         <div className="space-y-3">
-          <div><label className="label">Question *</label><textarea value={f.question_text} onChange={(e) => setF({ ...f, question_text: e.target.value })} className="input min-h-[70px] resize-none" /></div>
+          <QuestionEditor value={f.question_text} onChange={(html) => setF({ ...f, question_text: html })} />
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Type</label><select value={f.question_type} onChange={(e) => setF({ ...f, question_type: e.target.value })} className="input">{TYPES.map((t) => (<option key={t.value} value={t.value}>{t.label}</option>))}</select></div>
             <div><label className="label">Difficulty</label><select value={f.difficulty} onChange={(e) => setF({ ...f, difficulty: e.target.value })} className="input capitalize">{DIFFICULTIES.map((d) => (<option key={d} value={d}>{d}</option>))}</select></div>
@@ -212,6 +230,135 @@ function BankForm({ item, subjects, onClose }: { item: BankItem | null; subjects
           <button onClick={onClose} className="btn-secondary">Cancel</button>
           <button onClick={submit} disabled={pending || !f.question_text.trim()} className="btn-primary gap-2">{pending && <Loader2 size={15} className="animate-spin" />}{item ? "Save" : "Add"}</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function QuestionEditor({ value, onChange }: { value: string; onChange: (html: string) => void }) {
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      TiptapLink.configure({ openOnClick: false }),
+      TextAlign.configure({ types: ["heading", "paragraph"] }),
+    ],
+    content: value,
+    onUpdate: ({ editor }) => {
+      const html = editor.getHTML();
+      const sanitized = sanitizeHTML(html);
+      onChange(sanitized);
+    },
+  });
+
+  if (!editor) return null;
+
+  return (
+    <div>
+      <label className="label">Question *</label>
+      {/* Toolbar */}
+      <div className="border border-b-0 border-slate-200 rounded-t-lg bg-slate-50 p-2 flex flex-wrap gap-1">
+        <button
+          onClick={() => editor.chain().focus().toggleBold().run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("bold") && "bg-slate-200")}
+          title="Bold"
+        >
+          <Bold size={14} />
+        </button>
+        <button
+          onClick={() => editor.chain().focus().toggleItalic().run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("italic") && "bg-slate-200")}
+          title="Italic"
+        >
+          <Italic size={14} />
+        </button>
+        <button
+          onClick={() => editor.chain().focus().toggleUnderline().run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("underline") && "bg-slate-200")}
+          title="Underline"
+        >
+          <Underline size={14} />
+        </button>
+
+        <div className="w-px bg-slate-300 mx-1" />
+
+        <button
+          onClick={() => editor.chain().focus().setTextAlign("left").run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive({ textAlign: "left" }) && "bg-slate-200")}
+          title="Align left"
+        >
+          <AlignLeft size={14} />
+        </button>
+        <button
+          onClick={() => editor.chain().focus().setTextAlign("center").run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive({ textAlign: "center" }) && "bg-slate-200")}
+          title="Align center"
+        >
+          <AlignCenter size={14} />
+        </button>
+        <button
+          onClick={() => editor.chain().focus().setTextAlign("right").run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive({ textAlign: "right" }) && "bg-slate-200")}
+          title="Align right"
+        >
+          <AlignRight size={14} />
+        </button>
+
+        <div className="w-px bg-slate-300 mx-1" />
+
+        <button
+          onClick={() => editor.chain().focus().toggleBulletList().run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("bulletList") && "bg-slate-200")}
+          title="Bullet list"
+        >
+          <List size={14} />
+        </button>
+        <button
+          onClick={() => editor.chain().focus().toggleOrderedList().run()}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("orderedList") && "bg-slate-200")}
+          title="Numbered list"
+        >
+          <ListOrdered size={14} />
+        </button>
+
+        <div className="w-px bg-slate-300 mx-1" />
+
+        <button
+          onClick={() => {
+            const url = window.prompt("Enter URL:");
+            if (url) editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+          }}
+          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("link") && "bg-slate-200")}
+          title="Link"
+        >
+          <LinkIcon size={14} />
+        </button>
+
+        <div className="w-px bg-slate-300 mx-1" />
+
+        <button
+          onClick={() => editor.chain().focus().undo().run()}
+          disabled={!editor.can().undo()}
+          className="p-2 rounded hover:bg-slate-200 disabled:opacity-50 transition"
+          title="Undo"
+        >
+          <Undo2 size={14} />
+        </button>
+        <button
+          onClick={() => editor.chain().focus().redo().run()}
+          disabled={!editor.can().redo()}
+          className="p-2 rounded hover:bg-slate-200 disabled:opacity-50 transition"
+          title="Redo"
+        >
+          <Redo2 size={14} />
+        </button>
+      </div>
+
+      {/* Editor */}
+      <div className="border border-slate-200 rounded-b-lg overflow-hidden prose prose-sm max-w-none">
+        <EditorContent
+          editor={editor}
+          className="p-3 min-h-[80px] bg-white text-slate-700 focus:outline-none"
+        />
       </div>
     </div>
   );

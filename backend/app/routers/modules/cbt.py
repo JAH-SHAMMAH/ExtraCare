@@ -25,6 +25,7 @@ import csv
 import io
 import random
 from datetime import datetime, timezone, timedelta
+import bleach
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -685,6 +686,16 @@ async def _get_exam_or_404(db: AsyncSession, exam_id: str, org_id: str) -> CBTEx
 _DIFFICULTY = ("easy", "medium", "hard")
 _QTYPES = ("mcq", "true_false", "short_answer", "long_answer")
 
+# HTML sanitization config for rich-text fields (question_text, etc.)
+_SANITIZE_TAGS = {"p", "br", "strong", "em", "u", "ol", "ul", "li", "a", "table", "tr", "td", "th", "thead", "tbody"}
+_SANITIZE_ATTRS = {"a": ["href", "target"]}
+
+def _sanitize_html(html: str) -> str:
+    """Sanitize HTML to allow only safe formatting tags. Matches frontend DOMPurify config."""
+    if not html:
+        return html
+    return bleach.clean(html, tags=_SANITIZE_TAGS, attributes=_SANITIZE_ATTRS, strip=True)
+
 
 async def _bank_subject_names(db: AsyncSession, org_id: str, ids: set) -> dict:
     ids = {i for i in ids if i}
@@ -775,6 +786,8 @@ async def create_bank_item(
             raise HTTPException(status_code=404, detail="Subject not found.")
     data = payload.model_dump()
     data["question_type"] = QuestionType(data["question_type"])  # "mcq" -> QuestionType.MCQ
+    # Sanitize question_text to allow only safe HTML formatting
+    data["question_text"] = _sanitize_html(data.get("question_text", ""))
     q = QuestionBankItem(**data, created_by=current_user.id, org_id=org_id)
     db.add(q)
     await db.flush()
@@ -803,6 +816,9 @@ async def update_bank_item(
         raise HTTPException(status_code=422, detail="invalid question_type.")
     if "question_type" in updates:
         updates["question_type"] = QuestionType(updates["question_type"])
+    # Sanitize question_text if being updated
+    if "question_text" in updates:
+        updates["question_text"] = _sanitize_html(updates["question_text"])
     for k, v in updates.items():
         setattr(q, k, v)
     await db.flush()
@@ -879,7 +895,7 @@ async def import_bank(
         except ValueError:
             pts = 1.0
         db.add(QuestionBankItem(
-            question_text=qtext, question_type=QuestionType(qtype), options=opts or None,
+            question_text=_sanitize_html(qtext), question_type=QuestionType(qtype), options=opts or None,
             correct_answer=(row.get("correct_answer") or row.get("answer") or "").strip() or None,
             difficulty=diff, topic=(row.get("topic") or "").strip() or None,
             subject_id=lut.get((row.get("subject") or "").strip().lower()),
