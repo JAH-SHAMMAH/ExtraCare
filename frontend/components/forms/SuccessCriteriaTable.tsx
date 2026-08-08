@@ -62,7 +62,7 @@ export function SuccessCriteriaTable({
 
   const addRow = () => {
     const newRow: SuccessCriteriaRow = {
-      id: crypto.getRandomUUID(),
+      id: crypto.randomUUID(),
       criteria: "",
       some: false,
       most: false,
