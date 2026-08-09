@@ -110,9 +110,9 @@ def apply_updates():
     print("\n" + "="*100)
     print("RESULTS")
     print("="*100)
-    print(f"✅ Students updated: {len(student_updates)}")
-    print(f"✅ Staff updated: {len(staff_updates)}")
-    print(f"⏭️  Dead .ng accounts EXCLUDED: {len(excluded)}")
+    print(f"[OK] Students updated: {len(student_updates)}")
+    print(f"[OK] Staff updated: {len(staff_updates)}")
+    print(f"[SKIP] Dead .ng accounts EXCLUDED: {len(excluded)}")
     print(f"\nExcluded (not modified):")
     for email in sorted(excluded):
         print(f"  - {email}")
