@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     ALLOWED_EMAIL_DOMAIN: str = "fairviewschoolng.com"
     # Additional allowed email domain for students (e.g., student.fairview-school.ng).
     # Empty string disables. Checked in addition to ALLOWED_EMAIL_DOMAIN.
-    ALLOWED_STUDENT_EMAIL_DOMAIN: str = "student.fairview-school.ng"
+    ALLOWED_STUDENT_EMAIL_DOMAIN: str = ""
 
     # ── Attendance ───────────────────────────────────────────────────────────
     # Cutoffs (school-local "HH:MM") used to derive a daily attendance status
