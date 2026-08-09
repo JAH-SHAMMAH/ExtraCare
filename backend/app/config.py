@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # account (no auto-provisioning). Stored without the leading "@"; compared
     # case-insensitively — see allowed_email_domain below.
     ALLOWED_EMAIL_DOMAIN: str = "fairviewschoolng.com"
+    # Additional allowed email domain for students (e.g., student.fairview-school.ng).
+    # Empty string disables. Checked in addition to ALLOWED_EMAIL_DOMAIN.
+    ALLOWED_STUDENT_EMAIL_DOMAIN: str = "student.fairview-school.ng"
 
     # ── Attendance ───────────────────────────────────────────────────────────
     # Cutoffs (school-local "HH:MM") used to derive a daily attendance status
@@ -326,13 +329,27 @@ class Settings(BaseSettings):
 
     def email_allowed(self, email: str | None) -> bool:
         """True when single-school mode is off, no domain is configured, or
-        the email ends with the allowed domain. Case-insensitive."""
+        the email ends with an allowed domain (staff or student). Case-insensitive."""
         if not self.SINGLE_SCHOOL_MODE:
             return True
+
+        if not email:
+            return False
+
+        email_lower = email.strip().lower()
+
+        # Check staff domain
         domain = self.allowed_email_domain
-        if not domain:
+        if domain and email_lower.endswith("@" + domain):
             return True
-        return bool(email) and email.strip().lower().endswith("@" + domain)
+
+        # Check student domain
+        student_domain = self.ALLOWED_STUDENT_EMAIL_DOMAIN.strip().lstrip("@").lower()
+        if student_domain and email_lower.endswith("@" + student_domain):
+            return True
+
+        # No domain matched
+        return False
 
     @property
     def resolved_log_format(self) -> Literal["pretty", "json"]:
