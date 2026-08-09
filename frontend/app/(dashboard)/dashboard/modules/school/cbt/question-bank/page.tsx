@@ -120,7 +120,7 @@ export default function QuestionBankPage() {
             {items.map((q) => (
               <li key={q.id} className="px-5 py-3.5 flex items-start gap-3 hover:bg-slate-50/70 group">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-slate-800">{q.question_text}</p>
+                  <div className="text-sm font-medium text-slate-800 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeHTML(q.question_text) }} />
                   <div className="flex flex-wrap items-center gap-2 mt-1.5">
                     <span className={cn("badge capitalize", DIFF_STYLE[q.difficulty] || "bg-slate-50 text-slate-600 border-slate-200")}>{q.difficulty}</span>
                     <span className="badge bg-slate-50 text-slate-500 border-slate-200">{TYPES.find((t) => t.value === q.question_type)?.label || q.question_type}</span>
