@@ -711,6 +711,9 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
     };
     const teacherSections = (user as any)?.teacher_sections || [];
     const teacherSectionNames = new Set(teacherSections.map((s: any) => s.name));
+    const studentSections = (user as any)?.student_sections || [];
+    const studentSectionNames = new Set(studentSections.map((s: any) => s.name));
+    const hasStudentRole = (user as any)?.roles?.some((r: any) => r.slug === 'student') ?? false;
     const isTeacher = !hasPermission("school_admin:write") && hasPermission("school:reports:write");
 
     return MODULE_SECTIONS
@@ -723,14 +726,23 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
           return false;
         }
 
-        // If this is a report section and user is a teacher, only show if section matches.
+        // If this is a report section:
         const reportKey = Object.values(sectionNameToReportKey).find(key => key === s.key);
-        if (isTeacher && reportKey) {
-          // Find which section name maps to this report key, then check if teacher teaches it.
-          const sectionName = Object.entries(sectionNameToReportKey).find(
-            ([, key]) => key === s.key
-          )?.[0];
-          return sectionName && teacherSectionNames.has(sectionName);
+        if (reportKey) {
+          // Teachers: only show if section matches
+          if (isTeacher) {
+            const sectionName = Object.entries(sectionNameToReportKey).find(
+              ([, key]) => key === s.key
+            )?.[0];
+            return sectionName && teacherSectionNames.has(sectionName);
+          }
+          // Students: only show if section matches
+          if (hasStudentRole && studentSectionNames.size > 0) {
+            const sectionName = Object.entries(sectionNameToReportKey).find(
+              ([, key]) => key === s.key
+            )?.[0];
+            return sectionName && studentSectionNames.has(sectionName);
+          }
         }
         return true;
       })

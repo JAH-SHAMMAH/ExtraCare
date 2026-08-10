@@ -101,11 +101,12 @@ class UserMeResponse(BaseModel):
     force_password_change: bool = False
     org: OrganizationSummary | None = None
     teacher_sections: list[SectionBrief] = []  # teacher's assigned sections (for report nav filtering)
+    student_sections: list[SectionBrief] = []  # student's assigned section via class (for report nav filtering)
 
     model_config = {"from_attributes": True}
 
     @classmethod
-    def from_user(cls, user, org=None, teacher_sections=None) -> "UserMeResponse":
+    def from_user(cls, user, org=None, teacher_sections=None, student_sections=None) -> "UserMeResponse":
         return cls(
             id=user.id,
             email=user.email,
@@ -122,6 +123,7 @@ class UserMeResponse(BaseModel):
             force_password_change=bool(getattr(user, "force_password_change", False)),
             org=OrganizationSummary.from_org(org) if org is not None else None,
             teacher_sections=teacher_sections or [],
+            student_sections=student_sections or [],
         )
 
 

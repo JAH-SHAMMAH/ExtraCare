@@ -2389,13 +2389,54 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     if not student:
         raise HTTPException(status_code=404, detail="Student not found.")
     cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == student.class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+
+    # Student access gates: own-record check + published report check
+    is_student = any(r.slug == "student" for r in current_user.roles)
+    if is_student:
+        # Students can only view their own report
+        # (Student and User are separate tables linked via Student.user_id)
+        student_own = (await db.execute(
+            select(Student).where(
+                Student.user_id == current_user.id,
+                Student.org_id == org,
+            )
+        )).scalar_one_or_none()
+        if not student_own or student_own.id != student_id:
+            raise HTTPException(status_code=403, detail="You can only view your own report card.")
+
+        # Students can only view published reports (ReportApproval.stage == "published")
+        # This prevents seeing draft/in-progress scores while a teacher is still entering marks.
+        if cls:
+            # Load term record to get the term name (ReportApproval stores term as string)
+            term_record = (await db.execute(
+                select(AcademicTerm).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org)
+            )).scalar_one_or_none()
+
+            if term_record:
+                from app.models.modules.academics import ReportApproval
+                # Check if report is published via ReportApproval workflow
+                report_approval = (await db.execute(
+                    select(ReportApproval).where(
+                        ReportApproval.class_id == cls.id,
+                        ReportApproval.term == term_record.name,
+                        ReportApproval.org_id == org,
+                    )
+                )).scalar_one_or_none()
+
+                # Block if not published (draft/submitted/reviewed/approved stages are not yet visible to students)
+                if not report_approval or report_approval.stage != "published":
+                    raise HTTPException(
+                        status_code=403,
+                        detail="This report has not been published yet. Please check back later."
+                    )
+
     # Class-teacher gate: a non-admin may only open a card for a pupil in the class
-    # they are the class/form teacher of.
-    if not _report_admin(current_user) and (not cls or cls.teacher_id != current_user.id):
+    # they are the class/form teacher of. (Skipped for students via their own gates above.)
+    if not is_student and not _report_admin(current_user) and (not cls or cls.teacher_id != current_user.id):
         raise HTTPException(status_code=403, detail="You are not the class teacher for this pupil's class.")
     # Section-scoping: a teacher may only view reports for their assigned section(s).
     # For example, a Secondary teacher should not access Primary/Nursery report data.
-    if not _report_admin(current_user) and cls and cls.section_id:
+    if not is_student and not _report_admin(current_user) and cls and cls.section_id:
         teacher_sections = (await db.execute(
             select(TeacherSection.section_id).where(
                 TeacherSection.teacher_id == current_user.id,

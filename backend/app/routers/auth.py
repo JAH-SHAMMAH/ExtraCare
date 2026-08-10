@@ -355,7 +355,7 @@ async def get_me(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.models.modules.school import TeacherSection
+    from app.models.modules.school import TeacherSection, Student, SchoolClass
     from app.models.modules.platform import SchoolSection
     from app.schemas.auth import SectionBrief
 
@@ -384,7 +384,32 @@ async def get_me(
             )).scalars().all()
             teacher_sections = [SectionBrief(id=s.id, name=s.name) for s in sections]
 
-    return UserMeResponse.from_user(current_user, org, teacher_sections)
+    # Fetch student's assigned section (if this user is a student).
+    student_sections = []
+    student = (await db.execute(
+        select(Student).where(
+            Student.user_id == current_user.id,
+            Student.org_id == current_user.org_id,
+        )
+    )).scalar_one_or_none()
+
+    if student and student.class_id:
+        school_class = (await db.execute(
+            select(SchoolClass).where(SchoolClass.id == student.class_id)
+        )).scalar_one_or_none()
+
+        if school_class and school_class.section_id:
+            section = (await db.execute(
+                select(SchoolSection).where(
+                    SchoolSection.id == school_class.section_id,
+                    SchoolSection.org_id == current_user.org_id,
+                )
+            )).scalar_one_or_none()
+
+            if section:
+                student_sections = [SectionBrief(id=section.id, name=section.name)]
+
+    return UserMeResponse.from_user(current_user, org, teacher_sections, student_sections)
 
 
 @router.post("/change-password", summary="Change your own password")
