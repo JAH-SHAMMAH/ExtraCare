@@ -38,8 +38,8 @@ class UserResponse(BaseModel):
     job_title: Optional[str]
     avatar_url: Optional[str]
     status: UserStatus
-    email_verified: bool
-    mfa_enabled: bool
+    email_verified: bool = False  # default False if NULL in database
+    mfa_enabled: bool = False     # default False if NULL in database
     last_login_at: Optional[datetime]
     last_login_ip: Optional[str]
     created_at: datetime
@@ -62,8 +62,8 @@ class UserResponse(BaseModel):
             job_title=user.job_title,
             avatar_url=user.avatar_url,
             status=user.status,
-            email_verified=user.email_verified,
-            mfa_enabled=user.mfa_enabled,
+            email_verified=bool(user.email_verified or False),  # coerce NULL to False
+            mfa_enabled=bool(user.mfa_enabled or False),        # coerce NULL to False
             last_login_at=user.last_login_at,
             last_login_ip=user.last_login_ip,
             created_at=user.created_at,
@@ -88,7 +88,7 @@ class UserResponse(BaseModel):
             job_title=None,
             avatar_url=user.avatar_url,
             status=user.status,
-            email_verified=user.email_verified,
+            email_verified=bool(user.email_verified or False),  # coerce NULL to False
             mfa_enabled=False,
             last_login_at=None,
             last_login_ip=None,

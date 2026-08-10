@@ -97,7 +97,7 @@ class UserMeResponse(BaseModel):
     permissions: list[str]
     roles: list[RoleBrief] = []              # every role the user holds (for "My Roles")
     active_role_id: str | None = None        # the role the session is scoped to, or null = full
-    mfa_enabled: bool
+    mfa_enabled: bool = False                # default False if NULL in database
     force_password_change: bool = False
     org: OrganizationSummary | None = None
     teacher_sections: list[SectionBrief] = []  # teacher's assigned sections (for report nav filtering)
@@ -118,7 +118,7 @@ class UserMeResponse(BaseModel):
             roles=[RoleBrief(id=r.id, slug=r.slug, name=r.name, color=getattr(r, "color", None))
                    for r in user.roles],
             active_role_id=getattr(user, "_active_role_id", None),
-            mfa_enabled=user.mfa_enabled,
+            mfa_enabled=bool(user.mfa_enabled or False),  # coerce NULL to False
             force_password_change=bool(getattr(user, "force_password_change", False)),
             org=OrganizationSummary.from_org(org) if org is not None else None,
             teacher_sections=teacher_sections or [],
