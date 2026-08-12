@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useStudents, useReportCard, useSaveReportMeta, useSaveDomainRatings, useClasses } from "@/hooks/useSchool";
 import { useTermState, useGradingScales, useSections } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
+import { useAuthStore } from "@/lib/store";
 import { cn, getInitials } from "@/lib/utils";
 import { FileText, Search, Printer, Loader2, Pencil, X, ClipboardCheck, GraduationCap } from "lucide-react";
 import { PrintLetterhead } from "@/components/branding/Brand";
@@ -12,6 +13,53 @@ import { TERMS, DEFAULT_TERM } from "@/lib/terms";
 import type { Student, ReportCardDomain, SchoolClass, SchoolSection } from "@/types";
 
 export default function ReportCardsPage() {
+  const { user } = useAuthStore();
+  const isStudent = user?.roles?.some((r: any) => r.slug === "student") ?? false;
+
+  if (isStudent) {
+    return <StudentReportCardsView />;
+  }
+
+  return <TeacherReportCardsView />;
+}
+
+// ── Student view: just term dropdown, show own report ──
+
+function StudentReportCardsView() {
+  const { user } = useAuthStore();
+  const [term, setTerm] = useTermState(DEFAULT_TERM);
+  const { data: reportCard, isLoading: rcLoading } = useReportCard(user?.id ?? "", term);
+  const canWrite = useHasPermission("school:reports:write");
+
+  return (
+    <div className="p-8 max-w-3xl mx-auto">
+      <div className="mb-8 no-print">
+        <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Education</span><span>/</span><span className="text-brand-600 font-semibold">My Report Card</span></nav>
+        <h1 className="text-2xl font-black text-slate-900 tracking-tight">My Report Card</h1>
+        <p className="text-slate-500 text-sm mt-0.5">View and print your report card.</p>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex items-center justify-between gap-3 no-print">
+        <select value={term} onChange={(e) => setTerm(e.target.value)} className="input w-40">{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select>
+        {reportCard && (<button onClick={() => window.print()} className="btn-secondary gap-2"><Printer size={14} />Print</button>)}
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 p-6 print:border-0 print:p-0">
+        {rcLoading ? (
+          <div className="py-16 text-center"><Loader2 size={24} className="animate-spin text-slate-400 mx-auto" /></div>
+        ) : !reportCard ? (
+          <div className="py-16 text-center text-slate-400"><p className="font-semibold">No report card available</p><p className="text-sm mt-1">No grades have been submitted for this term yet, or your report is not published.</p></div>
+        ) : (
+          <ReportCardView card={reportCard} term={term} studentId={user?.id ?? ""} canWrite={canWrite} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Teacher/Admin view: multi-student interface (original) ──
+
+function TeacherReportCardsView() {
   const params = useSearchParams();
   // R4: a level-scoped view when the sidebar links here as ?section=<Name>
   // (Nursery / Primary / Secondary). Absent → the all-levels report desk.
