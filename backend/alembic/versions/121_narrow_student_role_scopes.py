@@ -47,8 +47,6 @@ NEW_PERMISSIONS = [
     "school:clubs:read",            # Browse clubs and enroll
     "school:feedback:read",         # Submit feedback (write-action gated server-side)
     "school:voting:submit",         # NEW: Vote/rate for teacher (cast own vote only)
-    # Housekeeping
-    "users:read",                   # View own profile
 ]
 
 OLD_PERMISSIONS = [

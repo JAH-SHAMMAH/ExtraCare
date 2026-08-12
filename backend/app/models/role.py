@@ -98,8 +98,6 @@ SCHOOL_STUDENT_PERMISSIONS = [
     "school:clubs:read",            # browse clubs and enroll
     "school:feedback:read",         # submit feedback (write-action gated server-side)
     "school:voting:submit",         # vote/rate for teacher (cast own vote only)
-    # Housekeeping
-    "users:read",                   # view own profile
 ]
 
 # Self-service scopes a PARENT may hold. Read-only over their CHILD's surface;

@@ -136,10 +136,11 @@ async def test_eclassroom_write_rbac(db, org):
     admin = await _preset_user(db, org, "org_admin")
     assert (await _run_gate(admin, org, db, rooms)).id == admin.id
 
-    # Students submit classwork (school:classroom:write) but must never reach the
-    # schedule/go-live controls.
+    # Students view classwork (school:classroom:read) but must never reach the
+    # schedule/go-live controls. (Migration 121 removed school:classroom:write from students.)
     pupil = await _preset_user(db, org, "student")
-    assert pupil.has_permission("school:classroom:write")
+    assert pupil.has_permission("school:classroom:read")
+    assert not pupil.has_permission("school:classroom:write")
     with pytest.raises(HTTPException) as exc:
         await _run_gate(pupil, org, db, rooms)
     assert exc.value.status_code == 403

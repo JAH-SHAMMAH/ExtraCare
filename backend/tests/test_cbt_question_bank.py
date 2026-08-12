@@ -162,5 +162,7 @@ async def test_bank_rbac_excludes_students(db, org):
     assert teacher_u.has_permission("school:cbt:manage")
     assert not teacher_u.has_permission("school:read") and not teacher_u.has_permission("school:write")
     student = await _preset_user(db, org, "student")
-    assert student.has_permission("school:cbt:read") and student.has_permission("school:cbt:write")
+    # Migration 121 narrowed student to school:cbt:sit (sit exams) instead of school:cbt:read/write (admin scopes)
+    assert student.has_permission("school:cbt:sit")
+    assert not student.has_permission("school:cbt:read") and not student.has_permission("school:cbt:write")
     assert not student.has_permission("school:read") and not student.has_permission("school:write")
