@@ -7,7 +7,8 @@
       "Bash(netstat -ano)",
       "Bash(cmd /c 'taskkill /F /PID 16296')",
       "Bash(npm install:*)",
-      "PowerShell($ErrorActionPreference = \"Stop\"; $fe = \"c:\\\\Users\\\\SHAMMAH\\\\OneDrive\\\\Desktop\\\\ExtraCare ERP\\\\frontend\"; $be = \"c:\\\\Users\\\\SHAMMAH\\\\OneDrive\\\\Desktop\\\\ExtraCare ERP\\\\backend\"; foreach \\($p in @\\(\"$fe\\\\node_modules\", \"$be\\\\venv\"\\)\\) { if \\(Test-Path $p\\) { Write-Output \"removing $p\"; Remove-Item -Recurse -Force $p; Write-Output \"  done\" } else { Write-Output \"skip \\(not present\\): $p\" } })"
+      "PowerShell($ErrorActionPreference = \"Stop\"; $fe = \"c:\\\\Users\\\\SHAMMAH\\\\OneDrive\\\\Desktop\\\\ExtraCare ERP\\\\frontend\"; $be = \"c:\\\\Users\\\\SHAMMAH\\\\OneDrive\\\\Desktop\\\\ExtraCare ERP\\\\backend\"; foreach \\($p in @\\(\"$fe\\\\node_modules\", \"$be\\\\venv\"\\)\\) { if \\(Test-Path $p\\) { Write-Output \"removing $p\"; Remove-Item -Recurse -Force $p; Write-Output \"  done\" } else { Write-Output \"skip \\(not present\\): $p\" } })",
+      "Bash(python -m pip install -q -r requirements.txt)"
     ]
   }
 }

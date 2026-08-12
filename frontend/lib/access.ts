@@ -205,9 +205,10 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // Make Report = the TEACHER score-entry page — scoped server-side to the
   // teacher's Timetable (class, subject) assignments.
   { prefix: "/dashboard/modules/school/make-report", permission: "school:reports:write" },
-  // Reports View (broadsheet etc.) — results view; the API further class-teacher-
-  // gates it (a non-class-teacher is blocked for that class).
-  { prefix: "/dashboard/modules/school/reports-view", permission: "school:reports:read" },
+  // Reports View (broadsheet etc.) — class results view, admin/teacher only (gated on
+  // school:reports:write). The API further class-teacher-gates it (a non-class-teacher
+  // is blocked for that class). Students see their own report via /report-cards instead.
+  { prefix: "/dashboard/modules/school/reports-view", permission: "school:reports:write" },
   // Reports Upload = ADMIN bulk import — school_admin only.
   { prefix: "/dashboard/modules/school/reports-upload", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/merits", permission: "school:behaviour:read" },

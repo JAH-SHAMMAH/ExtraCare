@@ -1,0 +1,54 @@
+﻿
+====================================================================================================
+FULL USER RECORD DUMP
+====================================================================================================
+
+email                          = abebi.abioye@fairviewschoolng.com
+full_name                      = Abebi Abioye
+hashed_password                = $2b$12$XWqxIzf.zQua1oy4CPEClu4y3TLlAQaSIH6Rvutc9cFK6.XGUpfLq
+avatar_url                     = None
+phone                          = None
+department                     = None
+job_title                      = None
+employee_id                    = None
+status                         = ACTIVE
+is_superadmin                  = None
+email_verified                 = True
+mfa_enabled                    = None
+mfa_secret                     = None
+failed_login_attempts          = None
+last_login_at                  = None
+last_login_ip                  = None
+password_reset_token           = None
+password_reset_expires         = None
+force_password_change          = True
+invite_token                   = None
+invite_expires                 = None
+invited_by                     = None
+bio                            = None
+preferences                    = None
+org_id                         = 8550ce5f-d9f6-48ef-8382-eff036da556a
+id                             = 571083013ecaa477
+created_at                     = 2026-08-10 02:12:51.649052+00:00
+updated_at                     = 2026-08-10 02:12:51.649052+00:00
+is_deleted                     = False
+deleted_at                     = None
+is_seed_account                = False
+
+====================================================================================================
+LOGIN AUTHENTICATION CHECK
+====================================================================================================
+
+School org ID: 8550ce5f-d9f6-48ef-8382-eff036da556a
+User org_id:   8550ce5f-d9f6-48ef-8382-eff036da556a
+Match:         True
+
+User is_deleted:   False
+Must be False:     True
+
+User status:       ACTIVE
+
+User hashed_password exists: True
+
+Roles assigned: 1
+  - student (Student)
