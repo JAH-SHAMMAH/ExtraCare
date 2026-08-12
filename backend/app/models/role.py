@@ -86,13 +86,20 @@ def _dedupe(perms: list[str]) -> list[str]:
 # reaches only their own academic surface. Their personal data (timetable,
 # attendance %) is served ownership-safe by /me/contexts with no school scope.
 SCHOOL_STUDENT_PERMISSIONS = [
-    "school:reports:read",      # own report card / grades
-    "school:lessons:read",      # published lesson material
-    "school:classroom:read", "school:classroom:write",  # eClassroom: view + submit
-    "school:cbt:read", "school:cbt:write",              # CBT: sit tests + submit
-    "school:clubs:read",        # browse clubs
-    "school:library:read",      # browse catalogue + own loans
-    "school:journals:read",     # class photo journals
+    # Core personal read-only access (own records only, enforced server-side via _scoped checks)
+    "school:timetable:read",        # my timetable
+    "school:library:read",          # browse catalogue + own loans
+    "school:reports:read",          # own report card (published-only, enforced server-side)
+    "school:classroom:read",        # own assignments / classwork (enforced server-side)
+    "school:journals:read",         # own photo journals
+    "school:lessons:read",          # assigned lesson material
+    # Student-specific engagement (distinct from admin/teacher scopes)
+    "school:cbt:sit",               # sit assigned exams (not manage/create)
+    "school:clubs:read",            # browse clubs and enroll
+    "school:feedback:read",         # submit feedback (write-action gated server-side)
+    "school:voting:submit",         # vote/rate for teacher (cast own vote only)
+    # Housekeeping
+    "users:read",                   # view own profile
 ]
 
 # Self-service scopes a PARENT may hold. Read-only over their CHILD's surface;
