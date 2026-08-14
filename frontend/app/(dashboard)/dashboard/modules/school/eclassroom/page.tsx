@@ -11,6 +11,7 @@ import {
 } from "@/hooks/useSchoolExperience";
 import { useMineFilter } from "@/hooks/useMineFilter";
 import { useHasPermission } from "@/components/guards/PermissionGate";
+import { useAuthStore } from "@/lib/store";
 import { cn, formatDate } from "@/lib/utils";
 import {
   BookOpen, Plus, X, Loader2, Edit2, Trash2, ClipboardList,
@@ -25,6 +26,107 @@ const STATUS_STYLES: Record<AssignmentStatus, string> = {
 };
 
 export default function EClassroomPage() {
+  const { user } = useAuthStore();
+  const isStudent = user?.roles?.some((r: any) => r.slug === "student") ?? false;
+
+  if (isStudent) {
+    return <StudentClassworkView />;
+  }
+
+  return <TeacherClassworkView />;
+}
+
+// ── Student view: simple assignment list with status ──
+
+function StudentClassworkView() {
+  const { data, isLoading } = useAssignments({
+    for_me: true,
+    page: 1,
+    page_size: 50,
+  });
+
+  const assignments = data?.items as Assignment[] | undefined;
+
+  return (
+    <div className="p-8 max-w-4xl mx-auto">
+      <div className="mb-8">
+        <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2">
+          <span>Education</span><span>/</span>
+          <span className="text-brand-600 font-semibold">Classwork</span>
+        </nav>
+        <h1 className="text-2xl font-black text-slate-900 tracking-tight">Classwork</h1>
+        <p className="text-slate-500 text-sm mt-0.5">View assignments and your submissions.</p>
+      </div>
+
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-48 bg-slate-100 rounded-xl animate-pulse" />
+          ))}
+        </div>
+      ) : assignments && assignments.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {assignments.map((a) => (
+            <StudentAssignmentCard key={a.id} assignment={a} />
+          ))}
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 flex flex-col items-center justify-center py-20 text-slate-400">
+          <BookOpen size={40} className="mb-3 opacity-40" />
+          <p className="font-semibold">No assignments yet</p>
+          <p className="text-sm mt-1">Assignments will appear here when your teacher posts them.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StudentAssignmentCard({ assignment }: { assignment: Assignment }) {
+  const isDraft = assignment.status === "draft";
+  const isClosed = assignment.status === "closed";
+  const dueDate = assignment.due_date ? new Date(assignment.due_date) : null;
+  const isOverdue = dueDate && dueDate < new Date();
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between mb-3">
+        <div className="w-10 h-10 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
+          <BookOpen size={18} className="text-indigo-600" />
+        </div>
+        {isDraft ? (
+          <span className="text-[10px] font-bold text-slate-400 uppercase">Draft</span>
+        ) : null}
+      </div>
+      <h3 className="text-sm font-bold text-slate-900 mb-1 line-clamp-2">{assignment.title}</h3>
+      {assignment.description && <p className="text-xs text-slate-500 mb-3 line-clamp-2">{assignment.description}</p>}
+      <div className="space-y-1 mb-3">
+        {dueDate && (
+          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+            <Calendar size={12} />
+            Due {formatDate(assignment.due_date || "")} {isOverdue && !isClosed ? <span className="text-red-600 font-semibold ml-1">(Overdue)</span> : null}
+          </div>
+        )}
+        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+          <Award size={12} />
+          {assignment.max_points} points
+        </div>
+      </div>
+      {isDraft ? (
+        <div className="text-xs text-slate-400 pt-3 border-t border-slate-100">
+          Not yet available (still being prepared)
+        </div>
+      ) : (
+        <div className="text-xs text-brand-600 pt-3 border-t border-slate-100 font-semibold">
+          {isClosed ? "Assignment closed" : "View your submission"}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Teacher/Admin view: multi-student interface (original) ──
+
+function TeacherClassworkView() {
   const canWrite = useHasPermission("school:write");
   const { mine, setMine } = useMineFilter();
   const [statusFilter, setStatusFilter] = useState<string>("");
