@@ -432,6 +432,34 @@ async def list_report_workflow(
     )
 
 
+@router.get("/report-workflow/mine", response_model=ReportApprovalListResponse, dependencies=[Depends(PermissionChecker("school:reports:read"))])
+async def list_my_report_workflow(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Teacher's own report submissions — read-only status view.
+
+    Returns ReportApproval records where submitted_by == current_user.id only.
+    Always filters to own submissions (no parameter override possible).
+    Gated on school:reports:read (teachers can view their own submission status).
+    """
+    base = select(ReportApproval).where(
+        ReportApproval.org_id == current_user.org_id,
+        ReportApproval.submitted_by == current_user.id,  # Own submissions only, hardcoded
+    )
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
+    rows = (await db.execute(
+        base.order_by(ReportApproval.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    )).scalars().all()
+    cnames = await _class_names(db, current_user.org_id, {r.class_id for r in rows})
+    return ReportApprovalListResponse(
+        items=[_report_response(r, cnames.get(r.class_id)) for r in rows],
+        total=total, page=page, page_size=page_size,
+    )
+
+
 @router.post("/report-workflow", response_model=ReportApprovalResponse, status_code=201, dependencies=[_report_write])
 async def create_report_workflow(
     payload: ReportApprovalCreate,
