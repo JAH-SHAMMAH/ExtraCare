@@ -149,7 +149,8 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/cbt/export", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt/reset", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt/remark", permission: "school:read" },
-  { prefix: "/dashboard/modules/school/cbt", permission: "school:cbt:read" },
+  // CBT: teachers hold school:cbt:read; students hold school:cbt:sit (sit exams only).
+  { prefix: "/dashboard/modules/school/cbt", permission: "school:cbt:read", anyOf: ["school:cbt:sit"] },
   // Behaviour Tracker TAXONOMY (categories / sub-categories / levels / settings)
   // defines the school's scheme — admin config. Logging a record stays on
   // school:behaviour:* so teachers can record conduct. Longest-prefix wins.
