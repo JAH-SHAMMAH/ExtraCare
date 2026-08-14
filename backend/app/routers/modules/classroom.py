@@ -53,6 +53,7 @@ router = APIRouter(
 
 _can_read = Depends(PermissionChecker("school:classroom:read"))
 _can_write = Depends(PermissionChecker("school:classroom:write"))
+_can_manage = Depends(PermissionChecker("school:classroom:manage"))  # teacher/admin only
 
 
 # ── Assignments ───────────────────────────────────────────────────────────────
@@ -217,15 +218,47 @@ async def delete_assignment(
 # ── Submissions ───────────────────────────────────────────────────────────────
 
 
-@router.get("/assignments/{assignment_id}/submissions", dependencies=[_can_read])
+@router.get("/assignments/{assignment_id}/submissions", dependencies=[_can_manage])
 async def list_submissions(
     assignment_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    """View all submissions for an assignment — teacher/admin only."""
     result = await db.execute(
         select(AssignmentSubmission).where(
             AssignmentSubmission.assignment_id == assignment_id,
+            AssignmentSubmission.org_id == current_user.org_id,
+        )
+    )
+    subs = result.scalars().all()
+    return {"items": [SubmissionResponse.model_validate(s).model_dump() for s in subs]}
+
+
+@router.get("/my-submissions", dependencies=[_can_read])
+async def my_submissions(
+    assignment_id: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """View own submission for an assignment — students see only their own."""
+    # Resolve student_id from current_user.id (same pattern as report-card own-record gate)
+    student = (await db.execute(
+        select(Student).where(
+            Student.user_id == current_user.id,
+            Student.org_id == current_user.org_id,
+        )
+    )).scalar_one_or_none()
+
+    if not student:
+        # User is not a student; return empty (prevent staff from using this to query)
+        return {"items": []}
+
+    # Return only this student's submission for the assignment
+    result = await db.execute(
+        select(AssignmentSubmission).where(
+            AssignmentSubmission.assignment_id == assignment_id,
+            AssignmentSubmission.student_id == student.id,
             AssignmentSubmission.org_id == current_user.org_id,
         )
     )
