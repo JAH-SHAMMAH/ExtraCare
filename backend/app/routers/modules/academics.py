@@ -29,9 +29,12 @@ from app.deps import get_current_active_user
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
 from app.models.user import User
-from app.models.modules.school import Student, Subject, SchoolClass
+from app.models.modules.school import Student, Subject, SchoolClass, Timetable
 from app.models.modules.academics import (
     SubjectSelection, Transcript, TranscriptEntry, ReportApproval, Recognition,
+)
+from app.models.modules.platform import (
+    Assessment, AssessmentGroup, StudentAssessmentScore, AcademicTerm, AcademicSubTerm,
 )
 from app.schemas.academics import (
     SubjectSelectionCreate, SubjectSelectionUpdate, SubjectSelectionResponse, SubjectSelectionListResponse,
@@ -458,6 +461,124 @@ async def list_my_report_workflow(
         items=[_report_response(r, cnames.get(r.class_id)) for r in rows],
         total=total, page=page, page_size=page_size,
     )
+
+
+@router.get("/report-analysis/grades", dependencies=[Depends(PermissionChecker("school:reports:read"))])
+async def list_grade_analysis(
+    class_id: str | None = Query(default=None),
+    subject_id: str | None = Query(default=None),
+    term_id: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Teacher's performance analysis — student scores aggregated by subject/assessment type.
+
+    Scoped to teacher's own classes/subjects via Timetable (class_id + subject_id + teacher_id).
+    Returns StudentAssessmentScore data grouped by student/subject/assessment_group.
+
+    Key scoping: Uses Timetable to ensure teacher only sees classes they teach,
+    not org-wide data. Filters by BOTH class_id AND subject_id together via Timetable
+    (not just Subject.teacher_id, which would be org-wide per subject).
+    """
+    # Get teacher's Timetable rows (class_id, subject_id pairs they teach)
+    teacher_timetables = (await db.execute(
+        select(Timetable).where(
+            Timetable.teacher_id == current_user.id,
+            Timetable.org_id == current_user.org_id,
+        )
+    )).scalars().all()
+
+    if not teacher_timetables:
+        # Teacher has no class assignments
+        return {"items": [], "total": 0, "page": page, "page_size": page_size}
+
+    # Extract (class_id, subject_id) pairs from teacher's Timetable
+    teacher_pairs = set((t.class_id, t.subject_id) for t in teacher_timetables if t.class_id and t.subject_id)
+
+    # Optional filtering by specific class/subject (must still be in teacher's Timetable)
+    if class_id or subject_id:
+        if class_id and subject_id:
+            if (class_id, subject_id) not in teacher_pairs:
+                return {"items": [], "total": 0, "page": page, "page_size": page_size}
+            teacher_pairs = {(class_id, subject_id)}
+        elif class_id:
+            teacher_pairs = {(c, s) for c, s in teacher_pairs if c == class_id}
+        elif subject_id:
+            teacher_pairs = {(c, s) for c, s in teacher_pairs if s == subject_id}
+
+    # Build base query: StudentAssessmentScore filtered to teacher's classes/subjects
+    base_query = select(
+        Student.id.label("student_id"),
+        Student.first_name,
+        Student.last_name,
+        Subject.id.label("subject_id"),
+        Subject.name.label("subject_name"),
+        AcademicTerm.id.label("term_id"),
+        AcademicTerm.name.label("term_name"),
+        AssessmentGroup.id.label("group_id"),
+        AssessmentGroup.name.label("assessment_type"),
+        func.sum(StudentAssessmentScore.score).label("total_score"),
+        func.sum(Assessment.max_score).label("total_max_score"),
+        func.count().label("assessment_count"),
+    ).join(
+        Student, StudentAssessmentScore.student_id == Student.id
+    ).join(
+        Subject, StudentAssessmentScore.subject_id == Subject.id
+    ).join(
+        Assessment, StudentAssessmentScore.assessment_id == Assessment.id
+    ).join(
+        AssessmentGroup, Assessment.group_id == AssessmentGroup.id
+    ).join(
+        AcademicTerm, Assessment.term_id == AcademicTerm.id
+    ).where(
+        StudentAssessmentScore.org_id == current_user.org_id,
+        # CRITICAL: Filter by BOTH class_id AND subject_id pairs from teacher's Timetable
+        # (not just Subject.teacher_id, which would be org-wide per subject)
+        or_(
+            *[
+                (Student.class_id == c) & (Subject.id == s)
+                for c, s in teacher_pairs
+            ]
+        ) if teacher_pairs else False,
+    ).group_by(
+        Student.id, Subject.id, AcademicTerm.id, AssessmentGroup.id
+    ).order_by(
+        AcademicTerm.created_at.desc(),
+        Student.first_name,
+        Student.last_name,
+        Subject.name,
+    )
+
+    if term_id:
+        base_query = base_query.where(AcademicTerm.id == term_id)
+
+    # Paginate
+    total = (await db.execute(select(func.count()).select_from(base_query.subquery()))).scalar() or 0
+    rows = (await db.execute(
+        base_query.offset((page - 1) * page_size).limit(page_size)
+    )).all()
+
+    # Format response
+    items = [
+        {
+            "student_id": r.student_id,
+            "student_name": f"{r.first_name} {r.last_name}",
+            "subject_id": r.subject_id,
+            "subject_name": r.subject_name,
+            "term_id": r.term_id,
+            "term_name": r.term_name,
+            "assessment_type": r.assessment_type,
+            "total_score": float(r.total_score) if r.total_score else 0,
+            "total_max_score": float(r.total_max_score) if r.total_max_score else 0,
+            "percentage": (float(r.total_score) / float(r.total_max_score) * 100) if r.total_max_score and r.total_score else 0,
+            "assessment_count": r.assessment_count,
+        }
+        for r in rows
+    ]
+
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.post("/report-workflow", response_model=ReportApprovalResponse, status_code=201, dependencies=[_report_write])

@@ -15,14 +15,20 @@ from sqlalchemy import select
 from app.models.user import User, UserStatus
 from app.models.organization import Organization, IndustryType
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
-from app.models.modules.school import Student, Subject
-from app.models.modules.academics import Transcript, Recognition
+from app.models.modules.school import Student, Subject, SchoolClass, Timetable
+from app.models.modules.academics import (
+    Transcript, Recognition
+)
+from app.models.modules.platform import (
+    Assessment, AssessmentGroup, StudentAssessmentScore, AcademicTerm, AcademicSubTerm
+)
 from app.routers.modules.academics import (
     list_subject_selections, create_subject_selection, update_subject_selection, delete_subject_selection,
     list_transcripts, create_transcript, get_transcript, update_transcript,
     add_transcript_entry, delete_transcript_entry, delete_transcript,
     list_report_workflow, create_report_workflow, update_report_workflow, delete_report_workflow,
     list_recognitions, create_recognition, update_recognition, delete_recognition, recognition_leaderboard,
+    list_grade_analysis,
 )
 from app.schemas.academics import (
     SubjectSelectionCreate, SubjectSelectionUpdate,
@@ -159,6 +165,185 @@ async def test_report_workflow_stage_transitions(db, org, teacher, school_class)
 
     await delete_report_workflow(r.id, db=db, current_user=teacher)
     assert (await list_report_workflow(stage=None, page=1, page_size=25, db=db, current_user=teacher)).total == 0
+
+
+# ── Grade Analysis (Teacher Performance Report) ────────────────────────────────
+
+async def test_grade_analysis_multi_class_same_subject(db, org, teacher):
+    """Verify teacher seeing same subject in multiple classes is correctly scoped.
+
+    CRITICAL TEST: Ensures Timetable scoping prevents a teacher from seeing
+    StudentAssessmentScore from classes/subjects they don't teach.
+    """
+    # Setup: Create two classes (different class_ids, same teacher)
+    class_a = SchoolClass(
+        id=str(uuid.uuid4()), name="Year 9A", level="Secondary",
+        academic_year="2025/2026", teacher_id=teacher.id, org_id=org.id
+    )
+    class_b = SchoolClass(
+        id=str(uuid.uuid4()), name="Year 9B", level="Secondary",
+        academic_year="2025/2026", teacher_id=teacher.id, org_id=org.id
+    )
+    db.add(class_a)
+    db.add(class_b)
+
+    # Create a subject
+    subject = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    db.add(subject)
+
+    # Create students: one in each class
+    student_a = Student(
+        id=str(uuid.uuid4()), student_id="A-001", first_name="Alice", last_name="Ahmed",
+        class_id=class_a.id, org_id=org.id
+    )
+    student_b = Student(
+        id=str(uuid.uuid4()), student_id="B-001", first_name="Bob", last_name="Brown",
+        class_id=class_b.id, org_id=org.id
+    )
+    db.add(student_a)
+    db.add(student_b)
+
+    # Create Timetable entries: teacher teaches Math to both classes (Monday 08:00-09:00)
+    tt_a = Timetable(
+        id=str(uuid.uuid4()), class_id=class_a.id, subject_id=subject.id,
+        day_of_week=0, start_time="08:00", end_time="09:00",
+        teacher_id=teacher.id, org_id=org.id
+    )
+    tt_b = Timetable(
+        id=str(uuid.uuid4()), class_id=class_b.id, subject_id=subject.id,
+        day_of_week=0, start_time="09:00", end_time="10:00",
+        teacher_id=teacher.id, org_id=org.id
+    )
+    db.add(tt_a)
+    db.add(tt_b)
+
+    # Create academic term
+    term = AcademicTerm(
+        id=str(uuid.uuid4()), name="Term 1", org_id=org.id
+    )
+    db.add(term)
+
+    # Create academic sub-term (required by Assessment)
+    sub_term = AcademicSubTerm(
+        id=str(uuid.uuid4()), name="Full-Term", org_id=org.id
+    )
+    db.add(sub_term)
+
+    # Create assessment group
+    group = AssessmentGroup(
+        id=str(uuid.uuid4()), name="Quiz 1", org_id=org.id
+    )
+    db.add(group)
+
+    # Create assessments
+    assessment_a = Assessment(
+        id=str(uuid.uuid4()), name="Quiz 1A", group_id=group.id,
+        term_id=term.id, sub_term_id=sub_term.id, max_score=20.0, org_id=org.id
+    )
+    assessment_b = Assessment(
+        id=str(uuid.uuid4()), name="Quiz 1B", group_id=group.id,
+        term_id=term.id, sub_term_id=sub_term.id, max_score=20.0, org_id=org.id
+    )
+    db.add(assessment_a)
+    db.add(assessment_b)
+
+    await db.flush()
+
+    # Create StudentAssessmentScore: class A student scores 18/20, class B student scores 15/20
+    score_a = StudentAssessmentScore(
+        id=str(uuid.uuid4()), student_id=student_a.id, subject_id=subject.id,
+        assessment_id=assessment_a.id, score=18.0, org_id=org.id
+    )
+    score_b = StudentAssessmentScore(
+        id=str(uuid.uuid4()), student_id=student_b.id, subject_id=subject.id,
+        assessment_id=assessment_b.id, score=15.0, org_id=org.id
+    )
+    db.add(score_a)
+    db.add(score_b)
+    await db.commit()
+
+    # TEST 1: List all grades for this teacher (no filters)
+    result = await list_grade_analysis(
+        class_id=None, subject_id=None, term_id=None,
+        page=1, page_size=25, db=db, current_user=teacher
+    )
+    assert result["total"] == 2, "Should see both classes' aggregated scores"
+    items = result["items"]
+    assert len(items) == 2
+
+    # Extract by student name to verify scoping
+    alice_item = next((i for i in items if "Alice" in i["student_name"]), None)
+    bob_item = next((i for i in items if "Bob" in i["student_name"]), None)
+    assert alice_item is not None, "Should see Alice (class A student)"
+    assert bob_item is not None, "Should see Bob (class B student)"
+
+    # Verify Alice's data is from class A
+    assert alice_item["total_score"] == 18.0
+    assert alice_item["total_max_score"] == 20.0
+    assert alice_item["percentage"] == 90.0
+    assert alice_item["assessment_count"] == 1
+
+    # Verify Bob's data is from class B
+    assert bob_item["total_score"] == 15.0
+    assert bob_item["total_max_score"] == 20.0
+    assert bob_item["percentage"] == 75.0
+    assert bob_item["assessment_count"] == 1
+
+    # TEST 2: Filter by class_id (class A only)
+    result_class_a = await list_grade_analysis(
+        class_id=class_a.id, subject_id=None, term_id=None,
+        page=1, page_size=25, db=db, current_user=teacher
+    )
+    assert result_class_a["total"] == 1, "Should see only class A student"
+    assert "Alice" in result_class_a["items"][0]["student_name"]
+
+    # TEST 3: Filter by class_id (class B only)
+    result_class_b = await list_grade_analysis(
+        class_id=class_b.id, subject_id=None, term_id=None,
+        page=1, page_size=25, db=db, current_user=teacher
+    )
+    assert result_class_b["total"] == 1, "Should see only class B student"
+    assert "Bob" in result_class_b["items"][0]["student_name"]
+
+    # TEST 4: Filter by subject_id
+    result_subject = await list_grade_analysis(
+        class_id=None, subject_id=subject.id, term_id=None,
+        page=1, page_size=25, db=db, current_user=teacher
+    )
+    assert result_subject["total"] == 2, "Should see both students for this subject"
+
+    # TEST 5: Filter by term_id
+    result_term = await list_grade_analysis(
+        class_id=None, subject_id=None, term_id=term.id,
+        page=1, page_size=25, db=db, current_user=teacher
+    )
+    assert result_term["total"] == 2, "Should see both students in this term"
+
+    # TEST 6: Filter by class + subject combo
+    result_combo = await list_grade_analysis(
+        class_id=class_a.id, subject_id=subject.id, term_id=None,
+        page=1, page_size=25, db=db, current_user=teacher
+    )
+    assert result_combo["total"] == 1, "Should see only class A + math"
+    assert "Alice" in result_combo["items"][0]["student_name"]
+
+
+async def test_grade_analysis_teacher_without_classes(db, org):
+    """Teacher with no Timetable assignments should see empty results."""
+    teacher_no_class = User(
+        id=str(uuid.uuid4()), email="lonely@example.com", full_name="Lonely Teacher",
+        status=UserStatus.ACTIVE, org_id=org.id
+    )
+    teacher_no_class.roles = []
+    db.add(teacher_no_class)
+    await db.commit()
+
+    result = await list_grade_analysis(
+        class_id=None, subject_id=None, term_id=None,
+        page=1, page_size=25, db=db, current_user=teacher_no_class
+    )
+    assert result["total"] == 0, "Teacher with no classes should see empty results"
+    assert result["items"] == []
 
 
 # ── Merit & Awards (Recognition) ────────────────────────────────────────────────
