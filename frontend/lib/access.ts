@@ -98,14 +98,15 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/lessons/setup", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/lessons/approve", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/lessons", permission: "school:lessons:write" },
-  // Library browse + own loans (students can use these)
-  { prefix: "/dashboard/modules/school/library", permission: "school:library:read" },
-  // Library admin operations (staff only) — all require write
+  // Library browse + own loans: students see sidebar My Library quick-link, NOT the admin section.
+  // The admin "Dashboard" itself is school:write (old parent), and all children require write.
+  // Longest-prefix match ensures specific children block before the parent.
   { prefix: "/dashboard/modules/school/library/catalogue", permission: "school:library:write" },
   { prefix: "/dashboard/modules/school/library/loans", permission: "school:library:write" },
   { prefix: "/dashboard/modules/school/library/users", permission: "school:library:write" },
   { prefix: "/dashboard/modules/school/library/setup", permission: "school:library:write" },
   { prefix: "/dashboard/modules/school/library/reviews", permission: "school:library:write" },
+  { prefix: "/dashboard/modules/school/library", permission: "school:library:write" },
   { prefix: "/dashboard/modules/school/sms", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/transport", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/report-cards", permission: "school:reports:read" },
