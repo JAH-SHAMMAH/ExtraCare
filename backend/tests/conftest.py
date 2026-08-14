@@ -155,7 +155,8 @@ async def student(db, org, school_class, student_user) -> Student:
         student_id="S-001",
         first_name="Ada",
         last_name="Okafor",
-        email=student_user.email,  # link via shared email
+        email=student_user.email,
+        user_id=student_user.id,  # canonical link to User record (matches live.py auth pattern)
         class_id=school_class.id,
         org_id=org.id,
     )

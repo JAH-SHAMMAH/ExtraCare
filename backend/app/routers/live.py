@@ -221,11 +221,12 @@ async def _is_user_authorised_for_session(
     if klass.teacher_id == user.id:
         return True
 
-    if not user.email:
-        return False
+    # Resolve student via canonical user_id link (not email, which can be
+    # unstable across bulk migrations). Matches the pattern used throughout
+    # this codebase for Student ↔ User joins (report-cards, submissions, etc).
     student = (await db.execute(
         select(Student.id).where(
-            Student.email == user.email,
+            Student.user_id == user.id,
             Student.org_id == user.org_id,
             Student.class_id == session.class_id,
             Student.is_deleted == False,

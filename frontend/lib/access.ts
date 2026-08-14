@@ -149,8 +149,11 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/cbt/export", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt/reset", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt/remark", permission: "school:read" },
-  // Live Classes — staff only (teachers, exam officers). Currently MISSING from this
-  // table; defining here to prevent inheritance from the parent /cbt route.
+  // Live Classes — admin interface for starting/managing sessions. Teachers/admins only.
+  // Students use the separate /dashboard/my-live-classes route (roleOnly in CORE_NAV).
+  // Both the frontend route and backend authorization (via _is_user_authorised_for_session)
+  // check student enrollment independently, so no permission scopes needed for students
+  // to join — only to access the admin "Go Live" interface.
   { prefix: "/dashboard/modules/school/cbt/live", permission: "school:cbt:manage" },
   // CBT admin tree (Manage CBT, Question Bank, Results, etc.) — teachers/admins only.
   // Students access exams via the dedicated /dashboard/my-exams route instead.
