@@ -149,8 +149,12 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/cbt/export", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt/reset", permission: "school:read" },
   { prefix: "/dashboard/modules/school/cbt/remark", permission: "school:read" },
-  // CBT: teachers hold school:cbt:read; students hold school:cbt:sit (sit exams only).
-  { prefix: "/dashboard/modules/school/cbt", permission: "school:cbt:read", anyOf: ["school:cbt:sit"] },
+  // Live Classes — staff only (teachers, exam officers). Currently MISSING from this
+  // table; defining here to prevent inheritance from the parent /cbt route.
+  { prefix: "/dashboard/modules/school/cbt/live", permission: "school:cbt:manage" },
+  // CBT admin tree (Manage CBT, Question Bank, Results, etc.) — teachers/admins only.
+  // Students access exams via the dedicated /dashboard/my-exams route instead.
+  { prefix: "/dashboard/modules/school/cbt", permission: "school:cbt:read" },
   // Behaviour Tracker TAXONOMY (categories / sub-categories / levels / settings)
   // defines the school's scheme — admin config. Logging a record stays on
   // school:behaviour:* so teachers can record conduct. Longest-prefix wins.
