@@ -37,6 +37,7 @@ const CORE_NAV = [
   { href: "/dashboard/my-children/payments", label: "Pay Fees", icon: BadgeDollarSign, roleOnly: "parent" as ActiveRole },
   { href: "/dashboard/my-timetable", label: "My Timetable", icon: Calendar, roleOnly: "student" as ActiveRole },
   { href: "/dashboard/my-exams", label: "My Exams", icon: MonitorCheck, roleOnly: "student" as ActiveRole },
+  { href: "/dashboard/my-live-classes", label: "My Live Classes", icon: Radio, roleOnly: "student" as ActiveRole },
   { href: "/dashboard/my-library", label: "My Library", icon: Library, roleOnly: "student" as ActiveRole },
   { href: "/dashboard/my-classes", label: "My Classes", icon: School, roleOnly: "teacher" as ActiveRole },
   { href: "/dashboard/my-classes/attendance", label: "Class Attendance", icon: ClipboardList, roleOnly: "teacher" as ActiveRole },
