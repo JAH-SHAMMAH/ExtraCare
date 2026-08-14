@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useLiveSessions, useLiveRecordings } from "@/hooks/useLive";
-import { resolveMediaUrl, timeAgo, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { Radio, Users, PlayCircle, Clock, Loader2 } from "lucide-react";
 import type { LiveSession } from "@/types";
 
@@ -215,13 +215,12 @@ function RecordingPlayer({ session }: { session: LiveSession }) {
   }
 
   const recording = recordings[0];
-  const videoUrl = recording.file_path ? resolveMediaUrl(recording.file_path) : null;
 
   return (
     <div className="space-y-4">
-      {videoUrl ? (
+      {recording.file_url ? (
         <video
-          src={videoUrl}
+          src={recording.file_url}
           controls
           className="w-full rounded-lg bg-black"
           autoPlay
@@ -233,10 +232,7 @@ function RecordingPlayer({ session }: { session: LiveSession }) {
       )}
       <div className="text-xs text-slate-500">
         <p>
-          Recorded{" "}
-          {recording.created_at
-            ? timeAgo(recording.created_at)
-            : "recently"}
+          Duration: {recording.duration_seconds ? `${Math.round(recording.duration_seconds / 60)} min` : "unknown"}
         </p>
       </div>
     </div>
