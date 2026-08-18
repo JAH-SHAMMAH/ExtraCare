@@ -20,6 +20,31 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Defensive: feed_posts was never created in migration history.
+    # Create it before FK references. On existing databases, this is a no-op.
+    from sqlalchemy import inspect
+    inspector = inspect(op.get_bind())
+
+    if "feed_posts" not in inspector.get_table_names():
+        op.create_table(
+            "feed_posts",
+            sa.Column("id", sa.String(length=36), nullable=False),
+            sa.Column("user_id", sa.String(length=36), nullable=False),
+            sa.Column("content", sa.Text, nullable=True),
+            sa.Column("media_url", sa.String(length=500), nullable=True),
+            sa.Column("media_type", sa.String(length=20), nullable=True),
+            sa.Column("org_id", sa.String(length=36), nullable=False),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+            sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+            sa.ForeignKeyConstraint(["org_id"], ["organizations.id"]),
+            sa.PrimaryKeyConstraint("id"),
+        )
+        op.create_index("ix_feed_posts_user_id", "feed_posts", ["user_id"])
+        op.create_index("ix_feed_posts_org_id", "feed_posts", ["org_id"])
+        op.create_index("ix_feed_post_org_created", "feed_posts", ["org_id", "created_at"])
+
     op.create_table(
         "feed_post_attachments",
         sa.Column("id", sa.String(length=36), nullable=False),

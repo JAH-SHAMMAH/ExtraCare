@@ -19,6 +19,66 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Defensive: library_books and library_loans were never created in migration history.
+    # On fresh databases, create them before FK references. On existing databases, this is a no-op.
+    from sqlalchemy import inspect
+    inspector = inspect(op.get_bind())
+
+    if "library_books" not in inspector.get_table_names():
+        op.create_table(
+            "library_books",
+            sa.Column("id", sa.String(length=36), nullable=False),
+            sa.Column("title", sa.String(length=255), nullable=False),
+            sa.Column("author", sa.String(length=255), nullable=False),
+            sa.Column("isbn", sa.String(length=20), nullable=True),
+            sa.Column("category", sa.String(length=60), nullable=True),
+            sa.Column("publisher", sa.String(length=255), nullable=True),
+            sa.Column("publication_year", sa.Integer, nullable=True),
+            sa.Column("cover_url", sa.String(length=500), nullable=True),
+            sa.Column("shelf_location", sa.String(length=30), nullable=True),
+            sa.Column("total_copies", sa.Integer, nullable=False, server_default="1"),
+            sa.Column("available_copies", sa.Integer, nullable=False, server_default="1"),
+            sa.Column("description", sa.Text, nullable=True),
+            sa.Column("org_id", sa.String(length=36), nullable=False),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+            sa.ForeignKeyConstraint(["org_id"], ["organizations.id"]),
+            sa.PrimaryKeyConstraint("id"),
+        )
+        op.create_index("ix_library_books_title", "library_books", ["title"])
+        op.create_index("ix_library_books_isbn", "library_books", ["isbn"])
+        op.create_index("ix_library_books_category", "library_books", ["category"])
+        op.create_index("ix_library_books_org_id", "library_books", ["org_id"])
+        op.create_index("ix_library_books_title_org", "library_books", ["title", "org_id"])
+
+    if "library_loans" not in inspector.get_table_names():
+        op.create_table(
+            "library_loans",
+            sa.Column("id", sa.String(length=36), nullable=False),
+            sa.Column("book_id", sa.String(length=36), nullable=False),
+            sa.Column("borrower_user_id", sa.String(length=36), nullable=False),
+            sa.Column("issued_by", sa.String(length=36), nullable=True),
+            sa.Column("borrowed_at", sa.DateTime(timezone=True), nullable=False),
+            sa.Column("due_date", sa.Date, nullable=False),
+            sa.Column("returned_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("notes", sa.Text, nullable=True),
+            sa.Column("status", sa.String(length=20), nullable=False, server_default="borrowed"),
+            sa.Column("org_id", sa.String(length=36), nullable=False),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+            sa.ForeignKeyConstraint(["book_id"], ["library_books.id"]),
+            sa.ForeignKeyConstraint(["borrower_user_id"], ["users.id"]),
+            sa.ForeignKeyConstraint(["issued_by"], ["users.id"], ondelete="SET NULL"),
+            sa.ForeignKeyConstraint(["org_id"], ["organizations.id"]),
+            sa.PrimaryKeyConstraint("id"),
+        )
+        op.create_index("ix_library_loans_book_id", "library_loans", ["book_id"])
+        op.create_index("ix_library_loans_borrower_user_id", "library_loans", ["borrower_user_id"])
+        op.create_index("ix_library_loans_due_date", "library_loans", ["due_date"])
+        op.create_index("ix_library_loans_status", "library_loans", ["status"])
+        op.create_index("ix_library_loans_org_id", "library_loans", ["org_id"])
+
     op.create_table(
         "library_settings",
         sa.Column("id", sa.String(length=36), nullable=False),

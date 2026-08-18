@@ -19,6 +19,41 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Defensive: live_sessions was never created in migration history.
+    # Create it before FK references. On existing databases, this is a no-op.
+    from sqlalchemy import inspect
+    inspector = inspect(op.get_bind())
+
+    if "live_sessions" not in inspector.get_table_names():
+        op.create_table(
+            "live_sessions",
+            sa.Column("id", sa.String(length=36), nullable=False),
+            sa.Column("host_user_id", sa.String(length=36), nullable=False),
+            sa.Column("title", sa.String(length=200), nullable=False),
+            sa.Column("description", sa.Text, nullable=True),
+            sa.Column("class_id", sa.String(length=36), nullable=True),
+            sa.Column("subject_id", sa.String(length=36), nullable=True),
+            sa.Column("timetable_id", sa.String(length=36), nullable=True),
+            sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.true()),
+            sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
+            sa.Column("ended_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("org_id", sa.String(length=36), nullable=False),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+            sa.ForeignKeyConstraint(["host_user_id"], ["users.id"], ondelete="CASCADE"),
+            sa.ForeignKeyConstraint(["class_id"], ["school_classes.id"], ondelete="SET NULL"),
+            sa.ForeignKeyConstraint(["subject_id"], ["subjects.id"], ondelete="SET NULL"),
+            sa.ForeignKeyConstraint(["timetable_id"], ["timetables.id"], ondelete="SET NULL"),
+            sa.ForeignKeyConstraint(["org_id"], ["organizations.id"]),
+            sa.PrimaryKeyConstraint("id"),
+        )
+        op.create_index("ix_live_sessions_host_user_id", "live_sessions", ["host_user_id"])
+        op.create_index("ix_live_sessions_class_id", "live_sessions", ["class_id"])
+        op.create_index("ix_live_sessions_subject_id", "live_sessions", ["subject_id"])
+        op.create_index("ix_live_sessions_timetable_id", "live_sessions", ["timetable_id"])
+        op.create_index("ix_live_sessions_is_active", "live_sessions", ["is_active"])
+        op.create_index("ix_live_session_org_active", "live_sessions", ["org_id", "is_active"])
+
     op.create_table(
         "eclassroom_settings",
         sa.Column("id", sa.String(length=36), nullable=False),

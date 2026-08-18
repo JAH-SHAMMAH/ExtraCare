@@ -21,6 +21,45 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Defensive: lesson_plans was never created in migration history.
+    # On fresh databases, create it before trying to ALTER. On existing
+    # databases, this is a no-op (CREATE TABLE IF NOT EXISTS via inspect).
+    from sqlalchemy import inspect
+    inspector = inspect(op.get_bind())
+    if "lesson_plans" not in inspector.get_table_names():
+        op.create_table(
+            "lesson_plans",
+            sa.Column("id", sa.String(length=36), nullable=False),
+            sa.Column("title", sa.String(length=255), nullable=False),
+            sa.Column("class_id", sa.String(length=36), nullable=False),
+            sa.Column("subject_id", sa.String(length=36), nullable=False),
+            sa.Column("teacher_id", sa.String(length=36), nullable=True),
+            sa.Column("lesson_date", sa.Date, nullable=False),
+            sa.Column("period", sa.Integer, nullable=True),
+            sa.Column("duration_minutes", sa.Integer, nullable=False, server_default="45"),
+            sa.Column("objectives", sa.Text, nullable=True),
+            sa.Column("activities", sa.Text, nullable=True),
+            sa.Column("materials", sa.Text, nullable=True),
+            sa.Column("homework", sa.Text, nullable=True),
+            sa.Column("notes", sa.Text, nullable=True),
+            sa.Column("status", sa.String(length=20), nullable=False, server_default="draft"),
+            sa.Column("org_id", sa.String(length=36), nullable=False),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+            sa.ForeignKeyConstraint(["class_id"], ["school_classes.id"]),
+            sa.ForeignKeyConstraint(["subject_id"], ["subjects.id"]),
+            sa.ForeignKeyConstraint(["teacher_id"], ["users.id"], ondelete="SET NULL"),
+            sa.ForeignKeyConstraint(["org_id"], ["organizations.id"]),
+            sa.PrimaryKeyConstraint("id"),
+        )
+        op.create_index("ix_lesson_plans_class_id", "lesson_plans", ["class_id"])
+        op.create_index("ix_lesson_plans_subject_id", "lesson_plans", ["subject_id"])
+        op.create_index("ix_lesson_plans_teacher_id", "lesson_plans", ["teacher_id"])
+        op.create_index("ix_lesson_plans_lesson_date", "lesson_plans", ["lesson_date"])
+        op.create_index("ix_lesson_plans_teacher_date", "lesson_plans", ["teacher_id", "lesson_date"])
+        op.create_index("ix_lesson_plans_org_id", "lesson_plans", ["org_id"])
+
     op.create_table(
         "lesson_plan_categories",
         sa.Column("id", sa.String(length=36), nullable=False),
