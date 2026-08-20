@@ -54,7 +54,23 @@ ADMIN_SLUGS = {"org_admin", "manager", "super_admin"}
 
 
 def _is_admin(user: User) -> bool:
-    return user.is_superadmin or any(r.slug in ADMIN_SLUGS for r in user.roles)
+    """Check if user has administrator access to the executive dashboard.
+
+    Recognizes three forms of admin status:
+    1. Platform-level superadmin flag (rarely set)
+    2. Org-scoped admin role (org_admin, manager, super_admin)
+    3. Any role with [*] wildcard scope (e.g., super_user with full permissions)
+    """
+    # Check 1: Platform-level superadmin flag
+    if user.is_superadmin:
+        return True
+    # Check 2: Role slug in admin set (for backward compatibility)
+    if any(r.slug in ADMIN_SLUGS for r in user.roles):
+        return True
+    # Check 3: Any role with [*] wildcard scope (handles super_user, etc.)
+    if any("*" in (r.permissions or []) for r in user.roles):
+        return True
+    return False
 
 
 @router.get("/overview", dependencies=[Depends(require_role_module("school")), _can_read])
