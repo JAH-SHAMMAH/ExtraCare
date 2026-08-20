@@ -44,7 +44,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.features import require_feature
-from app.core.plans import UNLIMITED, plan_for, plan_limit_detail
 from app.core.security import decode_token
 from app.database import get_db, AsyncSessionLocal
 from app.deps import get_current_active_user
@@ -773,35 +772,9 @@ async def upload_recording(
     # analytics) get a clean value without branching on codec suffixes.
     ctype = base_ctype
 
-    # Plan-level storage quota. We sum the org's existing recording bytes
-    # up-front so the frontend gets a precise 402 before the user spends
-    # bandwidth uploading a blob we'd just reject.
-    org = (await db.execute(
-        select(Organization).where(Organization.id == current_user.org_id)
-    )).scalar_one_or_none()
-    plan = plan_for(org.subscription_tier if org else None)
-    if plan.recording_storage_mb != UNLIMITED:
-        used_bytes = (await db.execute(
-            select(func.coalesce(func.sum(LiveRecording.file_size), 0))
-            .where(LiveRecording.org_id == current_user.org_id)
-        )).scalar() or 0
-        quota_bytes = plan.recording_storage_mb * 1024 * 1024
-        if used_bytes >= quota_bytes:
-            raise HTTPException(
-                status_code=402,
-                detail=plan_limit_detail(
-                    reason="recording_storage_exceeded",
-                    current_plan=plan.tier,
-                ),
-            )
-        # Cap this upload so we never exceed the quota mid-file. Use the
-        # smaller of the plan's remaining headroom and the per-file cap.
-        max_bytes = min(
-            MAX_RECORDING_MB * 1024 * 1024,
-            quota_bytes - used_bytes,
-        )
-    else:
-        max_bytes = MAX_RECORDING_MB * 1024 * 1024
+    # Recording storage: no plan-based limit (subscription tiers removed).
+    # Use the per-file max as the cap.
+    max_bytes = MAX_RECORDING_MB * 1024 * 1024
     # Tenant + session nested folder so recordings never cross boundaries
     # and cleanup-by-session is a single rmdir.
     sess_dir = Path(settings.UPLOAD_DIR) / current_user.org_id / "live" / session.id

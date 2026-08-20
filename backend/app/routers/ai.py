@@ -4,9 +4,8 @@ AI assistant — single entry point, module-aware.
 POST /api/v1/ai/assist with {module, task, context}. Enforcement layers:
   1. Feature flag `ai_assistant` must be on for the tenant.
   2. The target `module` must be in the tenant's `modules_enabled`.
-  3. The tenant's plan must actually permit the module (plan + cap).
-  4. The caller must hold `<module>:read`.
-  5. Onboarding soft-gate applies — pre-done tenants only get their
+  3. The caller must hold `<module>:read`.
+  4. Onboarding soft-gate applies — pre-done tenants only get their
      primary vertical.
 
 We deliberately replicate the module/plan/perm checks from
@@ -32,12 +31,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.features import require_feature
-from app.core.plans import (
-    module_allowed_by_plan,
-    modules_within_cap,
-    plan_for,
-    plan_limit_detail,
-)
 from app.core.tenant import bump_denial
 from app.core.workspace import effective_modules_for_org, is_module_enabled_for_org
 from app.database import get_db
@@ -103,7 +96,7 @@ async def _resolve_org(
 def _enforce_module_access(
     request: Request, org: Organization, current_user: User, module: str
 ) -> None:
-    """Module + plan + onboarding + permission checks. Mirrors the
+    """Module + onboarding + permission checks. Mirrors the
     sequence in `require_role_module` so /ai/assist stays consistent
     with the rest of the gated surface."""
     # (1) Module enabled on the org
@@ -126,21 +119,7 @@ def _enforce_module_access(
                 },
             )
 
-    # (3) Plan allows the module + within module cap
-    plan = plan_for(org.subscription_tier)
-    if not module_allowed_by_plan(plan, module) or not modules_within_cap(
-        plan, effective_modules_for_org(org)
-    ):
-        bump_denial("plan_module_denied", org.id, module)
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=plan_limit_detail(
-                reason="module_not_allowed",
-                current_plan=plan.tier,
-            ),
-        )
-
-    # (4) Permission — canonical `<module>:read`
+    # (3) Permission — canonical `<module>:read`
     required_perm = f"{module}:read"
     if not current_user.has_permission(required_perm):
         bump_denial("role_permission_denied", org.id, required_perm)

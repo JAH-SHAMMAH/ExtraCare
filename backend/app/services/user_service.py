@@ -7,53 +7,15 @@ from app.models.user import User, UserStatus
 from app.models.role import Role
 from app.models.organization import Organization
 from app.core.security import hash_password, generate_secure_token
-from app.core.plans import plan_for, users_within_cap, plan_limit_detail
 from app.core.tenant import bump_denial as _bump_denial_counter
 from app.services.usage import track as track_usage
 from app.schemas.user import UserCreate, UserUpdate, UserListResponse, UserResponse, InviteUserRequest
 
 
 async def _assert_user_cap(db: AsyncSession, org_id: str) -> None:
-    """Raises 402 if adding one more user would exceed the plan's cap.
-    We read org + count inside the same session so concurrent invites don't
-    slip past the cap — last writer still races, but this is a soft limit,
-    not a security boundary."""
-    from fastapi import HTTPException, status
-
-    org = (await db.execute(select(Organization).where(Organization.id == org_id))).scalar_one_or_none()
-    if not org:
-        return  # org-missing is handled elsewhere; don't mask that error here
-
-    plan = plan_for(org.subscription_tier)
-    count = (await db.execute(
-        select(func.count(User.id)).where(User.org_id == org_id, User.is_deleted == False)
-    )).scalar_one() or 0
-    if not users_within_cap(plan, count):
-        _bump_denial_counter("plan_user_denied", org_id, plan.tier.value)
-        # Org-wide nudge — any admin with the inbox open should see that
-        # they're at the user cap. Uses its own session (the caller is
-        # about to raise 402, which would rollback the request tx).
-        from app.services import notifications as _notif
-        from app.models.notification import TYPE_PLAN_LIMIT
-        await _notif.notify_fire_and_forget(
-            org_id=org_id,
-            user_id=None,
-            type=TYPE_PLAN_LIMIT,
-            title="User limit reached",
-            message=f"Your plan allows {plan.max_users} users. Upgrade to add more.",
-            payload={
-                "reason": "user_limit_exceeded",
-                "current_plan": plan.tier.value,
-                "max_users": plan.max_users,
-            },
-        )
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=plan_limit_detail(
-                reason="user_limit_exceeded",
-                current_plan=plan.tier,
-            ),
-        )
+    """User cap enforcement removed (subscription tiers disabled).
+    This function is now a no-op."""
+    pass
 
 
 async def create_user(db: AsyncSession, org_id: str, data: UserCreate) -> User:

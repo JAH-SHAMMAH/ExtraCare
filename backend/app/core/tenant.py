@@ -16,7 +16,6 @@ from fastapi import Request, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.organization import Organization
-from app.core.plans import plan_for, module_allowed_by_plan, modules_within_cap, plan_limit_detail
 from app.core.workspace import effective_modules_for_org, is_module_enabled_for_org
 
 _forbidden_logger = logging.getLogger("extracare.access")
@@ -222,50 +221,7 @@ def require_role_module(module_name: str, action: str = "read"):
                     },
                 )
 
-        # Subscription-tier check. The module is enabled on the org, but the
-        # plan may not actually permit it (e.g. admin downgraded from pro to
-        # free without trimming modules_enabled). 402 tells the frontend to
-        # route to /billing rather than showing a generic permission error.
-        plan = plan_for(org.subscription_tier)
-        effective_modules = effective_modules_for_org(org)
-        if not module_allowed_by_plan(plan, module_name) or not modules_within_cap(plan, effective_modules):
-            _bump_denial("plan_module_denied", org.id, module_name)
-            _forbidden_logger.warning(
-                "plan_module_denied",
-                extra={
-                    "event": "plan_module_denied",
-                    "user_id": current_user.id,
-                    "org_id": org.id,
-                    "plan": plan.tier.value,
-                    "required_module": module_name,
-                    "path": request.url.path,
-                },
-            )
-            # User-visible nudge before the exception tears down the tx.
-            # Uses its own session so the caller's rollback doesn't wipe
-            # the notification row. Awaited synchronously — the write is a
-            # single INSERT and the caller is about to raise anyway.
-            from app.services import notifications as _notif
-            from app.models.notification import TYPE_PLAN_LIMIT
-            await _notif.notify_fire_and_forget(
-                org_id=org.id,
-                user_id=current_user.id,
-                type=TYPE_PLAN_LIMIT,
-                title="Plan limit reached",
-                message=f"Your current plan doesn't include the '{module_name}' module.",
-                payload={
-                    "reason": "module_not_allowed",
-                    "module": module_name,
-                    "current_plan": plan.tier.value,
-                },
-            )
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail=plan_limit_detail(
-                    reason="module_not_allowed",
-                    current_plan=plan.tier,
-                ),
-            )
+        # Plan-based module enforcement removed (subscription tiers disabled)
 
         # Module-entry gate. A caller may open the module door if they hold the
         # broad `<module>:<action>` OR any fine-grained child scope (e.g. a

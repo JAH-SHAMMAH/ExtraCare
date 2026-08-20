@@ -573,42 +573,6 @@ async def test_mark_class_attendance_skips_non_student_users(
 
 # ── Monetization ─────────────────────────────────────────────────────────────
 
-async def test_recording_quota_402_when_exceeded(db, teacher, tmp_path, monkeypatch):
-    """When the org's stored bytes already meet the plan cap, the next
-    upload must 402 rather than write a byte to disk."""
-    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
-    from app.config import get_settings
-    get_settings.cache_clear()
-
-    # Bump to PRO (10 GB cap) and then seed a fake existing-recording row
-    # at the cap so the next upload is guaranteed over.
-    await _bump_to_pro(db, teacher.org_id)
-    from app.core.plans import plan_for
-    from app.models.organization import Organization, SubscriptionTier
-    cap_mb = plan_for(SubscriptionTier.PRO).recording_storage_mb
-    cap_bytes = cap_mb * 1024 * 1024
-
-    s = await start_session(
-        data=LiveSessionCreate(title="rec"), db=db, current_user=teacher,
-    )
-    db.add(LiveRecording(
-        org_id=teacher.org_id, session_id=s.id,
-        file_path="x", file_size=cap_bytes,
-        mime_type="video/webm", created_by=teacher.id,
-    ))
-    await db.commit()
-
-    file = _FakeUpload(b"\x00" * 10, content_type="video/webm")
-    with pytest.raises(HTTPException) as exc:
-        await upload_recording(
-            session_id=s.id, file=file, duration_seconds=None,
-            db=db, current_user=teacher,
-        )
-    get_settings.cache_clear()
-    assert exc.value.status_code == 402
-    assert exc.value.detail["reason"] == "recording_storage_exceeded"
-
-
 async def test_livestream_flag_enabled_on_pro(db, teacher):
     """PRO tier ships with the `livestream` flag on by default so the
     frontend can avoid showing a gated entry-point when it shouldn't."""

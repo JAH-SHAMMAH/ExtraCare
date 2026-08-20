@@ -100,34 +100,6 @@ async def test_invite_fires_user_invited_notification(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_plan_limit_fires_notification(client: AsyncClient):
-    """Forcing a school org over the free-plan module cap triggers a 402
-    and drops a plan_limit row in the inbox."""
-    res = await _register(client, "notif-plan")
-    Session = client.session_factory  # type: ignore[attr-defined]
-    async with Session() as db:
-        org = (await db.execute(select(Organization).where(Organization.slug == "notif-plan"))).scalar_one()
-        org.subscription_tier = SubscriptionTier.FREE
-        # Two IN-WORKSPACE modules (both school) exceed the free cap of 1. A
-        # cross-vertical entry would be stripped by the workspace filter before
-        # the cap check, so it must be a school-workspace module to count.
-        org.modules_enabled = ["school", "attendance"]  # effective count 2 > free cap 1
-        org.onboarding_step = "done"
-        from datetime import datetime, timezone
-        org.onboarding_completed_at = datetime.now(timezone.utc)
-        await db.commit()
-
-    r = await client.get("/api/v1/behaviour/summary", headers=_auth(res["access_token"]))
-    assert r.status_code == 402
-
-    inbox = await client.get("/api/v1/notifications", headers=_auth(res["access_token"]))
-    items = inbox.json()["items"]
-    match = [n for n in items if n["type"] == TYPE_PLAN_LIMIT]
-    assert len(match) >= 1
-    assert match[0]["payload"]["reason"] == "module_not_allowed"
-
-
-@pytest.mark.asyncio
 async def test_mark_read_flips_flag(client: AsyncClient):
     res = await _register(client, "notif-read")
     # Create a direct notification row for the admin user.
