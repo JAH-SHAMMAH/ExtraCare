@@ -15,8 +15,13 @@ from app.models.user import User
 from app.deps import get_current_active_user
 from app.models.modules.platform import AssessmentDomain, GradingScale, StudentDomainRating, AcademicTerm, SchoolSection
 from app.models.modules.school import Student
+from app.core.tenant import require_role_module
 
-router = APIRouter(prefix="/reports", tags=["reports"])
+router = APIRouter(
+    prefix="/reports",
+    tags=["reports"],
+    dependencies=[Depends(require_role_module("school"))],
+)
 
 # ── Request/Response Models ────────────────────────────────────────────────
 
