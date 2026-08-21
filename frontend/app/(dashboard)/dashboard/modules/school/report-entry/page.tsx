@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useClasses, useSubjects } from "@/hooks/useSchool";
 import { useTerms, useReportEntryGrid, useSaveReportEntry } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
+import { useAssessmentDomains, useStudentDomainRatings, useUpsertStudentRatings } from "@/hooks/useAssessmentDomains";
+import { ReportDomainGrid } from "@/components/ReportDomainGrid";
 import { Loader2, NotebookPen, Save } from "lucide-react";
 
 export default function ReportEntryPage() {
@@ -20,6 +22,15 @@ export default function ReportEntryPage() {
   const { data: grid, isLoading } = useReportEntryGrid({ class_id: classId, subject_id: subjectId, term_id: termId });
   const save = useSaveReportEntry();
 
+  // Get section_id from selected class
+  const selectedClass = classes.find((c: any) => c.id === classId);
+  const sectionId = selectedClass?.section_id || "";
+
+  // Behaviour & Skills domain hooks
+  const { data: domains = [] } = useAssessmentDomains(sectionId, undefined);
+  const upsertRatings = useUpsertStudentRatings();
+  const [domainRatingsDraft, setDomainRatingsDraft] = useState<Record<string, Array<{ domain_id: string; rating: string | null }>>>({});
+
   // draft[studentId][assessmentId] = string
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
   useEffect(() => {
@@ -32,6 +43,19 @@ export default function ReportEntryPage() {
     }
     setDraft(seed);
   }, [grid]);
+
+  // Initialize domain ratings draft when domains/students change
+  useEffect(() => {
+    if (!grid?.students || !domains.length) {
+      setDomainRatingsDraft({});
+      return;
+    }
+    const seed: Record<string, Array<{ domain_id: string; rating: string | null }>> = {};
+    for (const s of grid.students) {
+      seed[s.id] = domains.map((d) => ({ domain_id: d.id, rating: null }));
+    }
+    setDomainRatingsDraft(seed);
+  }, [grid?.students, domains]);
 
   const setCell = (sid: string, aid: string, v: string) =>
     setDraft((p) => ({ ...p, [sid]: { ...p[sid], [aid]: v } }));
@@ -46,6 +70,29 @@ export default function ReportEntryPage() {
       }
     }
     save.mutate({ subject_id: subjectId, class_id: classId, items });
+  };
+
+  const handleDomainRatingChange = (studentId: string, domainId: string, rating: string | null) => {
+    setDomainRatingsDraft((p) => ({
+      ...p,
+      [studentId]: (p[studentId] || []).map((r) =>
+        r.domain_id === domainId ? { ...r, rating } : r
+      ),
+    }));
+  };
+
+  const submitDomainRatings = () => {
+    if (!grid?.students || !termId) return;
+    for (const s of grid.students) {
+      const ratings = domainRatingsDraft[s.id] || [];
+      if (ratings.some((r) => r.rating !== null)) {
+        upsertRatings.mutate({
+          studentId: s.id,
+          term: termId,
+          ratings: ratings.map((r) => ({ domain_id: r.domain_id, rating: r.rating })),
+        });
+      }
+    }
   };
 
   const ready = grid && grid.assessments.length > 0 && grid.students.length > 0;
@@ -97,6 +144,37 @@ export default function ReportEntryPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Behaviour & Skills Section */}
+      {classId && termId && domains.length > 0 && (
+        <div className="mt-8 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Behaviour & Skills</h2>
+              <p className="text-sm text-slate-500 mt-1">Rate pupils on psychomotor and affective skills.</p>
+            </div>
+            {canWrite && (
+              <button
+                onClick={submitDomainRatings}
+                disabled={upsertRatings.isPending}
+                className="btn-primary gap-2"
+              >
+                {upsertRatings.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                Save Skills
+              </button>
+            )}
+          </div>
+
+          <ReportDomainGrid
+            domains={domains}
+            students={grid?.students || []}
+            ratings={[]} // Ratings will be hydrated when useStudentDomainRatings is wired in
+            readOnly={!canWrite}
+            onRatingChange={handleDomainRatingChange}
+            isLoading={false}
+          />
         </div>
       )}
     </div>

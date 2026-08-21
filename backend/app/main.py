@@ -57,6 +57,7 @@ from app.routers.modules import (
     platform as platform_router,
     eclassroom as eclassroom_router,
     voting as voting_router,
+    reports as reports_router,
 )
 
 settings = get_settings()
@@ -401,6 +402,7 @@ app.mount("/uploads", StaticFiles(directory=str(_upload_root)), name="uploads")
 app.include_router(classroom.router, prefix=API_V1)
 app.include_router(eclassroom_router.router, prefix=API_V1)
 app.include_router(voting_router.router, prefix=API_V1)
+app.include_router(reports_router.router, prefix=API_V1)
 app.include_router(cbt.router, prefix=API_V1)
 app.include_router(behaviour.router, prefix=API_V1)
 app.include_router(feedback_router.router, prefix=API_V1)

@@ -5,6 +5,7 @@ import { useHasPermission } from "@/components/guards/PermissionGate";
 import { TermsTab, TermDatesTab, AttendanceTab, DeadlineTab, CommentTab, DefaultCommentTab, GradingSystemTab, BrandingTab, ResultTypeTab, ResultPhotoTab, ExclusionTab } from "@/components/reports/ReportSetupTabs";
 import { AssessmentGroupTab, AssessmentTab } from "@/components/reports/ReportAssessmentTabs";
 import { ResultViewTab } from "@/components/reports/ReportResultViewTab";
+import { BehaviourSkillsTab } from "@/components/reports/BehaviourSkillsTab";
 import { cn } from "@/lib/utils";
 import { Settings2 } from "lucide-react";
 
@@ -13,18 +14,19 @@ import { Settings2 } from "lucide-react";
 type Tab =
   | "terms" | "comment" | "grading" | "assessment-group" | "assessment"
   | "non-assessment" | "default-comment" | "term-dates" | "deadline"
-  | "attendance" | "branding" | "result-type" | "photo" | "exclusion" | "result-view";
+  | "attendance" | "branding" | "result-type" | "photo" | "exclusion" | "result-view" | "behaviour-skills";
 
 const TABS: [Tab, string][] = [
   ["terms", "Terms & Sub-term"], ["comment", "Comment"], ["grading", "Grading System"],
   ["assessment-group", "Assessment Group"], ["assessment", "Assessment"],
-  ["non-assessment", "Non Assessment Comment"], ["default-comment", "Result Default Comment"],
+  ["non-assessment", "Non Assessment Comment"], ["behaviour-skills", "Behaviour & Skills"],
+  ["default-comment", "Result Default Comment"],
   ["term-dates", "Term Begins/Ends Date"], ["deadline", "Deadline"], ["attendance", "Attendance Setup"],
   ["branding", "School Motto, Seal & Sponsor"], ["result-type", "Result Type"],
   ["photo", "Result Photo Setup"], ["exclusion", "Subjects For Score Exclusion"], ["result-view", "Result View"],
 ];
 
-const LIVE = new Set<Tab>(["terms", "comment", "grading", "assessment-group", "assessment", "default-comment", "term-dates", "attendance", "deadline", "branding", "result-type", "photo", "exclusion", "result-view"]);
+const LIVE = new Set<Tab>(["terms", "comment", "grading", "assessment-group", "assessment", "default-comment", "behaviour-skills", "term-dates", "attendance", "deadline", "branding", "result-type", "photo", "exclusion", "result-view"]);
 
 export default function ReportSetupPage() {
   const canWrite = useHasPermission("settings:write");
@@ -56,6 +58,7 @@ export default function ReportSetupPage() {
         : tab === "assessment-group" ? <AssessmentGroupTab canWrite={canWrite} />
         : tab === "assessment" ? <AssessmentTab canWrite={canWrite} />
         : tab === "result-view" ? <ResultViewTab canWrite={canWrite} />
+        : tab === "behaviour-skills" ? <BehaviourSkillsTab canWrite={canWrite} />
         : <Placeholder label={TABS.find(([k]) => k === tab)?.[1] ?? ""} />}
     </div>
   );
