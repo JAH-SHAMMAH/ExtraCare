@@ -367,22 +367,24 @@ async def get_me(
         await evaluate_onboarding(db, org)
 
     # Fetch teacher's assigned sections (for report nav filtering).
+    # Fetch for any user with TeacherSection records, regardless of permissions.
+    # The sidebar filters report nav items by section assignment. Permission checks
+    # are orthogonal — they gate individual nav items but don't gate the whole section.
     teacher_sections = []
-    if current_user.has_permission("school:reports:write"):  # teachers have this
-        section_ids = (await db.execute(
-            select(TeacherSection.section_id).where(
-                TeacherSection.teacher_id == current_user.id,
-                TeacherSection.org_id == current_user.org_id,
+    section_ids = (await db.execute(
+        select(TeacherSection.section_id).where(
+            TeacherSection.teacher_id == current_user.id,
+            TeacherSection.org_id == current_user.org_id,
+        )
+    )).scalars().all()
+    if section_ids:
+        sections = (await db.execute(
+            select(SchoolSection).where(
+                SchoolSection.id.in_(section_ids),
+                SchoolSection.org_id == current_user.org_id,
             )
         )).scalars().all()
-        if section_ids:
-            sections = (await db.execute(
-                select(SchoolSection).where(
-                    SchoolSection.id.in_(section_ids),
-                    SchoolSection.org_id == current_user.org_id,
-                )
-            )).scalars().all()
-            teacher_sections = [SectionBrief(id=s.id, name=s.name) for s in sections]
+        teacher_sections = [SectionBrief(id=s.id, name=s.name) for s in sections]
 
     # Fetch student's assigned section (if this user is a student).
     student_sections = []

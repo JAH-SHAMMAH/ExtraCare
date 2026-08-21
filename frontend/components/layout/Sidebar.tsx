@@ -717,7 +717,9 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
     const studentSections = (user as any)?.student_sections || [];
     const studentSectionNames = new Set(studentSections.map((s: any) => s.name));
     const hasStudentRole = (user as any)?.roles?.some((r: any) => r.slug === 'student') ?? false;
-    const isTeacher = !hasPermission("school_admin:write") && hasPermission("school:reports:write");
+    // A teacher is someone with sections assigned who is not a school admin.
+    // This is more robust than checking a specific permission, which may not be granted.
+    const isTeacher = teacherSections.length > 0 && !hasPermission("school_admin:write");
 
     return MODULE_SECTIONS
       .filter((s) => moduleAllowedForOrg(org, s.requiredModule as "school" | "business" | "hospital"))
