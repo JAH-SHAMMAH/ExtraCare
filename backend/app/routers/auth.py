@@ -1,7 +1,7 @@
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, distinct
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
@@ -366,15 +366,17 @@ async def get_me(
         from app.services.onboarding import evaluate as evaluate_onboarding
         await evaluate_onboarding(db, org)
 
-    # Fetch teacher's assigned sections (for report nav filtering).
-    # Fetch for any user with TeacherSection records, regardless of permissions.
-    # The sidebar filters report nav items by section assignment. Permission checks
-    # are orthogonal — they gate individual nav items but don't gate the whole section.
+    # Fetch teacher's assigned sections (derived from their classes).
+    # Sidebar filters report nav items by section assignment. Rather than relying
+    # on a separate TeacherSection table (which is designed for admin Assign-To-School
+    # flow), derive sections directly from the teacher's actual class assignments.
+    # This ensures teachers always see report sections matching where they actually teach.
     teacher_sections = []
     section_ids = (await db.execute(
-        select(TeacherSection.section_id).where(
-            TeacherSection.teacher_id == current_user.id,
-            TeacherSection.org_id == current_user.org_id,
+        select(distinct(SchoolClass.section_id)).where(
+            SchoolClass.teacher_id == current_user.id,
+            SchoolClass.org_id == current_user.org_id,
+            SchoolClass.section_id != None,
         )
     )).scalars().all()
     if section_ids:
