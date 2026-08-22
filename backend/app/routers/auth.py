@@ -210,6 +210,46 @@ async def login(
 
     await log_action(db, AuditAction.LOGIN, org.id, actor=user, request=request)
 
+    # Compute teacher_sections (derived from their classes) — same logic as /me endpoint
+    teacher_sections = []
+    section_ids = (await db.execute(
+        select(distinct(SchoolClass.section_id)).where(
+            SchoolClass.teacher_id == user.id,
+            SchoolClass.org_id == user.org_id,
+            SchoolClass.section_id != None,
+        )
+    )).scalars().all()
+    if section_ids:
+        sections = (await db.execute(
+            select(SchoolSection).where(
+                SchoolSection.id.in_(section_ids),
+                SchoolSection.org_id == user.org_id,
+            )
+        )).scalars().all()
+        teacher_sections = [SectionBrief(id=s.id, name=s.name) for s in sections]
+
+    # Compute student_sections — same logic as /me endpoint
+    student_sections = []
+    student = (await db.execute(
+        select(Student).where(
+            Student.user_id == user.id,
+            Student.org_id == user.org_id,
+        )
+    )).scalar_one_or_none()
+    if student and student.class_id:
+        school_class = (await db.execute(
+            select(SchoolClass).where(SchoolClass.id == student.class_id)
+        )).scalar_one_or_none()
+        if school_class and school_class.section_id:
+            section = (await db.execute(
+                select(SchoolSection).where(
+                    SchoolSection.id == school_class.section_id,
+                    SchoolSection.org_id == user.org_id,
+                )
+            )).scalar_one_or_none()
+            if section:
+                student_sections = [SectionBrief(id=section.id, name=section.name)]
+
     claims = _identity_claims(user, org)
     access_token = create_access_token(claims)
     refresh_token = create_refresh_token({"sub": user.id, "org": org.id})
@@ -221,7 +261,7 @@ async def login(
         access_token=access_token,
         refresh_token=refresh_token,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        user=UserMeResponse.from_user(user, org),
+        user=UserMeResponse.from_user(user, org, teacher_sections, student_sections),
     )
 
 
