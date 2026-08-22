@@ -8,6 +8,9 @@ from app.database import get_db
 from app.models.user import User, UserStatus
 from app.models.organization import Organization, IndustryType, SubscriptionTier
 from app.models.role import Role, permission_presets_for_industry
+from app.models.modules.school import Student, SchoolClass
+from app.models.modules.platform import SchoolSection
+from app.schemas.auth import SectionBrief
 from app.core.workspace import effective_modules_for_org, get_default_modules_for_industry
 from app.core.single_school import get_school_org
 from app.core.security import (
