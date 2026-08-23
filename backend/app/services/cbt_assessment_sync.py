@@ -83,7 +83,7 @@ async def get_or_create_cbt_assessment(
     assessment = Assessment(
         id=str(uuid4()),
         org_id=org_id,
-        assessment_group_id=group.id,
+        group_id=group.id,
         name="CBT Exam Score",
         code="CBT",
         max_score=100,
