@@ -145,7 +145,7 @@ export function TeacherHome() {
             key: c.id,
             primary: c.name,
             secondary: [c.level, c.academic_year].filter(Boolean).join(" · ") || null,
-            href: `/dashboard/modules/school/classes`,
+            href: `/dashboard/my-classes`,
           }))}
           icon={UsersIcon}
         />
