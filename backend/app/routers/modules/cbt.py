@@ -106,7 +106,7 @@ _admin_write = Depends(PermissionChecker("school:write"))
 # ── Exams ─────────────────────────────────────────────────────────────────────
 
 
-@router.get("/exams", dependencies=[_can_read])
+@router.get("/exams")
 async def list_exams(
     class_id: str | None = None,
     status_filter: str | None = Query(default=None, alias="status", description="Server-recognised values: draft, published, active, closed, live."),
@@ -116,6 +116,15 @@ async def list_exams(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    # Permission check: for_me (student view) accepts school:cbt:sit; broader access requires school:cbt:read
+    if for_me:
+        # Student taking their own exams: allow school:cbt:sit (sit assigned exams)
+        if not current_user.has_permission("school:cbt:sit"):
+            raise HTTPException(status_code=403, detail="Insufficient permissions to view exams.")
+    else:
+        # Admin/teacher view: requires school:cbt:read (broader CBT access)
+        if not current_user.has_permission("school:cbt:read"):
+            raise HTTPException(status_code=403, detail="Insufficient permissions to view exams.")
     now = datetime.now(timezone.utc)
 
     query = select(CBTExam).where(
