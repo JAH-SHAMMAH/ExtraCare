@@ -76,6 +76,7 @@ from app.core.school_identity import (
     resolve_taught_class_ids,
     resolve_taught_subject_ids,
 )
+from app.services.cbt_assessment_sync import sync_cbt_to_assessment_score
 
 router = APIRouter(
     prefix="/cbt",
@@ -1205,11 +1206,25 @@ async def publish_exam_results(
             resource_type="Grade", resource_id=exam.id,
             resource_label=f"fed {fed} CBT grade(s) from {exam.title}", request=request,
         )
+
+    # Permanent hook: sync CBT results to StudentAssessmentScore (for Make Report).
+    # This is idempotent: calling twice updates existing scores, never duplicates.
+    # Sync happens regardless of gradebook feed result — assessment and gradebook are
+    # independent systems.
+    assessment_synced, assessment_reason = await sync_cbt_to_assessment_score(db, exam_id, org_id)
+    if assessment_synced > 0:
+        await log_action(
+            db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+            resource_type="StudentAssessmentScore", resource_id=exam.id,
+            resource_label=f"synced {assessment_synced} CBT score(s) to assessment", request=request,
+        )
+
     return {
         "published": True,
         "results_published_at": exam.results_published_at.isoformat(),
         "published_pass_percentage": exam.published_pass_percentage,
         "gradebook": {"fed": fed, "blocked": reason},
+        "assessment": {"synced": assessment_synced, "reason": assessment_reason},
     }
 
 
