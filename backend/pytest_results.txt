@@ -1,0 +1,72 @@
+C:\Users\SHAMMAH\AppData\Local\Programs\Python\Python311\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+........................................................................ [  6%]
+........................................................................ [ 12%]
+........................................................................ [ 18%]
+........................................................................ [ 24%]
+........................................................................ [ 30%]
+........................................................................ [ 37%]
+........................................................................ [ 43%]
+........................................................................ [ 49%]
+........................................................................ [ 55%]
+........................................................................ [ 61%]
+........................................................................ [ 68%]
+........................................................................ [ 74%]
+........................................................................ [ 80%]
+........................................................................ [ 86%]
+........................................................................ [ 92%]
+........................................................................ [ 98%]
+............                                                             [100%]
+============================== warnings summary ===============================
+tests/test_academics.py::test_subject_selection_crud
+  C:\Users\SHAMMAH\OneDrive\Desktop\ExtraCare ERP\backend\tests\conftest.py:79: SAWarning: relationship 'AuditLog.actor' will copy column users.id to column audit_logs.actor_id, which conflicts with relationship(s): 'User.audit_logs' (copies users.id to audit_logs.actor_id). If this is not the intention, consider if these relationships should be linked with back_populates, or if viewonly=True should be applied to one or more if they are read-only. For the less common case that foreign key constraints are partially overlapping, the orm.foreign() annotation can be used to isolate the columns that should be written towards.   To silence this warning, add the parameter 'overlaps="audit_logs"' to the 'AuditLog.actor' relationship. (Background on this warning at: https://sqlalche.me/e/20/qzyx) (This warning originated from the `configure_mappers()` process, which was invoked automatically in response to a user-initiated operation.)
+    o = Organization(
+
+tests/test_fee_payments.py::test_paystack_webhook_signature_hmac
+  tests\test_fee_payments.py:107: PytestWarning: The test <Function test_paystack_webhook_signature_hmac> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    def test_paystack_webhook_signature_hmac():
+
+tests/test_flutterwave.py::test_webhook_signature_valid
+  tests\test_flutterwave.py:109: PytestWarning: The test <Function test_webhook_signature_valid> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    def test_webhook_signature_valid():
+
+tests/test_messenger.py::test_dm_pair_key_sorted
+  tests\test_messenger.py:135: PytestWarning: The test <Function test_dm_pair_key_sorted> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    def test_dm_pair_key_sorted():
+
+tests/test_report_engine_s4a.py::test_evaluator_curated_composition
+  tests\test_report_engine_s4a.py:27: PytestWarning: The test <Function test_evaluator_curated_composition> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    def test_evaluator_curated_composition():
+
+tests/test_report_engine_s4a.py::test_evaluator_cycle_guard
+  tests\test_report_engine_s4a.py:63: PytestWarning: The test <Function test_evaluator_cycle_guard> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    def test_evaluator_cycle_guard():
+
+tests/test_role_catalog.py::test_new_presets_exist_with_expected_tiers
+  tests\test_role_catalog.py:29: PytestWarning: The test <Function test_new_presets_exist_with_expected_tiers> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    def test_new_presets_exist_with_expected_tiers():
+
+tests/test_role_catalog.py::test_cbt_bank_scope_admits_exam_officer_excludes_students
+  tests\test_role_catalog.py:71: PytestWarning: The test <Function test_cbt_bank_scope_admits_exam_officer_excludes_students> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    def test_cbt_bank_scope_admits_exam_officer_excludes_students():
+
+tests/test_role_catalog.py::test_display_name_overrides
+  tests\test_role_catalog.py:93: PytestWarning: The test <Function test_display_name_overrides> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    def test_display_name_overrides():
+
+tests/test_role_switch.py::test_permissions_scope_down_to_active_role
+  tests\test_role_switch.py:41: PytestWarning: The test <Function test_permissions_scope_down_to_active_role> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    def test_permissions_scope_down_to_active_role():
+
+tests/test_school_exams.py::test_grade_letter_boundaries
+  tests\test_school_exams.py:64: PytestWarning: The test <Function test_grade_letter_boundaries> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    def test_grade_letter_boundaries():
+
+tests/test_storage.py::test_resource_type_mapping
+  tests\test_storage.py:42: PytestWarning: The test <Function test_resource_type_mapping> is marked with '@pytest.mark.asyncio' but it is not an async function. Please remove the asyncio mark. If the test is not marked explicitly, check for global marks applied via 'pytestmark'.
+    def test_resource_type_mapping():
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1164 passed, 12 warnings in 1711.13s (0:28:31)

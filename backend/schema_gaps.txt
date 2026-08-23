@@ -1,0 +1,34 @@
+﻿[MISSING TABLE] conversation_members
+[MISSING TABLE] conversations
+[MISSING TABLE] feed_post_comments
+[MISSING TABLE] feed_post_likes
+[feed_posts] missing columns: ['is_deleted']
+[MISSING TABLE] hr_events
+[MISSING TABLE] hr_profiles
+[MISSING TABLE] leave_applications
+[lesson_plans] missing columns: ['is_deleted']
+[library_books] missing columns: ['is_deleted']
+[MISSING TABLE] live_attendance
+[MISSING TABLE] live_recordings
+[MISSING TABLE] messages
+[MISSING TABLE] notifications
+[MISSING TABLE] parent_guardians
+[payment_transactions] missing columns: ['deleted_at']
+[MISSING TABLE] payment_webhook_events
+[MISSING TABLE] sms_campaigns
+[MISSING TABLE] sms_messages
+[student_fee_records] missing columns: ['deleted_at']
+[MISSING TABLE] student_route_assignments
+[students] missing columns: ['user_id']
+[subscription_invoices] missing columns: ['deleted_at']
+[tenant_payment_settings] missing columns: ['deleted_at']
+[MISSING TABLE] transport_drivers
+[MISSING TABLE] transport_routes
+[MISSING TABLE] transport_stops
+[MISSING TABLE] transport_trips
+[MISSING TABLE] transport_vehicles
+[MISSING TABLE] trip_boardings
+[tuckshop_transactions] missing columns: ['deleted_at']
+[MISSING TABLE] usage_events
+
+Total gaps found: 32

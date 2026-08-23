@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCBTExams } from "@/hooks/useSchoolExperience";
 import { cn, formatDate } from "@/lib/utils";
 import { MonitorCheck, Clock, Award } from "lucide-react";
@@ -61,6 +62,7 @@ export default function MyExamsPage() {
 }
 
 function StudentExamCard({ exam }: { exam: CBTExam }) {
+  const router = useRouter();
   const now = new Date();
   const startTime = exam.start_time ? new Date(exam.start_time) : null;
   const endTime = exam.end_time ? new Date(exam.end_time) : null;
@@ -70,6 +72,10 @@ function StudentExamCard({ exam }: { exam: CBTExam }) {
 
   const statusLabel = isClosed ? "Closed" : isLive ? "In Progress" : isUpcoming ? "Upcoming" : "Not Started";
   const statusColor = isClosed ? "text-amber-600" : isLive ? "text-emerald-600" : isUpcoming ? "text-blue-600" : "text-slate-600";
+
+  const handleStartExam = () => {
+    router.push(`/dashboard/my-exams/${exam.id}/take`);
+  };
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-md transition-shadow">
@@ -97,7 +103,10 @@ function StudentExamCard({ exam }: { exam: CBTExam }) {
       </div>
       <div className="pt-3 border-t border-slate-100">
         {isLive ? (
-          <button className="w-full text-xs font-semibold text-emerald-600 hover:text-emerald-700">
+          <button
+            onClick={handleStartExam}
+            className="w-full text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition"
+          >
             Resume Exam →
           </button>
         ) : isClosed ? (
@@ -105,7 +114,10 @@ function StudentExamCard({ exam }: { exam: CBTExam }) {
         ) : isUpcoming ? (
           <div className="text-xs text-blue-600 text-center">Not yet available</div>
         ) : (
-          <button className="w-full text-xs font-semibold text-brand-600 hover:text-brand-700">
+          <button
+            onClick={handleStartExam}
+            className="w-full text-xs font-semibold text-brand-600 hover:text-brand-700 transition"
+          >
             Start Exam →
           </button>
         )}
