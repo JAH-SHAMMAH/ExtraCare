@@ -1,4 +1,4 @@
-"""Narrow the parent role's finance scope: payments:read -> payments:own:read
+﻿"""Narrow the parent role's finance scope: payments:read -> payments:own:read
 
 Revision ID: 123_narrow_parent_payments
 Revises: 122_add_org_missing_columns
@@ -27,7 +27,7 @@ import sqlalchemy as sa
 
 
 revision = "123_narrow_parent_payments"
-down_revision = "122_add_org_missing_columns"
+down_revision = "5301d5f8e6d5"
 branch_labels = None
 depends_on = None
 
@@ -80,3 +80,4 @@ def downgrade() -> None:
                 sa.text("UPDATE roles SET permissions = :p WHERE id = :id"),
                 {"p": json.dumps(new), "id": rid},
             )
+
