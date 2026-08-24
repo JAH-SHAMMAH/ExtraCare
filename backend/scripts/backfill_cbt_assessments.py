@@ -124,12 +124,19 @@ async def write():
             synced, reason = await sync_cbt_to_assessment_score(db, exam.id, FAIRVIEW_ORG_ID)
             total_synced += synced
 
+            # Commit PER EXAM, not once after the loop. The link to Ohio has
+            # dropped mid-run repeatedly; an all-or-nothing transaction discards
+            # every completed exam when that happens. Each exam is independent,
+            # so a crash keeps the work already done and a plain rerun resumes:
+            # sync_cbt_to_assessment_score() UPDATEs rows it wrote earlier, and
+            # uq_student_assessment_score(org,student,subject,assessment) makes a
+            # duplicate INSERT impossible rather than merely unlikely.
+            await db.commit()
+
             if reason is None:
                 success_count += 1
                 if synced > 0 or i <= 5 or i > len(exams) - 3:
-                    print(f"{i:3d}. {exam.title[:50]:50s} {synced:3d} rows")
-
-        await db.commit()
+                    print(f"{i:3d}. {exam.title[:50]:50s} {synced:3d} rows  [committed]")
 
         print()
         print("=" * 80)
