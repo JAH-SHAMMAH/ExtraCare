@@ -74,8 +74,12 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/subjects", permission: "school:subjects:read" },
   // Insights dashboard is admin-only; the marking page needs write.
   { prefix: "/dashboard/modules/school/attendance/dashboard", permission: "school_admin:read" },
-  // Live monitor is a staff read view over the check-in/out events.
-  { prefix: "/dashboard/modules/school/attendance/monitor", permission: "school:attendance:read" },
+  // Live monitor is a STAFF read view over the check-in/out events. Gated on
+  // attendance:WRITE, not :read — parents hold `school:attendance:read` for their
+  // own child, so a read gate let them into this whole-school admin page. Teachers
+  // and admins hold :write, so nothing staff-side changes. Parents get their own
+  // children's attendance via /dashboard/my-children.
+  { prefix: "/dashboard/modules/school/attendance/monitor", permission: "school:attendance:write" },
   // Attendance Setup edits org-wide config (late cutoff + reason codes) — admin-only.
   { prefix: "/dashboard/modules/school/attendance/setup", permission: "settings:read" },
   { prefix: "/dashboard/modules/school/attendance", permission: "school:attendance:write" },
@@ -109,7 +113,14 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/library", permission: "school:library:write" },
   { prefix: "/dashboard/modules/school/sms", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/transport", permission: "school_admin:read" },
+  // Report Cards is SHARED, not admin-only: students already view their own report
+  // here (they hold school:reports:read, never :write), so it must stay on :read.
+  // It is now self-scoping instead — its picker reads GET /school/students, which
+  // returns only the caller's own record / linked children for a non-staff caller,
+  // so a parent sees exactly their children and a student sees only themselves.
   { prefix: "/dashboard/modules/school/report-cards", permission: "school:reports:read" },
+  // Fee Management is staff-side. Parents now hold `payments:own:read` (not the
+  // broad staff `payments:read`), so this gate excludes them without further change.
   { prefix: "/dashboard/modules/school/fees", permission: "payments:read" },
   { prefix: "/dashboard/modules/school/ratings", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/eclassroom", permission: "school:classroom:read" },

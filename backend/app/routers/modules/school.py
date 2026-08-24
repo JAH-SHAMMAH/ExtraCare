@@ -118,6 +118,53 @@ async def _user_owns_student(db: AsyncSession, user: User, student_id: str) -> b
     return link is not None
 
 
+# Account kinds whose access is defined by OWNERSHIP rather than by a staff scope.
+_OWNER_ROLE_SLUGS = {"parent", "student"}
+
+
+async def _owned_student_ids(db: AsyncSession, user: User) -> list[str] | None:
+    """The students `user` may see as their OWN — the list-shaped counterpart to
+    _user_owns_student.
+
+    Returns the user's own student record (if they ARE a student) plus EVERY child
+    linked to them through ParentGuardian, so a guardian of three children sees all
+    three. Returns None for staff-side callers (anyone whose grant covers
+    `school:students:read`), meaning "unrestricted" — callers must treat None as
+    "apply no filter" rather than "no students".
+
+    List endpoints have no equivalent of _ensure_student_visible, so any list that
+    forgets to filter hands a parent the whole school. Filtering on this helper's
+    result keeps that decision in one place.
+    """
+    if user.has_permission("school:students:read"):
+        return None
+    ids: set[str] = set((await db.execute(
+        select(Student.id).where(
+            Student.org_id == user.org_id,
+            Student.is_deleted == False,  # noqa: E712
+            or_(Student.user_id == user.id, Student.email == user.email),
+        )
+    )).scalars().all())
+    ids.update((await db.execute(
+        select(ParentGuardian.student_id).where(
+            ParentGuardian.user_id == user.id,
+            ParentGuardian.org_id == user.org_id,
+        )
+    )).scalars().all())
+    if ids:
+        return sorted(ids)
+    # No owned students. "Lacks school:students:read" alone is NOT a reliable test
+    # for "is a parent" — narrowly-scoped STAFF roles fail it too (nurse and
+    # accountant hold neither school:read nor school:students:read). Narrowing them
+    # here would be a silent regression on roles that never had ownership semantics.
+    # So restrict-to-nothing only for an account that IS an owner identity but
+    # currently has no links (e.g. a parent created before being linked to a child);
+    # anyone else keeps whatever their endpoint's own permission gate already allows.
+    if any(r.slug in _OWNER_ROLE_SLUGS for r in (user.roles or [])):
+        return []
+    return None
+
+
 async def _ensure_student_visible(db: AsyncSession, user: User, student_id: str) -> None:
     """Authorize access to a single student's records.
 
@@ -136,7 +183,7 @@ async def _ensure_student_visible(db: AsyncSession, user: User, student_id: str)
 
 # ── Students ──────────────────────────────────────────────────────────────────
 
-@router.get("/students", dependencies=[_students_read])
+@router.get("/students")
 async def list_students(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
@@ -147,10 +194,21 @@ async def list_students(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    # Gate: staff (school:students:read) see the roster; a parent/student caller is
+    # allowed through ONLY to reach their own record / linked children, and the
+    # query is narrowed to those ids. Anyone who is neither is refused, so this
+    # does not widen access -- it replaces a blanket 403 for parents with an
+    # ownership-scoped result, which is what the report-cards picker needs.
+    owned = await _owned_student_ids(db, current_user)
+    if owned is None and not current_user.has_permission("school:students:read"):
+        # Neither staff nor an owner — the same 403 the route dependency used to give.
+        raise HTTPException(status_code=403, detail="Permission denied. Required: 'school:students:read'")
     query = select(Student).where(
         Student.org_id == current_user.org_id,
         Student.is_deleted == False,
     )
+    if owned is not None:
+        query = query.where(Student.id.in_(owned))
     if search:
         term = f"%{search}%"
         query = query.where(
@@ -763,6 +821,15 @@ async def list_attendance(
     so already-saved marks pre-populate (the frontend merges them onto the roster);
     without it the grid always looked blank even after saving."""
     query = select(AttendanceRecord).where(AttendanceRecord.org_id == current_user.org_id)
+    # Ownership scoping: a parent/student caller sees ONLY their own children's
+    # marks. Without this the org_id filter is the only one, so any holder of
+    # school:attendance:read reads the whole school's register (class_id is
+    # caller-supplied, so they could enumerate any class).
+    owned = await _owned_student_ids(db, current_user)
+    if owned is not None:
+        if not owned:
+            return {"items": []}
+        query = query.where(AttendanceRecord.student_id.in_(owned))
     if class_id:
         query = query.where(AttendanceRecord.class_id == class_id)
     if attendance_date:

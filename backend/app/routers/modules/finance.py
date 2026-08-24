@@ -75,6 +75,11 @@ router = APIRouter(
 )
 
 _fin_read = Depends(PermissionChecker("payments:read"))
+# Narrow, parent-facing finance read. Parents hold `payments:own:read` only (mig
+# 123), so the handful of routes they legitimately need must ask for THIS, not the
+# broad staff `payments:read`. Staff satisfy it automatically via the scope
+# hierarchy (a two-part `payments:read` covers its three-part children).
+_fin_own_read = Depends(PermissionChecker("payments:own:read"))
 _fin_write = Depends(PermissionChecker("payments:write"))
 _fin_post = Depends(PermissionChecker("payments:post"))
 # Sensitive back-office finance (Budget, Payroll, Salary Advance, Bank Ledger,
@@ -2466,13 +2471,16 @@ async def list_bank_accounts(
     return [_bank_account_response(b) for b in rows]
 
 
-@router.get("/bank-accounts/primary", response_model=BankAccountPublic | None, dependencies=[_fin_read])
+@router.get("/bank-accounts/primary", response_model=BankAccountPublic | None, dependencies=[_fin_own_read])
 async def primary_bank_account(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """The primary active 'pay to' account, public subset — gated payments:READ so
-    fee-payers (parents) can see where to pay. Returns null if none is set."""
+    """The primary active 'pay to' account, public subset — gated `payments:own:read`
+    so fee-payers (parents) can see where to pay. This is the ONE read route in this
+    router that is genuinely parent-facing; the rest (invoices, requisitions, petty
+    cash, store, wallets) are org-wide and stay on the staff `payments:read`.
+    Returns null if none is set."""
     b = (await db.execute(
         select(BankAccount).where(
             BankAccount.org_id == current_user.org_id, BankAccount.is_primary == True,  # noqa: E712

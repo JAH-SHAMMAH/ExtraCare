@@ -37,7 +37,10 @@ from app.services.payment_resolver import PaymentConfigError
 
 router = APIRouter(prefix="/payments/remita", tags=["Remita Payments"])
 
-_can_pay = Depends(PermissionChecker("payments:read"))
+# Parent-facing: paying THEIR OWN children's fees. Gated on the narrow
+# `payments:own:read` so parents no longer need the broad staff finance scope.
+# Staff holding `payments:read` still satisfy this via the scope hierarchy.
+_can_pay = Depends(PermissionChecker("payments:own:read"))
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────────

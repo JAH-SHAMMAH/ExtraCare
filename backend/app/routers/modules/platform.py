@@ -2414,22 +2414,27 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         raise HTTPException(status_code=404, detail="Student not found.")
     cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == student.class_id, SchoolClass.org_id == org))).scalar_one_or_none()
 
-    # Student access gates: own-record check + published report check
-    is_student = any(r.slug == "student" for r in current_user.roles)
-    if is_student:
-        # Students can only view their own report
-        # (Student and User are separate tables linked via Student.user_id)
-        student_own = (await db.execute(
-            select(Student).where(
-                Student.user_id == current_user.id,
-                Student.org_id == org,
-            )
-        )).scalar_one_or_none()
-        if not student_own or student_own.id != student_id:
-            raise HTTPException(status_code=403, detail="You can only view your own report card.")
+    # Access gates. This endpoint previously recognised exactly two identities --
+    # student (own record) and staff (admin or class teacher) -- and hardcoded the
+    # own-record test against Student.user_id. A PARENT was neither, so they fell
+    # into the staff branch and were rejected by the class-teacher gate below with
+    # "You are not the class teacher for this pupil's class", even for their own
+    # child. Delegating to _ensure_student_visible reuses the same ownership rule
+    # as GET /school/students/{id}/report-card (Student.user_id/email OR a
+    # ParentGuardian link), so the two report-card endpoints can no longer diverge,
+    # and it covers a guardian with several children without special-casing.
+    from app.routers.modules.school import _ensure_student_visible, _user_owns_student
+    await _ensure_student_visible(db, current_user, student_id)
 
-        # Students can only view published reports (ReportApproval.stage == "published")
-        # This prevents seeing draft/in-progress scores while a teacher is still entering marks.
+    # Whether this caller is limited to PUBLISHED reports. Students were already
+    # held to this; parents must be too, or unblocking them above would expose
+    # draft marks while a teacher is still entering them. Staff (school:students:
+    # read) keep seeing work in progress -- that is the point of the entry grid.
+    owns_only = (
+        not current_user.has_permission("school:students:read")
+        and await _user_owns_student(db, current_user, student_id)
+    )
+    if owns_only:
         if cls:
             # Load term record to get the term name (ReportApproval stores term as string)
             term_record = (await db.execute(
@@ -2454,13 +2459,16 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
                         detail="This report has not been published yet. Please check back later."
                     )
 
-    # Class-teacher gate: a non-admin may only open a card for a pupil in the class
-    # they are the class/form teacher of. (Skipped for students via their own gates above.)
-    if not is_student and not _report_admin(current_user) and (not cls or cls.teacher_id != current_user.id):
+    # Class-teacher gate: a STAFF non-admin may only open a card for a pupil in the
+    # class they are the class/form teacher of. Skipped for owners (the pupil
+    # themselves or a linked guardian), who are already authorised above -- they are
+    # never the class teacher, so leaving them in this branch is what produced the
+    # parent 403.
+    if not owns_only and not _report_admin(current_user) and (not cls or cls.teacher_id != current_user.id):
         raise HTTPException(status_code=403, detail="You are not the class teacher for this pupil's class.")
     # Section-scoping: a teacher may only view reports for their assigned section(s).
     # For example, a Secondary teacher should not access Primary/Nursery report data.
-    if not is_student and not _report_admin(current_user) and cls and cls.section_id:
+    if not owns_only and not _report_admin(current_user) and cls and cls.section_id:
         teacher_sections = (await db.execute(
             select(TeacherSection.section_id).where(
                 TeacherSection.teacher_id == current_user.id,

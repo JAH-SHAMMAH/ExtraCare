@@ -104,11 +104,22 @@ SCHOOL_STUDENT_PERMISSIONS = [
 # ownership is enforced per-record (a parent passing another child's id is
 # rejected). Fees/payments stay on the separate `payments` namespace.
 SCHOOL_PARENT_PERMISSIONS = [
-    "school:attendance:read",   # child attendance (ownership-scoped)
-    "school:reports:read",      # child grades / report card (ownership-scoped)
+    "school:attendance:read",   # child attendance (ownership-scoped in-endpoint)
+    "school:reports:read",      # child grades / report card (ownership-scoped in-endpoint)
     "school:journals:read",     # child class journals
     "school:feedback:read",     # raise & view feedback
-    "payments:read",            # view & pay child's outstanding fees
+    # NOT `payments:read` -- that is the STAFF finance scope. It gates ~18 org-wide
+    # routes (invoices, petty cash, store sales, wallet + cooperative summaries and
+    # GL reconciliations), so granting it to parents exposed the school's books;
+    # sensitive routes had been bumped to payments:WRITE one at a time to compensate,
+    # which is a patch over a scope-design flaw and missed the rest.
+    #
+    # `payments:own:read` is a three-part scope, so User.has_permission resolves it
+    # via its two-part parent: any staff holder of `payments:read` satisfies it
+    # automatically (no staff regression), while a parent holding ONLY this does not
+    # satisfy `payments:read`. Every org-wide finance route therefore closes at once,
+    # and any route we overlook stays staff-only -- it fails closed, not open.
+    "payments:own:read",        # view & pay THEIR OWN children's outstanding fees
 ]
 
 # Payments namespace (school fees / Paystack) is gated separately from

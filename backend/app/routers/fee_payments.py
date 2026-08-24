@@ -43,7 +43,10 @@ _logger = logging.getLogger("extracare.fee_payments")
 
 router = APIRouter(prefix="/payments/fees", tags=["Fee Payments"])
 
-_can_pay = Depends(PermissionChecker("payments:read"))
+# Parent-facing: paying THEIR OWN children's fees. Gated on the narrow
+# `payments:own:read` so parents no longer need the broad staff finance scope.
+# Staff holding `payments:read` still satisfy this via the scope hierarchy.
+_can_pay = Depends(PermissionChecker("payments:own:read"))
 
 # Providers whose hosted checkout this router drives (built by the resolver factory).
 # Remita is handled by its own router, but still SHOWN by /providers so the parent UI
