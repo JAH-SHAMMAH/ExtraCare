@@ -254,7 +254,8 @@ async def test_discount_rbac(db, org):
     accountant = await _preset_user(db, org, "accountant")
     assert accountant.has_permission("payments:write") and accountant.has_permission("payments:post")
     parent = await _preset_user(db, org, "parent")
-    assert parent.has_permission("payments:read")          # sees own fees…
+    assert parent.has_permission("payments:own:read")      # sees own fees…
+    assert not parent.has_permission("payments:read")      # …not the staff finance scope
     assert not parent.has_permission("payments:write")     # …but can't grant or list discounts
     for slug in ("teacher", "student"):
         u = await _preset_user(db, org, slug)

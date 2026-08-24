@@ -146,7 +146,8 @@ async def test_bank_account_rbac(db, org):
     manager = await _preset_user(db, org, "manager")
     assert manager.has_permission("payments:write")
     parent = await _preset_user(db, org, "parent")
-    assert parent.has_permission("payments:read")          # can read the primary 'pay to'…
+    assert parent.has_permission("payments:own:read")      # can read the primary 'pay to'…
+    assert not parent.has_permission("payments:read")      # …not the staff finance scope
     assert not parent.has_permission("payments:write")     # …but NOT manage the account list
     for slug in ("teacher", "student"):
         u = await _preset_user(db, org, slug)

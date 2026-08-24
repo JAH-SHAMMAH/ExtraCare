@@ -38,6 +38,19 @@ async def _staff(db, org) -> User:
     return u
 
 
+async def _sitting_student(db, org) -> User:
+    """A user with the real STUDENT preset (school:cbt:sit, never school:write or
+    school:cbt:manage) — the actual threat model for the answer-key check."""
+    u = User(id=str(uuid.uuid4()), email=f"pupil-{uuid.uuid4().hex[:6]}@example.com",
+             full_name="Pupil", status=UserStatus.ACTIVE, org_id=org.id)
+    role = Role(id=str(uuid.uuid4()), name="student", slug=f"s-{uuid.uuid4().hex[:6]}",
+                permissions=list(SCHOOL_PERMISSION_PRESETS["student"]), org_id=org.id, is_system=False)
+    u.roles = [role]
+    db.add_all([role, u])
+    await db.flush()
+    return u
+
+
 async def _exam(db, org, teacher, status=ExamStatus.PUBLISHED):
     e = CBTExam(
         id=str(uuid.uuid4()), title="Quiz", status=status, total_points=1.0,
@@ -95,11 +108,17 @@ async def test_attempt_blocked_when_exam_not_live(db, org, teacher, student):
 
 async def test_questions_hide_correct_answer_from_non_writers(db, org, teacher):
     """Security: include_answers=true must be ignored for callers lacking
-    school:write — students must never receive the answer key."""
+    school:write / school:cbt:manage — students must never receive the answer key.
+
+    Uses a real STUDENT-preset user. This previously leaned on the `teacher`
+    fixture being permission-less, which made it pass for the wrong reason: a real
+    teacher holds school:cbt:manage and is *supposed* to see the answer key (they
+    author the bank). The pupil is the caller the check actually exists to stop.
+    """
     exam = await _exam(db, org, teacher)
     await _question(db, org, exam, answer="secret")
-    await db.refresh(teacher, attribute_names=["roles"])  # empty roles → not a writer
-    out = await list_questions(exam_id=exam.id, include_answers=True, db=db, current_user=teacher)
+    pupil = await _sitting_student(db, org)
+    out = await list_questions(exam_id=exam.id, include_answers=True, db=db, current_user=pupil)
     assert out["items"]
     assert "correct_answer" not in out["items"][0]
 

@@ -123,8 +123,13 @@ async def test_reports_rbac(db, org):
         u = await _preset_user(db, org, slug)
         assert u.has_permission("payments:write")
     parent = await _preset_user(db, org, "parent")
-    assert parent.has_permission("payments:read")          # parents can read their own invoices…
-    assert not parent.has_permission("payments:write")     # …but NOT the school-wide report
+    # Parents now hold the NARROW `payments:own:read`, not the staff `payments:read`
+    # (mig 123). The invariant this test protects is unchanged and now stronger: a
+    # parent cannot reach org-wide financials. Previously that relied on every such
+    # route remembering to demand :write; now the read scope itself excludes them.
+    assert parent.has_permission("payments:own:read")      # own invoices…
+    assert not parent.has_permission("payments:read")      # …NOT the staff finance scope
+    assert not parent.has_permission("payments:write")     # …nor the school-wide report
     for slug in ("teacher", "student"):
         u = await _preset_user(db, org, slug)
         assert not u.has_permission("payments:write")

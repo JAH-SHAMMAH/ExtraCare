@@ -174,7 +174,8 @@ async def test_fee_assignment_rbac(db, org):
     manager = await _preset_user(db, org, "manager")
     assert manager.has_permission("payments:write")
     parent = await _preset_user(db, org, "parent")
-    assert parent.has_permission("payments:read")
+    assert parent.has_permission("payments:own:read")
+    assert not parent.has_permission("payments:read")      # staff finance scope, not the parent's
     assert not parent.has_permission("payments:write")
     for slug in ("teacher", "student"):
         u = await _preset_user(db, org, slug)

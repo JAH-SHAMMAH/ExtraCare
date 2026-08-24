@@ -90,6 +90,20 @@ async def org(db) -> Organization:
 
 @pytest_asyncio.fixture
 async def teacher(db, org) -> User:
+    # TODO(rbac-fixtures): this fixture used to carry `roles = []`. A roleless user
+    # has NO permissions, so any endpoint that checks permissions in its BODY (rather
+    # than via the route's `dependencies=`, which a direct function call skips)
+    # silently passed for the wrong reason — it read as "staff" only because nothing
+    # was ever checked. Giving it the real teacher preset makes these tests exercise
+    # the same permission path production does. `student_user` and `unlinked_user`
+    # are still roleless and have the same blind spot; fix them the same way when a
+    # test needs their permissions to be real.
+    from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
+    role = Role(
+        id=str(uuid.uuid4()), name="Teacher", slug=f"teacher-{uuid.uuid4().hex[:6]}",
+        permissions=list(SCHOOL_PERMISSION_PRESETS["teacher"]), org_id=org.id, is_system=False,
+    )
+    db.add(role)
     u = User(
         id=str(uuid.uuid4()),
         email="teacher@example.com",
@@ -97,9 +111,9 @@ async def teacher(db, org) -> User:
         status=UserStatus.ACTIVE,
         org_id=org.id,
     )
-    # Loaded (empty) roles so has_permission() doesn't lazy-load in async direct
+    # Roles eagerly assigned so has_permission() doesn't lazy-load in async direct
     # calls — mirrors production, where get_current_user selectinloads roles.
-    u.roles = []
+    u.roles = [role]
     db.add(u)
     await db.commit()
     return u
