@@ -29,9 +29,18 @@ DB_URL = "postgresql+asyncpg://fairview_data_user:1MMCmx2rVy0XbXNh1IBjclMiOH1ACP
 FAIRVIEW_ORG_ID = "0a6ee83d-7e2a-4089-914c-7c0ecafd4027"
 
 
+def _resolve_db_url() -> str:
+    """First non-flag argument wins, else the default above. Without this the
+    passed URL is silently ignored and the hardcoded one used instead."""
+    for arg in sys.argv[1:]:
+        if not arg.startswith("--"):
+            return arg
+    return DB_URL
+
+
 async def dry_run():
     """Count how many StudentAssessmentScore rows would be created/updated."""
-    clean_url = DB_URL.split("?")[0]
+    clean_url = _resolve_db_url().split("?")[0]
     engine = create_async_engine(clean_url, echo=False, connect_args={"ssl": "require"}, pool_pre_ping=True)
     AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -87,7 +96,7 @@ async def dry_run():
 
 async def write():
     """Actually write StudentAssessmentScore rows."""
-    clean_url = DB_URL.split("?")[0]
+    clean_url = _resolve_db_url().split("?")[0]
     engine = create_async_engine(clean_url, echo=False, connect_args={"ssl": "require"}, pool_pre_ping=True)
     AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -136,7 +145,9 @@ async def write():
 
 
 async def main():
-    if len(sys.argv) > 1 and sys.argv[1] == "--write":
+    # Flag may appear at ANY position — the optional DB URL is also positional,
+    # so checking sys.argv[1] alone silently downgrades `<url> --write` to a dry-run.
+    if "--write" in sys.argv:
         await write()
     else:
         await dry_run()

@@ -178,13 +178,15 @@ async def sync_cbt_to_assessment_score(
     if not assessment_id:
         return 0, "Could not create Assessment for exam's term"
 
-    # Get best attempt per student
+    # Get best attempt per student. superseded_at IS NULL = active — the same
+    # filter cbt.py's _active() applies (inlined here: importing the router back
+    # into this service would be circular).
     attempts = (await db.execute(
         select(CBTAttempt).where(
             CBTAttempt.exam_id == exam_id,
             CBTAttempt.org_id == org_id,
             CBTAttempt.status == AttemptStatus.GRADED,
-            CBTAttempt.superseded.isnot(True),
+            CBTAttempt.superseded_at.is_(None),
         )
     )).scalars().all()
 
