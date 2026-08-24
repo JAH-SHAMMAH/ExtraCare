@@ -2213,9 +2213,15 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
     if not _report_admin(current_user):
         if not payload.class_id:
             raise HTTPException(status_code=422, detail="class_id is required.")
-        # Section-scoping: teacher may only save scores for classes in their assigned section(s).
+        assignments = await _teacher_assignments(db, org, current_user.id)
+        # Section-scoping: teacher may only save scores for classes in their assigned
+        # section(s) — BUT an explicit (class, subject) assignment via Timetable or
+        # Subject.teacher_id already proves they teach it, so it takes precedence.
+        # This mirrors the GET /report-entry check. Without the `assignments` guard a
+        # teacher with Timetable rows but no TeacherSection row could READ the grid
+        # and then get a 403 trying to SAVE it.
         cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == payload.class_id, SchoolClass.org_id == org))).scalar_one_or_none()
-        if cls and cls.section_id:
+        if cls and cls.section_id and (payload.class_id, payload.subject_id) not in assignments:
             teacher_sections = (await db.execute(
                 select(TeacherSection.section_id).where(
                     TeacherSection.teacher_id == current_user.id,
@@ -2224,8 +2230,26 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
             )).scalars().all()
             if cls.section_id not in teacher_sections:
                 raise HTTPException(status_code=403, detail="You do not teach in this academic section.")
-        if (payload.class_id, payload.subject_id) not in await _teacher_assignments(db, org, current_user.id):
+        if (payload.class_id, payload.subject_id) not in assignments:
             raise HTTPException(status_code=403, detail="You do not teach this subject in this class.")
+    # Student scoping: every pupil in the payload must belong to this org, and --
+    # when a class is given -- to THAT class. Without this a teacher legitimately
+    # scoped to one (class, subject) could post scores for any pupil in the school,
+    # or another tenant's pupil, just by sending their ids. Checked before any write
+    # so a payload with one stray id saves nothing.
+    student_ids = {i.student_id for i in payload.items}
+    if student_ids:
+        sq = select(Student.id).where(
+            Student.id.in_(student_ids), Student.org_id == org,
+            Student.is_deleted == False)  # noqa: E712
+        if payload.class_id:
+            sq = sq.where(Student.class_id == payload.class_id)
+        known = set((await db.execute(sq)).scalars().all())
+        stray = student_ids - known
+        if stray:
+            raise HTTPException(
+                status_code=403,
+                detail=f"{len(stray)} student(s) in this payload are not in this class.")
     valid_assessments = set((await db.execute(select(Assessment.id).where(Assessment.org_id == org))).scalars().all())
     keys = {(i.student_id, i.assessment_id) for i in payload.items}
     existing = {(r.student_id, r.assessment_id): r for r in (await db.execute(select(StudentAssessmentScore).where(
