@@ -269,6 +269,16 @@ export function useReportCard(p: { student_id: string; term_id: string; sub_term
   });
 }
 
+/** Every card in a class, for Result Bulk Print. Kept separate from useReportCard
+ *  so the single-card view is not refetched when the bulk view is open. */
+export function useReportCardsBulk(p: { class_id: string; term_id: string; sub_term_id: string }, enabled = true) {
+  return useQuery<any[]>({
+    queryKey: ["report-cards-bulk", p],
+    queryFn: () => platformApi.reportCardsBulk(p),
+    enabled: enabled && !!p.class_id && !!p.term_id && !!p.sub_term_id,
+  });
+}
+
 // ── S-4d: report-card comment grids ──────────────────────────────────────────
 export function useCommentGrid(p: { class_id: string; term_id: string; sub_term_id: string; kind: string }) {
   return useQuery<any>({

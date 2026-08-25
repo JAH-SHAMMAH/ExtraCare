@@ -34,7 +34,10 @@ from app.models.modules.platform import (
     MailboxMessage, MailboxRecipient,
     MobileDevice, MobileAppConfig,
 )
-from app.models.modules.school import SchoolClass, Subject, Student, StudentReport, Timetable, TeacherSection
+from app.models.modules.school import (
+    SchoolClass, Subject, Student, StudentReport, Timetable, TeacherSection,
+    AttendanceRecord, AttendanceStatus,
+)
 from app.schemas.platform import (
     SessionCreate, SessionUpdate, SessionResponse, CurrentSessionResponse,
     HouseCreate, HouseUpdate, HouseResponse, BandCreate, BandResponse,
@@ -2530,14 +2533,25 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     # Per-classmate totals (for position) + per-subject class values (arm average).
     totals: dict[str, object] = {}
     arm: dict[str, list] = {}
+    # Each classmate's PERCENTAGE average, so the class average is comparable with
+    # the pupil's own `average` below (which is a mean of percentages, not of raw
+    # display values). Reuses this same pass rather than re-querying the class.
+    peer_averages: list = []
     for st in classmates:
         tot = money(0)
+        p_sum = money(0)
+        p_n = 0
         for sid in subjects:
-            v, _mx = display_val(st.id, sid)
+            v, mx = display_val(st.id, sid)
             if v is not None:
                 tot += v
                 arm.setdefault(sid, []).append(v)
+                if mx:
+                    p_sum += (v / mx * 100)
+                    p_n += 1
         totals[st.id] = tot
+        if p_n:
+            peer_averages.append(p_sum / p_n)
     ranking = sorted(classmates, key=lambda s: totals.get(s.id, money(0)), reverse=True)
     position = next((i for i, s in enumerate(ranking, start=1) if s.id == student_id), 0)
 
@@ -2569,13 +2583,49 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         n += 1
     average = (pct_sum / n) if n else money(0)
 
-    sr = (await db.execute(select(StudentReport).where(
-        StudentReport.org_id == org, StudentReport.student_id == student_id))).scalars().first()
+    # StudentReport is unique on (student_id, term, org_id). Filtering by student
+    # alone returned an ARBITRARY term's row, so attendance and comments could come
+    # from the wrong term as soon as a second term was authored. Match the term
+    # actually being rendered; fall back to the student's only row when the term
+    # name cannot be resolved, so single-term schools keep working.
+    sr_q = select(StudentReport).where(
+        StudentReport.org_id == org, StudentReport.student_id == student_id)
+    sr = None
+    if term_name:
+        sr = (await db.execute(sr_q.where(StudentReport.term == term_name))).scalars().first()
+    if sr is None and not term_name:
+        sr = (await db.execute(sr_q)).scalars().first()
 
     comment_rows = (await db.execute(select(StudentReportComment).where(
         StudentReportComment.org_id == org, StudentReportComment.student_id == student_id,
         StudentReportComment.term_id == term_id, StudentReportComment.sub_term_id == sub_term_id))).scalars().all()
     comments = {c.kind: c.text for c in comment_rows}
+
+    # "Times Punctual" — present days that were NOT flagged late. The check-in
+    # pipeline (services/attendance.py::_upsert_daily_record) already resolves each
+    # arrival against the org's late_after_time and stamps AttendanceRecord.status
+    # LATE or PRESENT, so counting that status reuses the pipeline's own decision
+    # instead of re-applying the cutoff to raw events — one source of truth.
+    # Scoped to the term's session window when AcademicSession carries dates for
+    # this term; otherwise counted across the pupil's whole roll-call history.
+    # Stays None while no roll-call data exists, so the card shows a dash rather
+    # than a misleading 0.
+    punctual = None
+    att_q = select(func.count(AttendanceRecord.id)).where(
+        AttendanceRecord.org_id == org,
+        AttendanceRecord.student_id == student_id,
+        AttendanceRecord.status == AttendanceStatus.PRESENT,
+    )
+    if term_name:
+        sess = (await db.execute(select(AcademicSession).where(
+            AcademicSession.org_id == org, AcademicSession.term == term_name))).scalars().first()
+        if sess and sess.start_date and sess.end_date:
+            att_q = att_q.where(AttendanceRecord.date >= sess.start_date,
+                                AttendanceRecord.date <= sess.end_date)
+    has_any = (await db.execute(select(func.count(AttendanceRecord.id)).where(
+        AttendanceRecord.org_id == org, AttendanceRecord.student_id == student_id))).scalar() or 0
+    if has_any:
+        punctual = (await db.execute(att_q)).scalar() or 0
 
     title = " ".join(x for x in [(term_name or "").upper(), (sub_name or "").upper(), "REPORT"] if x).strip()
     return ReportCardResponse(
@@ -2586,9 +2636,53 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         subjects=subj_rows, bands=[BroadsheetBand(grade=b.grade, min_score=b.min_score, max_score=b.max_score, remark=b.remark) for b in bands],
         total=round_dp(my_total, 2), average=round_dp(average, 2), grade=_grade_for(average, bands) if n else None,
         position=position, class_size=len(classmates),
+        class_average=(round_dp(sum(peer_averages) / len(peer_averages), 2) if peer_averages else None),
         attendance_present=(sr.attendance_present if sr else None), attendance_total=(sr.attendance_total if sr else None),
-        head_comment=comments.get("head"), pc_comment=comments.get("pc"),
+        attendance_punctual=punctual,
+        # The authored comments live on StudentReport (180 rows populated), while the
+        # newer StudentReportComment store is per-(term, sub-term) and currently
+        # empty — reading only the latter left every card blank. Prefer the newer
+        # store where a row exists, fall back to StudentReport otherwise.
+        class_teacher_comment=(sr.class_teacher_comment if sr else None),
+        head_comment=comments.get("head") or (sr.head_teacher_comment if sr else None),
+        pc_comment=comments.get("pc"),
     )
+
+
+@router.get("/report-cards-bulk", response_model=list[ReportCardResponse],
+            dependencies=[Depends(PermissionChecker("school:reports:read"))])
+async def report_cards_bulk(class_id: str, term_id: str, sub_term_id: str,
+                            db: AsyncSession = Depends(get_db),
+                            current_user: User = Depends(get_current_active_user)):
+    """Every pupil's report card for one class, for Result Bulk Print.
+
+    Delegates to report_card() per pupil rather than reimplementing the engine, so
+    a bulk-printed card can never disagree with the same card opened singly — and
+    every access gate (ownership, class-teacher, section, published-report) is
+    enforced identically.
+
+    SCALING LIMIT: report_card() re-runs the whole classmate pass for each pupil,
+    so this is O(N^2) in class size. Deliberate -- at 15-40 pupils per class the
+    cost is trivial and consistency with the single-card view is worth more. If
+    this is ever pointed at a whole YEAR GROUP (or the school), hoist the
+    classmate/arm-average pass out of report_card() and share it across pupils
+    first, or it will not hold up.
+    """
+    org = current_user.org_id
+    cls = (await db.execute(select(SchoolClass).where(
+        SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found.")
+    students = (await db.execute(
+        select(Student).where(Student.org_id == org, Student.class_id == class_id,
+                              Student.is_deleted == False)  # noqa: E712
+        .order_by(Student.first_name, Student.last_name)
+    )).scalars().all()
+    cards: list[ReportCardResponse] = []
+    for st in students:
+        cards.append(await report_card(student_id=st.id, term_id=term_id,
+                                       sub_term_id=sub_term_id, db=db, current_user=current_user))
+    return cards
 
 
 # ── Secondary Report S-4d: report-card comment grids (Head / PC Teacher) ─────

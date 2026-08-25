@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useClasses } from "@/hooks/useSchool";
-import { useTerms, useSubTerms, useBroadsheet, useReportCard, useCommentGrid, useSaveComments } from "@/hooks/usePlatform";
+import { useTerms, useSubTerms, useBroadsheet, useReportCard, useReportCardsBulk, useCommentGrid, useSaveComments } from "@/hooks/usePlatform";
 import { Loader2, Printer, FileText, Save } from "lucide-react";
+
+/** Sentinel for the "every pupil in the class" option in the student picker. */
+const ALL = "__ALL__";
 
 export function BulkPrintTab() {
   const classesData: any = useClasses({ page_size: 200 }).data;
@@ -15,30 +18,49 @@ export function BulkPrintTab() {
   const [subTermId, setSubTermId] = useState("");
   const [studentId, setStudentId] = useState("");
   const { data: bs } = useBroadsheet({ class_id: classId, term_id: termId, sub_term_id: subTermId });
-  const { data: card, isLoading } = useReportCard({ student_id: studentId, term_id: termId, sub_term_id: subTermId });
+  // studentId === ALL renders every card in the class, one per printed page.
+  const isAll = studentId === ALL;
+  const { data: card, isLoading } = useReportCard({ student_id: isAll ? "" : studentId, term_id: termId, sub_term_id: subTermId });
+  const { data: allCards, isLoading: allLoading } = useReportCardsBulk(
+    { class_id: classId, term_id: termId, sub_term_id: subTermId }, isAll);
 
   const students: any[] = bs?.rows ?? [];
   const num = (v: any) => (v == null ? "–" : Number(v));
+  const cards: any[] = isAll ? (allCards ?? []) : card ? [card] : [];
+  const busy = isAll ? allLoading : isLoading;
 
   return (
     <div className="space-y-4">
-      <style>{`@media print { body * { visibility: hidden !important; } #report-card, #report-card * { visibility: visible !important; } #report-card { position: absolute; left: 0; top: 0; width: 100%; } }`}</style>
+      <style>{`@media print {
+        body * { visibility: hidden !important; }
+        #report-card, #report-card * { visibility: visible !important; }
+        #report-card { position: absolute; left: 0; top: 0; width: 100%; }
+        /* One card per sheet in bulk mode; the last must not emit a trailing blank page. */
+        .card-page { break-after: page; page-break-after: always; }
+        .card-page:last-child { break-after: auto; page-break-after: auto; }
+      }`}</style>
 
       <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3 no-print">
         <div><label className="label">Class</label><select value={classId} onChange={(e) => { setClassId(e.target.value); setStudentId(""); }} className="input"><option value="">— Select —</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
         <div><label className="label">Term</label><select value={termId} onChange={(e) => setTermId(e.target.value)} className="input"><option value="">— Select —</option>{(terms as any[]).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
         <div><label className="label">Sub-term</label><select value={subTermId} onChange={(e) => setSubTermId(e.target.value)} className="input"><option value="">— Select —</option>{(subs as any[]).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-        <div><label className="label">Student</label><select value={studentId} onChange={(e) => setStudentId(e.target.value)} disabled={!bs} className="input min-w-[180px]"><option value="">— Select —</option>{students.map((r) => <option key={r.student_id} value={r.student_id}>{r.student_name}</option>)}</select></div>
-        {card && <button onClick={() => window.print()} className="btn-primary gap-2 ml-auto"><Printer size={15} /> Print</button>}
+        <div><label className="label">Student</label><select value={studentId} onChange={(e) => setStudentId(e.target.value)} disabled={!bs} className="input min-w-[180px]"><option value="">— Select —</option><option value={ALL}>All students ({students.length}) — bulk print</option>{students.map((r) => <option key={r.student_id} value={r.student_id}>{r.student_name}</option>)}</select></div>
+        {cards.length > 0 && <button onClick={() => window.print()} className="btn-primary gap-2 ml-auto"><Printer size={15} /> Print{isAll ? ` ${cards.length} cards` : ""}</button>}
       </div>
 
       {!studentId ? (
-        <div className="bg-white rounded-xl border border-dashed border-slate-200 py-16 text-center text-slate-400 no-print"><FileText size={30} className="mx-auto mb-3 opacity-40" /><p className="text-sm">Choose a class, term, sub-term and student to view the report card.</p></div>
-      ) : isLoading || !card ? (
-        <div className="py-16 text-center no-print"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
+        <div className="bg-white rounded-xl border border-dashed border-slate-200 py-16 text-center text-slate-400 no-print"><FileText size={30} className="mx-auto mb-3 opacity-40" /><p className="text-sm">Choose a class, term, sub-term and student — or &ldquo;All students&rdquo; to bulk-print the whole class.</p></div>
+      ) : busy ? (
+        <div className="py-16 text-center no-print"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /><p className="text-xs text-slate-400 mt-2">{isAll ? "Building every card in the class…" : "Loading…"}</p></div>
+      ) : cards.length === 0 ? (
+        <div className="bg-white rounded-xl border border-dashed border-slate-200 py-16 text-center text-slate-400 no-print"><p className="text-sm">No report cards for this selection.</p></div>
       ) : (
-        <div id="report-card" className="bg-white rounded-xl border border-slate-300 p-6 max-w-4xl mx-auto text-slate-900">
-          <Card card={card} num={num} />
+        <div id="report-card" className="space-y-6">
+          {cards.map((c: any) => (
+            <div key={c.student_id} className="card-page bg-white rounded-xl border border-slate-300 p-6 max-w-4xl mx-auto text-slate-900">
+              <Card card={c} num={num} />
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -48,6 +70,8 @@ export function BulkPrintTab() {
 function Card({ card, num }: { card: any; num: (v: any) => any }) {
   const b = card.branding || {};
   const attPct = card.attendance_total ? Math.round((card.attendance_present / card.attendance_total) * 100) : null;
+  // Date on the signature line: when the card was produced.
+  const printedOn = new Date().toLocaleDateString("en-GB");
   return (
     <>
       <div className="flex items-center gap-4 border-b-2 border-slate-800 pb-3">
@@ -74,10 +98,18 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
           <tr>
             <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Admission No</td>
             <td className="border border-slate-300 px-2 py-1">{card.admission_no || "—"}</td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Days Present</td>
-            <td className="border border-slate-300 px-2 py-1">{card.attendance_present ?? "—"}{card.attendance_total ? ` / ${card.attendance_total}` : ""}</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Times School Opened</td>
+            <td className="border border-slate-300 px-2 py-1">{card.attendance_total ?? "—"}</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Times Punctual</td>
+            <td className="border border-slate-300 px-2 py-1">{card.attendance_punctual ?? "—"}</td>
+          </tr>
+          <tr>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Times Present</td>
+            <td className="border border-slate-300 px-2 py-1">{card.attendance_present ?? "—"}</td>
             <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">% Attendance</td>
             <td className="border border-slate-300 px-2 py-1">{attPct != null ? `${attPct}%` : "—"}</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Term</td>
+            <td className="border border-slate-300 px-2 py-1">{card.term_name || "—"}{card.sub_term_name ? ` · ${card.sub_term_name}` : ""}</td>
           </tr>
         </tbody>
       </table>
@@ -106,34 +138,62 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
         </tbody>
       </table>
 
-      <div className="grid grid-cols-3 gap-3 mt-3 text-xs">
-        <div className="border border-slate-300 p-2 text-center"><p className="font-bold text-slate-500">Student Average</p><p className="text-lg font-black">{num(card.average)}</p></div>
-        <div className="border border-slate-300 p-2 text-center"><p className="font-bold text-slate-500">Total Score</p><p className="text-lg font-black">{num(card.total)}</p></div>
-        <div className="border border-slate-300 p-2 text-center"><p className="font-bold text-slate-500">Overall Grade</p><p className="text-lg font-black">{card.grade || "–"}</p></div>
-      </div>
-
-      {card.bands.length > 0 && (
-        <div className="mt-3 text-[10px]">
-          <p className="font-bold text-slate-500 uppercase tracking-widest mb-1">Grading Scale</p>
-          <div className="flex flex-wrap gap-x-3 gap-y-1">
-            {card.bands.map((bnd: any) => <span key={bnd.grade}><b>{bnd.grade}</b> {bnd.min_score != null ? `${num(bnd.min_score)}–${num(bnd.max_score)}` : ""}{bnd.remark ? ` ${bnd.remark}` : ""}</span>)}
+      {/* Summary boxes beside the grading scale, matching the reference card. */}
+      <div className="grid grid-cols-2 gap-3 mt-3 text-xs items-start">
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="border border-slate-300 p-2 text-center"><p className="font-bold text-slate-500">Student&apos;s Average</p><p className="text-lg font-black">{num(card.average)}</p></div>
+            <div className="border border-slate-300 p-2 text-center"><p className="font-bold text-slate-500">Student&apos;s Total Score</p><p className="text-lg font-black">{num(card.total)}</p></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="border border-slate-300 p-2 text-center"><p className="font-bold text-slate-500">Total Class Average</p><p className="text-lg font-black">{card.class_average != null ? num(card.class_average) : "–"}</p></div>
+            <div className="border border-slate-300 p-2 text-center"><p className="font-bold text-slate-500">Overall Grade</p><p className="text-lg font-black">{card.grade || "–"}</p></div>
           </div>
         </div>
-      )}
+        {card.bands.length > 0 ? (
+          <table className="w-full text-[10px] border border-slate-300">
+            <thead><tr className="bg-slate-100"><th colSpan={3} className="border border-slate-300 px-2 py-1">GRADING SCALE</th></tr></thead>
+            <tbody>
+              {card.bands.map((bnd: any) => (
+                <tr key={bnd.grade}>
+                  <td className="border border-slate-300 px-2 py-0.5 text-center tabular-nums">{bnd.min_score != null ? `${num(bnd.min_score)}-${num(bnd.max_score)}` : "–"}</td>
+                  <td className="border border-slate-300 px-2 py-0.5 text-center font-bold">{bnd.grade}</td>
+                  <td className="border border-slate-300 px-2 py-0.5">{bnd.remark || ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <div />}
+      </div>
 
-      {(card.pc_comment || card.head_comment) && (
+      {/* Three distinct comments. class_teacher and head come from StudentReport;
+          pc is the newer per-(term, sub-term) store. */}
+      {(card.class_teacher_comment || card.pc_comment || card.head_comment) && (
         <table className="w-full text-xs mt-3 border border-slate-300">
+          <thead><tr className="bg-slate-100"><th colSpan={2} className="border border-slate-300 px-2 py-1">COMMENTS</th></tr></thead>
           <tbody>
-            {card.pc_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 w-40 align-top">PC Teacher's Comment</td><td className="border border-slate-300 px-2 py-1">{card.pc_comment}</td></tr>}
-            {card.head_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 align-top">{b.school_head_title || "Head"}'s Comment</td><td className="border border-slate-300 px-2 py-1">{card.head_comment}</td></tr>}
+            {card.class_teacher_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 w-40 align-top">{b.class_teacher_title || "Class Teacher"}</td><td className="border border-slate-300 px-2 py-1">{card.class_teacher_comment}</td></tr>}
+            {card.pc_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 align-top">PC Teacher&apos;s Comment</td><td className="border border-slate-300 px-2 py-1">{card.pc_comment}</td></tr>}
+            {card.head_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 align-top">{b.school_head_title || "Head"}&apos;s Comment</td><td className="border border-slate-300 px-2 py-1">{card.head_comment}</td></tr>}
           </tbody>
         </table>
       )}
 
-      <div className="grid grid-cols-2 gap-6 mt-6 text-xs">
-        <div><p className="border-t border-slate-400 pt-1 mt-8">{b.class_teacher_title || "Class Teacher"} Signature</p></div>
-        <div><p className="border-t border-slate-400 pt-1 mt-8">{b.school_head_title || "Principal"}{b.school_head_name ? ` — ${b.school_head_name}` : ""}</p></div>
-      </div>
+      {/* Signature + date block, per the reference card. */}
+      <table className="w-full text-xs mt-3 border border-slate-300">
+        <tbody>
+          <tr>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 w-24">Signed:</td>
+            <td className="border border-slate-300 px-2 py-6">
+              {/* Branding stores ONE signature (head_signature_url); there is no
+                  separate class-teacher signature field, so that is what prints. */}
+              {b.head_signature_url ? <img src={b.head_signature_url} alt="" className="h-10 object-contain" /> : null}
+            </td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 w-20">Date:</td>
+            <td className="border border-slate-300 px-2 py-1 tabular-nums w-32">{printedOn}</td>
+          </tr>
+        </tbody>
+      </table>
     </>
   );
 }

@@ -1075,9 +1075,22 @@ class ReportCardResponse(BaseModel):
     grade: Optional[str] = None
     position: int = 0
     class_size: int = 0
+    # Mean of every classmate's percentage average — the reference card's
+    # "Total Class Average" box, shown beside the pupil's own average.
+    class_average: Optional[Decimal] = None
     # attendance (from the existing StudentReport, if authored)
     attendance_present: Optional[int] = None
     attendance_total: Optional[int] = None
+    # "Times Punctual": present-and-not-late days, counted from AttendanceRecord.
+    # The check-in pipeline already resolves lateness against the org's
+    # late_after_time when it ingests an AttendanceEvent (services/attendance.py),
+    # so this reads that decision rather than re-deriving it from raw punches —
+    # one source of truth. None when no roll-call data exists yet.
+    attendance_punctual: Optional[int] = None
+    # Three genuinely distinct comments. class_teacher/head come from the older
+    # StudentReport row (which is where the authored text actually lives); pc is
+    # the newer per-(term, sub-term) StudentReportComment store.
+    class_teacher_comment: Optional[str] = None
     head_comment: Optional[str] = None
     pc_comment: Optional[str] = None
 
