@@ -259,7 +259,13 @@ SCHOOL_PERMISSION_PRESETS.update({
     # Senior administration → manager tier
     "vice_principal": _MGR,
     "deputy_head": _MGR,
-    "administrative_coordinator": _MGR,
+    # Manager tier PLUS `settings:read`, which gates Report Setup (and the other
+    # org-wide config pages: Attendance Setup, Feedback Settings). Educare's
+    # Administrative Coordinator reaches Report Setup, and this is the only scope
+    # standing between the manager tier and the whole report section. Given its own
+    # list rather than widening _MGR, which manager / vice_principal / deputy_head
+    # also alias -- they are deliberately NOT widened here.
+    "administrative_coordinator": _dedupe(_MGR + ["settings:read"]),
     # Head of Administration → manager tier PLUS sensitive-finance read/write (view
     # + draft Budget/Payroll/Salary-Advance/Ledger) — but NOT finance_admin:post,
     # so payroll approval / period lock / journal posting stay with the Accountant
