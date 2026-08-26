@@ -50,7 +50,22 @@ router = APIRouter(
 _can_read = Depends(AnyPermissionChecker("school:read", "school:classes:read"))
 _can_analytics_read = Depends(PermissionChecker("analytics:read"))
 
-ADMIN_SLUGS = {"org_admin", "manager", "super_admin"}
+# Roles that may see WHOLE-SCHOOL headcount aggregates on /dashboard/overview.
+# Deliberately admin-tier only: teachers and other staff land on the same page but
+# must not see school-wide numbers.
+#
+# `hr_manager` and `accountant` are the real slugs from the Educare role catalogue
+# (there is no "hr" or "hr_admin" role — "hr_admin" is only a pytest fixture name),
+# and they carry no [*] wildcard, so check 3 below does not cover them.
+#
+# `super_admin` does NOT exist in the role catalogue — the real top-tier slug is
+# `super_user`, which passes via the [*] wildcard check instead. Kept as a harmless
+# no-op rather than removed, since an older org could still carry that slug.
+#
+# Scope note: this set is LOCAL to the executive dashboard. sms.py and transport.py
+# each define their own identically-named ADMIN_SLUGS; they are separate constants
+# and are intentionally NOT widened here.
+ADMIN_SLUGS = {"org_admin", "manager", "super_admin", "hr_manager", "accountant"}
 
 
 def _is_admin(user: User) -> bool:
