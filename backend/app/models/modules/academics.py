@@ -11,7 +11,7 @@ All tenant-scoped. Values stored as strings, validated in the schema layer.
 """
 from __future__ import annotations
 
-from sqlalchemy import Column, String, Text, Date, Integer, Float, ForeignKey, Index, UniqueConstraint
+from sqlalchemy import Column, String, Text, Date, DateTime, Integer, Float, ForeignKey, Index, UniqueConstraint
 
 from app.models.base import Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin
 
@@ -78,9 +78,21 @@ class ReportApproval(Base, UUIDMixin, TimestampMixin, TenantMixin):
     submitted_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     reviewed_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     approved_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # `published` is the stage that actually releases the card to parents, so it
+    # carries its own stamp rather than sharing `approved_by`. Kept on a move back
+    # to an earlier stage: it records the last release, not the current state.
+    published_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    published_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("ix_report_approvals_org_stage", "org_id", "stage"),
+        # One workflow row per class + term. Both gates resolve a class's stage by
+        # (class, term); duplicates would make "the stage" ambiguous and let a
+        # stale second row keep releasing a card that was pulled back on the first.
+        # `class_id` is a per-org FK, so this is org-scoped without naming org_id —
+        # and NULL class_id (an org-wide row) stays unconstrained, as Postgres
+        # treats NULLs as distinct.
+        UniqueConstraint("class_id", "term", name="uq_report_approval_class_term"),
     )
 
 

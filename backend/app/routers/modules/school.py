@@ -6,7 +6,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, update as sa_update
 from sqlalchemy.exc import IntegrityError
-from datetime import date, time, timedelta, datetime
+from datetime import date, time, timedelta, datetime, timezone
 
 from app.database import get_db
 from app.deps import get_current_active_user
@@ -22,6 +22,7 @@ from app.models.modules.platform import (
     AcademicSession, SchoolSection, ReportTemplate, GradingBand, ReportSubjectAssessment,
     AssessmentDomain, StudentDomainRating, MailboxMessage, MailboxRecipient,
 )
+from app.models.modules.academics import ReportApproval
 from app.models.role import Role, user_roles
 from app.services.email import email_configured, send_email
 from app.schemas.attendance_config import (
@@ -41,6 +42,7 @@ from app.schemas.subject import SubjectCreate, SubjectUpdate
 from app.schemas.exam import ExamCreate, ExamUpdate, ExamResultRow, EXAM_TYPES, EXAM_STATUSES
 from app.schemas.rating import RatingCreate
 from app.schemas.grade import GradePublish, ReportMetaUpdate
+from app.schemas.academics import REPORT_PUBLISHABLE_STAGES, REPORT_RELEASED_STAGE
 from app.schemas.platform import DomainRatingsSet, DomainRatingResponse
 from app.schemas.lesson_planner import (
     CategoryCreate, CategoryUpdate, CategoryResponse,
@@ -1248,9 +1250,32 @@ async def get_report_card(
     # Fail-safe: parents/students see only published/finalised grades. Staff (broad
     # students-read scope) see drafts too. Draft grades never leak downstream.
     see_drafts = current_user.has_permission("school:students:read")
-    if not see_drafts:
+    if see_drafts:
+        grades = (await db.execute(query)).scalars().all()
+    else:
+        # Two gates for an owner, not one. Grade.status releases a mark the moment
+        # a teacher flips it; ReportApproval is what the SCHOOL signs off on, and
+        # only its `published` stage means "this class's term is released". A term
+        # must clear both. Fail closed on the way in: an unclassed student, or a
+        # class whose workflow has not reached `published`, shows nothing rather
+        # than defaulting to visible.
         query = query.where(Grade.status == GradeStatus.PUBLISHED)
-    grades = (await db.execute(query)).scalars().all()
+        released_terms = set()
+        if student.class_id:
+            released_terms = set((await db.execute(
+                select(ReportApproval.term).where(
+                    ReportApproval.org_id == current_user.org_id,
+                    ReportApproval.class_id == student.class_id,
+                    ReportApproval.stage == REPORT_RELEASED_STAGE,
+                    ReportApproval.term.isnot(None),
+                )
+            )).scalars().all())
+        # `.in_(empty)` is a valid no-match, but skipping the round-trip is clearer
+        # about the intent: nothing released means nothing to show.
+        grades = (
+            (await db.execute(query.where(Grade.term.in_(released_terms)))).scalars().all()
+            if released_terms else []
+        )
 
     subj_names = await _subject_names(db, current_user.org_id, {g.subject_id for g in grades})
     exam_types = await _exam_type_map(db, current_user.org_id, {g.exam_id for g in grades})
@@ -1277,7 +1302,13 @@ async def get_report_card(
     total_score = round(sum(subject_totals), 1)
     average = round(sum(subject_totals) / len(subject_totals), 2) if subject_totals else 0
 
-    rank, class_size = await _class_position(db, current_user.org_id, student.class_id, term, student_id, ca_w, exam_w)
+    # Ranking is derived from the whole class's published grades, so it survives a
+    # gated card unless suppressed — a parent shown "no results yet" next to
+    # "position 3 of 15" would leak the standing the gate is withholding.
+    rank, class_size = (
+        await _class_position(db, current_user.org_id, student.class_id, term, student_id, ca_w, exam_w)
+        if (see_drafts or grades) else (None, 0)
+    )
 
     meta = None
     if term:
@@ -1549,6 +1580,41 @@ def _grades_in_scope(org_id: str, term: str, class_id: str | None,
     return query
 
 
+async def _require_report_approval(db, org_id: str, term: str, class_id: str | None,
+                                   exam_id: str | None) -> ReportApproval:
+    """The class's sign-off for this term, or 422.
+
+    Resolves the class from the payload, else from the exam that names one. Fails
+    closed when neither yields a class: with no class there is no workflow row to
+    check, and an unverifiable release is refused rather than waved through.
+    """
+    if not class_id and exam_id:
+        class_id = (await db.execute(
+            select(Exam.class_id).where(Exam.id == exam_id, Exam.org_id == org_id)
+        )).scalar_one_or_none()
+    if not class_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot resolve a class for this scope — publishing needs a class, either "
+                   "given directly or on the exam, so its report approval can be checked.",
+        )
+    approval = (await db.execute(
+        select(ReportApproval).where(
+            ReportApproval.org_id == org_id,
+            ReportApproval.class_id == class_id,
+            ReportApproval.term == term,
+            ReportApproval.stage.in_(REPORT_PUBLISHABLE_STAGES),
+        ).order_by(ReportApproval.updated_at.desc())
+    )).scalars().first()
+    if approval is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"This class's report for {term} has not been approved — move its Report "
+                   f"Workflow to 'approved' before publishing results to parents.",
+        )
+    return approval
+
+
 @router.get("/grades/publish-status", dependencies=[_grades_read])
 async def grade_publish_status(
     term: str,
@@ -1575,10 +1641,22 @@ async def publish_grades(
     current_user: User = Depends(get_current_active_user),
 ):
     """Bulk set grade status for a scoped set (term + a class and/or exam). Refuses
-    to run without a class or exam — publishing an entire term blind is too broad."""
+    to run without a class or exam — publishing an entire term blind is too broad.
+
+    Publishing additionally requires the class's ReportApproval for the term to
+    have reached `approved`, and advances it to `published` on success — releasing
+    the results IS the act the final stage records, so there is no in-between
+    state where grades are out but the card stays dark. Retracting (→ draft) is
+    deliberately ungated: pulling a wrong result back from parents must never
+    wait on a workflow stage."""
     if not (payload.class_id or payload.exam_id):
         raise HTTPException(status_code=422, detail="Scope too broad — specify a class or an exam.")
     new_status = GradeStatus(payload.status)
+    approval = None
+    if new_status == GradeStatus.PUBLISHED:
+        approval = await _require_report_approval(
+            db, current_user.org_id, payload.term, payload.class_id, payload.exam_id,
+        )
     rows = (await db.execute(
         _grades_in_scope(current_user.org_id, payload.term, payload.class_id, payload.exam_id, payload.subject_id)
     )).scalars().all()
@@ -1587,15 +1665,46 @@ async def publish_grades(
         if g.status != new_status:
             g.status = new_status
             changed += 1
+    # Releasing the results is what `published` records, so carry the workflow the
+    # last step rather than leaving a signed-off class with its card still dark.
+    # Only from `approved` (an already-published row keeps its original release
+    # stamp), and only when the scope actually matched something — you cannot
+    # release nothing.
+    advanced = False
+    if approval is not None and approval.stage == "approved" and rows:
+        approval.stage = REPORT_RELEASED_STAGE
+        approval.published_by = current_user.id
+        approval.published_at = datetime.now(timezone.utc)
+        advanced = True
     await db.flush()
+    if advanced:
+        await log_action(
+            db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+            resource_type="ReportApproval", resource_id=approval.id,
+            resource_label="report workflow stage (auto-advanced by result publish)",
+            old_values={"stage": "approved"}, new_values={"stage": REPORT_RELEASED_STAGE},
+            severity="warning", request=request,
+        )
     await log_action(
         db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
         resource_type="Grade", resource_label=f"{payload.status} {changed} grade(s) for {payload.term}",
         severity="warning",
         metadata={"term": payload.term, "class_id": payload.class_id, "exam_id": payload.exam_id,
-                  "status": payload.status, "changed": changed}, request=request,
+                  "status": payload.status, "changed": changed,
+                  # Which sign-off authorised the release, so the audit row answers
+                  # "who allowed this" without a second lookup.
+                  "approval_id": approval.id if approval else None,
+                  "approval_stage": approval.stage if approval else None}, request=request,
     )
-    return {"updated": changed, "matched": len(rows), "status": payload.status}
+    return {
+        "updated": changed, "matched": len(rows), "status": payload.status,
+        "workflow_stage": approval.stage if approval else None,
+        # True once the workflow sits at `published` — which a successful publish
+        # now brings about itself. Reported so the caller can say plainly whether
+        # parents can see this, instead of inferring it.
+        "parent_visible": bool(approval and approval.stage == REPORT_RELEASED_STAGE),
+        "workflow_advanced": advanced,
+    }
 
 
 # ── Exams (manual gradebook) ────────────────────────────────────────────────────

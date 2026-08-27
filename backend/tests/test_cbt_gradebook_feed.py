@@ -17,9 +17,10 @@ from sqlalchemy import select, func
 from app.models.user import User, UserStatus
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.modules.school import (
-    CBTExam, CBTAttempt, CBTAnswer, Subject, Student, Grade, GradeStatus,
+    CBTExam, CBTAttempt, CBTAnswer, Subject, Student, SchoolClass, Grade, GradeStatus,
     ExamStatus, AttemptStatus,
 )
+from app.models.modules.academics import ReportApproval
 from app.routers.modules.cbt import (
     publish_exam_results, unpublish_exam_results, feed_gradebook, exam_results,
 )
@@ -248,7 +249,16 @@ async def test_exam_results_exposes_gradebook_state(db, org):
 
 async def test_report_card_shows_cbt_grade_only_after_publish(db, org):
     staff = await _staff(db, org)
-    stu, stu_user = await _linked_student(db, org)
+    # The owner-facing card gates on the class's ReportApproval as well as on
+    # Grade.status, so this student needs a class whose Term 1 is released —
+    # otherwise the card is empty for a reason this test isn't about.
+    cls = SchoolClass(id=str(uuid.uuid4()), name="Year 10A", level="Secondary", org_id=org.id)
+    db.add(cls)
+    await db.commit()
+    stu, stu_user = await _linked_student(db, org, class_id=cls.id)
+    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term="Term 1",
+                          stage="published", org_id=org.id))
+    await db.commit()
     subj = await _subject(db, org)
     exam = await _exam(db, org, staff, hold_results=True, subject_id=subj.id, term="Term 1")
     await _attempt(db, org, exam, stu.id, score=15)  # 75% → A

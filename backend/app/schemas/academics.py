@@ -13,8 +13,40 @@ from pydantic import BaseModel, Field
 SELECTION_STATUSES = {"requested", "approved", "rejected"}
 TRANSCRIPT_STATUSES = {"draft", "issued"}
 REPORT_STAGES = ["draft", "submitted", "reviewed", "approved", "published"]
+# Position in REPORT_STAGES is load-bearing, not decorative: a report advances
+# ONE stage at a time (so "approved" can't be skipped on the way to "published"),
+# but may be sent back any distance in a single move — a reviewer rejecting a
+# submission drops it straight to "draft" without walking down the ladder.
+REPORT_STAGE_ORDER = {name: i for i, name in enumerate(REPORT_STAGES)}
+# Stages that permit POST /school/grades/publish for the class + term. "published"
+# is included so re-publishing after a retraction doesn't need a stage round-trip.
+REPORT_PUBLISHABLE_STAGES = ("approved", "published")
+# The stage the parent-facing report card requires. Narrower than the publish
+# gate on purpose: approving readies a report, publishing releases it.
+REPORT_RELEASED_STAGE = "published"
 RECOGNITION_TYPES = {"conduct_point", "academic_award"}
 AWARD_TYPES = {"honor_roll", "prize", "certificate"}
+
+
+def stage_transition_error(current: str, target: str) -> Optional[str]:
+    """Why ``current`` -> ``target`` is illegal, or None when the move is allowed.
+
+    Forward one step, backward freely, and a no-op re-set of the same stage is
+    tolerated (an idempotent PATCH shouldn't 422). A row holding a stage outside
+    REPORT_STAGES — only reachable from data written before this rule existed —
+    is never trapped: any valid target gets it back on the ladder.
+    """
+    if target not in REPORT_STAGE_ORDER:
+        return f"stage must be one of {REPORT_STAGES}"
+    if current not in REPORT_STAGE_ORDER:
+        return None
+    cur, nxt = REPORT_STAGE_ORDER[current], REPORT_STAGE_ORDER[target]
+    if nxt > cur + 1:
+        return (
+            f"cannot jump from '{current}' to '{target}' — a report advances one stage "
+            f"at a time (next is '{REPORT_STAGES[cur + 1]}')."
+        )
+    return None
 
 
 # ── Subject Selection ──────────────────────────────────────────────────────────
@@ -128,6 +160,8 @@ class ReportApprovalResponse(BaseModel):
     term: Optional[str]
     stage: str
     notes: Optional[str]
+    published_by: Optional[str] = None
+    published_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     org_id: str

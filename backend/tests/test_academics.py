@@ -17,7 +17,7 @@ from app.models.organization import Organization, IndustryType
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.modules.school import Student, Subject, SchoolClass, Timetable
 from app.models.modules.academics import (
-    Transcript, Recognition
+    Transcript, Recognition, ReportApproval
 )
 from app.models.modules.platform import (
     Assessment, AssessmentGroup, StudentAssessmentScore, AcademicTerm, AcademicSubTerm
@@ -146,11 +146,15 @@ async def test_transcript_get_detail(db, org, teacher, student):
 
 # ── Report Workflow ────────────────────────────────────────────────────────────
 
-async def test_report_workflow_stage_transitions(db, org, teacher, school_class):
-    r = await create_report_workflow(
-        ReportApprovalCreate(class_id=school_class.id, term="Term 1"),
+async def _workflow(db, teacher, school_class, term="Term 1"):
+    return await create_report_workflow(
+        ReportApprovalCreate(class_id=school_class.id, term=term),
         request=None, db=db, current_user=teacher,
     )
+
+
+async def test_report_workflow_stage_transitions(db, org, teacher, school_class):
+    r = await _workflow(db, teacher, school_class)
     assert r.stage == "draft"
     assert r.class_name == school_class.name
 
@@ -165,6 +169,93 @@ async def test_report_workflow_stage_transitions(db, org, teacher, school_class)
 
     await delete_report_workflow(r.id, db=db, current_user=teacher)
     assert (await list_report_workflow(stage=None, page=1, page_size=25, db=db, current_user=teacher)).total == 0
+
+
+async def test_report_workflow_walks_the_full_ladder(db, org, teacher, school_class):
+    """One step at a time, all the way up, stamping an actor at each stage."""
+    r = await _workflow(db, teacher, school_class)
+    for stage in ("submitted", "reviewed", "approved", "published"):
+        out = await update_report_workflow(r.id, ReportApprovalUpdate(stage=stage),
+                                           request=None, db=db, current_user=teacher)
+        assert out.stage == stage
+
+    row = (await db.execute(select(ReportApproval).where(ReportApproval.id == r.id))).scalar_one()
+    assert row.submitted_by == teacher.id
+    assert row.reviewed_by == teacher.id
+    assert row.approved_by == teacher.id
+    # Releasing to parents carries its own stamp, not a shared "approved_by".
+    assert row.published_by == teacher.id
+    assert row.published_at is not None
+
+
+async def test_report_workflow_rejects_stage_skips(db, org, teacher, school_class):
+    """A jump straight to `published` would skip the review the row exists to
+    record — every forward jump of more than one step is refused."""
+    r = await _workflow(db, teacher, school_class)
+
+    for target in ("reviewed", "approved", "published"):
+        with pytest.raises(HTTPException) as exc:
+            await update_report_workflow(r.id, ReportApprovalUpdate(stage=target),
+                                         request=None, db=db, current_user=teacher)
+        assert exc.value.status_code == 422
+        assert "one stage at a time" in exc.value.detail
+
+    row = (await db.execute(select(ReportApproval).where(ReportApproval.id == r.id))).scalar_one()
+    assert row.stage == "draft"          # nothing moved
+    assert row.published_at is None      # and nothing was stamped on the way
+
+
+async def test_report_workflow_allows_backward_moves(db, org, teacher, school_class):
+    """Rejection is a single move backwards of any distance: a reviewer sends an
+    approved report straight back to draft without walking down the ladder."""
+    r = await _workflow(db, teacher, school_class)
+    for stage in ("submitted", "reviewed", "approved"):
+        await update_report_workflow(r.id, ReportApprovalUpdate(stage=stage),
+                                     request=None, db=db, current_user=teacher)
+
+    out = await update_report_workflow(r.id, ReportApprovalUpdate(stage="draft"),
+                                       request=None, db=db, current_user=teacher)
+    assert out.stage == "draft"
+
+    # Re-setting the same stage is a no-op, not a 422 — a PATCH must stay idempotent.
+    same = await update_report_workflow(r.id, ReportApprovalUpdate(stage="draft"),
+                                        request=None, db=db, current_user=teacher)
+    assert same.stage == "draft"
+
+    # And a published report can be pulled back the same way.
+    for stage in ("submitted", "reviewed", "approved", "published"):
+        await update_report_workflow(r.id, ReportApprovalUpdate(stage=stage),
+                                     request=None, db=db, current_user=teacher)
+    pulled = await update_report_workflow(r.id, ReportApprovalUpdate(stage="reviewed"),
+                                          request=None, db=db, current_user=teacher)
+    assert pulled.stage == "reviewed"
+    row = (await db.execute(select(ReportApproval).where(ReportApproval.id == r.id))).scalar_one()
+    # published_at survives the retraction: it records the last release, and the
+    # gates read `stage`, never the timestamp.
+    assert row.published_at is not None
+
+
+async def test_report_workflow_create_refuses_a_duplicate(db, org, teacher, school_class):
+    """One row per class + term. The second attempt gets a sentence naming the
+    existing stage, not the constraint's 500."""
+    await _workflow(db, teacher, school_class, term="Term 1")
+
+    with pytest.raises(HTTPException) as exc:
+        await _workflow(db, teacher, school_class, term="Term 1")
+    assert exc.value.status_code == 409
+    assert "already exists" in exc.value.detail
+
+    # A different term is fine — the constraint is per (class, term).
+    other = await _workflow(db, teacher, school_class, term="Term 2")
+    assert other.stage == "draft"
+
+
+async def test_report_workflow_notes_edit_needs_no_stage(db, org, teacher, school_class):
+    """A PATCH that doesn't touch `stage` isn't subject to the ladder at all."""
+    r = await _workflow(db, teacher, school_class)
+    out = await update_report_workflow(r.id, ReportApprovalUpdate(notes="Waiting on Maths."),
+                                       request=None, db=db, current_user=teacher)
+    assert out.notes == "Waiting on Maths." and out.stage == "draft"
 
 
 # ── Grade Analysis (Teacher Performance Report) ────────────────────────────────

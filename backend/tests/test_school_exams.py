@@ -29,6 +29,7 @@ from app.routers.modules.school import (
 )
 from app.schemas.exam import ExamCreate, ExamUpdate, ExamResultRow
 from app.schemas.subject import SubjectCreate
+from app.models.modules.academics import ReportApproval
 from app.schemas.grade import GradePublish, ReportMetaUpdate
 
 
@@ -210,6 +211,10 @@ async def test_report_card_position_uses_published_average(db, org, teacher, sch
                                            ExamResultRow(student_id=top.id, score=90)],
                               request=None, db=db, current_user=teacher)
     # Position ranks on PUBLISHED grades only — publish, then the ranking appears.
+    # Publishing is gated on the class's report workflow reaching `approved`.
+    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=school_class.id, term="Term 1",
+                          stage="approved", org_id=org.id))
+    await db.commit()
     await publish_grades(GradePublish(term="Term 1", class_id=school_class.id, status="published"),
                          request=None, db=db, current_user=teacher)
     staff = await _preset_user(db, org, "teacher")

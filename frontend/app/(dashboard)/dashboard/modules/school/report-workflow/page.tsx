@@ -12,6 +12,15 @@ import { FolderOpen, Plus, X, Loader2, Trash2, AlertTriangle } from "lucide-reac
 import { TERMS } from "@/lib/terms";
 
 const STAGES = ["draft", "submitted", "reviewed", "approved", "published"];
+
+// The backend moves a report forward ONE stage at a time (and backward any
+// distance), so offering the whole list would put PATCHes in the dropdown that
+// can only come back 422. Reachable = anything at or below the current stage,
+// plus the single next one.
+const reachableStages = (current: string) => {
+  const i = STAGES.indexOf(current);
+  return i < 0 ? STAGES : STAGES.slice(0, i + 2);
+};
 const STAGE_STYLE: Record<string, string> = {
   draft: "bg-slate-50 text-slate-500 border-slate-200",
   submitted: "bg-blue-50 text-blue-700 border-blue-200",
@@ -100,7 +109,7 @@ export default function ReportWorkflowPage() {
                   <td className="px-5 py-4">
                     {canWrite ? (
                       <select value={r.stage} onChange={(e) => update.mutate({ id: r.id, data: { stage: e.target.value } })} className={cn("input py-1 text-xs capitalize w-36 border", STAGE_STYLE[r.stage] || "")}>
-                        {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                        {reachableStages(r.stage).map((s) => <option key={s} value={s}>{s}</option>)}
                       </select>
                     ) : <span className={cn("badge capitalize", STAGE_STYLE[r.stage] || "")}>{r.stage}</span>}
                   </td>

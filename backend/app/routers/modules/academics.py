@@ -43,7 +43,8 @@ from app.schemas.academics import (
     ReportApprovalCreate, ReportApprovalUpdate, ReportApprovalResponse, ReportApprovalListResponse,
     RecognitionCreate, RecognitionUpdate, RecognitionResponse, RecognitionListResponse,
     HouseLeaderboardRow, LeaderboardResponse,
-    SELECTION_STATUSES, TRANSCRIPT_STATUSES, REPORT_STAGES, RECOGNITION_TYPES, AWARD_TYPES,
+    SELECTION_STATUSES, TRANSCRIPT_STATUSES, RECOGNITION_TYPES, AWARD_TYPES,
+    stage_transition_error,
 )
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
@@ -409,6 +410,7 @@ def _report_response(r: ReportApproval, cname: str | None) -> ReportApprovalResp
     return ReportApprovalResponse(
         id=r.id, class_id=r.class_id, class_name=cname, academic_year=r.academic_year,
         term=r.term, stage=r.stage, notes=r.notes,
+        published_by=r.published_by, published_at=r.published_at,
         created_at=r.created_at, updated_at=r.updated_at, org_id=r.org_id,
     )
 
@@ -594,12 +596,37 @@ async def create_report_workflow(
         )).scalar_one_or_none()
         if not cls:
             raise HTTPException(status_code=404, detail="class not found in your organisation.")
+        # One row per class + term (uq_report_approval_class_term). Checked here so
+        # a repeat "New Workflow" returns a sentence the user can act on instead of
+        # a 500 from the constraint.
+        clash = (await db.execute(
+            select(ReportApproval).where(
+                ReportApproval.org_id == current_user.org_id,
+                ReportApproval.class_id == payload.class_id,
+                ReportApproval.term == payload.term,
+            )
+        )).scalars().first()
+        if clash:
+            raise HTTPException(
+                status_code=409,
+                detail=f"A report workflow for this class and {payload.term or 'this term'} "
+                       f"already exists (currently '{clash.stage}'). Move that one along "
+                       f"instead of starting a second.",
+            )
     r = ReportApproval(
         class_id=payload.class_id, academic_year=payload.academic_year, term=payload.term,
         notes=payload.notes, stage="draft", org_id=current_user.org_id,
     )
     db.add(r)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # Lost a race between the check above and the insert.
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="A report workflow for this class and term already exists.",
+        )
     await log_action(
         db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
         resource_type="ReportApproval", resource_id=r.id, resource_label="report workflow", request=request,
@@ -623,8 +650,13 @@ async def update_report_workflow(
         raise HTTPException(status_code=404, detail="Workflow not found.")
     data = payload.model_dump(exclude_unset=True)
     if "stage" in data:
-        if data["stage"] not in REPORT_STAGES:
-            raise HTTPException(status_code=422, detail=f"stage must be one of {REPORT_STAGES}")
+        # The ladder is enforced here, not just offered in the UI: this row is what
+        # POST /school/grades/publish and the parent report card read to decide
+        # whether results are releasable, so a jump straight to "published" would
+        # skip the review it exists to record.
+        problem = stage_transition_error(r.stage, data["stage"])
+        if problem:
+            raise HTTPException(status_code=422, detail=problem)
         old_stage, new_stage = r.stage, data["stage"]
         # Stamp the actor for the stage they moved it into.
         if new_stage == "submitted":
@@ -633,10 +665,17 @@ async def update_report_workflow(
             r.reviewed_by = current_user.id
         elif new_stage == "approved":
             r.approved_by = current_user.id
+        elif new_stage == "published":
+            r.published_by = current_user.id
+            r.published_at = datetime.now(timezone.utc)
         await log_action(
             db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
             resource_type="ReportApproval", resource_id=r.id, resource_label="report workflow stage",
-            old_values={"stage": old_stage}, new_values={"stage": new_stage}, request=request,
+            old_values={"stage": old_stage}, new_values={"stage": new_stage},
+            # Releasing a class's cards to parents (and pulling them back) is the
+            # consequential move on this row — log it above routine-edit noise.
+            severity="warning" if "published" in (old_stage, new_stage) else "info",
+            request=request,
         )
     for field, value in data.items():
         setattr(r, field, value)
