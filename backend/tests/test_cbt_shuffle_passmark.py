@@ -16,7 +16,7 @@ from app.models.user import User, UserStatus
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.modules.school import (
     CBTExam, CBTQuestion, CBTAttempt, CBTSettings,
-    ExamStatus, QuestionType, AttemptStatus, Student,
+    ExamStatus, QuestionType, AttemptStatus, Student, SchoolClass,
 )
 from app.routers.modules.cbt import list_questions, exam_results
 
@@ -34,10 +34,18 @@ async def _staff(db, org) -> User:
     return u
 
 
-async def _linked_student(db, org):
+async def _class(db, org) -> SchoolClass:
+    c = SchoolClass(id=str(uuid.uuid4()), name=f"JSS{uuid.uuid4().hex[:3]}", level="Secondary",
+                    org_id=org.id)
+    db.add(c)
+    await db.commit()
+    return c
+
+
+async def _linked_student(db, org, class_id: str | None = None):
     email = f"stu-{uuid.uuid4().hex[:6]}@example.com"
     stu = Student(id=str(uuid.uuid4()), student_id=f"S-{uuid.uuid4().hex[:6]}",
-                  first_name="S", last_name="X", email=email, org_id=org.id)
+                  first_name="S", last_name="X", email=email, class_id=class_id, org_id=org.id)
     role = Role(id=str(uuid.uuid4()), name="student", slug=f"student-{uuid.uuid4().hex[:6]}",
                 permissions=list(SCHOOL_PERMISSION_PRESETS["student"]), org_id=org.id, is_system=False)
     u = User(id=str(uuid.uuid4()), email=email, full_name="S X", status=UserStatus.ACTIVE, org_id=org.id)
@@ -47,10 +55,12 @@ async def _linked_student(db, org):
     return stu, u
 
 
-async def _exam(db, org, staff, *, shuffle=False, pass_percentage=None, total_points=2) -> CBTExam:
+async def _exam(db, org, staff, *, shuffle=False, pass_percentage=None, total_points=2,
+                class_id=None) -> CBTExam:
     exam = CBTExam(id=str(uuid.uuid4()), title="Quiz", created_by=staff.id, org_id=org.id,
                    status=ExamStatus.PUBLISHED, total_points=total_points,
-                   shuffle_questions=shuffle, pass_percentage=pass_percentage)
+                   shuffle_questions=shuffle, pass_percentage=pass_percentage,
+                   class_id=class_id)
     db.add(exam)
     await db.commit()
     return exam
@@ -72,8 +82,9 @@ async def _questions(db, org, exam, n=6):
 
 async def test_student_shuffle_is_seeded_and_stable(db, org):
     staff = await _staff(db, org)
-    stu, stu_user = await _linked_student(db, org)
-    exam = await _exam(db, org, staff, shuffle=True)
+    cls = await _class(db, org)
+    stu, stu_user = await _linked_student(db, org, class_id=cls.id)
+    exam = await _exam(db, org, staff, shuffle=True, class_id=cls.id)
     qs = await _questions(db, org, exam)
 
     expected = [q.id for q in qs]
@@ -98,8 +109,9 @@ async def test_staff_see_canonical_order(db, org):
 
 async def test_no_shuffle_keeps_position_order_for_student(db, org):
     staff = await _staff(db, org)
-    stu, stu_user = await _linked_student(db, org)
-    exam = await _exam(db, org, staff, shuffle=False)
+    cls = await _class(db, org)
+    stu, stu_user = await _linked_student(db, org, class_id=cls.id)
+    exam = await _exam(db, org, staff, shuffle=False, class_id=cls.id)
     qs = await _questions(db, org, exam)
     res = await list_questions(exam.id, include_answers=False, db=db, current_user=stu_user)
     assert [i["id"] for i in res["items"]] == [q.id for q in qs]

@@ -26,10 +26,17 @@ export default function ReportCardsPage() {
 // ── Student view: just term dropdown, show own report ──
 
 function StudentReportCardsView() {
-  const { user } = useAuthStore();
   const [term, setTerm] = useTermState(DEFAULT_TERM);
-  const { data: reportCard, isLoading: rcLoading } = useReportCard(user?.id ?? "", term);
+  // The report-card endpoint keys on Student.id, which is NOT the signed-in
+  // User.id. Passing the user id 403s ("You can only access your own records")
+  // and this page renders its empty state as though no report existed — which
+  // reads as "your results aren't published" when they are. /school/students is
+  // ownership-scoped for a student caller, so it returns exactly one row: theirs.
+  const { data: studentData, isLoading: sLoading } = useStudents();
+  const studentId = ((studentData?.items ?? []) as Student[])[0]?.id ?? "";
+  const { data: reportCard, isLoading: rcLoading } = useReportCard(studentId, term);
   const canWrite = useHasPermission("school:reports:write");
+  const isLoading = sLoading || rcLoading;
 
   return (
     <div className="p-8 max-w-3xl mx-auto">
@@ -45,12 +52,12 @@ function StudentReportCardsView() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-6 print:border-0 print:p-0">
-        {rcLoading ? (
+        {isLoading ? (
           <div className="py-16 text-center"><Loader2 size={24} className="animate-spin text-slate-400 mx-auto" /></div>
         ) : !reportCard ? (
           <div className="py-16 text-center text-slate-400"><p className="font-semibold">No report card available</p><p className="text-sm mt-1">No grades have been submitted for this term yet, or your report is not published.</p></div>
         ) : (
-          <ReportCardView card={reportCard} term={term} studentId={user?.id ?? ""} canWrite={canWrite} />
+          <ReportCardView card={reportCard} term={term} studentId={studentId} canWrite={canWrite} />
         )}
       </div>
     </div>

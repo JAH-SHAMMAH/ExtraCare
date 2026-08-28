@@ -343,10 +343,12 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/deactivated-users", permission: "users:write" },
   // Planned stubs (sidebar-complete; backend to follow) — admin-only.
   { prefix: "/dashboard/modules/school/week-entries", permission: "settings:read" },
-  // Result Publish is a grade operation — gate on school:write (its publish endpoint
-  // is school:write), so managers + org_admin (school:*) see it, not just settings holders.
-  // Publish Report is an ADMIN action — hidden from teachers. (It drives the shared
-  // gradebook publish; teachers still publish their own grades from the Gradebook.)
+  // Publish Report is the ONLY surface in the app that calls POST /school/grades/publish,
+  // and it is admin-only on purpose: publishing is precisely the step the report-approval
+  // workflow exists to gate, so a teacher must not be able to release results without
+  // admin sign-off. There is deliberately NO teacher-facing publish path — the Gradebook
+  // has no publish action either. Teachers enter marks (Make Report / Exams & Results);
+  // an admin approves in Report Workflow and publishes here.
   { prefix: "/dashboard/modules/school/result-publish", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/user-roles", permission: "roles:write" },
   // ── Medicals module (confidential — medical:read) ───────────────────────

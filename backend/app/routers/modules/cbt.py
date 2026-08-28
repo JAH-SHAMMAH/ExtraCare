@@ -12,8 +12,11 @@ Design notes:
     strips `correct_answer` for non-write callers.
 
 RBAC:
-  - school:cbt:read / school:cbt:write → students: sit published exams, submit
-    their own attempts (never the question bank / answers).
+  - school:cbt:sit                     → students: sit their own class's exams and
+    submit their own attempts (never the question bank / answers). NOT
+    school:cbt:read — that is the teacher/admin CBT surface, and the role catalog
+    narrowed students off it, so every endpoint on the sit path accepts either
+    scope and then narrows by ownership.
   - school:read / school:write         → staff (teacher/admin) authoring exams,
     the question bank, results, grading, publishing.
   - school:cbt:manage                  → dedicated staff-CBT scope for narrowly-
@@ -86,6 +89,12 @@ router = APIRouter(
 
 _can_read = Depends(PermissionChecker("school:cbt:read"))
 _can_write = Depends(PermissionChecker("school:cbt:write"))
+# The SIT path — the endpoints a student walks to take an exam. Students hold
+# `school:cbt:sit`, never `school:cbt:read` (that is the teacher/admin CBT
+# surface), so gating these on cbt:read alone locks the student out of the exam
+# they were assigned. Accept either scope here and narrow by OWNERSHIP inside:
+# attempts via _attempt_scope, exams via _ensure_exam_sittable.
+_sit_or_read = Depends(AnyPermissionChecker("school:cbt:read", "school:cbt:sit"))
 # The Question Bank holds correct answers and is a teacher/admin authoring tool.
 # Gate it on the broad school scopes OR the dedicated school:cbt:manage scope —
 # NEVER on school:cbt:read/write, which students hold to SIT tests (they must
@@ -221,13 +230,14 @@ async def create_exam(
     return ExamResponse.model_validate(exam).model_dump()
 
 
-@router.get("/exams/{exam_id}", dependencies=[_can_read])
+@router.get("/exams/{exam_id}", dependencies=[_sit_or_read])
 async def get_exam(
     exam_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     exam = await _get_exam_or_404(db, exam_id, current_user.org_id)
+    await _ensure_exam_sittable(db, current_user, exam)
     return _exam_with_live(exam, datetime.now(timezone.utc))
 
 
@@ -274,7 +284,7 @@ async def delete_exam(
 # ── Questions ─────────────────────────────────────────────────────────────────
 
 
-@router.get("/exams/{exam_id}/questions", dependencies=[_can_read])
+@router.get("/exams/{exam_id}/questions", dependencies=[_sit_or_read])
 async def list_questions(
     exam_id: str,
     include_answers: bool = False,
@@ -282,6 +292,7 @@ async def list_questions(
     current_user: User = Depends(get_current_active_user),
 ):
     exam = await _get_exam_or_404(db, exam_id, current_user.org_id)
+    await _ensure_exam_sittable(db, current_user, exam)
 
     result = await db.execute(
         select(CBTQuestion).where(
@@ -301,7 +312,7 @@ async def list_questions(
 
     # Only bank managers should see correct_answer — a broad school:write holder
     # (teacher/admin) or the dedicated school:cbt:manage scope (e.g. Exam Officer).
-    # Students (school:cbt:read/write only) never get answers.
+    # A sitting student (school:cbt:sit) never gets answers.
     wants_answers = include_answers and (
         current_user.has_permission("school:write") or current_user.has_permission("school:cbt:manage")
     )
@@ -386,6 +397,28 @@ async def _attempt_scope(db: AsyncSession, user: User) -> tuple[bool, str | None
     return False, await resolve_linked_student_id(db, user)
 
 
+async def _ensure_exam_sittable(db: AsyncSession, user: User, exam: CBTExam) -> None:
+    """A sit-only caller may reach an exam only if it is their own class's.
+
+    Holders of school:cbt:read (teacher, admin, exam officer) are unaffected.
+    Without this, widening the sit path to school:cbt:sit would let any student
+    pull any exam by id — the same reach the list endpoint's `for_me` filter
+    already denies them. Mirrors that filter: match on the student's class.
+    404 rather than 403, so an id they may not see stays indistinguishable from
+    one that does not exist.
+    """
+    if user.has_permission("school:cbt:read"):
+        return
+    student_id = await resolve_linked_student_id(db, user)
+    if not student_id:
+        raise HTTPException(status_code=404, detail="Exam not found.")
+    student_class = (await db.execute(
+        select(Student.class_id).where(Student.id == student_id)
+    )).scalar_one_or_none()
+    if not student_class or exam.class_id != student_class:
+        raise HTTPException(status_code=404, detail="Exam not found.")
+
+
 def _as_utc(dt: datetime | None) -> datetime | None:
     """Treat a naive datetime as UTC — SQLite drops tzinfo on round-trip, so a
     reloaded started_at/end_time can be naive while datetime.now() is aware."""
@@ -425,7 +458,7 @@ def _active(q):
     return q.where(CBTAttempt.superseded_at.is_(None))
 
 
-@router.post("/exams/{exam_id}/attempts", status_code=201, dependencies=[_can_read])
+@router.post("/exams/{exam_id}/attempts", status_code=201, dependencies=[_sit_or_read])
 async def start_attempt(
     exam_id: str,
     student_id: str | None = None,
@@ -436,6 +469,8 @@ async def start_attempt(
     exam = await _get_exam_or_404(db, exam_id, org_id)
     # Ownership: a student can only start their OWN attempt (student_id is derived,
     # any passed value is ignored); staff may start for any valid in-org student.
+    # Resolved BEFORE the sittability check so an account with no linked student
+    # keeps its specific 403 instead of being flattened into a generic 404.
     is_staff, own_student_id = await _attempt_scope(db, current_user)
     if is_staff:
         if not student_id:
@@ -452,6 +487,7 @@ async def start_attempt(
         if not own_student_id:
             raise HTTPException(status_code=403, detail="No linked student record for this account.")
         student_id = own_student_id
+    await _ensure_exam_sittable(db, current_user, exam)
     now = datetime.now(timezone.utc)
     if not _is_live(exam, now):
         # Categorise rejection so we can spot UX issues (e.g. clocks drifting,
@@ -516,7 +552,7 @@ async def start_attempt(
     return _attempt_dict(attempt, exam)
 
 
-@router.post("/attempts/{attempt_id}/submit", dependencies=[_can_read])
+@router.post("/attempts/{attempt_id}/submit", dependencies=[_sit_or_read])
 async def submit_attempt(
     attempt_id: str,
     payload: AttemptSubmit,
@@ -594,7 +630,7 @@ async def submit_attempt(
     return _attempt_dict(attempt, exam)
 
 
-@router.get("/attempts", dependencies=[_can_read])
+@router.get("/attempts", dependencies=[_sit_or_read])
 async def list_attempts(
     exam_id: str | None = None,
     student_id: str | None = None,
@@ -615,7 +651,7 @@ async def list_attempts(
     return {"items": [AttemptResponse.model_validate(a).model_dump() for a in items]}
 
 
-@router.get("/attempts/{attempt_id}", dependencies=[_can_read])
+@router.get("/attempts/{attempt_id}", dependencies=[_sit_or_read])
 async def get_attempt(
     attempt_id: str,
     db: AsyncSession = Depends(get_db),

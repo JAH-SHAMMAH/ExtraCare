@@ -13,7 +13,9 @@ from sqlalchemy import select
 
 from app.models.user import User, UserStatus
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
-from app.models.modules.school import CBTExam, CBTAttempt, ExamStatus, AttemptStatus, Student
+from app.models.modules.school import (
+    CBTExam, CBTAttempt, ExamStatus, AttemptStatus, SchoolClass, Student,
+)
 from app.routers.modules.cbt import start_attempt, submit_attempt, get_attempt, list_attempts
 from app.schemas.school_experience import AttemptSubmit
 
@@ -41,19 +43,29 @@ async def _student_role_user(db, org, email: str) -> User:
     return u
 
 
-async def _linked_student(db, org):
+async def _class(db, org) -> SchoolClass:
+    c = SchoolClass(id=str(uuid.uuid4()), name=f"JSS{uuid.uuid4().hex[:3]}", level="Secondary",
+                    org_id=org.id)
+    db.add(c)
+    await db.commit()
+    return c
+
+
+async def _linked_student(db, org, class_id: str | None = None):
     """A Student + a User linked by email (resolve_linked_student_id matches on email)."""
     email = f"stu-{uuid.uuid4().hex[:6]}@example.com"
     stu = Student(id=str(uuid.uuid4()), student_id=f"S-{uuid.uuid4().hex[:6]}",
-                  first_name="S", last_name="X", email=email, org_id=org.id)
+                  first_name="S", last_name="X", email=email, class_id=class_id, org_id=org.id)
     db.add(stu)
     await db.commit()
     return stu, await _student_role_user(db, org, email)
 
 
-async def _live_exam(db, org, created_by) -> CBTExam:
+async def _live_exam(db, org, created_by, class_id: str | None = None) -> CBTExam:
+    # class_id mirrors production: every live exam belongs to a class, and the sit
+    # path checks the caller's class against it.
     exam = CBTExam(id=str(uuid.uuid4()), title="Quiz", created_by=created_by, org_id=org.id,
-                   status=ExamStatus.PUBLISHED, total_points=2)  # no window -> live
+                   status=ExamStatus.PUBLISHED, total_points=2, class_id=class_id)  # no window -> live
     db.add(exam)
     await db.commit()
     return exam
@@ -68,9 +80,10 @@ def _attempt(exam, student_id, org, status=AttemptStatus.IN_PROGRESS) -> CBTAtte
 
 async def test_student_start_is_forced_to_own_record(db, org):
     staff = await _staff(db, org)
-    stu_a, user_a = await _linked_student(db, org)
-    stu_b, _ = await _linked_student(db, org)
-    exam = await _live_exam(db, org, staff.id)
+    cls = await _class(db, org)
+    stu_a, user_a = await _linked_student(db, org, class_id=cls.id)
+    stu_b, _ = await _linked_student(db, org, class_id=cls.id)
+    exam = await _live_exam(db, org, staff.id, class_id=cls.id)
 
     # user_a passes stu_b's id, but the attempt is created for stu_a (own), never stu_b
     res = await start_attempt(exam.id, student_id=stu_b.id, db=db, current_user=user_a)

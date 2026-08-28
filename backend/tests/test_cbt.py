@@ -15,7 +15,7 @@ from app.models.organization import Organization, IndustryType
 from app.models.user import User, UserStatus
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.modules.school import (
-    CBTExam, CBTQuestion, ExamStatus, QuestionType,
+    CBTExam, CBTQuestion, ExamStatus, QuestionType, SchoolClass, Student,
 )
 from app.routers.modules.cbt import (
     get_exam, list_questions, start_attempt, submit_attempt,
@@ -38,23 +38,40 @@ async def _staff(db, org) -> User:
     return u
 
 
-async def _sitting_student(db, org) -> User:
+async def _class(db, org) -> SchoolClass:
+    c = SchoolClass(id=str(uuid.uuid4()), name=f"JSS{uuid.uuid4().hex[:3]}", level="Secondary",
+                    org_id=org.id)
+    db.add(c)
+    await db.flush()
+    return c
+
+
+async def _sitting_student(db, org, class_id: str | None = None) -> User:
     """A user with the real STUDENT preset (school:cbt:sit, never school:write or
-    school:cbt:manage) — the actual threat model for the answer-key check."""
-    u = User(id=str(uuid.uuid4()), email=f"pupil-{uuid.uuid4().hex[:6]}@example.com",
+    school:cbt:manage) — the actual threat model for the answer-key check.
+
+    Pass `class_id` to also create the linked Student record, which is what makes
+    the account able to reach an exam at all (the sit path resolves the caller's
+    class to check the exam is theirs)."""
+    email = f"pupil-{uuid.uuid4().hex[:6]}@example.com"
+    u = User(id=str(uuid.uuid4()), email=email,
              full_name="Pupil", status=UserStatus.ACTIVE, org_id=org.id)
     role = Role(id=str(uuid.uuid4()), name="student", slug=f"s-{uuid.uuid4().hex[:6]}",
                 permissions=list(SCHOOL_PERMISSION_PRESETS["student"]), org_id=org.id, is_system=False)
     u.roles = [role]
     db.add_all([role, u])
+    if class_id:
+        db.add(Student(id=str(uuid.uuid4()), student_id=f"S-{uuid.uuid4().hex[:5]}",
+                       first_name="P", last_name="Q", email=email, user_id=u.id,
+                       class_id=class_id, org_id=org.id))
     await db.flush()
     return u
 
 
-async def _exam(db, org, teacher, status=ExamStatus.PUBLISHED):
+async def _exam(db, org, teacher, status=ExamStatus.PUBLISHED, class_id=None):
     e = CBTExam(
         id=str(uuid.uuid4()), title="Quiz", status=status, total_points=1.0,
-        duration_minutes=60, created_by=teacher.id, org_id=org.id,
+        duration_minutes=60, created_by=teacher.id, class_id=class_id, org_id=org.id,
     )
     db.add(e)
     await db.flush()
@@ -115,9 +132,10 @@ async def test_questions_hide_correct_answer_from_non_writers(db, org, teacher):
     teacher holds school:cbt:manage and is *supposed* to see the answer key (they
     author the bank). The pupil is the caller the check actually exists to stop.
     """
-    exam = await _exam(db, org, teacher)
+    cls = await _class(db, org)
+    exam = await _exam(db, org, teacher, class_id=cls.id)
     await _question(db, org, exam, answer="secret")
-    pupil = await _sitting_student(db, org)
+    pupil = await _sitting_student(db, org, class_id=cls.id)  # in the exam's class
     out = await list_questions(exam_id=exam.id, include_answers=True, db=db, current_user=pupil)
     assert out["items"]
     assert "correct_answer" not in out["items"][0]

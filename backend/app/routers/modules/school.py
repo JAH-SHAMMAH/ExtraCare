@@ -1609,8 +1609,12 @@ async def _require_report_approval(db, org_id: str, term: str, class_id: str | N
     if approval is None:
         raise HTTPException(
             status_code=422,
-            detail=f"This class's report for {term} has not been approved — move its Report "
-                   f"Workflow to 'approved' before publishing results to parents.",
+            # Names the blocker, not an instruction: approving is an admin action
+            # (school_admin:write), so telling the caller to "go and approve it"
+            # is advice a teacher-tier account cannot act on.
+            detail=f"This class's report for {term} has not been approved yet. It must be "
+                   f"approved in Report Workflow before results can be published to parents "
+                   f"— contact an administrator if you don't have access to that page.",
         )
     return approval
 
