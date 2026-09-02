@@ -319,9 +319,44 @@ SCHOOL_PERMISSION_PRESETS.update({
     "spa_attendant": _MIN,
 })
 
+# ── ICT Support ──────────────────────────────────────────────────────────────
+# The helpdesk role: create accounts, assign roles, reset forgotten passwords.
+#
+# Its scope list looks alarmingly wide for a support role, and that is forced by
+# `assert_can_manage_user`, not by what ICT is meant to DO. That guard lets you
+# manage a user only when you already hold every permission their roles carry —
+# it cannot tell "above me" from "sideways of me". A role holding only
+# users:*/roles:* would therefore be unable to reset an ordinary TEACHER's
+# password (the teacher holds 33 classroom scopes it lacks), which makes the
+# helpdesk role useless. Covering the everyday tiers is the price of the guard.
+#
+# What matters is what it deliberately does NOT hold, because that is what stays
+# unreachable: `*` (super_user), users:delete / settings:* / audit_logs:read
+# (org_admin, principal, head), school:write + imports:* + hr:write (manager
+# tier), hr:write (hr_manager), and finance_admin:* / payments:write
+# (accountant). No role ICT can manage holds a privilege-escalating or
+# money-moving scope — asserted in tests/test_it_support_role.py, which fails
+# loudly if a future scope change breaks either half of that.
+#
+# Composed from the tiers rather than hand-listed so it tracks them: widen _TCH
+# and ICT keeps working, instead of silently losing the ability to help teachers.
+SCHOOL_PERMISSION_PRESETS["it_support"] = _dedupe(
+    ["users:read", "users:write", "roles:read", "roles:write"]   # the actual job
+    + _TCH                                              # teaching/academic tier
+    + _MIN                                              # support staff (hr:read)
+    + SCHOOL_PERMISSION_PRESETS["student"]
+    + SCHOOL_PERMISSION_PRESETS["parent"]
+    + SCHOOL_PERMISSION_PRESETS["staff"]
+    + SCHOOL_PERMISSION_PRESETS["viewer"]
+    + SCHOOL_PERMISSION_PRESETS["librarian"]
+    + SCHOOL_PERMISSION_PRESETS["frontdesk_officer"]
+    + SCHOOL_PERMISSION_PRESETS["storekeeper"]
+)
+
 # Display names where slug.title() would be wrong (acronyms, "of", parentheses).
 ROLE_DISPLAY_NAMES = {
     "super_user": "Super User",
+    "it_support": "ICT Support",
     "hr_manager": "HR Manager",
     "frontdesk_officer": "FrontDesk Officer",
     "spa_officer": "SPA Officer",

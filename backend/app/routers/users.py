@@ -283,6 +283,10 @@ async def update_user_status(
         raise HTTPException(status_code=404, detail="User not found.")
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot change your own status.")
+    # Same bar as reset-password and role assignment: suspending an account is a
+    # denial of service against it, so a lower tier must not be able to switch off
+    # the Super User (or any account carrying scopes it doesn't hold).
+    assert_can_manage_user(current_user, user)
 
     old_status = user.status
     user.status = data.status
@@ -343,14 +347,24 @@ async def reset_user_password(
 ):
     """Admin-initiated reset: set a one-time temp password the user MUST change
     before the account is usable again. Returns the temp password so the admin can
-    hand it over out-of-band. Audited."""
+    hand it over out-of-band. Audited.
+
+    Privilege-guarded like role assignment. Handing back a working credential for
+    another account is a full takeover of it, so it needs the same bar as changing
+    that account's roles — without it, any `users:write` holder could reset the
+    Super User's password and log in as them. Roles are eager-loaded because the
+    guard reads them.
+    """
     user = (await db.execute(
-        select(User).where(User.id == user_id, User.org_id == current_user.org_id, User.is_deleted == False)
+        select(User).options(selectinload(User.roles)).where(
+            User.id == user_id, User.org_id == current_user.org_id, User.is_deleted == False
+        )
     )).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Use change-password for your own account.")
+    assert_can_manage_user(current_user, user)
     temp = secrets.token_urlsafe(9)
     user.hashed_password = hash_password(temp)
     user.force_password_change = True
