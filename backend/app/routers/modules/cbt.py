@@ -191,12 +191,29 @@ async def list_exams(
     }
 
 
+def _as_utc(dt: datetime | None) -> datetime | None:
+    """Treat a naive datetime as UTC — SQLite drops tzinfo on round-trip, so a
+    reloaded started_at/end_time can be naive while datetime.now() is aware."""
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _is_live(exam: CBTExam, now: datetime) -> bool:
+    """Is the exam open to sit right now? The single predicate start_attempt gates on.
+
+    Window bounds go through _as_utc for the same reason the timer path does: a
+    naive value here would raise TypeError against an aware `now` and surface as a
+    500 instead of the clean 400 the caller expects. Postgres (timestamptz) hands
+    back aware values so production never hit it, but the comparison must not
+    depend on which driver is underneath.
+    """
     if exam.status not in (ExamStatus.PUBLISHED, ExamStatus.ACTIVE):
         return False
-    if exam.start_time and exam.start_time > now:
+    start, end = _as_utc(exam.start_time), _as_utc(exam.end_time)
+    if start and start > now:
         return False
-    if exam.end_time and exam.end_time < now:
+    if end and end < now:
         return False
     return True
 
@@ -419,14 +436,6 @@ async def _ensure_exam_sittable(db: AsyncSession, user: User, exam: CBTExam) -> 
         raise HTTPException(status_code=404, detail="Exam not found.")
 
 
-def _as_utc(dt: datetime | None) -> datetime | None:
-    """Treat a naive datetime as UTC — SQLite drops tzinfo on round-trip, so a
-    reloaded started_at/end_time can be naive while datetime.now() is aware."""
-    if dt is not None and dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
-
-
 def _attempt_deadline(exam: CBTExam, attempt: CBTAttempt) -> datetime | None:
     """Absolute submit-by instant: started_at + duration, capped by the exam
     window. None when the exam has no duration (no timer to enforce)."""
@@ -492,11 +501,12 @@ async def start_attempt(
     if not _is_live(exam, now):
         # Categorise rejection so we can spot UX issues (e.g. clocks drifting,
         # exams being closed too eagerly, students hitting the early/late edges).
+        start, end = _as_utc(exam.start_time), _as_utc(exam.end_time)
         if exam.status not in (ExamStatus.PUBLISHED, ExamStatus.ACTIVE):
             reason = "status_closed"
-        elif exam.start_time and exam.start_time > now:
+        elif start and start > now:
             reason = "before_window"
-        elif exam.end_time and exam.end_time < now:
+        elif end and end < now:
             reason = "after_window"
         else:
             reason = "unknown"
