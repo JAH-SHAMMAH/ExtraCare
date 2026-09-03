@@ -138,6 +138,26 @@ async def sync_cbt_to_assessment_score(
     if not exam.results_published_at:
         return 0, "Exam results not published yet"
 
+    # A published class report is frozen, and this path would otherwise move the
+    # marks behind it. It SKIPS rather than raising, deliberately: a re-published
+    # CBT exam is a legitimate act, and failing it here would block releasing
+    # results to students for a reason that has nothing to do with CBT. Same
+    # contract the other guards above use, and the same shape as the gradebook
+    # feed's `_feed_block_reason` — report why the feed was withheld, never
+    # silently skip, never block the student release.
+    #
+    # The CBT->Grade path needs no equivalent: those rows land as DRAFT and staff
+    # release them separately, so the draft status already buffers parents.
+    # StudentAssessmentScore has no draft state, so this is the only buffer.
+    if exam.class_id:
+        from app.services.report_lock import find_published_block
+
+        if await find_published_block(db, org_id, {exam.class_id}, {exam.term}):
+            return 0, (
+                f"This class's {exam.term} report is published — scores are frozen. "
+                f"Retract it to 'approved' in Report Workflow to accept new marks."
+            )
+
     # Look up AcademicTerm by exam.term name
     from app.models.modules.platform import AcademicTerm, AcademicSubTerm
 

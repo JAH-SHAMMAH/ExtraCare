@@ -74,6 +74,9 @@ from app.schemas.platform import (
 )
 from app.services.ledger import money  # Decimal helper for grading bands
 from app.services.report_engine import evaluate_cumulative, round_dp
+from app.services.report_lock import (
+    find_published_block, locked_message, term_names_for_ids,
+)
 from app.services.import_files import rows_from_upload
 
 router = APIRouter(prefix="/platform", tags=["Administration & Platform"], dependencies=[Depends(require_module("school"))])
@@ -2253,6 +2256,39 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
             raise HTTPException(
                 status_code=403,
                 detail=f"{len(stray)} student(s) in this payload are not in this class.")
+    # Published reports are frozen. A released report card is something a parent
+    # has already read, so editing the marks behind it would change what they saw
+    # with no re-approval and no trace. Retracting the workflow unfreezes it,
+    # which is why the check reads the CURRENT stage rather than a flag.
+    #
+    # The class comes from the payload when given, and otherwise from the pupils
+    # themselves — an admin may omit class_id, and without that fallback omitting
+    # it would be a way around the freeze.
+    lock_classes = {payload.class_id} if payload.class_id else set(
+        (await db.execute(
+            select(Student.class_id).where(
+                Student.id.in_(student_ids), Student.org_id == org,
+                Student.class_id.isnot(None),
+            )
+        )).scalars().all()
+    ) if student_ids else set()
+    if lock_classes:
+        # ReportApproval stores the term NAME; assessments carry a term id.
+        term_ids = set((await db.execute(
+            select(Assessment.term_id).where(
+                Assessment.org_id == org,
+                Assessment.id.in_({i.assessment_id for i in payload.items}),
+            )
+        )).scalars().all())
+        names = await term_names_for_ids(db, org, term_ids)
+        blocked = await find_published_block(db, org, lock_classes, set(names.values()))
+        if blocked:
+            blocked_class, blocked_term = blocked
+            cname = (await db.execute(
+                select(SchoolClass.name).where(SchoolClass.id == blocked_class)
+            )).scalar_one_or_none()
+            raise HTTPException(status_code=422, detail=locked_message(blocked_term, cname))
+
     valid_assessments = set((await db.execute(select(Assessment.id).where(Assessment.org_id == org))).scalars().all())
     keys = {(i.student_id, i.assessment_id) for i in payload.items}
     existing = {(r.student_id, r.assessment_id): r for r in (await db.execute(select(StudentAssessmentScore).where(
