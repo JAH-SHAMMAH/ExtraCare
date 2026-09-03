@@ -2303,8 +2303,31 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
             row.score = it.score
             row.recorded_by = current_user.id
         else:
-            db.add(StudentAssessmentScore(org_id=org, student_id=it.student_id, subject_id=payload.subject_id,
-                                          assessment_id=it.assessment_id, score=it.score, recorded_by=current_user.id))
+            # The row set was read at the top, so "no row exists" can be stale by
+            # the time we get here: a second teacher saving the same cell inserts
+            # in between, uq_student_assessment_score rejects ours, and the
+            # IntegrityError surfaced as a 500 with the marks unsaved. Verified by
+            # forcing that interleaving. The insert is attempted inside a
+            # SAVEPOINT so a collision rolls back only this row, leaving the rest
+            # of the batch intact, and the loser then does what it would have done
+            # had it read a moment later: update the row that now exists.
+            try:
+                async with db.begin_nested():
+                    db.add(StudentAssessmentScore(
+                        org_id=org, student_id=it.student_id, subject_id=payload.subject_id,
+                        assessment_id=it.assessment_id, score=it.score,
+                        recorded_by=current_user.id))
+            except IntegrityError:
+                row = (await db.execute(
+                    select(StudentAssessmentScore).where(
+                        StudentAssessmentScore.org_id == org,
+                        StudentAssessmentScore.student_id == it.student_id,
+                        StudentAssessmentScore.subject_id == payload.subject_id,
+                        StudentAssessmentScore.assessment_id == it.assessment_id,
+                    )
+                )).scalar_one()
+                row.score = it.score
+                row.recorded_by = current_user.id
         saved += 1
     await db.flush()
     return {"saved": saved}

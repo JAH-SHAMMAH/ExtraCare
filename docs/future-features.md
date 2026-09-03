@@ -87,3 +87,44 @@ verify-as-the-real-role treatment the parent RBAC work got.
 2. **Reports Award** — small if derived; reuses the ranking that already exists.
 3. **Result Analysis** — only after confirming in the reference what it actually is.
 4. **Communication Book Intervention** — largest, needs schema + parent RBAC.
+
+---
+
+## 5. Lost-update detection on Report Entry (optimistic locking)
+
+**Status:** known behaviour, deliberately not fixed. Found by concurrency testing
+2026-09-03 alongside two races that WERE fixed (`test_concurrency_races.py`).
+
+When two teachers save the same `(student, subject, assessment)` cell at the same
+time and a row already exists, **both succeed and the later write silently wins**.
+No error, no warning, and the teacher whose value was discarded has no way to know.
+
+This is not corruption — `uq_student_assessment_score` guarantees one row, and the
+value stored is always some teacher's real entry. The concurrent-INSERT case is
+separately handled: it recovers into an update rather than surfacing as a 500
+(verified for 2, 3 and 5 simultaneous writers). What is missing is *detection* of
+the overwrite.
+
+**Why it was left:** a fix changes the contract rather than repairing a defect, and
+needs a product decision about what a teacher sees when it happens.
+
+**Options, roughly in order of cost:**
+
+- **`updated_at` precondition.** The grid already loads scores; send the row's
+  `updated_at` back with the save and reject with 409 if it moved. No migration —
+  the column exists via `TimestampMixin`. Cheapest real fix.
+- **Version column + optimistic locking.** `UPDATE ... WHERE version = :seen`,
+  409 on a zero rowcount. Migration for the column; the sturdiest option, and the
+  one to pick if score edits ever gain an audit trail.
+- **Last-write-wins, made visible.** Keep the behaviour, record who overwrote whom
+  in the audit log, and surface it in the UI after the fact. Cheapest of all,
+  but the losing teacher still finds out late.
+
+Whichever is chosen, the frontend needs a conflict path — a 409 with no UI for it
+is worse than the silent overwrite, because the marks are lost AND the save appears
+to fail for an unexplained reason.
+
+**Reuse:** `StudentAssessmentScore.recorded_by` already records who wrote a value,
+so "who overwrote whom" is derivable without new columns. `save_report_entry` in
+`app/routers/modules/platform.py` is the single write path — there is no second
+place to keep in sync.

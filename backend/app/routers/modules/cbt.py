@@ -30,7 +30,7 @@ import random
 from datetime import datetime, timezone, timedelta
 import bleach
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -600,6 +600,32 @@ async def submit_attempt(
             })
         submitted_late = now > deadline + timedelta(seconds=60)
 
+    # Claim the attempt ATOMICALLY before writing anything. The IN_PROGRESS check
+    # above is a fast path, not a guard: two simultaneous submits both read
+    # IN_PROGRESS, both pass it, and both go on to insert answer rows — verified,
+    # a 1-question attempt ended up with 2 CBTAnswer rows. A conditional UPDATE
+    # settles it in the database instead: whichever request matches the row wins,
+    # the other matches nothing and is turned away. The loser also blocks on the
+    # row lock until the winner commits, so it cannot read a stale status either.
+    #
+    # Setting the final status here is safe because the whole request is one
+    # transaction — if grading below fails, this rolls back with it.
+    claim = await db.execute(
+        sa_update(CBTAttempt)
+        .where(
+            CBTAttempt.id == attempt.id,
+            CBTAttempt.org_id == current_user.org_id,
+            CBTAttempt.status == AttemptStatus.IN_PROGRESS,
+        )
+        .values(status=AttemptStatus.GRADED, submitted_at=now, submitted_late=submitted_late)
+    )
+    if claim.rowcount == 0:
+        raise HTTPException(status_code=400, detail="Attempt already submitted.")
+    # Mirror onto the loaded object so the response reflects what was written.
+    attempt.status = AttemptStatus.GRADED
+    attempt.submitted_at = now
+    attempt.submitted_late = submitted_late
+
     # Load all questions for this exam into a dict for fast lookup.
     q_result = await db.execute(
         select(CBTQuestion).where(
@@ -609,8 +635,15 @@ async def submit_attempt(
     )
     questions = {q.id: q for q in q_result.scalars().all()}
 
-    total_score = 0.0
+    # Last answer wins per question. A payload repeating a question_id would
+    # otherwise write one row per repeat — the same duplicate the atomic claim
+    # prevents ACROSS requests, reachable within a single one.
+    deduped = {}
     for ans in payload.answers:
+        deduped[ans.question_id] = ans
+
+    total_score = 0.0
+    for ans in deduped.values():
         question = questions.get(ans.question_id)
         if not question:
             continue  # silently skip — prevents client error from corrupting grading
@@ -633,9 +666,6 @@ async def submit_attempt(
         ))
 
     attempt.score = total_score
-    attempt.submitted_at = now
-    attempt.submitted_late = submitted_late
-    attempt.status = AttemptStatus.GRADED  # auto-graded objective exams
     await db.flush()
     return _attempt_dict(attempt, exam)
 
