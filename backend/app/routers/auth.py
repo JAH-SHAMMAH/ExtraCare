@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models.user import User, UserStatus
 from app.models.organization import Organization, IndustryType, SubscriptionTier
-from app.models.role import Role, permission_presets_for_industry
+from app.models.role import Role, permission_presets_for_industry, role_display_name
 from app.models.modules.school import Student, SchoolClass
 from app.models.modules.platform import SchoolSection
 from app.schemas.auth import SectionBrief
@@ -522,7 +522,9 @@ def _create_default_roles(org_id: str, industry: str) -> list[Role]:
         if slug == "super_admin":
             continue  # platform-only
         roles.append(Role(
-            name=slug.replace("_", " ").title(),
+            # Same reason as the self-heal path in database.py: .title() mangles
+            # acronyms and lowercase joiners.
+            name=role_display_name(slug),
             slug=slug,
             permissions=perms,
             org_id=org_id,

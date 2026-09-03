@@ -76,7 +76,7 @@ async def init_db():
     # the next boot without a destructive migration.
     from sqlalchemy import select
     from app.models.organization import Organization
-    from app.models.role import Role, permission_presets_for_industry
+    from app.models.role import Role, permission_presets_for_industry, role_display_name
 
     async with AsyncSessionLocal() as session:
         orgs = (await session.execute(
@@ -97,7 +97,13 @@ async def init_db():
                 role = by_slug.get(slug)
                 if role is None:
                     session.add(Role(
-                        name=slug.replace("_", " ").title(),
+                        # role_display_name, not .title() — acronyms and lowercase
+                        # joiners (ICT Support, HR Manager, Head of Administration)
+                        # only come out right through the override table. This path
+                        # is how a NEW preset first lands in an existing org, so
+                        # getting it wrong here names the role wrongly forever:
+                        # sync-roles compares permissions, never names.
+                        name=role_display_name(slug),
                         slug=slug,
                         permissions=list(preset),
                         org_id=org.id,
