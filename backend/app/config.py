@@ -63,11 +63,20 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./extracare.db"
     DATABASE_ECHO: bool = False
 
-    # Prod DBs need pool tuning; SQLite ignores these. Values are conservative
-    # defaults tuned for a single gunicorn worker — multiply by worker count
-    # to reason about total connections at the DB.
-    DB_POOL_SIZE: int = 10
-    DB_MAX_OVERFLOW: int = 20
+    # Prod DBs need pool tuning; SQLite ignores these. These are PER WORKER, and
+    # each uvicorn worker is a separate process with its own pool — so the ceiling
+    # that matters is (DB_POOL_SIZE + DB_MAX_OVERFLOW) x workers, and it has to
+    # fit under the server's max_connections minus its superuser reservation.
+    #
+    #   5 + 10 = 15 per worker  x  4 workers (Dockerfile CMD)  =  60 worst case
+    #   against 97 usable (max_connections 100 - 3 reserved)   =  37 spare
+    #
+    # The old 10/20 came to 120 — more than the database allows, so under load the
+    # app could exhaust it on its own. The spare is not slack: entrypoint.sh runs
+    # Alembic on every deploy, and psql/monitoring/maintenance all need a slot.
+    # Raising these means re-checking that arithmetic against the actual server.
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
     DB_POOL_RECYCLE_SECONDS: int = 1800  # recycle before most cloud idle-kills.
 
     # ── Redis ────────────────────────────────────────────────────────────────

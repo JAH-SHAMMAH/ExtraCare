@@ -138,6 +138,8 @@ See `BACKUP.md` for the full runbook. Minimum: nightly `scripts/backup_db.py`,
 | `DEBUG` | `false` | yes |
 | `SECRET_KEY` | 32-byte random | **secret** |
 | `DATABASE_URL` | `mysql+aiomysql://…` | via compose/secret |
+| `DB_POOL_SIZE` | `5` — **per worker** (see note below) | default |
+| `DB_MAX_OVERFLOW` | `10` — **per worker** (see note below) | default |
 | `AUTO_CREATE_SCHEMA` | `false` | yes |
 | `CLOUDINARY_URL` | `cloudinary://<key>:<secret>@<cloud>` | **recommended — §5b Option A** |
 | `UPLOAD_DIR` | durable path, e.g. `/var/uploads` (only if not using Cloudinary) | §5b Option B |
@@ -151,6 +153,25 @@ See `BACKUP.md` for the full runbook. Minimum: nightly `scripts/backup_db.py`,
 | `REDIS_URL` / `REDIS_ENABLED` | optional | no |
 
 **Frontend (build-time):** `NEXT_PUBLIC_API_URL` (public), `NEXT_PUBLIC_SITE_URL`.
+
+### Connection-pool sizing (read before raising either value)
+`DB_POOL_SIZE` and `DB_MAX_OVERFLOW` are **per uvicorn worker**, and each worker
+is a separate process with its own pool. What the database sees is:
+
+```
+(DB_POOL_SIZE + DB_MAX_OVERFLOW) x worker count   <=   max_connections - superuser_reserved_connections
+        (5 + 10 = 15)            x 4 (Dockerfile) =  60   <=   100 - 3 = 97      ✅ 37 spare
+```
+
+Check the ceiling on the server itself rather than assuming the plan's
+documentation — `SHOW max_connections;` and `SHOW superuser_reserved_connections;`.
+The current Render Postgres reports 100 and 3.
+
+The spare is not slack. `entrypoint.sh` runs Alembic on every deploy, and
+psql/monitoring/backup jobs each need a slot. The previous defaults (10/20) came
+to 120 — more than the database allows — so under load the app could exhaust its
+own database. If you raise either value, or the worker count in the Dockerfile
+`CMD`, redo the arithmetic above first.
 
 ## 11. Known operational notes
 - **Email is not implemented** — password resets / invites are **not** emailed.
