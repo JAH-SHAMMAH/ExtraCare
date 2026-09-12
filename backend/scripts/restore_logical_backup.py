@@ -39,6 +39,12 @@ from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
 PRODUCTION_DB_NAMES = {"fairview_data"}
 BATCH = 500
 
+# Alembic owns the schema; the dump carries DATA. `alembic_version` is Alembic's
+# own bookkeeping, and step 2 of the procedure has already written it by the time
+# this runs — restoring it collides on alembic_version_pkc and aborts the whole
+# transaction. It is the one table that must never come from the dump.
+SKIP_TABLES = {"alembic_version"}
+
 
 def _decode(v):
     if isinstance(v, dict) and "__t__" in v:
@@ -109,7 +115,10 @@ async def main() -> int:
     print(f"target database  : {db_name}")
 
     async_url = target.replace("postgresql://", "postgresql+asyncpg://").split("?")[0]
-    engine = create_async_engine(async_url)
+    # Render external hostnames require TLS; a local drill target has no TLS
+    # listener. Without this the restore cannot reach a hosted database at all.
+    local = "@localhost" in async_url or "@127.0.0.1" in async_url
+    engine = create_async_engine(async_url, connect_args={} if local else {"ssl": "require"})
     written: dict[str, int] = {}
     try:
         async with engine.begin() as conn:
@@ -127,9 +136,12 @@ async def main() -> int:
             by_name = {t.name: t for t in md.sorted_tables}
 
             order = meta.get("table_order") or list(tables)
-            print(f"\nloading {sum(len(v) for v in tables.values()):,} rows "
-                  f"across {len([t for t in order if tables.get(t)])} non-empty tables ...")
+            loadable = {t: v for t, v in tables.items() if t not in SKIP_TABLES and v}
+            print(f"\nloading {sum(len(v) for v in loadable.values()):,} rows "
+                  f"across {len(loadable)} non-empty tables ...")
             for name in order:
+                if name in SKIP_TABLES:
+                    continue
                 rows = tables.get(name) or []
                 if not rows:
                     continue

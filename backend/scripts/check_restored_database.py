@@ -1,7 +1,11 @@
 #!/usr/bin/env python
 """Application-level checks against a restored database.
 
-  python scripts/check_restored_database.py <db-url>
+  python scripts/check_restored_database.py <db-url> [source-db-url]
+
+Give a SOURCE url and every table is counted on both sides and compared — the
+only expectation that cannot rot. Without one it falls back to the snapshot
+constants below, which drift the moment anyone adds a user.
 
 Row counts prove nothing about whether the data is USABLE. These are the
 questions a school would actually ask after a disaster:
@@ -27,6 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import MetaData, text  # noqa: E402
 from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
 
+# Fallback only, and a snapshot: taken 2026-09-02, already stale by one user and
+# one role the day after (the ICT account). Prefer passing a source url.
 EXPECTED = {
     "users": 777,
     "students": 450,
@@ -44,9 +50,29 @@ async def main() -> int:
     if len(sys.argv) < 2:
         raise SystemExit(__doc__)
     url = sys.argv[1]
-    async_url = url.replace("postgresql://", "postgresql+asyncpg://").split("?")[0]
-    local = "@localhost" in async_url or "@127.0.0.1" in async_url
-    engine = create_async_engine(async_url, connect_args={} if local else {"ssl": "require"})
+    source = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("-") else None
+
+    def _engine(u):
+        a = u.replace("postgresql://", "postgresql+asyncpg://").split("?")[0]
+        loc = "@localhost" in a or "@127.0.0.1" in a
+        return create_async_engine(a, connect_args={} if loc else {"ssl": "require"})
+
+    expected, expect_label = dict(EXPECTED), "snapshot constants (may be stale)"
+    if source:
+        # Count the SAME tables on the source. An expectation read from the live
+        # source cannot go stale the way a hardcoded one does.
+        src = _engine(source)
+        try:
+            async with src.connect() as sc:
+                expected = {
+                    t: (await sc.execute(text(f'SELECT COUNT(*) FROM "{t}"'))).scalar()
+                    for t in EXPECTED
+                }
+            expect_label = "live source database"
+        finally:
+            await src.dispose()
+
+    engine = _engine(url)
     failures = 0
 
     try:
@@ -56,8 +82,8 @@ async def main() -> int:
             print("=" * 78)
 
             # ── 1. headline counts ────────────────────────────────────────────
-            print("\n[1] Expected record counts")
-            for tbl, want in EXPECTED.items():
+            print(f"\n[1] Record counts   (expectations from: {expect_label})")
+            for tbl, want in expected.items():
                 got = (await conn.execute(text(f'SELECT COUNT(*) FROM "{tbl}"'))).scalar()
                 ok = got == want
                 failures += 0 if ok else 1
