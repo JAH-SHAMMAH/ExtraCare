@@ -142,7 +142,10 @@ export function StudentHome() {
       {/* Quick links */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
         <QuickTile href="/dashboard/modules/school/eclassroom" icon={BookOpen} label="Assignments" color="bg-amber-500" />
-        <QuickTile href="/dashboard/modules/school/cbt" icon={MonitorCheck} label="CBT Tests" color="bg-indigo-500" />
+        {/* /my-exams, not the staff CBT console: students hold school:cbt:sit, never
+            school:cbt:read, so the console route is guarded against them. Same
+            narrowing that 697a543 fixed on the API side. */}
+        <QuickTile href="/dashboard/my-exams" icon={MonitorCheck} label="My Exams" color="bg-indigo-500" />
         <QuickTile href="/dashboard/my-library" icon={Library} label="My Library" color="bg-rose-500" />
         <QuickTile href="/dashboard/my-timetable" icon={Calendar} label="My Timetable" color="bg-emerald-500" />
       </div>

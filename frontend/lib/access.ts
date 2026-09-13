@@ -13,6 +13,24 @@
 // are intentionally ABSENT — they carry no module permission; their data is
 // resolved + ownership-scoped server-side from the caller's identity, and the
 // sidebar shows them by active view-role instead.
+//
+// ── WHEN YOU NARROW A ROLE'S SCOPE, CHECK THE DASHBOARD HOME TILES TOO ───────
+// The "never drift apart" guarantee above covers the sidebar and the guard,
+// because both read THIS table. It does not cover a third surface: the
+// per-role dashboards (app/(dashboard)/dashboard/home/{Parent,Student,Teacher,
+// Admin}Home.tsx) link with HARDCODED hrefs that nothing here governs. Narrow a
+// scope and the sidebar quietly stops showing the staff page — while the home
+// tile keeps pointing at it and starts returning the "no permission" panel.
+//
+// That has now caused a broken link three times:
+//   • payments:read → payments:own:read  (mig 123)  broke the parent Fees tiles
+//   • the student narrowing (mig 121)               broke the student CBT tile
+//   • attendance :read vs :write                    broke the parent Attendance tiles
+//
+// The rule: a role's dashboard should link to the SAME routes its sidebar shows
+// it — the /my-* pages for parents and students, not /modules/school/*. To check
+// a change, evaluate every href in those four files against the role's preset
+// using longest-prefix matching, the same way permissionForPath does.
 
 export interface RouteAccess {
   prefix: string;

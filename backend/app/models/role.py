@@ -130,6 +130,14 @@ SCHOOL_PARENT_PERMISSIONS = [
 #   - parent:    read (view & pay their child's outstanding fees)
 # A dedicated Accountant role with reconcile-only finance scope is a planned
 # follow-up (needs role-switcher support); until then admins reconcile.
+# NARROWING A ROLE HERE HAS A FRONTEND TAIL. Three surfaces read these scopes,
+# and only two stay in sync on their own: the sidebar and RouteGuard both consume
+# frontend/lib/access.ts, but the per-role dashboards
+# (app/(dashboard)/dashboard/home/*Home.tsx) link with hardcoded hrefs that
+# nothing checks. Narrow a scope and the sidebar hides the staff page while the
+# dashboard tile keeps pointing at it and starts showing "no permission".
+# Already caused by mig 121 (student), mig 123 (payments:read -> payments:own:read)
+# and the attendance read/write split. See the note in access.ts.
 SCHOOL_PERMISSION_PRESETS = {
     # `payment_gateways:*` is a DELIBERATELY SEPARATE namespace from `payments:*`
     # (not `payments:gateways:*`): managing live gateway API secrets is org_admin-only,

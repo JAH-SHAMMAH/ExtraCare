@@ -55,11 +55,17 @@ export function ParentHome() {
         </div>
       )}
 
-      {/* Quick links */}
+      {/* Quick links — parents go to the /my-children/* pages, NOT the staff pages
+          under /modules/school/*. Those carry staff scopes a parent will never
+          hold (payments:read vs payments:own:read, attendance:write vs :read), so
+          linking there gives the RouteGuard "no permission" panel even though the
+          data is perfectly visible to them one route over.
+          Feedback is the exception and is correct as it stands: that page IS the
+          submit form, gated on school:feedback:read, which parents hold. */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-8">
         <QuickTile href="/dashboard/my-children" icon={GraduationCap} label="All Children" color="bg-brand-600" />
-        <QuickTile href="/dashboard/modules/school/fees" icon={Award} label="Fees" color="bg-amber-500" />
-        <QuickTile href="/dashboard/modules/school/attendance" icon={Calendar} label="Attendance" color="bg-emerald-500" />
+        <QuickTile href="/dashboard/my-children/payments" icon={Award} label="Fees" color="bg-amber-500" />
+        <QuickTile href="/dashboard/my-children/attendance" icon={Calendar} label="Attendance" color="bg-emerald-500" />
         <QuickTile href="/dashboard/modules/school/feedback" icon={BookOpen} label="Send Feedback" color="bg-indigo-500" />
       </div>
 
@@ -129,9 +135,12 @@ function ChildCard({ child }: { child: ParentChild }) {
 
       {/* Actions */}
       <div className="divide-y divide-slate-50">
-        <ActionRow href="/dashboard/modules/school/attendance" icon={Calendar} label="Attendance history" />
-        <ActionRow href="/dashboard/modules/school/grades" icon={GraduationCap} label="Grades & reports" />
-        <ActionRow href="/dashboard/modules/school/fees" icon={Award} label="Fees & invoices" />
+        <ActionRow href="/dashboard/my-children/attendance" icon={Calendar} label="Attendance history" />
+        {/* Lands on the child picker rather than a bare report card: the card page
+            expects a child to have been chosen, so deep-linking it shows an empty
+            state for a parent with more than one child. */}
+        <ActionRow href="/dashboard/my-children" icon={GraduationCap} label="Grades & reports" />
+        <ActionRow href="/dashboard/my-children/payments" icon={Award} label="Fees & invoices" />
       </div>
     </div>
   );
