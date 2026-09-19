@@ -491,6 +491,7 @@ export const cbtApi = {
     publish: (exam_id: string) => api.post(`/cbt/exams/${exam_id}/publish-results`).then((r) => r.data),
     unpublish: (exam_id: string) => api.post(`/cbt/exams/${exam_id}/unpublish-results`).then((r) => r.data),
     feedGradebook: (exam_id: string) => api.post(`/cbt/exams/${exam_id}/feed-gradebook`).then((r) => r.data),
+    syncAssessment: (exam_id: string) => api.post(`/cbt/exams/${exam_id}/sync-assessment`).then((r) => r.data),
   },
   interventions: {
     list: (p?: { status?: string; student_id?: string; exam_id?: string }) =>

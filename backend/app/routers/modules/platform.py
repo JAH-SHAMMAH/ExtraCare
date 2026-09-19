@@ -2205,7 +2205,56 @@ async def report_entry_grid(class_id: str, subject_id: str, term_id: str,
         assessments=[ReportEntryAssessment(id=a.id, name=a.name, max_score=a.max_score, sub_term_name=subs.get(a.sub_term_id)) for a in assessments],
         students=[ReportEntryStudent(id=s.id, name=f"{s.first_name} {s.last_name}".strip()) for s in students],
         scores=scores,
+        notices=await _grid_notices(db, org, cls, subject_id, term_id, current_user),
     )
+
+
+async def _grid_notices(db: AsyncSession, org: str, cls, subject_id: str,
+                        term_id: str, user: User) -> list[str]:
+    """Explain an empty CBT column, rather than leaving the teacher to guess.
+
+    A CBT exam whose results are published is expected to have fed its scores
+    here. When the feed was skipped, the column is blank and looks identical to a
+    class nobody has marked. This asks the sync's own helper why — the same code
+    the CBT results panel uses, so the two can never give different answers.
+
+    Read-only: `assessment_block_reason` creates nothing.
+
+    NOT every skip reason can reach here, and that is structural rather than an
+    oversight. Exams are found BY matching the grid's term name, subject and
+    class, so an exam whose term string has drifted ("No academic term named X")
+    matches nothing and cannot be reported on any grid — it is surfaced on the CBT
+    results panel and in the audit log instead, and is admin-only anyway. Likewise
+    an exam with no subject belongs to no subject column. What does reach here is
+    the case that actually loses marks silently: a frozen report, or a sub-term
+    the school never defined.
+    """
+    from app.models.modules.school import CBTExam
+    from app.services.cbt_assessment_sync import assessment_block_reason
+
+    term_name = (await db.execute(
+        select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org)
+    )).scalar_one_or_none()
+    if not term_name:
+        return []
+
+    exams = (await db.execute(
+        select(CBTExam).where(
+            CBTExam.org_id == org,
+            CBTExam.class_id == cls.id,
+            CBTExam.subject_id == subject_id,
+            CBTExam.term == term_name,
+            CBTExam.results_published_at.is_not(None),
+        )
+    )).scalars().all()
+
+    is_admin = _report_admin(user)
+    out: list[str] = []
+    for exam in exams:
+        block = await assessment_block_reason(db, exam, org)
+        if block:
+            out.append(f"“{exam.title}”: {block.message_for(is_admin)}")
+    return out
 
 
 @router.post("/report-entry", dependencies=[_reports_write])

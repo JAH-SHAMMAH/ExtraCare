@@ -22,6 +22,149 @@ from uuid import uuid4
 from datetime import datetime
 
 
+# Three of the reasons a sync is skipped describe the ORGANISATION's academic
+# setup rather than anything about the exam: no AcademicTerm matching the exam's
+# term name, no sub-term defined at all, or an Assessment that could not be built
+# from them. A teacher holds neither the scope nor the context to act on those, so
+# showing them "No sub-term found in organization" is noise that reads like an
+# accusation and sends them hunting for a setting they cannot see. They get
+# ADMIN_FIX_NOTICE instead. The precise text still reaches admins and the audit
+# log, which is where it can actually be acted on.
+ADMIN_FIX_NOTICE = (
+    "CBT scores for this exam can't reach Make Report because of a problem with "
+    "the school's term setup. Ask an administrator to check it — there's nothing "
+    "to fix on your side."
+)
+
+
+class SyncBlock(str):
+    """Why a CBT exam's scores are not flowing into Make Report.
+
+    A `str` subclass rather than a dataclass so that every caller that already
+    treats the reason as text keeps working untouched: the backfill scripts print
+    it, the tests substring-match it, and FastAPI serialises it as a plain string.
+    `admin_only` rides alongside, so the presentation layer can decide who is shown
+    the precise text without any of those callers changing.
+    """
+
+    admin_only: bool
+
+    def __new__(cls, reason: str, admin_only: bool = False) -> "SyncBlock":
+        obj = super().__new__(cls, reason)
+        obj.admin_only = admin_only
+        return obj
+
+    @property
+    def reason(self) -> str:
+        """The precise, admin-facing explanation."""
+        return str(self)
+
+    def message_for(self, is_admin: bool) -> str:
+        """The text to SHOW this viewer. Admins always get the precise reason."""
+        if self.admin_only and not is_admin:
+            return ADMIN_FIX_NOTICE
+        return str(self)
+
+
+async def assessment_block_reason(
+    db: AsyncSession,
+    exam: CBTExam,
+    org_id: str,
+) -> "SyncBlock | None":
+    """Why `exam`'s results can't reach StudentAssessmentScore, or None if they can.
+
+    READ-ONLY, deliberately: this is what the CBT results panel and the Make Report
+    notice call, and a status check must never create an Assessment as a side
+    effect. `sync_cbt_to_assessment_score` calls it first and then re-resolves the
+    term itself — two extra indexed SELECTs on a path that only runs when results
+    are published, which is a fair price for a status helper that writes nothing.
+
+    The counterpart to `_feed_block_reason` in the CBT router, which does this job
+    for the gradebook feed. Unlike that one it must be async: the freeze check and
+    the term lookups are queries, not attribute reads.
+
+    Anything this returns is also returned by the sync, so the reason a teacher is
+    shown and the reason the sync acted on cannot drift apart.
+    """
+    from app.models.modules.platform import AcademicTerm
+
+    if not exam.subject_id:
+        return SyncBlock("Exam has no subject assigned")
+    if not exam.term:
+        return SyncBlock("Exam has no term assigned")
+    if not exam.results_published_at:
+        return SyncBlock("Exam results not published yet")
+
+    # A published class report is frozen, and this path would otherwise move the
+    # marks behind it. It SKIPS rather than raising, deliberately: a re-published
+    # CBT exam is a legitimate act, and failing it here would block releasing
+    # results to students for a reason that has nothing to do with CBT. Same
+    # contract the other guards use, and the same shape as the gradebook feed's
+    # `_feed_block_reason` — report why the feed was withheld, never silently
+    # skip, never block the student release.
+    #
+    # The CBT->Grade path needs no equivalent: those rows land as DRAFT and staff
+    # release them separately, so the draft status already buffers parents.
+    # StudentAssessmentScore has no draft state, so this is the only buffer.
+    #
+    # NOT admin_only: a teacher can't retract the report themselves, but the fact
+    # that their class's report is already out is exactly the context they need,
+    # and it names the page to ask about.
+    if exam.class_id:
+        from app.services.report_lock import find_published_block
+
+        if await find_published_block(db, org_id, {exam.class_id}, {exam.term}):
+            return SyncBlock(
+                f"This class's {exam.term} report is published — scores are frozen. "
+                f"Retract it to 'approved' in Report Workflow to accept new marks."
+            )
+
+    # From here down the exam is fine and the ORG's setup is what's missing, so
+    # every remaining block is admin_only.
+    term_row = (await db.execute(
+        select(AcademicTerm).where(
+            AcademicTerm.org_id == org_id,
+            AcademicTerm.name == exam.term,
+        )
+    )).scalar_one_or_none()
+    if not term_row:
+        # Term is free text on CBTExam and matched by value, so this fires on a
+        # plain spelling drift between the exam and Academic Terms. See
+        # docs/future-features.md section 6.
+        return SyncBlock(
+            f"No academic term named '{exam.term}' exists, so there is nothing to "
+            f"attach these scores to. Add it under Academic Terms, or correct the "
+            f"term on the exam.",
+            admin_only=True,
+        )
+
+    if not await _resolve_sub_term(db, org_id):
+        return SyncBlock(
+            "No sub-terms are defined for this school, so scores have nowhere to "
+            "land. Add at least one (usually 'Full-Term') under Academic Settings.",
+            admin_only=True,
+        )
+    return None
+
+
+async def _resolve_sub_term(db: AsyncSession, org_id: str):
+    """The sub-term CBT scores attach to. Most assessments use "Full-Term"; fall
+    back to any sub-term so a school that named theirs differently still works."""
+    from app.models.modules.platform import AcademicSubTerm
+
+    row = (await db.execute(
+        select(AcademicSubTerm).where(
+            AcademicSubTerm.org_id == org_id,
+            AcademicSubTerm.name.in_(["Full-Term", "Full Term"]),
+        )
+    )).scalar_one_or_none()
+    if row:
+        return row
+    return (await db.execute(
+        select(AcademicSubTerm).where(AcademicSubTerm.org_id == org_id)
+    )).scalar_one_or_none()
+
+
 async def get_or_create_cbt_assessment(
     db: AsyncSession,
     org_id: str,
@@ -129,37 +272,15 @@ async def sync_cbt_to_assessment_score(
     if not exam:
         return 0, "Exam not found"
 
-    if not exam.subject_id:
-        return 0, "Exam has no subject assigned"
+    # One source of truth for "why not", shared with the CBT results panel and the
+    # Make Report notice. Whatever they show, the sync acted on.
+    block = await assessment_block_reason(db, exam, org_id)
+    if block:
+        return 0, block
 
-    if not exam.term:
-        return 0, "Exam has no term assigned"
-
-    if not exam.results_published_at:
-        return 0, "Exam results not published yet"
-
-    # A published class report is frozen, and this path would otherwise move the
-    # marks behind it. It SKIPS rather than raising, deliberately: a re-published
-    # CBT exam is a legitimate act, and failing it here would block releasing
-    # results to students for a reason that has nothing to do with CBT. Same
-    # contract the other guards above use, and the same shape as the gradebook
-    # feed's `_feed_block_reason` — report why the feed was withheld, never
-    # silently skip, never block the student release.
-    #
-    # The CBT->Grade path needs no equivalent: those rows land as DRAFT and staff
-    # release them separately, so the draft status already buffers parents.
-    # StudentAssessmentScore has no draft state, so this is the only buffer.
-    if exam.class_id:
-        from app.services.report_lock import find_published_block
-
-        if await find_published_block(db, org_id, {exam.class_id}, {exam.term}):
-            return 0, (
-                f"This class's {exam.term} report is published — scores are frozen. "
-                f"Retract it to 'approved' in Report Workflow to accept new marks."
-            )
-
-    # Look up AcademicTerm by exam.term name
-    from app.models.modules.platform import AcademicTerm, AcademicSubTerm
+    # Guards passed, so both of these resolve; re-read rather than threading them
+    # out of the read-only helper.
+    from app.models.modules.platform import AcademicTerm
 
     term_row = (await db.execute(
         select(AcademicTerm).where(
@@ -167,36 +288,18 @@ async def sync_cbt_to_assessment_score(
             AcademicTerm.name == exam.term,
         )
     )).scalar_one_or_none()
+    sub_term_row = await _resolve_sub_term(db, org_id)
 
-    if not term_row:
-        return 0, f"No AcademicTerm found for '{exam.term}'"
-
-    # Find a sub-term (org-wide, not tied to specific term).
-    # Most assessments use "Full-Term"; fall back to any sub-term.
-    sub_term_row = (await db.execute(
-        select(AcademicSubTerm).where(
-            AcademicSubTerm.org_id == org_id,
-            AcademicSubTerm.name.in_(["Full-Term", "Full Term"]),
-        )
-    )).scalar_one_or_none()
-
-    if not sub_term_row:
-        # Fall back to any sub-term
-        sub_term_row = (await db.execute(
-            select(AcademicSubTerm).where(
-                AcademicSubTerm.org_id == org_id,
-            )
-        )).scalar_one_or_none()
-
-    if not sub_term_row:
-        return 0, f"No sub-term found in organization"
-
-    # Get or create the Assessment for this exam's term
+    # Get or create the Assessment for this exam's term. Only reachable with a
+    # valid term and sub-term, so a failure here is a genuine write problem rather
+    # than missing setup - but it is still nothing a teacher can act on.
     assessment_id = await get_or_create_cbt_assessment(
         db, org_id, term_row.id, sub_term_row.id
     )
     if not assessment_id:
-        return 0, "Could not create Assessment for exam's term"
+        return 0, SyncBlock(
+            "Could not create the CBT assessment for this term.", admin_only=True
+        )
 
     # Get best attempt per student. superseded_at IS NULL = active — the same
     # filter cbt.py's _active() applies (inlined here: importing the router back

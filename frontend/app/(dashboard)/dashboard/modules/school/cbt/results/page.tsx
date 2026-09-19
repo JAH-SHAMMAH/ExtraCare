@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useCBTExams, useExamResults, useAttemptReview, useRemarkAttempt, useResetAttempt, useCreateIntervention, usePublishResults, useFeedGradebook } from "@/hooks/useSchoolExperience";
+import { useCBTExams, useExamResults, useAttemptReview, useRemarkAttempt, useResetAttempt, useCreateIntervention, usePublishResults, useFeedGradebook, useSyncAssessment } from "@/hooks/useSchoolExperience";
 import { cbtApi } from "@/lib/api";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
-import { BarChart3, Download, Loader2, ArrowLeft, ClipboardEdit, X, AlertTriangle, CheckCircle2, Flag, RotateCcw, Clock, EyeOff, Send, Eye, BookOpenCheck } from "lucide-react";
+import { BarChart3, Download, Loader2, ArrowLeft, ClipboardEdit, X, AlertTriangle, CheckCircle2, Flag, RotateCcw, Clock, EyeOff, Send, Eye, BookOpenCheck, NotebookPen } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -31,6 +31,7 @@ export default function CBTResultsPage() {
   const resetAttempt = useResetAttempt();
   const createIntervention = useCreateIntervention();
   const publishResults = usePublishResults();
+  const syncAssessment = useSyncAssessment();
   const feedGradebook = useFeedGradebook();
   const canWrite = useHasPermission("school:write");
 
@@ -116,6 +117,52 @@ export default function CBTResultsPage() {
                     >
                       {publishResults.isPending ? <Loader2 size={15} className="animate-spin" /> : published ? <EyeOff size={15} /> : <Send size={15} />}
                       {published ? "Unpublish" : "Publish results"}
+                    </button>
+                  )}
+                </div>
+              );
+            })()
+          )}
+
+          {/* Make Report feed — a SEPARATE path from the gradebook above, with its
+              own failure modes. Before this, a skipped sync was reported nowhere:
+              the teacher opened Make Report, found a blank CBT column, and had no
+              way to tell it from a class nobody had marked. A setup problem only
+              an admin can fix arrives already generalised from the API, so there
+              is nothing to decide here. */}
+          {data?.assessment && (
+            (() => {
+              const as = data.assessment;
+              const blocked: string | null = as.block_reason;
+              const syncedCount: number = as.synced_count || 0;
+              return (
+                <div className="rounded-xl border border-slate-200 p-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <NotebookPen size={18} className="text-brand-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">Make Report</p>
+                      <p className="text-xs mt-0.5 text-slate-500">
+                        {blocked
+                          ? <span className="text-amber-700">{blocked}</span>
+                          : syncedCount > 0
+                            ? <>{syncedCount} score{syncedCount === 1 ? "" : "s"} available in <Link href="/dashboard/modules/school/make-report" className="text-brand-600 font-semibold hover:underline">Make Report →</Link></>
+                            : <>Send these results to the report score grid (best attempt per student, as a percentage), so they appear as the CBT column in Make Report.</>}
+                      </p>
+                    </div>
+                  </div>
+                  {canWrite && (
+                    <button
+                      onClick={() => syncAssessment.mutate(examId)}
+                      /* Deliberately NOT disabled when blocked: the fix for most of
+                         these is made elsewhere (add the sub-term, retract the
+                         report) and then this button is how you retry. Disabling it
+                         would leave unpublish-and-republish as the only way back. */
+                      disabled={syncAssessment.isPending}
+                      className="btn-secondary gap-2 shrink-0"
+                      title={blocked ? `Retry after fixing: ${blocked}` : "Send scores to Make Report"}
+                    >
+                      {syncAssessment.isPending ? <Loader2 size={15} className="animate-spin" /> : <NotebookPen size={15} />}
+                      {syncedCount > 0 ? "Re-sync scores" : "Send to Make Report"}
                     </button>
                   )}
                 </div>

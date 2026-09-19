@@ -299,6 +299,13 @@ export function usePublishResults() {
       if (gb?.fed > 0) toast.success(`Results published; ${gb.fed} grade(s) sent to the gradebook (draft).`);
       else if (gb?.blocked) toast.success(`Results published to students. Not sent to the gradebook — ${gb.blocked}`);
       else toast.success("Results published to students.");
+      // The Make Report feed is a separate path and fails for its own reasons.
+      // The API has always returned this; nothing displayed it, so a skipped sync
+      // left the teacher with a blank column and no explanation anywhere. Shown
+      // as a second toast rather than folded into the first: publishing DID
+      // succeed, and this is a distinct thing that did not.
+      const as = d?.assessment;
+      if (as?.reason) toast.error(`Scores did not reach Make Report — ${as.reason}`, { duration: 8000 });
     },
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update publish state."),
   });
@@ -313,6 +320,22 @@ export function useFeedGradebook() {
       toast.success(`${d?.fed ?? 0} grade(s) sent to the gradebook as drafts. Publish them from the gradebook to release to parents.`);
     },
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Couldn't send results to the gradebook."),
+  });
+}
+
+export function useSyncAssessment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (exam_id: string) => cbtApi.results.syncAssessment(exam_id),
+    onSuccess: (d: any) => {
+      qc.invalidateQueries({ queryKey: ["cbt-results"] });
+      // Re-running is the whole point, so a run that changed nothing must say so
+      // rather than flashing a success the teacher will read as "fixed".
+      if (d?.synced > 0) toast.success(`${d.synced} score(s) sent to Make Report.`);
+      else if (d?.reason) toast.error(`Still blocked — ${d.reason}`, { duration: 8000 });
+      else toast.success("Nothing to send — no graded attempts on this exam yet.");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Couldn't send scores to Make Report."),
   });
 }
 

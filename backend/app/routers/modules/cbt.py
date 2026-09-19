@@ -79,7 +79,10 @@ from app.core.school_identity import (
     resolve_taught_class_ids,
     resolve_taught_subject_ids,
 )
-from app.services.cbt_assessment_sync import sync_cbt_to_assessment_score
+from app.services.cbt_assessment_sync import (
+    assessment_block_reason,
+    sync_cbt_to_assessment_score,
+)
 
 router = APIRouter(
     prefix="/cbt",
@@ -1128,6 +1131,57 @@ def _results_released(exam: CBTExam) -> bool:
 # staff then release to parents via the school router's publish_grades — so the
 # report card's "never publish a term blind" fail-safe stays authoritative.
 
+def _is_report_admin(user: User) -> bool:
+    """Mirrors platform.py's `_report_admin`. Teachers hold school:write, never
+    school_admin, so this is False for them — which is what decides whether a
+    setup problem is spelled out or handed off with ADMIN_FIX_NOTICE."""
+    return user.has_permission("school_admin:read")
+
+
+async def _assessment_status(db: AsyncSession, exam: CBTExam, org_id: str, user: User) -> dict:
+    """The Make Report feed's status, shaped like the `gradebook` block beside it.
+
+    `block_reason` is what THIS viewer should see; `synced_count` is how many
+    StudentAssessmentScore rows the exam currently backs, so a cleared block and a
+    feed that never ran are distinguishable.
+    """
+    from app.models.modules.platform import (
+        AcademicTerm, Assessment, StudentAssessmentScore,
+    )
+
+    block = await assessment_block_reason(db, exam, org_id)
+    synced = 0
+    if exam.subject_id and exam.term:
+        # Scoped to this exam's class, subject and term. Counting by subject alone
+        # would total every class in the school and report a number several times
+        # the size of the class the teacher is looking at. Still not exam-exact —
+        # StudentAssessmentScore has no exam_id, so two CBT exams for the same
+        # class, subject and term share one count — which is why the copy says
+        # "available in Make Report" rather than "from this exam".
+        q = (
+            select(func.count(StudentAssessmentScore.id))
+            .select_from(StudentAssessmentScore)
+            .join(Assessment, Assessment.id == StudentAssessmentScore.assessment_id)
+            .join(AcademicTerm, AcademicTerm.id == Assessment.term_id)
+            .where(
+                StudentAssessmentScore.org_id == org_id,
+                StudentAssessmentScore.subject_id == exam.subject_id,
+                Assessment.name == "CBT Exam Score",
+                AcademicTerm.name == exam.term,
+            )
+        )
+        if exam.class_id:
+            q = q.join(Student, Student.id == StudentAssessmentScore.student_id).where(
+                Student.class_id == exam.class_id
+            )
+        synced = (await db.execute(q)).scalar() or 0
+    return {
+        "block_reason": block.message_for(_is_report_admin(user)) if block else None,
+        "admin_only": bool(block.admin_only) if block else False,
+        "synced_count": synced,
+    }
+
+
 def _feed_block_reason(exam: CBTExam) -> str | None:
     """Why this exam can't feed the gradebook yet, or None if it can.
     Option I: a held exam whose results aren't published feeds nothing — parents
@@ -1246,6 +1300,10 @@ async def exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current
             "term": exam.term,
             "subject_id": exam.subject_id,
         },
+        # The Make Report feed is a SEPARATE path from the gradebook and fails for
+        # its own reasons; before this it reported nothing at all, so a skipped
+        # sync looked exactly like an exam nobody had marked.
+        "assessment": await _assessment_status(db, exam, org_id, current_user),
     }
 
 
@@ -1294,13 +1352,69 @@ async def publish_exam_results(
             resource_type="StudentAssessmentScore", resource_id=exam.id,
             resource_label=f"synced {assessment_synced} CBT score(s) to assessment", request=request,
         )
+    elif getattr(assessment_reason, "admin_only", False):
+        # The publisher may well be a teacher who can do nothing about this, and
+        # the toast is gone the moment they navigate. Leave the PRECISE reason
+        # somewhere an administrator can still find it. RECORD_UPDATED is reused
+        # deliberately: a new AuditAction member needs an ALTER TYPE migration on
+        # Postgres and would 500 in production without one.
+        await log_action(
+            db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+            resource_type="StudentAssessmentScore", resource_id=exam.id,
+            resource_label=(
+                f"CBT scores for '{exam.title}' could not reach Make Report "
+                f"— needs an administrator: {assessment_reason}"
+            ),
+            request=request,
+        )
 
     return {
         "published": True,
         "results_published_at": exam.results_published_at.isoformat(),
         "published_pass_percentage": exam.published_pass_percentage,
         "gradebook": {"fed": fed, "blocked": reason},
-        "assessment": {"synced": assessment_synced, "reason": assessment_reason},
+        "assessment": {
+            "synced": assessment_synced,
+            # What THIS publisher should see. The precise text is in the audit log.
+            "reason": (
+                assessment_reason.message_for(_is_report_admin(current_user))
+                if hasattr(assessment_reason, "message_for") else assessment_reason
+            ),
+        },
+    }
+
+
+@router.post("/exams/{exam_id}/sync-assessment", dependencies=[_bank_write])
+async def sync_exam_to_assessment(
+    exam_id: str, request: Request = None,
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    """Re-run the Make Report feed for one exam.
+
+    The sync otherwise has exactly one trigger — publishing results — so before
+    this endpoint existed, a skip could only be recovered by unpublishing and
+    republishing, which yanks scores away from students to fix something that has
+    nothing to do with them. The counterpart to the gradebook's "Send to gradebook"
+    button, which has always had a manual re-run.
+
+    Idempotent: the sync UPDATEs rows it wrote before and never duplicates them.
+    """
+    org_id = current_user.org_id
+    exam = await _get_exam_or_404(db, exam_id, org_id)
+    synced, reason = await sync_cbt_to_assessment_score(db, exam_id, org_id)
+    if synced > 0:
+        await log_action(
+            db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+            resource_type="StudentAssessmentScore", resource_id=exam.id,
+            resource_label=f"re-synced {synced} CBT score(s) to assessment", request=request,
+        )
+    return {
+        "synced": synced,
+        "reason": (
+            reason.message_for(_is_report_admin(current_user))
+            if hasattr(reason, "message_for") else reason
+        ),
+        "admin_only": bool(getattr(reason, "admin_only", False)),
     }
 
 

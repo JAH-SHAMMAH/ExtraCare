@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useMyTeachingAssignments, useReportEntryGrid, useSaveReportEntry, useTerms } from "@/hooks/usePlatform";
 import { cn } from "@/lib/utils";
 import { subTermDisplay } from "@/lib/reportEntry";
-import { Loader2, Save, NotebookPen } from "lucide-react";
+import { Loader2, Save, NotebookPen, AlertTriangle } from "lucide-react";
 
 export default function MakeReportPage() {
   const { data: assignments = [], isLoading: loadingA } = useMyTeachingAssignments();
@@ -61,11 +61,11 @@ export default function MakeReportPage() {
           <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3 mb-4">
             <div className="flex-1 min-w-[240px]"><label className="label">My class &amp; subject</label>
               <select value={pair} onChange={(e) => setPair(e.target.value)} className="input">
-                <option value="">â€” Select â€”</option>
-                {(assignments as any[]).map((a) => <option key={`${a.class_id}|${a.subject_id}`} value={`${a.class_id}|${a.subject_id}`}>{a.class_name} Â· {a.subject_name}</option>)}
+                <option value="">— Select —</option>
+                {(assignments as any[]).map((a) => <option key={`${a.class_id}|${a.subject_id}`} value={`${a.class_id}|${a.subject_id}`}>{a.class_name} · {a.subject_name}</option>)}
               </select>
             </div>
-            <div><label className="label">Term</label><select value={termId} onChange={(e) => setTermId(e.target.value)} className="input"><option value="">â€” Select â€”</option>{(terms as any[]).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+            <div><label className="label">Term</label><select value={termId} onChange={(e) => setTermId(e.target.value)} className="input"><option value="">— Select —</option>{(terms as any[]).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
             {ready && grid && (grid.students?.length ?? 0) > 0 && <button onClick={submit} disabled={save.isPending} className="btn-primary gap-2 ml-auto">{save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save Scores</button>}
           </div>
 
@@ -79,6 +79,24 @@ export default function MakeReportPage() {
             <p className="text-sm text-slate-400 py-10 text-center bg-white rounded-xl border border-slate-200">No pupils in this class.</p>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+              {/* Why an expected column is empty. Without this a CBT exam whose
+                  scores were refused looks exactly like a class nobody marked —
+                  the teacher's only clue was a blank column. Phrased for this
+                  viewer by the API: a setup problem only an admin can fix arrives
+                  already generalised. */}
+              {grid.notices?.length > 0 && (
+                <div className="m-4 mb-0 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3">
+                  <p className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                    <AlertTriangle size={13} className="shrink-0" />
+                    Some CBT scores haven&apos;t reached this grid
+                  </p>
+                  <ul className="mt-1.5 space-y-1">
+                    {grid.notices.map((n: string, i: number) => (
+                      <li key={i} className="text-xs text-amber-800 leading-relaxed">{n}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {subTerm.only && (
                 <p className="px-4 pt-3 text-xs text-slate-500">Sub-term: <span className="font-semibold text-slate-700">{subTerm.only}</span></p>
               )}

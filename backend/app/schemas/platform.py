@@ -978,6 +978,12 @@ class ReportEntryGrid(BaseModel):
     students: list[ReportEntryStudent] = Field(default_factory=list)
     # scores[student_id][assessment_id] = score
     scores: dict[str, dict[str, Optional[Decimal]]] = Field(default_factory=dict)
+    # Why an expected column is empty — chiefly a CBT exam whose results were
+    # published but whose scores never reached here. Without this the grid cannot
+    # distinguish "not marked yet" from "marked, but the feed was skipped", and
+    # the teacher has no way to tell which. Already phrased for the viewer: a
+    # setup problem only an admin can fix is generalised before it gets here.
+    notices: list[str] = Field(default_factory=list)
 
 
 class ScoreItem(BaseModel):
