@@ -147,6 +147,19 @@ class ReportApprovalCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class ReportSubmitRequest(BaseModel):
+    """A class teacher handing their class's term report to the office.
+
+    Deliberately NOT ReportApprovalCreate: a teacher chooses the class and term
+    and nothing else. Stage is not a field here — the only move this grants is
+    draft -> submitted, so accepting a stage would be offering a choice that does
+    not exist.
+    """
+    class_id: str
+    term: str
+    notes: Optional[str] = None
+
+
 class ReportApprovalUpdate(BaseModel):
     stage: Optional[str] = None
     notes: Optional[str] = None

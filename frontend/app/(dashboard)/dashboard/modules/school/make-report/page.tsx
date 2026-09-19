@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import { useMyTeachingAssignments, useReportEntryGrid, useSaveReportEntry, useTerms } from "@/hooks/usePlatform";
 import { cn } from "@/lib/utils";
 import { subTermDisplay } from "@/lib/reportEntry";
-import { Loader2, Save, NotebookPen, AlertTriangle } from "lucide-react";
+import { useSubmitClassReport } from "@/hooks/useAcademics";
+import { Loader2, Save, NotebookPen, AlertTriangle, SendHorizonal, CheckCircle2 } from "lucide-react";
 
 export default function MakeReportPage() {
   const { data: assignments = [], isLoading: loadingA } = useMyTeachingAssignments();
@@ -15,6 +16,7 @@ export default function MakeReportPage() {
   const ready = !!classId && !!subjectId && !!termId;
   const { data: grid, isLoading } = useReportEntryGrid({ class_id: classId, subject_id: subjectId, term_id: termId });
   const save = useSaveReportEntry();
+  const submitReport = useSubmitClassReport();
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
 
   const scores = useMemo(() => {
@@ -68,6 +70,57 @@ export default function MakeReportPage() {
             <div><label className="label">Term</label><select value={termId} onChange={(e) => setTermId(e.target.value)} className="input"><option value="">— Select —</option>{(terms as any[]).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
             {ready && grid && (grid.students?.length ?? 0) > 0 && <button onClick={submit} disabled={save.isPending} className="btn-primary gap-2 ml-auto">{save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save Scores</button>}
           </div>
+
+          {/* Above the table, not below it: a class can run to forty pupils, and a
+              teacher should not have to scroll past all of them to find out the
+              report has already gone in. */}
+          {ready && grid?.submission && (grid.students?.length ?? 0) > 0 && (
+            (() => {
+              const sub = grid.submission;
+              const termName = (terms as any[]).find((t) => t.id === termId)?.name;
+              const done = sub.stage && sub.stage !== "draft";
+              return (
+                <div className={cn(
+                  "rounded-xl border p-4 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3",
+                  done ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-white",
+                )}>
+                  <div className="flex items-start gap-2.5">
+                    {done
+                      ? <CheckCircle2 size={18} className="text-emerald-600 mt-0.5 shrink-0" />
+                      : <SendHorizonal size={18} className="text-brand-600 mt-0.5 shrink-0" />}
+                    <div>
+                      <p className={cn("text-sm font-bold", done ? "text-emerald-900" : "text-slate-800")}>
+                        {done ? "Handed in" : "Finished this class?"}
+                      </p>
+                      {/* `reason` explains a missing button rather than leaving a
+                          subject teacher staring at a page that seems incomplete. */}
+                      <p className={cn("text-xs mt-0.5", done ? "text-emerald-800" : "text-slate-500")}>
+                        {sub.reason
+                          ? sub.reason
+                          : done
+                            ? <>This report is with the office at &ldquo;{sub.stage}&rdquo;.</>
+                            : <>Submitting hands the whole class&rsquo;s {termName ? `${termName} ` : ""}report to the office for approval. You can keep saving scores until then.</>}
+                      </p>
+                    </div>
+                  </div>
+                  {sub.can_submit && (
+                    <button
+                      onClick={() => {
+                        if (!termName) return;
+                        if (confirm(`Submit ${termName} for this class? Scores stay editable until an administrator approves it.`))
+                          submitReport.mutate({ class_id: classId, term: termName });
+                      }}
+                      disabled={submitReport.isPending}
+                      className="btn-primary gap-2 shrink-0"
+                    >
+                      {submitReport.isPending ? <Loader2 size={15} className="animate-spin" /> : <SendHorizonal size={15} />}
+                      Submit for approval
+                    </button>
+                  )}
+                </div>
+              );
+            })()
+          )}
 
           {!ready ? (
             <p className="text-sm text-slate-400 py-10 text-center bg-white rounded-xl border border-slate-200">Pick a class/subject and term to enter scores.</p>

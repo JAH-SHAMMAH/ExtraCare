@@ -41,6 +41,7 @@ from app.schemas.academics import (
     TranscriptCreate, TranscriptUpdate, TranscriptResponse, TranscriptListResponse,
     TranscriptEntryCreate, TranscriptEntryResponse,
     ReportApprovalCreate, ReportApprovalUpdate, ReportApprovalResponse, ReportApprovalListResponse,
+    ReportSubmitRequest,
     RecognitionCreate, RecognitionUpdate, RecognitionResponse, RecognitionListResponse,
     HouseLeaderboardRow, LeaderboardResponse,
     SELECTION_STATUSES, TRANSCRIPT_STATUSES, RECOGNITION_TYPES, AWARD_TYPES,
@@ -632,6 +633,114 @@ async def create_report_workflow(
         resource_type="ReportApproval", resource_id=r.id, resource_label="report workflow", request=request,
     )
     cnames = await _class_names(db, current_user.org_id, {r.class_id})
+    return _report_response(r, cnames.get(r.class_id))
+
+
+@router.post("/report-workflow/submit", response_model=ReportApprovalResponse,
+             dependencies=[Depends(PermissionChecker("school:reports:write"))])
+async def submit_class_report(
+    payload: ReportSubmitRequest,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """A class teacher hands their class's term report to the office.
+
+    The gap this closes: every other write on this row is `school_admin:write`, so
+    a teacher could never set `submitted_by` — which made GET
+    /report-workflow/mine, filtered on exactly that column, permanently empty for
+    the people it was written for. The teacher half of the workflow was stubbed
+    and never wired.
+
+    SCOPE, and why: the row is unique on (class_id, term), so submitting is a
+    statement about the WHOLE class, not one subject. Only the class's PC teacher
+    may make it — a subject teacher claiming the class is ready would be claiming
+    it on behalf of every other subject teacher. Per-subject sign-off would need
+    its own table; see docs/future-features.md.
+
+    The only transition granted is draft -> submitted. Everything onward stays
+    admin-only, so this adds a step to the ladder without widening it.
+    """
+    org_id = current_user.org_id
+    cls = (await db.execute(
+        select(SchoolClass).where(SchoolClass.id == payload.class_id, SchoolClass.org_id == org_id)
+    )).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="class not found in your organisation.")
+
+    # Admins keep their existing route in through PATCH; this check is about who
+    # may speak for the class, and an admin already can.
+    from app.routers.modules.platform import _pc_teacher_id, _report_admin
+
+    if not _report_admin(current_user):
+        pc = await _pc_teacher_id(db, org_id, payload.class_id)
+        if pc is None:
+            # Distinguished from "someone else is the class teacher": if no class
+            # teacher is set, telling a teacher it is not them sends them looking
+            # for a colleague who does not exist. This is a setup gap, not a
+            # permission one.
+            raise HTTPException(status_code=403, detail="No class teacher is assigned to this class, so there is no one to submit its report. Ask an administrator to assign one.")
+        if pc != current_user.id:
+            raise HTTPException(
+                status_code=403,
+                detail="Only this class's teacher can submit its report. Subject "
+                       "marks you enter are included when they do.",
+            )
+
+    r = (await db.execute(
+        select(ReportApproval).where(
+            ReportApproval.org_id == org_id,
+            ReportApproval.class_id == payload.class_id,
+            ReportApproval.term == payload.term,
+        )
+    )).scalars().first()
+
+    if r is None:
+        # Get-or-create: a teacher should not have to ask an admin to open a
+        # workflow row before they are allowed to fill it in.
+        r = ReportApproval(class_id=payload.class_id, term=payload.term,
+                           notes=payload.notes, stage="draft", org_id=org_id)
+        db.add(r)
+        try:
+            await db.flush()
+        except IntegrityError:
+            # Two teachers pressing submit at once, or an admin opening the row in
+            # between. Recover onto the existing row rather than 500 on the unique
+            # constraint - the same shape as create_report_workflow's race guard.
+            await db.rollback()
+            r = (await db.execute(
+                select(ReportApproval).where(
+                    ReportApproval.org_id == org_id,
+                    ReportApproval.class_id == payload.class_id,
+                    ReportApproval.term == payload.term,
+                )
+            )).scalars().first()
+            if r is None:
+                raise HTTPException(status_code=409, detail="Could not open a workflow for this class and term.")
+
+    if r.stage != "draft":
+        # Already moving. Saying where it is beats a bare refusal: "submitted"
+        # means someone beat them to it, "approved" means it is out of their hands.
+        raise HTTPException(
+            status_code=409,
+            detail=f"This class's {payload.term} report is already at '{r.stage}' "
+                   f"and cannot be submitted again. Ask an administrator to move it "
+                   f"back to 'draft' if it needs more work.",
+        )
+
+    r.stage = "submitted"
+    r.submitted_by = current_user.id
+    if payload.notes:
+        r.notes = payload.notes
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="ReportApproval", resource_id=r.id,
+        resource_label=f"submitted {cls.name} {payload.term} report for approval",
+        old_values={"stage": "draft"}, new_values={"stage": "submitted"},
+        request=request,
+    )
+    cnames = await _class_names(db, org_id, {r.class_id})
     return _report_response(r, cnames.get(r.class_id))
 
 

@@ -970,6 +970,17 @@ class ReportEntryStudent(BaseModel):
     name: str
 
 
+class ReportEntrySubmission(BaseModel):
+    """The report-workflow state behind a Make Report grid."""
+    # None when no workflow row exists yet — the teacher has not handed it in and
+    # the office has not opened one. Distinct from "draft", which is a real row.
+    stage: Optional[str] = None
+    can_submit: bool = False
+    # Why not, when can_submit is False and the report is still open. Lets the page
+    # explain rather than silently hiding the control.
+    reason: Optional[str] = None
+
+
 class ReportEntryGrid(BaseModel):
     class_id: str
     subject_id: str
@@ -984,6 +995,11 @@ class ReportEntryGrid(BaseModel):
     # the teacher has no way to tell which. Already phrased for the viewer: a
     # setup problem only an admin can fix is generalised before it gets here.
     notices: list[str] = Field(default_factory=list)
+    # Where this class's term report has got to, and whether THIS user may hand it
+    # in. Carried on the grid the page already loads so the UI never offers a
+    # button that would 403 — only the class teacher may submit, and only from
+    # 'draft'.
+    submission: "ReportEntrySubmission" = Field(default_factory=lambda: ReportEntrySubmission())
 
 
 class ScoreItem(BaseModel):

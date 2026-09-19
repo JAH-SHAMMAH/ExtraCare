@@ -1039,6 +1039,8 @@ export const academicsApi = {
     create: (data: object) => api.post("/academics/report-workflow", data).then((r) => r.data),
     update: (id: string, data: object) => api.patch(`/academics/report-workflow/${id}`, data).then((r) => r.data),
     remove: (id: string) => api.delete(`/academics/report-workflow/${id}`),
+    submit: (data: { class_id: string; term: string; notes?: string }) =>
+      api.post("/academics/report-workflow/submit", data).then((r) => r.data),
   },
   recognitions: {
     list: (p?: { type?: string; student_id?: string; house?: string; term?: string; page?: number; page_size?: number }) =>

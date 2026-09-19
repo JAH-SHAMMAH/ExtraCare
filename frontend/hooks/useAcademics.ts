@@ -115,6 +115,23 @@ export function useCreateReportWorkflow() {
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to create workflow."),
   });
 }
+export function useSubmitClassReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { class_id: string; term: string; notes?: string }) =>
+      academicsApi.reportWorkflow.submit(data),
+    onSuccess: () => {
+      // The Make Report grid carries the submission state, so it has to refetch
+      // or the button stays live after the report has gone in.
+      qc.invalidateQueries({ queryKey: ["report-workflow"] });
+      qc.invalidateQueries({ queryKey: ["report-entry"] });
+      toast.success("Report submitted for approval. The office will review it from here.");
+    },
+    onError: (e: any) =>
+      toast.error(e?.response?.data?.detail || "Couldn't submit this report."),
+  });
+}
+
 export function useUpdateReportWorkflow() {
   const qc = useQueryClient();
   return useMutation({

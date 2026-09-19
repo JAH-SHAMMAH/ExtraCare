@@ -2206,7 +2206,53 @@ async def report_entry_grid(class_id: str, subject_id: str, term_id: str,
         students=[ReportEntryStudent(id=s.id, name=f"{s.first_name} {s.last_name}".strip()) for s in students],
         scores=scores,
         notices=await _grid_notices(db, org, cls, subject_id, term_id, current_user),
+        submission=await _grid_submission(db, org, class_id, term_id, current_user),
     )
+
+
+async def _grid_submission(db: AsyncSession, org: str, class_id: str,
+                           term_id: str, user: User):
+    """Where this class's term report stands, and whether this user may submit it.
+
+    Resolved here so the page never renders a button that would 403: only the
+    class's PC teacher (or an admin) may hand a report in, and only while it is
+    still at 'draft'. Mirrors the checks in `submit_class_report` — if they ever
+    disagree the UI is the one that is wrong, since the endpoint is authoritative.
+    """
+    from app.models.modules.academics import ReportApproval
+    from app.schemas.platform import ReportEntrySubmission
+
+    term_name = (await db.execute(
+        select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org)
+    )).scalar_one_or_none()
+    if not term_name:
+        return ReportEntrySubmission()
+
+    row = (await db.execute(
+        select(ReportApproval).where(
+            ReportApproval.org_id == org,
+            ReportApproval.class_id == class_id,
+            ReportApproval.term == term_name,
+        )
+    )).scalars().first()
+    stage = row.stage if row else None
+
+    is_admin = _report_admin(user)
+    pc = None if is_admin else await _pc_teacher_id(db, org, class_id)
+    if stage not in (None, "draft"):
+        return ReportEntrySubmission(
+            stage=stage, can_submit=False,
+            reason=f"Already submitted — this report is at '{stage}'.",
+        )
+    if not is_admin and pc is None:
+        return ReportEntrySubmission(stage=stage, can_submit=False, reason="No class teacher is assigned to this class, so there is no one to submit its report. Ask an administrator to assign one.")
+    if not is_admin and pc != user.id:
+        return ReportEntrySubmission(
+            stage=stage, can_submit=False,
+            reason="Only this class's teacher submits the report. Your marks are "
+                   "included when they do.",
+        )
+    return ReportEntrySubmission(stage=stage, can_submit=True)
 
 
 async def _grid_notices(db: AsyncSession, org: str, cls, subject_id: str,
