@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useMyTeachingAssignments, useReportEntryGrid, useSaveReportEntry, useTerms } from "@/hooks/usePlatform";
 import { cn } from "@/lib/utils";
+import { subTermDisplay } from "@/lib/reportEntry";
 import { Loader2, Save, NotebookPen } from "lucide-react";
 
 export default function MakeReportPage() {
@@ -24,6 +25,11 @@ export default function MakeReportPage() {
     });
     return seed;
   }, [grid]);
+  // The grid holds every assessment for the term, across sub-terms — without
+  // this two same-named columns (Half-Term EXAM / Full-Term EXAM) are
+  // indistinguishable to the teacher filling them in.
+  const subTerm = useMemo(() => subTermDisplay(grid?.assessments), [grid]);
+
   const cur = (sid: string, aid: string) => (draft[sid]?.[aid] ?? scores[sid]?.[aid] ?? "");
   const setCell = (sid: string, aid: string, v: string) => setDraft((p) => ({ ...p, [sid]: { ...(p[sid] ?? scores[sid] ?? {}), [aid]: v } }));
 
@@ -55,11 +61,11 @@ export default function MakeReportPage() {
           <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3 mb-4">
             <div className="flex-1 min-w-[240px]"><label className="label">My class &amp; subject</label>
               <select value={pair} onChange={(e) => setPair(e.target.value)} className="input">
-                <option value="">— Select —</option>
-                {(assignments as any[]).map((a) => <option key={`${a.class_id}|${a.subject_id}`} value={`${a.class_id}|${a.subject_id}`}>{a.class_name} · {a.subject_name}</option>)}
+                <option value="">â€” Select â€”</option>
+                {(assignments as any[]).map((a) => <option key={`${a.class_id}|${a.subject_id}`} value={`${a.class_id}|${a.subject_id}`}>{a.class_name} Â· {a.subject_name}</option>)}
               </select>
             </div>
-            <div><label className="label">Term</label><select value={termId} onChange={(e) => setTermId(e.target.value)} className="input"><option value="">— Select —</option>{(terms as any[]).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+            <div><label className="label">Term</label><select value={termId} onChange={(e) => setTermId(e.target.value)} className="input"><option value="">â€” Select â€”</option>{(terms as any[]).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
             {ready && grid && (grid.students?.length ?? 0) > 0 && <button onClick={submit} disabled={save.isPending} className="btn-primary gap-2 ml-auto">{save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save Scores</button>}
           </div>
 
@@ -73,10 +79,21 @@ export default function MakeReportPage() {
             <p className="text-sm text-slate-400 py-10 text-center bg-white rounded-xl border border-slate-200">No pupils in this class.</p>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+              {subTerm.only && (
+                <p className="px-4 pt-3 text-xs text-slate-500">Sub-term: <span className="font-semibold text-slate-700">{subTerm.only}</span></p>
+              )}
               <table className="w-full text-left">
                 <thead><tr className="bg-slate-50/80 border-b border-slate-100">
                   <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">Pupil</th>
-                  {grid.assessments.map((a: any) => <th key={a.id} className="px-3 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500 text-center">{a.name}<span className="block font-normal text-slate-400">/{Number(a.max_score)}</span></th>)}
+                  {grid.assessments.map((a: any) => (
+                    <th key={a.id} className="px-3 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500 text-center">
+                      {a.name}
+                      {subTerm.perColumn && a.sub_term_name && (
+                        <span className="block font-semibold normal-case tracking-normal text-brand-600">{a.sub_term_name}</span>
+                      )}
+                      <span className="block font-normal text-slate-400">/{Number(a.max_score)}</span>
+                    </th>
+                  ))}
                 </tr></thead>
                 <tbody className="divide-y divide-slate-50">
                   {grid.students.map((s: any) => (
