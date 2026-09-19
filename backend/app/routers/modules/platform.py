@@ -2136,9 +2136,22 @@ async def bootstrap_cumulatives(db: AsyncSession = Depends(get_db), current_user
 
 # ── Secondary Report S-4a: Report Entry (assessment scores) ──────────────────
 
-async def _entry_assessments(db, org_id, term_id, level):
-    """Assessments for a term that apply to a class level (year_group NULL = all)."""
+async def _entry_assessments(db, org_id, term_id, level, sub_term_id: str | None = None):
+    """Assessments for a term that apply to a class level (year_group NULL = all).
+
+    `sub_term_id` narrows to one sub-term. Optional, and omitting it keeps the
+    old behaviour of returning the whole term: the entry grid is the only caller
+    that scopes by sub-term, and a required argument would change what every
+    other reader of this helper sees.
+
+    Until now the entry grid was the one stage of the report pipeline that could
+    not scope this way — report_broadsheet and report_card have always taken a
+    sub_term_id — so a term carrying both a Half-Term and a Full-Term assessment
+    put both in front of the teacher at once with no way to choose.
+    """
     q = select(Assessment).where(Assessment.org_id == org_id, Assessment.term_id == term_id)
+    if sub_term_id:
+        q = q.where(Assessment.sub_term_id == sub_term_id)
     rows = (await db.execute(q.order_by(Assessment.position, Assessment.name))).scalars().all()
     return [a for a in rows if not a.year_group or a.year_group == level]
 
@@ -2161,6 +2174,7 @@ async def my_teaching_assignments(db: AsyncSession = Depends(get_db), current_us
 
 @router.get("/report-entry", response_model=ReportEntryGrid, dependencies=[_school_read])
 async def report_entry_grid(class_id: str, subject_id: str, term_id: str,
+                            sub_term_id: str | None = None,
                             db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     org = current_user.org_id
     cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
@@ -2185,7 +2199,7 @@ async def report_entry_grid(class_id: str, subject_id: str, term_id: str,
     if not _report_admin(current_user) and (class_id, subject_id) not in await _teacher_assignments(db, org, current_user.id):
         raise HTTPException(status_code=403, detail="You do not teach this subject in this class.")
     subs = {s.id: s.name for s in (await db.execute(select(AcademicSubTerm).where(AcademicSubTerm.org_id == org))).scalars().all()}
-    assessments = await _entry_assessments(db, org, term_id, getattr(cls, "level", None))
+    assessments = await _entry_assessments(db, org, term_id, getattr(cls, "level", None), sub_term_id)
     students = (await db.execute(
         select(Student).where(
             Student.org_id == org, Student.class_id == class_id, Student.is_deleted == False)  # noqa: E712
