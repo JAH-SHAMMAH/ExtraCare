@@ -1712,7 +1712,7 @@ export const platformApi = {
     bootstrap: () => api.post("/platform/cumulatives/bootstrap").then((r) => r.data),
   },
   reportEntry: {
-    grid: (p: { class_id: string; subject_id: string; term_id: string }) => api.get("/platform/report-entry", { params: p }).then((r) => r.data),
+    grid: (p: { class_id: string; subject_id: string; term_id: string; sub_term_id?: string }) => api.get("/platform/report-entry", { params: p }).then((r) => r.data),
     save: (d: object) => api.post("/platform/report-entry", d).then((r) => r.data),
   },
   myTeachingAssignments: () => api.get("/platform/my-teaching-assignments").then((r) => r.data),

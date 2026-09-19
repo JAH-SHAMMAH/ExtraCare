@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useClasses, useSubjects } from "@/hooks/useSchool";
-import { useTerms, useReportEntryGrid, useSaveReportEntry } from "@/hooks/usePlatform";
+import { defaultSubTermId } from "@/lib/reportEntry";
+import { useTerms, useSubTerms, useReportEntryGrid, useSaveReportEntry } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { useAssessmentDomains, useStudentDomainRatings, useUpsertStudentRatings } from "@/hooks/useAssessmentDomains";
 import { ReportDomainGrid } from "@/components/ReportDomainGrid";
@@ -16,10 +17,20 @@ export default function ReportEntryPage() {
   const subjects: any[] = subjectsData?.items ?? subjectsData ?? [];
   const { data: terms = [] } = useTerms();
 
+  const { data: subTerms = [] } = useSubTerms();
+
   const [classId, setClassId] = useState("");
   const [subjectId, setSubjectId] = useState("");
   const [termId, setTermId] = useState("");
-  const { data: grid, isLoading } = useReportEntryGrid({ class_id: classId, subject_id: subjectId, term_id: termId });
+  const [subTermId, setSubTermId] = useState("");
+
+  // Same default as Make Report and as the backend resolver: Full-Term, so the
+  // grid opens on the columns it showed before sub-term scoping existed.
+  useEffect(() => {
+    if (!subTermId && (subTerms as any[]).length) setSubTermId(defaultSubTermId(subTerms as any[]));
+  }, [subTerms, subTermId]);
+
+  const { data: grid, isLoading } = useReportEntryGrid({ class_id: classId, subject_id: subjectId, term_id: termId, sub_term_id: subTermId || undefined });
   const save = useSaveReportEntry();
 
   // Get section_id from selected class
@@ -107,6 +118,10 @@ export default function ReportEntryPage() {
         <div><label className="label">Class</label><select value={classId} onChange={(e) => setClassId(e.target.value)} className="input"><option value="">— Select —</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
         <div><label className="label">Subject</label><select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className="input"><option value="">— Select —</option>{subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
         <div><label className="label">Term</label><select value={termId} onChange={(e) => setTermId(e.target.value)} className="input"><option value="">— Select —</option>{(terms as any[]).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+        {/* Both entry paths share GET /platform/report-entry, so they scope the
+            same way — one filtering by sub-term while the other did not would
+            show two people different columns for the same class and term. */}
+        <div><label className="label">Sub-Term</label><select value={subTermId} onChange={(e) => setSubTermId(e.target.value)} className="input">{(subTerms as any[]).map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}</select></div>
         {canWrite && ready && <button onClick={submit} disabled={save.isPending} className="btn-primary gap-2 ml-auto">{save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save Scores</button>}
       </div>
 
@@ -117,7 +132,11 @@ export default function ReportEntryPage() {
       ) : !grid || grid.students.length === 0 ? (
         <p className="text-sm text-slate-400 py-14 text-center bg-white rounded-xl border border-slate-200">No pupils in this class.</p>
       ) : grid.assessments.length === 0 ? (
-        <p className="text-sm text-slate-400 py-14 text-center bg-white rounded-xl border border-slate-200">No assessments defined for this term/level. Set them up under Report Setup → Assessment.</p>
+        <p className="text-sm text-slate-400 py-14 text-center bg-white rounded-xl border border-slate-200">
+          No assessments defined for{" "}
+          <span className="font-semibold text-slate-600">{(subTerms as any[]).find((st) => st.id === subTermId)?.name ?? "this sub-term"}</span>
+          {" "}at this term/level. Try another sub-term, or set them up under Report Setup → Assessment.
+        </p>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
           <table className="w-full text-left">

@@ -242,10 +242,12 @@ export const useDeleteCumulative = m((id: string) => platformApi.cumulatives.rem
 export const useBootstrapCumulatives = m(() => platformApi.cumulatives.bootstrap(), ["cumulatives"], "Seeded cumulative columns.");
 
 // ── S-4a: Report Entry (assessment scores) ───────────────────────────────────
-export function useReportEntryGrid(p: { class_id: string; subject_id: string; term_id: string }) {
+export function useReportEntryGrid(p: { class_id: string; subject_id: string; term_id: string; sub_term_id?: string }) {
   return useQuery<any>({
     queryKey: ["report-entry", p],
     queryFn: () => platformApi.reportEntry.grid(p),
+    // sub_term_id is deliberately NOT required here: omitting it returns the
+    // whole term, which is what this grid did before sub-term scoping existed.
     enabled: !!p.class_id && !!p.subject_id && !!p.term_id,
   });
 }

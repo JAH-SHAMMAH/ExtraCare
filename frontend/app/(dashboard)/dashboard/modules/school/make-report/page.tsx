@@ -1,20 +1,43 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useMyTeachingAssignments, useReportEntryGrid, useSaveReportEntry, useTerms } from "@/hooks/usePlatform";
+import { useEffect, useMemo, useState } from "react";
+import { useMyTeachingAssignments, useReportEntryGrid, useSaveReportEntry, useSubTerms, useTerms } from "@/hooks/usePlatform";
 import { cn } from "@/lib/utils";
-import { subTermDisplay } from "@/lib/reportEntry";
+import { classesFromAssignments, defaultSubTermId, subjectsForClass, subTermDisplay } from "@/lib/reportEntry";
 import { useSubmitClassReport } from "@/hooks/useAcademics";
 import { Loader2, Save, NotebookPen, AlertTriangle, SendHorizonal, CheckCircle2 } from "lucide-react";
 
 export default function MakeReportPage() {
   const { data: assignments = [], isLoading: loadingA } = useMyTeachingAssignments();
   const { data: terms = [] } = useTerms();
-  const [pair, setPair] = useState("");   // "classId|subjectId"
+  const { data: subTerms = [] } = useSubTerms();
+  // Four fields, matching Report Entry (the admin page) rather than the single
+  // combined "class - subject" list this page used to carry: a Fairview teacher
+  // has 2 classes and 10 subjects, so that one list held 20 entries.
+  const [classId, setClassId] = useState("");
+  const [subjectId, setSubjectId] = useState("");
   const [termId, setTermId] = useState("");
-  const [classId, subjectId] = pair ? pair.split("|") : ["", ""];
+  const [subTermId, setSubTermId] = useState("");
+
+  const myClasses = useMemo(() => classesFromAssignments(assignments as any[]), [assignments]);
+  // Subject depends on Class: the Timetable assigns per class per subject, so an
+  // independent pair could be one this teacher does not teach, which the grid
+  // answers with a 403.
+  const mySubjects = useMemo(() => subjectsForClass(assignments as any[], classId), [assignments, classId]);
+
+  // Default to Full-Term, as the backend's own resolver does, so the grid opens
+  // on exactly the columns it showed before this selector existed.
+  useEffect(() => {
+    if (!subTermId && (subTerms as any[]).length) setSubTermId(defaultSubTermId(subTerms as any[]));
+  }, [subTerms, subTermId]);
+
+  // A subject held from a previous class may not be taught in the new one.
+  useEffect(() => {
+    if (subjectId && !mySubjects.some((s) => s.id === subjectId)) setSubjectId("");
+  }, [mySubjects, subjectId]);
+
   const ready = !!classId && !!subjectId && !!termId;
-  const { data: grid, isLoading } = useReportEntryGrid({ class_id: classId, subject_id: subjectId, term_id: termId });
+  const { data: grid, isLoading } = useReportEntryGrid({ class_id: classId, subject_id: subjectId, term_id: termId, sub_term_id: subTermId || undefined });
   const save = useSaveReportEntry();
   const submitReport = useSubmitClassReport();
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
@@ -61,13 +84,25 @@ export default function MakeReportPage() {
       ) : (
         <>
           <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3 mb-4">
-            <div className="flex-1 min-w-[240px]"><label className="label">My class &amp; subject</label>
-              <select value={pair} onChange={(e) => setPair(e.target.value)} className="input">
+            <div><label className="label">Term</label><select value={termId} onChange={(e) => setTermId(e.target.value)} className="input"><option value="">— Select —</option>{(terms as any[]).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+            {/* Scopes the grid to one sub-term's assessments. Without it a term
+                holding both a Half-Term and a Full-Term "EXAM" showed the
+                teacher both columns at once with no way to choose. */}
+            <div><label className="label">Sub-Term</label><select value={subTermId} onChange={(e) => setSubTermId(e.target.value)} className="input">{(subTerms as any[]).map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}</select></div>
+            <div className="min-w-[180px]"><label className="label">Class</label>
+              <select value={classId} onChange={(e) => setClassId(e.target.value)} className="input">
                 <option value="">— Select —</option>
-                {(assignments as any[]).map((a) => <option key={`${a.class_id}|${a.subject_id}`} value={`${a.class_id}|${a.subject_id}`}>{a.class_name} · {a.subject_name}</option>)}
+                {myClasses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
-            <div><label className="label">Term</label><select value={termId} onChange={(e) => setTermId(e.target.value)} className="input"><option value="">— Select —</option>{(terms as any[]).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+            <div className="min-w-[180px]"><label className="label">Subject</label>
+              {/* Disabled until a class is chosen: which subjects are available
+                  depends on it, so an enabled-but-empty list would just puzzle. */}
+              <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className="input" disabled={!classId}>
+                <option value="">{classId ? "— Select —" : "— Pick a class first —"}</option>
+                {mySubjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
             {ready && grid && (grid.students?.length ?? 0) > 0 && <button onClick={submit} disabled={save.isPending} className="btn-primary gap-2 ml-auto">{save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save Scores</button>}
           </div>
 
@@ -123,11 +158,15 @@ export default function MakeReportPage() {
           )}
 
           {!ready ? (
-            <p className="text-sm text-slate-400 py-10 text-center bg-white rounded-xl border border-slate-200">Pick a class/subject and term to enter scores.</p>
+            <p className="text-sm text-slate-400 py-10 text-center bg-white rounded-xl border border-slate-200">Pick a class and subject to enter scores.</p>
           ) : isLoading || !grid ? (
             <div className="py-14 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
           ) : (grid.assessments?.length ?? 0) === 0 ? (
-            <p className="text-sm text-slate-400 py-10 text-center bg-white rounded-xl border border-slate-200">No assessments configured for this term. Ask an administrator to set up assessments.</p>
+            <p className="text-sm text-slate-400 py-10 text-center bg-white rounded-xl border border-slate-200">
+              No assessments are set up for{" "}
+              <span className="font-semibold text-slate-600">{(subTerms as any[]).find((st) => st.id === subTermId)?.name ?? "this sub-term"}</span>
+              {" "}in this term. Try another sub-term, or ask an administrator to set them up.
+            </p>
           ) : (grid.students?.length ?? 0) === 0 ? (
             <p className="text-sm text-slate-400 py-10 text-center bg-white rounded-xl border border-slate-200">No pupils in this class.</p>
           ) : (
@@ -150,7 +189,11 @@ export default function MakeReportPage() {
                   </ul>
                 </div>
               )}
-              {subTerm.only && (
+              {/* Only when the grid is UNFILTERED. With a sub-term selected the
+                  field above already names it, and repeating it here would be
+                  noise; without one the grid spans the whole term, and this is
+                  the only thing saying which sub-term a column belongs to. */}
+              {!subTermId && subTerm.only && (
                 <p className="px-4 pt-3 text-xs text-slate-500">Sub-term: <span className="font-semibold text-slate-700">{subTerm.only}</span></p>
               )}
               <table className="w-full text-left">
