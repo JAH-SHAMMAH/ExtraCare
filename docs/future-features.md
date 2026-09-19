@@ -128,3 +128,50 @@ to fail for an unexplained reason.
 so "who overwrote whom" is derivable without new columns. `save_report_entry` in
 `app/routers/modules/platform.py` is the single write path — there is no second
 place to keep in sync.
+
+---
+
+## 6. Term names are free-text strings, and two models document the wrong vocabulary
+
+**Found while:** comparing our Make Report flow against Educare's (their term naming
+is Educare's own; ours is Fairview's). Logged rather than fixed — a rename is a
+data migration, not an edit.
+
+Term is not a foreign key in most places. `AcademicTerm` exists and is referenced
+properly by the report pipeline (`term_id`), but **19 columns across 5 model files
+store the term as a `String`** that is matched by value — and they do not even agree
+on a format: `StudentFeeRecord.term` (`app/models/payment.py:240`) holds
+`"term1_2024"`, not `"Term 1"`. `CBTExam.term` is the
+one that bites today: `sync_cbt_to_assessment_score` resolves it with
+`select(AcademicTerm).where(AcademicTerm.name == exam.term)` and returns
+`"No AcademicTerm found for '<term>'"` when the spelling does not line up — a silent
+skip caused purely by string drift.
+
+Two of those columns are documented with a vocabulary this school does not use:
+
+| Column | Comment says | Live data is |
+|---|---|---|
+| `ClubMembership.term` (`app/models/modules/school.py:1006`) | `# e.g. "SPRING"` | `Term 1` / `Term 2` / `Term 3` |
+| `ClubEnrollmentDeadline.term` (`app/models/modules/school.py:1052`) | `# e.g. "SPRING" / "Term 2"` | `Term 1` / `Term 2` / `Term 3` |
+
+`SPRING` is Educare's naming, inherited when these models were written. Nothing is
+broken *now* — no code compares against the literal `"SPRING"`, and both columns are
+only ever written with whatever the UI sends. The risk is a future reader trusting
+the comment and seeding, importing or filtering with `SPRING`, which would silently
+match nothing.
+
+**Cheapest correct fix (do this much regardless):** correct the two comments. Zero
+risk, and it removes the misleading part.
+
+**The real fix, if term naming is ever revisited:** give the term a display-name
+indirection so the stored value and the shown value can differ, then migrate the
+string columns to `term_id`. That is the change that makes a rename possible at all
+— today, renaming a term in settings would orphan every row that stored the old
+spelling, across clubs, CBT, attendance and fees.
+
+**Reuse:** `AcademicTerm` already carries `name` and is already the resolution
+target; `term_names_for_ids` in `app/services/report_lock.py` is the existing
+id → name helper, and is where a display-name lookup would naturally live.
+**Open question:** is a rename actually wanted? If Fairview will always say
+"Term 1/2/3", the indirection is cost with no payoff and only the comments need
+fixing.
