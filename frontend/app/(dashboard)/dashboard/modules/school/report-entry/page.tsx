@@ -115,13 +115,13 @@ export default function ReportEntryPage() {
       <p className="text-slate-500 text-sm mb-5">Enter pupils&apos; marks for each assessment. These feed the cumulative columns and the report card.</p>
 
       <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3 mb-5">
-        <div><label className="label">Class</label><select value={classId} onChange={(e) => setClassId(e.target.value)} className="input"><option value="">— Select —</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-        <div><label className="label">Subject</label><select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className="input"><option value="">— Select —</option>{subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
         <div><label className="label">Term</label><select value={termId} onChange={(e) => setTermId(e.target.value)} className="input"><option value="">— Select —</option>{(terms as any[]).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
         {/* Both entry paths share GET /platform/report-entry, so they scope the
             same way — one filtering by sub-term while the other did not would
             show two people different columns for the same class and term. */}
         <div><label className="label">Sub-Term</label><select value={subTermId} onChange={(e) => setSubTermId(e.target.value)} className="input">{(subTerms as any[]).map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}</select></div>
+        <div><label className="label">Class</label><select value={classId} onChange={(e) => setClassId(e.target.value)} className="input"><option value="">— Select —</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+        <div><label className="label">Subject</label><select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className="input"><option value="">— Select —</option>{subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
         {canWrite && ready && <button onClick={submit} disabled={save.isPending} className="btn-primary gap-2 ml-auto">{save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save Scores</button>}
       </div>
 
