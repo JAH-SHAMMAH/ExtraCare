@@ -16,6 +16,7 @@ Expected: ~1800 StudentAssessmentScore rows (180 students × 10 subjects)
 """
 
 import asyncio
+import os
 import sys
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -24,18 +25,31 @@ from sqlalchemy import select
 from app.models.modules.school import CBTExam
 from app.services.cbt_assessment_sync import sync_cbt_to_assessment_score
 
-# Same database as production
-DB_URL = "postgresql+asyncpg://fairview_data_user:1MMCmx2rVy0XbXNh1IBjclMiOH1ACPVa@dpg-da243tn40ujc7394oip0-a.ohio-postgres.render.com/fairview_data?ssl=require"
+# There is deliberately NO default database.
+#
+# This used to fall back to a hardcoded DSN for `fairview_data`, the database
+# Fairview was migrated OFF. After the cutover that default pointed at a
+# decommissioned server, so running the script without an argument would either
+# fail confusingly or — worse, while the old instance was still alive — write a
+# backfill into the wrong database and report success. A script that writes to
+# production must be told which production it means.
 FAIRVIEW_ORG_ID = "0a6ee83d-7e2a-4089-914c-7c0ecafd4027"
 
 
 def _resolve_db_url() -> str:
-    """First non-flag argument wins, else the default above. Without this the
-    passed URL is silently ignored and the hardcoded one used instead."""
+    """The DSN, from the first non-flag argument or DATABASE_URL. No fallback."""
     for arg in sys.argv[1:]:
         if not arg.startswith("--"):
             return arg
-    return DB_URL
+    env = os.environ.get("DATABASE_URL", "").strip()
+    if env:
+        return env
+    sys.exit(
+        "No database given. Pass the DSN as the first argument, or set "
+        "DATABASE_URL. There is no default on purpose: this script writes, "
+        "and the previous default pointed at the database Fairview was "
+        "migrated off."
+    )
 
 
 async def dry_run():
