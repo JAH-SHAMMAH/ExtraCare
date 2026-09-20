@@ -16,6 +16,9 @@ import {
 } from "@/hooks/usePlatform";
 import { useYearGroups, useSubjects } from "@/hooks/useSchool";
 import { cn } from "@/lib/utils";
+import { platformApi } from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Plus, Trash2, Loader2, Power, Check, X, Sparkles } from "lucide-react";
 
 // ── Terms & Sub-term ─────────────────────────────────────────────────────────
@@ -27,7 +30,31 @@ export function TermsTab({ canWrite }: { canWrite: boolean }) {
   const createTerm = useCreateTerm();
   const updateTerm = useUpdateTerm();
   const deleteTerm = useDeleteTerm();
+  const qc = useQueryClient();
   const [f, setF] = useState({ name: "", alias: "", position: "" });
+
+  // "Delete Autumn?" tells an administrator nothing about what they are about to
+  // destroy. The first attempt deliberately omits confirm so the API can answer
+  // 409 with the real counts - assessments and scores that CASCADE away, plus
+  // the rows in five other tables that merely stop matching the term by name -
+  // and only that text goes in front of the person deciding.
+  const deleteTermWithImpact = async (t: any) => {
+    try {
+      await platformApi.terms.remove(t.id);
+      qc.invalidateQueries({ queryKey: ["academic-terms"] });
+      toast.success("Removed.");
+      return;
+    } catch (e: any) {
+      if (e?.response?.status !== 409) {
+        toast.error(e?.response?.data?.detail || "Couldn't delete this term.");
+        return;
+      }
+      if (!confirm(`${e.response.data.detail}
+
+Delete "${t.name}" anyway?`)) return;
+    }
+    deleteTerm.mutate({ id: t.id, confirm: true });
+  };
 
   return (
     <div className="space-y-6">
@@ -74,7 +101,7 @@ export function TermsTab({ canWrite }: { canWrite: boolean }) {
                       </select>
                     ) : <span className="text-sm text-slate-600">{t.active_sub_term_name || "—"}</span>}
                   </td>
-                  <td className="px-4 py-3">{canWrite && <button onClick={() => { if (confirm(`Delete ${t.name}?`)) deleteTerm.mutate(t.id); }} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={15} /></button>}</td>
+                  <td className="px-4 py-3">{canWrite && <button onClick={() => deleteTermWithImpact(t)} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={15} /></button>}</td>
                 </tr>
               ))}
           </tbody>

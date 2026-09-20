@@ -183,7 +183,16 @@ export function useSubTerms() { return useQuery<any[]>({ queryKey: ["academic-su
 export const useBootstrapTerms = m(() => platformApi.terms.bootstrap(), ["academic-terms", "academic-sub-terms"], "Terms seeded.");
 export const useCreateTerm = m((d) => platformApi.terms.create(d), ["academic-terms"], "Term added.");
 export const useUpdateTerm = m((v: { id: string; data: object }) => platformApi.terms.update(v.id, v.data), ["academic-terms"], "Updated.");
-export const useDeleteTerm = m((id: string) => platformApi.terms.remove(id), ["academic-terms"], "Removed.");
+// Two-phase on purpose. The first DELETE carries no confirm, so the API answers
+// 409 with a report of what would be destroyed and what would be left orphaned.
+// The caller shows that, and only then re-sends with confirm. Deleting a term
+// cascades away every assessment and score beneath it, and silently strands
+// five tables that match the term BY NAME - which is how a September 2026
+// Report Setup rebuild wiped the CBT feed with no warning and no audit trail.
+export const useDeleteTerm = m(
+  (v: { id: string; confirm?: boolean }) => platformApi.terms.remove(v.id, v.confirm),
+  ["academic-terms"], "Removed.",
+);
 export const useCreateSubTerm = m((d) => platformApi.subTerms.create(d), ["academic-sub-terms"], "Sub-term added.");
 export const useUpdateSubTerm = m((v: { id: string; data: object }) => platformApi.subTerms.update(v.id, v.data), ["academic-sub-terms"], "Updated.");
 export const useDeleteSubTerm = m((id: string) => platformApi.subTerms.remove(id), ["academic-sub-terms"], "Removed.");

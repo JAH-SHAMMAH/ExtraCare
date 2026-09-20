@@ -1743,7 +1743,11 @@ export const platformApi = {
     list: () => api.get("/platform/academic-terms").then((r) => r.data),
     create: (d: object) => api.post("/platform/academic-terms", d).then((r) => r.data),
     update: (id: string, d: object) => api.patch(`/platform/academic-terms/${id}`, d).then((r) => r.data),
-    remove: (id: string) => api.delete(`/platform/academic-terms/${id}`),
+    // confirm=true is the caller acknowledging the 409 impact report. Never
+    // send it on the first attempt: the whole point is that the counts are
+    // seen before the delete goes through.
+    remove: (id: string, confirm = false) =>
+      api.delete(`/platform/academic-terms/${id}${confirm ? "?confirm=true" : ""}`),
     bootstrap: () => api.post("/platform/academic-terms/bootstrap").then((r) => r.data),
   },
   termPeriods: {

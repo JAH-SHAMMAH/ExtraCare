@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from app.models.audit import AuditAction
+from app.services.audit_service import log_action
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from sqlalchemy import select, func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1457,8 +1459,68 @@ async def _deactivate_other_terms(db: AsyncSession, org_id: str, keep_id: str | 
         AcademicTerm.org_id == org_id, AcademicTerm.id != (keep_id or "")).values(is_active=False))
 
 
+# Deleting a term is the most destructive act in Report Setup, and until this it
+# was the quietest. In September 2026 a term was removed during a Report Setup
+# rebuild and took the CBT assessment and every StudentAssessmentScore row with
+# it, via ON DELETE CASCADE, with nothing shown beforehand and nothing recorded
+# after. Teachers found out when Make Report came up empty.
+#
+# Two DIFFERENT kinds of damage, and the warning has to name both, because only
+# the first is visible in the schema:
+#
+#   HARD  — rows a database CASCADE deletes outright. Assessments hang off
+#           term_id, and scores hang off those. They are gone, not orphaned.
+#   SOFT  — rows that merely stop MATCHING. Term is free text in five other
+#           tables (see docs/future-features.md section 6), compared by value
+#           rather than by key, so nothing is deleted and nothing complains:
+#           the CBT sync stops resolving, the publish freeze stops firing, and
+#           the parent report-card gate starts refusing everyone. That is what
+#           actually caused the September incident, and a schema-level warning
+#           would never have mentioned it.
+async def _term_delete_impact(db: AsyncSession, org_id: str, term_id: str, name: str) -> dict:
+    """What deleting this term destroys (hard) and what it silently strands (soft)."""
+    hard_assessments = (await db.execute(
+        select(func.count(Assessment.id)).where(
+            Assessment.org_id == org_id, Assessment.term_id == term_id)
+    )).scalar() or 0
+    hard_scores = (await db.execute(
+        select(func.count(StudentAssessmentScore.id))
+        .select_from(StudentAssessmentScore)
+        .join(Assessment, Assessment.id == StudentAssessmentScore.assessment_id)
+        .where(Assessment.org_id == org_id, Assessment.term_id == term_id)
+    )).scalar() or 0
+    hard_comments = (await db.execute(
+        select(func.count(StudentReportComment.id)).where(
+            StudentReportComment.org_id == org_id, StudentReportComment.term_id == term_id)
+    )).scalar() or 0
+
+    soft: dict[str, int] = {}
+    if name:
+        from app.models.modules.academics import ReportApproval
+        from app.models.modules.school import CBTExam, Grade, StudentReport
+
+        for label, model in (
+            ("CBT exams", CBTExam), ("gradebook rows", Grade),
+            ("report workflows", ReportApproval), ("student reports", StudentReport),
+            ("academic sessions", AcademicSession),
+        ):
+            n = (await db.execute(
+                select(func.count(model.id)).where(model.org_id == org_id, model.term == name)
+            )).scalar() or 0
+            if n:
+                soft[label] = n
+
+    return {
+        "hard": {"assessments": hard_assessments, "scores": hard_scores,
+                 "report comments": hard_comments},
+        "soft": soft,
+        "hard_total": hard_assessments + hard_scores + hard_comments,
+        "soft_total": sum(soft.values()),
+    }
+
+
 @router.post("/academic-terms", response_model=TermResponse, status_code=201, dependencies=[_write])
-async def create_term(payload: TermCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def create_term(payload: TermCreate, request: Request = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     dupe = (await db.execute(select(AcademicTerm.id).where(
         AcademicTerm.org_id == current_user.org_id, func.lower(AcademicTerm.name) == payload.name.lower()))).scalar_one_or_none()
     if dupe:
@@ -1466,22 +1528,41 @@ async def create_term(payload: TermCreate, db: AsyncSession = Depends(get_db), c
     t = AcademicTerm(org_id=current_user.org_id, **payload.model_dump())
     db.add(t)
     await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
+        resource_type="AcademicTerm", resource_id=t.id,
+        resource_label=f"created academic term '{t.name}'", request=request,
+    )
     subs = {s.id: (s.name, s.position) for s in (await db.execute(
         select(AcademicSubTerm).where(AcademicSubTerm.org_id == current_user.org_id))).scalars().all()}
     return await _term_response(db, current_user.org_id, t, subs)
 
 
 @router.patch("/academic-terms/{term_id}", response_model=TermResponse, dependencies=[_write])
-async def update_term(term_id: str, payload: TermUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def update_term(term_id: str, payload: TermUpdate, request: Request = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     t = (await db.execute(select(AcademicTerm).where(AcademicTerm.id == term_id, AcademicTerm.org_id == current_user.org_id))).scalar_one_or_none()
     if not t:
         raise HTTPException(status_code=404, detail="Term not found.")
     data = payload.model_dump(exclude_unset=True)
     if "active_sub_term_id" in data:
         await _validate_sub_term(db, current_user.org_id, data["active_sub_term_id"])
+    # A RENAME is the same hazard as a delete: five other tables store this term
+    # by NAME, so renaming strands every one of them exactly as deleting would,
+    # with no cascade to make it visible. Recorded for the same reason.
+    was = t.name
+    renamed = "name" in data and data["name"] != was
     for f, v in data.items():
         setattr(t, f, v)
     await db.flush()
+    if renamed:
+        stranded = (await _term_delete_impact(db, current_user.org_id, t.id, was))["soft"]
+        await log_action(
+            db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+            resource_type="AcademicTerm", resource_id=t.id,
+            resource_label=f"renamed academic term '{was}' -> '{t.name}'",
+            old_values={"name": was}, new_values={"name": t.name, "stranded": stranded},
+            severity="warning" if stranded else "info", request=request,
+        )
     # Exactly one active term: if this one just became active, deactivate the rest.
     if data.get("is_active") is True:
         await _deactivate_other_terms(db, current_user.org_id, t.id)
@@ -1491,10 +1572,54 @@ async def update_term(term_id: str, payload: TermUpdate, db: AsyncSession = Depe
 
 
 @router.delete("/academic-terms/{term_id}", status_code=204, dependencies=[_write])
-async def delete_term(term_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def delete_term(term_id: str, confirm: bool = False, request: Request = None,
+                      db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Delete a term. Refuses with a 409 describing the damage unless ?confirm=true.
+
+    Not a dialog for its own sake: the refusal carries the counts, so the person
+    deciding sees what they are about to destroy instead of being asked whether
+    they are sure about something unquantified.
+    """
     t = (await db.execute(select(AcademicTerm).where(AcademicTerm.id == term_id, AcademicTerm.org_id == current_user.org_id))).scalar_one_or_none()
     if not t:
         raise HTTPException(status_code=404, detail="Term not found.")
+
+    impact = await _term_delete_impact(db, current_user.org_id, term_id, t.name)
+    if (impact["hard_total"] or impact["soft_total"]) and not confirm:
+        lines = []
+        hard = {k: v for k, v in impact["hard"].items() if v}
+        if hard:
+            lines.append("PERMANENTLY DELETED: "
+                         + ", ".join(f"{v} {k}" for k, v in hard.items()))
+        if impact["soft"]:
+            lines.append("LEFT ORPHANED (kept, but will silently stop matching this "
+                         "term by name): "
+                         + ", ".join(f"{v} {k}" for k, v in impact["soft"].items()))
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Deleting '{t.name}' would affect existing records. "
+                + " ".join(lines)
+                + " Orphaned rows are the dangerous half: nothing is removed, so "
+                  "there is no error, but the CBT score sync, the publish freeze and "
+                  "the parent report-card gate all match a term BY NAME and would "
+                  "stop finding it. Rename the term instead if you are changing what "
+                  "it is called, or re-tag those records first. "
+                  "Re-send with ?confirm=true to delete anyway."
+            ),
+        )
+
+    await log_action(
+        db, AuditAction.RECORD_DELETED, current_user.org_id, actor=current_user,
+        resource_type="AcademicTerm", resource_id=t.id,
+        resource_label=f"deleted academic term '{t.name}'",
+        old_values={"name": t.name},
+        new_values={"cascaded": impact["hard"], "orphaned": impact["soft"]},
+        # A term delete can take a whole term's marks with it. That belongs above
+        # routine-edit noise in the audit log.
+        severity="warning" if (impact["hard_total"] or impact["soft_total"]) else "info",
+        request=request,
+    )
     await db.delete(t)
 
 
