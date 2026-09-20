@@ -1041,12 +1041,24 @@ async def submit_grades(
 ):
     created = []
     for g in grades:
+        _score = g.get("score")
+        _max = g.get("max_score", 100)
         grade = Grade(
             student_id=g["student_id"],
             subject_id=g["subject_id"],
-            score=g.get("score"),
-            max_score=g.get("max_score", 100),
+            score=_score,
+            max_score=_max,
             term=g.get("term"),
+            # Every OTHER path that writes a Grade stamps the letter - the CBT
+            # gradebook feed and the exam-results path both do. This one never
+            # did, so a mark entered by hand reached the report card with a blank
+            # Grade column while a CBT-fed mark beside it showed one. Derived
+            # from the same helper, so all three agree by construction rather
+            # than by three copies of the thresholds.
+            # _grade_letter is the module-level alias for
+            # app.services.grading.grade_letter (imported further down, but
+            # bound before any request runs).
+            grade_letter=_grade_letter(_score, _max),
             remarks=g.get("remarks"),
             graded_by=current_user.id,
             org_id=current_user.org_id,

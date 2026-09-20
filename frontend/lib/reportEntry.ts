@@ -102,3 +102,23 @@ export function defaultSubTermId(subTerms: NamedRow[] | undefined | null): strin
   });
   return (full ?? rows[0])?.id ?? "";
 }
+
+/**
+ * A mark as it should appear on a document a parent reads.
+ *
+ * Scores are stored as raw floats. A CBT percentage is a division, so it
+ * arrives as 62.70341089190804, and rendering it unformatted put exactly that
+ * on the parent report card. Two decimals is what the rest of the report
+ * pipeline already rounds to, and trailing zeros are dropped so a clean mark
+ * reads "70" rather than "70.00".
+ *
+ * Returns the em-dash the tables already use for a missing mark, so callers do
+ * not each invent their own placeholder.
+ */
+export function formatMark(score: number | string | null | undefined): string {
+  if (score === null || score === undefined || score === "") return "—";
+  const n = typeof score === "number" ? score : Number(score);
+  if (!Number.isFinite(n)) return "—";
+  // parseFloat on the fixed string drops trailing zeros: 62.70 -> 62.7, 70.00 -> 70.
+  return String(parseFloat(n.toFixed(2)));
+}

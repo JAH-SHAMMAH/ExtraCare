@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMyContexts, type ParentChild } from "@/hooks/useMyContexts";
 import { useReportCard } from "@/hooks/useSchool";
 import { getInitials } from "@/lib/utils";
+import { formatMark } from "@/lib/reportEntry";
 import { GraduationCap, Loader2, ArrowLeft, FileText, ShieldCheck } from "lucide-react";
 import { TERMS, DEFAULT_TERM } from "@/lib/terms";
 
@@ -93,7 +94,7 @@ export default function ParentReportCardPage() {
                       {grades.map((g, i) => (
                         <tr key={i}>
                           <td className="py-2.5 text-sm font-medium text-slate-800">{g.subject_name || "—"}</td>
-                          <td className="py-2.5 text-sm text-slate-600 tabular-nums">{g.score ?? "—"}{g.max_score ? ` / ${g.max_score}` : ""}</td>
+                          <td className="py-2.5 text-sm text-slate-600 tabular-nums">{formatMark(g.score)}{g.max_score ? ` / ${formatMark(g.max_score)}` : ""}</td>
                           <td className="py-2.5 text-sm font-bold text-slate-700">{g.grade_letter || "—"}</td>
                         </tr>
                       ))}
