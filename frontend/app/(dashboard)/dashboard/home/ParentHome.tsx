@@ -106,8 +106,14 @@ function ChildCard({ child }: { child: ParentChild }) {
             {child.class_name ?? "No class"} · {child.student_id}
           </p>
         </div>
+        {/* "Primary GUARDIAN", not the school phase. is_primary is a column on
+            ParentGuardian — it says this viewer is the child's main contact, the
+            one who gets report-card emails by default. Abbreviated to "Primary"
+            it sat right after "JSS1 A · FSN-0031" and read as a phase label, so a
+            parent reported their Secondary child being shown as Primary. The
+            my-children page has always spelled it out; this now matches. */}
         {child.is_primary && (
-          <span className="badge bg-brand-50 text-brand-700 border-brand-200 text-[10px]">Primary</span>
+          <span className="badge bg-brand-50 text-brand-700 border-brand-200 text-[10px]">Primary guardian</span>
         )}
       </div>
 
