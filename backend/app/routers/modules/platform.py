@@ -298,11 +298,28 @@ def _band_response(b: GradingBand) -> BandResponse:
 
 @router.get("/grading-bands", response_model=list[BandResponse], dependencies=[_read])
 async def list_bands(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    # Legacy flat listing (scale-less bands). Scale-scoped bands come back with the scale.
-    rows = (await db.execute(
-        select(GradingBand).where(GradingBand.org_id == current_user.org_id, GradingBand.scale_id.is_(None))
-        .order_by(GradingBand.min_score.desc())
-    )).scalars().all()
+    """The org's numeric grade bands.
+
+    Was a flat listing of scale-LESS bands only (`scale_id IS NULL`), from
+    before bands belonged to a GradingScale. Once a school configures a scale in
+    Report Setup, every band it owns has a scale_id, so this returned an empty
+    list to a school that plainly had bands - Fairview has nine and saw none.
+
+    Falls back to the legacy scale-less rows when no scale exists, so an org
+    that never migrated still sees what it always did.
+    """
+    org = current_user.org_id
+    scale = (await db.execute(
+        select(GradingScale)
+        .where(GradingScale.org_id == org, GradingScale.scale_type == "numeric",
+               GradingScale.purpose == "grade")
+        .order_by(GradingScale.show_in_table.desc())
+    )).scalars().first()
+
+    q = select(GradingBand).where(GradingBand.org_id == org)
+    # Same scale the report card and the letter resolver pick, so all three agree.
+    q = q.where(GradingBand.scale_id == scale.id) if scale else q.where(GradingBand.scale_id.is_(None))
+    rows = (await db.execute(q.order_by(GradingBand.min_score.desc()))).scalars().all()
     return [_band_response(b) for b in rows]
 
 
