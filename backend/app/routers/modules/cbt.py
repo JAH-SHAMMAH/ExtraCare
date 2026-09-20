@@ -53,7 +53,6 @@ from app.models.modules.school import (
     Grade,
     GradeStatus,
 )
-from app.services.grading import grade_letter
 from app.services.import_files import rows_from_upload
 from app.schemas.question_bank import BankItemCreate, BankItemUpdate, ComposeFromBank
 from app.schemas.cbt_ops import InterventionCreate, InterventionUpdate, CBTSettingsUpdate
@@ -79,6 +78,7 @@ from app.core.school_identity import (
     resolve_taught_class_ids,
     resolve_taught_subject_ids,
 )
+from app.services.grading import letter_for, load_grade_bands
 from app.services.cbt_assessment_sync import (
     assessment_block_reason,
     sync_cbt_to_assessment_score,
@@ -1221,10 +1221,14 @@ async def _feed_gradebook(db: AsyncSession, exam: CBTExam, org_id: str, actor: U
     existing = {g.student_id: g for g in (await db.execute(
         select(Grade).where(Grade.cbt_exam_id == exam.id, Grade.org_id == org_id)
     )).scalars().all()}
+    # Once, not per pupil: this loops over a whole class, and a query inside it
+    # would be an N+1. Bands are the school's configured scale; the hardcoded
+    # fallback applies only when they have none.
+    bands = await load_grade_bands(db, org_id)
     written = 0
     for student_id, (_attempt, raw_pct) in best.items():
         pct = round(raw_pct, 2)
-        letter = grade_letter(pct, 100)
+        letter = letter_for(pct, 100, bands)
         g = existing.get(student_id)
         if g:
             # Update the mark in place; leave status untouched so a re-sync of an

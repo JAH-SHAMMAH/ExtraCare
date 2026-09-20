@@ -42,61 +42,22 @@ FAIRVIEW_ORG_ORG_ID = "0a6ee83d-7e2a-4089-914c-7c0ecafd4027"
 async def _feed_gradebook_for_exam(
     db: AsyncSession, exam: CBTExam, org_id: str, actor: User
 ) -> int:
-    """Feed grades from exam attempts to gradebook (same logic as publish_exam_results backend)."""
-    # Get all graded attempts for this exam (excluding superseded)
-    attempts = (await db.execute(
-        select(CBTAttempt).where(
-            CBTAttempt.exam_id == exam.id,
-            CBTAttempt.status == "graded",
-            CBTAttempt.superseded_at == None,
-        )
-    )).scalars().all()
+    """Feed one exam's results to the gradebook, via the REAL publish path.
 
-    # Group by student (pick best score if multiple)
-    student_attempts = {}
-    for attempt in attempts:
-        if attempt.student_id not in student_attempts:
-            student_attempts[attempt.student_id] = attempt
-        else:
-            # Pick higher score
-            if attempt.score > student_attempts[attempt.student_id].score:
-                student_attempts[attempt.student_id] = attempt
+    This used to be a hand-written copy of `_feed_gradebook`, with a docstring
+    claiming it was the same logic. It was not, and the drift reached
+    production: it wrote 1800 Grade rows with raw unrounded floats and no
+    `grade_letter` at all, so parents saw "62.70341089190804" and a blank Grade
+    column. It also checked `Grade.exam_id` while writing `cbt_exam_id`, so its
+    own de-duplication never matched.
 
-    # Create/update Grade records (one per student per exam)
-    fed_count = 0
-    for student_id, attempt in student_attempts.items():
-        # Normalize score to percentage (assuming attempt.max_score is 100)
-        percentage = (attempt.score / attempt.max_score) * 100.0 if attempt.max_score > 0 else 0.0
+    Delegating means a copy cannot drift again: whatever publishing does, this
+    does. Do not reintroduce a local implementation here - if the feed needs to
+    change, change `_feed_gradebook` and both callers get it.
+    """
+    from app.routers.modules.cbt import _feed_gradebook
 
-        # Check if Grade already exists
-        existing_grade = (await db.execute(
-            select(Grade).where(
-                Grade.exam_id == exam.id,
-                Grade.student_id == student_id,
-            )
-        )).scalar_one_or_none()
-
-        if existing_grade:
-            # Update existing
-            existing_grade.score = percentage
-            existing_grade.status = GradeStatus.DRAFT
-        else:
-            # Create new
-            grade = Grade(
-                org_id=org_id,
-                cbt_exam_id=exam.id,
-                student_id=student_id,
-                subject_id=exam.subject_id,
-                term=exam.term,
-                score=percentage,
-                max_score=100.0,
-                status=GradeStatus.DRAFT,
-            )
-            db.add(grade)
-
-        fed_count += 1
-
-    return fed_count
+    return await _feed_gradebook(db, exam, org_id, actor)
 
 
 async def main() -> int:

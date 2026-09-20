@@ -1039,6 +1039,8 @@ async def submit_grades(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    # Once, before the loop: a submission can carry a whole class.
+    bands = await load_grade_bands(db, current_user.org_id)
     created = []
     for g in grades:
         _score = g.get("score")
@@ -1055,10 +1057,9 @@ async def submit_grades(
             # Grade column while a CBT-fed mark beside it showed one. Derived
             # from the same helper, so all three agree by construction rather
             # than by three copies of the thresholds.
-            # _grade_letter is the module-level alias for
-            # app.services.grading.grade_letter (imported further down, but
-            # bound before any request runs).
-            grade_letter=_grade_letter(_score, _max),
+            # From the school's configured bands, so a mark typed by hand and a
+            # CBT-fed mark beside it letter identically.
+            grade_letter=letter_for(_score, _max, bands),
             remarks=g.get("remarks"),
             graded_by=current_user.id,
             org_id=current_user.org_id,
@@ -1120,14 +1121,15 @@ async def _report_context(db, org_id, cls):
 
 
 def _letter(pct, bands):
-    """Grade letter for a percentage — from the level's configured numeric bands
-    when present, else the hardcoded fallback scale (R1)."""
-    if bands:
-        for b in bands:
-            if b.min_score is not None and b.max_score is not None and float(b.min_score) <= pct <= float(b.max_score):
-                return b.grade
-        return None
-    return _grade_letter(pct, 100)
+    """Grade letter for a percentage, from the level's bands when present.
+
+    Delegates to `letter_for` rather than keeping its own copy of the rule. The
+    behaviour change is deliberate: this matched a RANGE (min <= pct <= max),
+    which resolves nothing for a fractional mark when bands are integer-bounded
+    with holes between them - 189 of 1800 live rows sat in gaps like (39, 40).
+    `letter_for` matches on the lower bound instead, which is gap-free.
+    """
+    return letter_for(pct, 100, bands)
 
 
 async def _exam_type_map(db, org_id, exam_ids):
@@ -1730,7 +1732,9 @@ async def publish_grades(
 # app.services.grading so the CBT feed derives letters from the same scheme —
 # re-exported here as _grade_letter for existing callers/tests.
 
-from app.services.grading import GRADING_SCALE, grade_letter as _grade_letter
+from app.services.grading import (
+    GRADING_SCALE, grade_letter as _grade_letter, letter_for, load_grade_bands,
+)
 
 
 async def _load_exam(db: AsyncSession, exam_id: str, org_id: str) -> Exam:
@@ -1988,11 +1992,12 @@ async def submit_exam_results(
     existing = {g.student_id: g for g in (await db.execute(
         select(Grade).where(Grade.exam_id == e.id, Grade.org_id == org_id)
     )).scalars().all()}
+    bands = await load_grade_bands(db, org_id)
     submitted = 0
     for row in results:
         if row.score is None or (roster_ids and row.student_id not in roster_ids):
             continue
-        letter = _grade_letter(row.score, e.total_marks)
+        letter = letter_for(row.score, e.total_marks, bands)
         g = existing.get(row.student_id)
         if g:
             g.score = row.score
