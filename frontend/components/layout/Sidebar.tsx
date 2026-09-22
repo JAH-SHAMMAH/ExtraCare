@@ -249,7 +249,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
   // Report). Our report engine is unified (the card adapts to the student's section
   // template), so these are level-organised entry points into the shared report
   // tools. Every child links to a REAL page. Educare children we don't have as pages
-  // yet (Reports Insight, Reports Upload, Result Analysis, Communication Book) are
+  // yet (Reports Insight, Result Analysis, Communication Book) are
   // deliberately omitted rather than shipped as dead links.
   {
     key: "nursery-report",
@@ -263,6 +263,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
+      { href: "/dashboard/modules/school/grade-analysis", label: "Grade Analysis", icon: BarChart3 },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
       { href: "/dashboard/modules/school/promotion", label: "Promotion Manager", icon: BarChart3 },
       { href: "/dashboard/modules/school/transfer", label: "Transfer Manager", icon: UserCog },
@@ -280,6 +281,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
+      { href: "/dashboard/modules/school/grade-analysis", label: "Grade Analysis", icon: BarChart3 },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
       { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: BookOpen },
     ],
@@ -297,6 +299,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
+      { href: "/dashboard/modules/school/grade-analysis", label: "Grade Analysis", icon: BarChart3 },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
       { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: BookOpen },
     ],

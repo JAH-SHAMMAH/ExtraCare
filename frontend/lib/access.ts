@@ -258,6 +258,13 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // is blocked for that class). Students see their own report via /report-cards instead.
   { prefix: "/dashboard/modules/school/reports-view", permission: "school:reports:write" },
   // Reports Upload = ADMIN bulk import — school_admin only.
+  // Grade Analysis — a teacher's own marks, scoped by the API to their Timetable
+  // pairs. Gated on reports:WRITE, matching Reports View, even though the page
+  // only reads: school:reports:read is held by parents and students too (they
+  // read their own report), so a read gate would put a staff page in their
+  // sidebar. The API returns them nothing regardless — no Timetable rows — but a
+  // link that leads somewhere empty is still a link that should not be there.
+  { prefix: "/dashboard/modules/school/grade-analysis", permission: "school:reports:write" },
   { prefix: "/dashboard/modules/school/reports-upload", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/merits", permission: "school:behaviour:read" },
 

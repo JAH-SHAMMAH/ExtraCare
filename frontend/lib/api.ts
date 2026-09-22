@@ -1033,6 +1033,12 @@ export const academicsApi = {
     addEntry: (id: string, data: object) => api.post(`/academics/transcripts/${id}/entries`, data).then((r) => r.data),
     removeEntry: (id: string, entryId: string) => api.delete(`/academics/transcripts/${id}/entries/${entryId}`).then((r) => r.data),
   },
+  reportAnalysis: {
+    // Teacher-scoped by the API: it derives the visible (class, subject) pairs
+    // from the caller's Timetable, so this needs no scoping of its own.
+    grades: (p?: { class_id?: string; subject_id?: string; term_id?: string; page?: number; page_size?: number }) =>
+      api.get("/academics/report-analysis/grades", { params: p }).then((r) => r.data),
+  },
   reportWorkflow: {
     list: (p?: { stage?: string; page?: number; page_size?: number }) =>
       api.get("/academics/report-workflow", { params: p }).then((r) => r.data),

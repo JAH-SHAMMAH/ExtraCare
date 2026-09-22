@@ -115,6 +115,13 @@ export function useCreateReportWorkflow() {
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to create workflow."),
   });
 }
+export function useGradeAnalysis(p: { class_id?: string; subject_id?: string; term_id?: string; page?: number; page_size?: number }) {
+  return useQuery({
+    queryKey: ["grade-analysis", p],
+    queryFn: () => academicsApi.reportAnalysis.grades(p),
+  });
+}
+
 export function useSubmitClassReport() {
   const qc = useQueryClient();
   return useMutation({
