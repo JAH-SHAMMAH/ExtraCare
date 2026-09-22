@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useClasses, useCreateClass, useUpdateClass, useDeleteClass, useYearGroups, useTeachers } from "@/hooks/useSchool";
 import { cn } from "@/lib/utils";
-import { Search, Plus, School, MoreVertical, Edit2, Trash2, X, Loader2, Users2 } from "lucide-react";
+import { Search, Plus, School, MoreVertical, Edit2, Trash2, X, Loader2, Users2, AlertTriangle } from "lucide-react";
 import type { SchoolClass } from "@/types";
 
 export default function ClassesPage() {
@@ -123,7 +123,21 @@ export default function ClassesPage() {
               {c.grade_level && <p className="text-xs text-slate-500 mt-0.5">Grade: {c.grade_level}{c.section ? ` - ${c.section}` : ""}</p>}
               <div className="flex items-center gap-4 mt-3 text-xs text-slate-500">
                 <span className="flex items-center gap-1"><Users2 size={12} /> {c.student_count}/{c.capacity}</span>
-                {c.class_teacher_name && <span>Teacher: {c.class_teacher_name}</span>}
+                {/* An unassigned class used to render NOTHING here, so the gap was
+                    invisible until someone hit it: the class teacher is the only
+                    person who can open the class in Reports View or submit its
+                    report for approval, and without one only an administrator
+                    can do either. Shown, not hidden. */}
+                {c.class_teacher_name ? (
+                  <span>Teacher: {c.class_teacher_name}</span>
+                ) : (
+                  <span
+                    className="inline-flex items-center gap-1 font-semibold text-amber-700"
+                    title="Only this class's teacher can open it in Reports View or submit its report. Assign one by editing this class."
+                  >
+                    <AlertTriangle size={12} /> No class teacher
+                  </span>
+                )}
               </div>
               <div className="mt-3 w-full bg-slate-100 rounded-full h-1.5">
                 <div className={cn("h-full rounded-full", c.student_count >= c.capacity ? "bg-red-500" : c.student_count >= c.capacity * 0.8 ? "bg-orange-500" : "bg-brand-600")} style={{ width: `${Math.min((c.student_count / c.capacity) * 100, 100)}%` }} />
