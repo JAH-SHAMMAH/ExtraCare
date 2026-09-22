@@ -7,7 +7,7 @@ import { useHasPermission } from "@/components/guards/PermissionGate";
 import { BulkPrintTab, CommentGridTab } from "@/components/reports/ReportCardPrint";
 import { ReportInsightTab } from "@/components/reports/ReportInsightTab";
 import { cn } from "@/lib/utils";
-import { Loader2, LayoutGrid, BarChart3, RefreshCw, Download } from "lucide-react";
+import { Loader2, LayoutGrid, BarChart3, RefreshCw, Download, ShieldAlert } from "lucide-react";
 
 type Tab = "broadsheet" | "bulk" | "head" | "pc" | "insight";
 // adminOnly tabs (School Head Comment, Result Insight) are hidden from teachers,
@@ -74,7 +74,22 @@ function Broadsheet() {
   // Applied selection — the grid only refetches when "Process Result" is pressed,
   // matching the reference. Changing a dropdown alone does not fire a request.
   const [applied, setApplied] = useState({ class_id: "", term_id: "", sub_term_id: "" });
-  const { data: bs, isLoading } = useBroadsheet(applied);
+  const { data: bs, isLoading, isError, error } = useBroadsheet(applied);
+
+  // Reports View is class-teacher-only, enforced by the API:
+  // report_broadsheet refuses a teacher who is not SchoolClass.teacher_id for the
+  // class. The route itself is gated on school:reports:write, which EVERY teacher
+  // holds, so a subject teacher can open this page and only finds out on load.
+  //
+  // That refusal used to land in the `!bs` branch below and render "No results -
+  // enter marks under Report Entry first", which is worse than silence: it sends
+  // someone to go and enter marks when the truth is the class is not theirs.
+  // The API already returns a clear sentence; this shows it.
+  const status = (error as any)?.response?.status;
+  const denied = isError && (status === 403 || status === 404);
+  const deniedMessage =
+    (error as any)?.response?.data?.detail ||
+    "You do not have access to this class's results.";
 
   // Year Group filters the class list: YearGroup.name and SchoolClass.level hold
   // the same strings (the model's Grade-Level picklist feeds level as free text),
@@ -146,6 +161,23 @@ function Broadsheet() {
         <div className="bg-white rounded-xl border border-dashed border-slate-200 py-16 text-center text-slate-400"><LayoutGrid size={30} className="mx-auto mb-3 opacity-40" /><p className="text-sm">Choose a session, term, sub-term and class, then press Process Result.</p></div>
       ) : isLoading ? (
         <div className="py-16 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
+      ) : denied ? (
+        <div className="bg-white rounded-xl border border-amber-200 py-14 px-6 text-center">
+          <ShieldAlert size={30} className="mx-auto mb-3 text-amber-500" />
+          <p className="text-sm font-bold text-slate-800 mb-1">You don&apos;t have access to this class</p>
+          <p className="text-sm text-amber-800 max-w-md mx-auto leading-relaxed">{deniedMessage}</p>
+          <p className="text-xs text-slate-500 mt-3 max-w-md mx-auto leading-relaxed">
+            Reports View shows a whole class&rsquo;s results, so it&rsquo;s limited to that
+            class&rsquo;s teacher. Marks you enter for your own subjects are unaffected &mdash;
+            enter them under <span className="font-semibold">Make Report</span>.
+          </p>
+        </div>
+      ) : isError ? (
+        /* A real failure, not a refusal. Saying "no results" here would blame the
+           data for what is actually a broken request. */
+        <p className="text-sm text-slate-500 py-14 text-center bg-white rounded-xl border border-slate-200">
+          Couldn&apos;t load this class&rsquo;s results. Try again, or press Process Result.
+        </p>
       ) : !bs || rows.length === 0 ? (
         <p className="text-sm text-slate-400 py-14 text-center bg-white rounded-xl border border-slate-200">No results — enter marks under Report Entry first.</p>
       ) : (
