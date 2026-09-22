@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useClasses, useCreateClass, useUpdateClass, useDeleteClass, useYearGroups } from "@/hooks/useSchool";
+import { useClasses, useCreateClass, useUpdateClass, useDeleteClass, useYearGroups, useTeachers } from "@/hooks/useSchool";
 import { cn } from "@/lib/utils";
 import { Search, Plus, School, MoreVertical, Edit2, Trash2, X, Loader2, Users2 } from "lucide-react";
 import type { SchoolClass } from "@/types";
@@ -17,18 +17,31 @@ export default function ClassesPage() {
   const updateClass = useUpdateClass();
   const deleteClass = useDeleteClass();
 
-  const [form, setForm] = useState({ name: "", grade_level: "", section: "", capacity: "30", academic_year: new Date().getFullYear().toString() });
+  // Who may be picked as class teacher. The list returns Users (its `id` IS the
+  // user id), which is what SchoolClass.teacher_id references.
+  const { data: teacherData } = useTeachers({ page_size: 200 });
+  const teachers: any[] = teacherData?.items ?? (Array.isArray(teacherData) ? teacherData : []);
 
-  const resetForm = () => { setForm({ name: "", grade_level: "", section: "", capacity: "30", academic_year: new Date().getFullYear().toString() }); setEditingClass(null); setShowForm(false); };
+  const BLANK = { name: "", grade_level: "", section: "", capacity: "30", class_teacher_id: "", academic_year: new Date().getFullYear().toString() };
+  const [form, setForm] = useState(BLANK);
+
+  const resetForm = () => { setForm(BLANK); setEditingClass(null); setShowForm(false); };
 
   const handleSubmit = () => {
-    const payload = { ...form, capacity: parseInt(form.capacity) || 30 };
+    const payload = {
+      ...form,
+      capacity: parseInt(form.capacity) || 30,
+      // null, not "": the API clears the assignment on a null, and teacher_id is
+      // a foreign key, so an empty string would be a FK violation rather than an
+      // unassign.
+      class_teacher_id: form.class_teacher_id || null,
+    };
     if (editingClass) updateClass.mutate({ id: editingClass.id, data: payload }, { onSuccess: resetForm });
     else createClass.mutate(payload, { onSuccess: resetForm });
   };
 
   const handleEdit = (c: SchoolClass) => {
-    setForm({ name: c.name, grade_level: c.grade_level || "", section: c.section || "", capacity: String(c.capacity), academic_year: c.academic_year });
+    setForm({ name: c.name, grade_level: c.grade_level || "", section: c.section || "", capacity: String(c.capacity), class_teacher_id: c.class_teacher_id || "", academic_year: c.academic_year });
     setEditingClass(c); setShowForm(true); setMenuOpen(null);
   };
 
@@ -56,6 +69,18 @@ export default function ClassesPage() {
             <div><label className="label">Grade Level</label><input list="class-year-groups" value={form.grade_level} onChange={(e) => setForm({ ...form, grade_level: e.target.value })} placeholder="e.g. Year 7" className="input" /><YearGroupOptions /></div>
             <div><label className="label">Section</label><input value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })} placeholder="e.g. A" className="input" /></div>
             <div><label className="label">Capacity</label><input type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} className="input" /></div>
+            <div><label className="label">Class Teacher</label>
+              {/* The class teacher is load-bearing, not decorative: they are the
+                  only person who can open this class in Reports View or submit
+                  its report for approval. Leaving it unset means nobody but an
+                  administrator can do either. */}
+              <select value={form.class_teacher_id} onChange={(e) => setForm({ ...form, class_teacher_id: e.target.value })} className="input">
+                <option value="">— None —</option>
+                {teachers.map((t) => (
+                  <option key={t.id} value={t.id}>{[t.first_name, t.last_name].filter(Boolean).join(" ") || t.email}</option>
+                ))}
+              </select>
+            </div>
             <div><label className="label">Academic Year</label><input value={form.academic_year} onChange={(e) => setForm({ ...form, academic_year: e.target.value })} className="input" /></div>
           </div>
           <div className="flex justify-end gap-3 mt-4">

@@ -596,6 +596,10 @@ async def update_class(
     c = await _load_class(db, class_id, org_id)
     updates = data.model_dump(exclude_unset=True)
     if "class_teacher_id" in updates:
+        # "" clears the assignment, as section_id already does. Without this the
+        # empty string reaches teacher_id, which is a FK to users.id, and an
+        # unassign becomes a foreign-key violation rather than a clear.
+        updates["class_teacher_id"] = updates["class_teacher_id"] or None
         await _validate_teacher(db, org_id, updates["class_teacher_id"])
     if "section_id" in updates:
         sid = updates["section_id"] or None   # "" clears the assignment
