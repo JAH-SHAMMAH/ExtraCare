@@ -264,6 +264,12 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
       { href: "/dashboard/modules/school/make-report", label: "Make Report", icon: NotebookPen },
+      // Teacher Reports and Teacher Comments are phase-agnostic: the first shows
+      // the teacher's OWN submissions whatever the class, the second gates per
+      // class rather than per phase. Secondary had them; the other two levels
+      // teach real pupils and needed them too.
+      { href: "/dashboard/modules/school/teacher-reports", label: "Teacher Reports", icon: ClipboardList },
+      { href: "/dashboard/modules/school/teacher-comments", label: "Teacher Comments", icon: MessageSquareText },
       { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
@@ -282,6 +288,12 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
       { href: "/dashboard/modules/school/make-report", label: "Make Report", icon: NotebookPen },
+      // Teacher Reports and Teacher Comments are phase-agnostic: the first shows
+      // the teacher's OWN submissions whatever the class, the second gates per
+      // class rather than per phase. Secondary had them; the other two levels
+      // teach real pupils and needed them too.
+      { href: "/dashboard/modules/school/teacher-reports", label: "Teacher Reports", icon: ClipboardList },
+      { href: "/dashboard/modules/school/teacher-comments", label: "Teacher Comments", icon: MessageSquareText },
       { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
