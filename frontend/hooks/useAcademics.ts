@@ -115,6 +115,14 @@ export function useCreateReportWorkflow() {
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to create workflow."),
   });
 }
+export function useClassList(p: { class_id: string; subject_id: string }) {
+  return useQuery({
+    queryKey: ["class-list", p],
+    queryFn: () => academicsApi.classList.get(p),
+    enabled: !!p.class_id && !!p.subject_id,
+  });
+}
+
 export function useGradeAnalysis(p: { class_id?: string; subject_id?: string; term_id?: string; page?: number; page_size?: number }) {
   return useQuery({
     queryKey: ["grade-analysis", p],

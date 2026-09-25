@@ -466,6 +466,87 @@ async def list_my_report_workflow(
     )
 
 
+@router.get("/class-list", dependencies=[Depends(PermissionChecker("school:students:read"))])
+async def class_list(
+    class_id: str,
+    subject_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """The pupils a teacher teaches for one (class, subject) pair.
+
+    Scoped SERVER-SIDE to the caller's Timetable pairs, exactly as Make Report and
+    Grade Analysis are. `GET /school/students?class_id=` would have served the same
+    rows — teachers legitimately hold school:students:read — but it is org-wide, so
+    building on it would have made this page's scope weaker than the two it sits
+    beside. A teacher asking for a class they do not teach is refused here.
+
+    Admins bypass the pair check: they hold school_admin and are not on anyone's
+    timetable, so requiring a pair would make this empty for them (the same shape
+    as Grade Analysis, which returns nothing to an account with no Timetable rows).
+
+    Read-only. Educare's version of this page also tracks which pupils are
+    assigned to WHICH teacher within a class+subject — teaching sets — with
+    "assigned to this teacher" / "assigned elsewhere" counts. Nothing here models
+    that: Timetable is class-level (no student_id) and Subject.teacher_id is one
+    teacher org-wide. Those counts are deliberately absent rather than faked.
+    """
+    org_id = current_user.org_id
+
+    cls = (await db.execute(
+        select(SchoolClass).where(SchoolClass.id == class_id, SchoolClass.org_id == org_id)
+    )).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found.")
+    subject = (await db.execute(
+        select(Subject).where(Subject.id == subject_id, Subject.org_id == org_id)
+    )).scalar_one_or_none()
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found.")
+
+    if not current_user.has_permission("school_admin:read"):
+        taught = {
+            (t.class_id, t.subject_id)
+            for t in (await db.execute(
+                select(Timetable).where(
+                    Timetable.teacher_id == current_user.id,
+                    Timetable.org_id == org_id,
+                )
+            )).scalars().all()
+        }
+        if (class_id, subject_id) not in taught:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not teach this subject in this class.",
+            )
+
+    students = (await db.execute(
+        select(Student).where(
+            Student.org_id == org_id,
+            Student.class_id == class_id,
+            Student.is_deleted == False,  # noqa: E712
+        ).order_by(Student.first_name, Student.last_name)
+    )).scalars().all()
+
+    return {
+        "class_id": cls.id,
+        "class_name": cls.name,
+        "subject_id": subject.id,
+        "subject_name": subject.name,
+        "students": [
+            {
+                "id": s.id,
+                "student_id": s.student_id,
+                "name": f"{s.first_name} {s.last_name}".strip(),
+                "gender": s.gender,
+                "photo_url": s.photo_url,
+            }
+            for s in students
+        ],
+        "total": len(students),
+    }
+
+
 @router.get("/report-analysis/grades", dependencies=[Depends(PermissionChecker("school:reports:read"))])
 async def list_grade_analysis(
     class_id: str | None = Query(default=None),

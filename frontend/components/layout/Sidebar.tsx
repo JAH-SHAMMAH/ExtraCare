@@ -117,6 +117,10 @@ const MODULE_SECTIONS: ModuleSection[] = [
     icon: GraduationCap,
     items: [
       { href: "/dashboard/modules/school/subjects", label: "Subjects", icon: BookMarked },
+      // Class List: the roster for a (class, subject) the teacher teaches. Sits
+      // with the other subject tools rather than in a section of its own -
+      // Educare groups these under "Subjects", we group them under Academics.
+      { href: "/dashboard/modules/school/class-list", label: "Class List", icon: Users2 },
       { href: "/dashboard/modules/school/exams", label: "Exams & Results", icon: Award },
       { href: "/dashboard/modules/school/grades", label: "Gradebook", icon: BookOpen },
       { href: "/dashboard/modules/school/report-cards", label: "Report Cards", icon: FileText },

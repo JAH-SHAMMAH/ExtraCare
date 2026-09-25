@@ -1033,6 +1033,12 @@ export const academicsApi = {
     addEntry: (id: string, data: object) => api.post(`/academics/transcripts/${id}/entries`, data).then((r) => r.data),
     removeEntry: (id: string, entryId: string) => api.delete(`/academics/transcripts/${id}/entries/${entryId}`).then((r) => r.data),
   },
+  classList: {
+    // Scoped server-side to the caller's Timetable pairs, so this needs no
+    // scoping of its own — asking for a class you don't teach is a 403.
+    get: (p: { class_id: string; subject_id: string }) =>
+      api.get("/academics/class-list", { params: p }).then((r) => r.data),
+  },
   reportAnalysis: {
     // Teacher-scoped by the API: it derives the visible (class, subject) pairs
     // from the caller's Timetable, so this needs no scoping of its own.
