@@ -1077,6 +1077,20 @@ class CardSubjectRow(BaseModel):
     grade: Optional[str] = None
     remark: Optional[str] = None
     subject_arm_average: Optional[Decimal] = None
+    # This subject's mean percentage across the session's terms. None where the
+    # subject has marks in no term but the one being viewed — there is nothing
+    # to average, and repeating the term's own figure would dress a single term
+    # up as a session.
+    sessional: Optional[Decimal] = None
+
+
+class SessionalTerm(BaseModel):
+    """One term's contribution to the Sessional Score, named so a card can show
+    what the figure is actually built from. `average` is None for a term with no
+    marks, which is what keeps "based on 1 of 3 terms" honest."""
+    term_id: str
+    term_name: Optional[str] = None
+    average: Optional[Decimal] = None
 
 
 class ReportCardResponse(BaseModel):
@@ -1100,6 +1114,14 @@ class ReportCardResponse(BaseModel):
     # Mean of every classmate's percentage average — the reference card's
     # "Total Class Average" box, shown beside the pupil's own average.
     class_average: Optional[Decimal] = None
+    # Sessional Score: the unweighted mean of the session's per-term averages.
+    # Computed at read time from the same cumulatives the card already uses —
+    # nothing is stored, so it cannot drift from the marks behind it.
+    sessional_score: Optional[Decimal] = None
+    sessional_terms: list[SessionalTerm] = Field(default_factory=list)
+    # How many of `sessional_terms` actually carried marks. A card should say so
+    # rather than presenting a one-term mean as a full session's score.
+    sessional_terms_counted: int = 0
     # attendance (from the existing StudentReport, if authored)
     attendance_present: Optional[int] = None
     attendance_total: Optional[int] = None

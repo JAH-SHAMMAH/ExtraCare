@@ -59,6 +59,28 @@ def evaluate_cumulative(cid, cumulatives, components, assessments, scores, _stac
     return total_val, total_max      # score (sum)
 
 
+def sessional_average(term_averages):
+    """Unweighted mean of a pupil's per-term averages -> ``(mean, counted)``.
+
+    Fairview's Sessional Score is the mean of the three terms' cumulative
+    averages, each term weighing the same regardless of how many subjects or
+    assessments it carried. That is why this is a plain mean of the per-term
+    averages and NOT a mean of every subject percentage across the session --
+    the latter would silently weight a term with more subjects more heavily.
+
+    Terms with no marks contribute nothing rather than counting as zero: a term
+    that has not been taught yet is an absent value, not a failed one, and
+    averaging a zero into it would halve a pupil's score for the crime of the
+    school year being incomplete. ``counted`` is returned alongside so a caller
+    can say "based on 1 of 3 terms" rather than presenting a one-term figure as
+    though it were a full session.
+    """
+    vals = [_d(v) for v in term_averages if v is not None]
+    if not vals:
+        return None, 0
+    return sum(vals) / len(vals), len(vals)
+
+
 def round_dp(value: Decimal, places: int) -> Decimal:
     """Round for display to ``places`` decimals (banker's-safe, ROUND_HALF_UP-ish)."""
     from decimal import ROUND_HALF_UP

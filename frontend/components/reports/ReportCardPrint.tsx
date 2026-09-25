@@ -70,6 +70,12 @@ export function BulkPrintTab() {
 function Card({ card, num }: { card: any; num: (v: any) => any }) {
   const b = card.branding || {};
   const attPct = card.attendance_total ? Math.round((card.attendance_present / card.attendance_total) * 100) : null;
+  // The Sessional Score appears only once more than one term has marks. A mean
+  // of a single term is that term's own average, and printing it under a
+  // different name would be the same number claiming to be a session's work.
+  const sessionalTerms = card.sessional_terms ?? [];
+  const showSessional = card.sessional_score != null && (card.sessional_terms_counted ?? 0) > 1;
+  const partialSession = showSessional && card.sessional_terms_counted < sessionalTerms.length;
   // Date on the signature line: when the card was produced.
   const printedOn = new Date().toLocaleDateString("en-GB");
   return (
@@ -122,6 +128,7 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
             <th className="border border-slate-300 px-2 py-1 text-center">Grade</th>
             <th className="border border-slate-300 px-2 py-1 text-center">Remark</th>
             <th className="border border-slate-300 px-2 py-1 text-center">Arm Avg</th>
+            {showSessional && <th className="border border-slate-300 px-2 py-1 text-center">Session Avg</th>}
           </tr>
         </thead>
         <tbody>
@@ -132,9 +139,10 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
               <td className="border border-slate-300 px-2 py-1 text-center font-bold">{r.grade || "–"}</td>
               <td className="border border-slate-300 px-2 py-1 text-center">{r.remark || "–"}</td>
               <td className="border border-slate-300 px-2 py-1 text-center tabular-nums">{num(r.subject_arm_average)}</td>
+              {showSessional && <td className="border border-slate-300 px-2 py-1 text-center tabular-nums">{r.sessional != null ? num(r.sessional) : "–"}</td>}
             </tr>
           ))}
-          {card.subjects.length === 0 && <tr><td colSpan={card.columns.length + 4} className="border border-slate-300 px-2 py-3 text-center text-slate-400">No marks entered for this pupil.</td></tr>}
+          {card.subjects.length === 0 && <tr><td colSpan={card.columns.length + (showSessional ? 5 : 4)} className="border border-slate-300 px-2 py-3 text-center text-slate-400">No marks entered for this pupil.</td></tr>}
         </tbody>
       </table>
 
@@ -149,6 +157,22 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
             <div className="border border-slate-300 p-2 text-center"><p className="font-bold text-slate-500">Total Class Average</p><p className="text-lg font-black">{card.class_average != null ? num(card.class_average) : "–"}</p></div>
             <div className="border border-slate-300 p-2 text-center"><p className="font-bold text-slate-500">Overall Grade</p><p className="text-lg font-black">{card.grade || "–"}</p></div>
           </div>
+          {showSessional && (
+            <div className="border border-slate-300 p-2 text-center">
+              <p className="font-bold text-slate-500">Sessional Score</p>
+              <p className="text-lg font-black">{num(card.sessional_score)}</p>
+              <p className="text-[9px] text-slate-500">
+                {sessionalTerms.filter((t: any) => t.average != null).map((t: any) => `${t.term_name} ${num(t.average)}`).join("  ·  ")}
+              </p>
+              {/* Say so on the face of the card when the session is incomplete,
+                  rather than letting a two-term mean read as a full year. */}
+              {partialSession && (
+                <p className="text-[9px] font-semibold text-slate-600">
+                  Based on {card.sessional_terms_counted} of {sessionalTerms.length} terms
+                </p>
+              )}
+            </div>
+          )}
         </div>
         {card.bands.length > 0 ? (
           <table className="w-full text-[10px] border border-slate-300">

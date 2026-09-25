@@ -59,7 +59,7 @@ from app.schemas.platform import (
     CumulativeCreate, CumulativeUpdate, CumulativeResponse,
     ReportEntryGrid, ReportEntryAssessment, ReportEntryStudent, ScoreItem, ReportEntrySave, TeachingAssignment,
     BroadsheetResponse, BroadsheetRow, BroadsheetCell, BroadsheetSubject, BroadsheetBand,
-    CardColumn, CardSubjectRow, ReportCardResponse,
+    CardColumn, CardSubjectRow, ReportCardResponse, SessionalTerm,
     REPORT_COMMENT_KINDS, CommentGridRow, CommentGridResponse, CommentItem, CommentGridSave,
     InsightResponse, InsightSubject, InsightGender, InsightClass,
     ScoreUploadResult,
@@ -75,7 +75,7 @@ from app.schemas.platform import (
     COMMENT_LENGTH_TYPES, TEACHER_TYPES,
 )
 from app.services.ledger import money  # Decimal helper for grading bands
-from app.services.report_engine import evaluate_cumulative, round_dp
+from app.services.report_engine import evaluate_cumulative, round_dp, sessional_average
 from app.services.report_lock import (
     find_published_block, locked_message, term_names_for_ids,
 )
@@ -2587,15 +2587,30 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
 # ── Secondary Report S-4b: Broadsheet (class results grid) ───────────────────
 
 def _grade_for(pct, bands):
-    """First numeric band whose [min,max] contains pct (max None = open top)."""
-    from decimal import Decimal as _Dec
-    p = _Dec(str(pct))
-    for b in bands:
-        lo = b.min_score if b.min_score is not None else _Dec("-999999")
-        hi = b.max_score if b.max_score is not None else _Dec("999999")
-        if lo <= p <= hi:
-            return b.grade
-    return None
+    """Letter for a percentage, by LOWER BOUND -- the highest band it reaches.
+
+    This used to range-match (``min <= pct <= max``), which silently returns no
+    grade at all for a mark that lands in a gap between two bands. Fairview's
+    nine bands are integer-bounded with exactly those gaps (F 0-39, P 40-49,
+    ...), so a 39.5 matched nothing and the card printed a blank grade. It went
+    unnoticed only because `cumulatives` was empty, which pinned every pct to
+    exactly 0 -- an integer, and inside the F band. Introducing a real
+    cumulative makes fractional percentages the norm and would have turned
+    "everything is F" into "some subjects have no grade".
+
+    `services.grading.letter_for` already resolved this for every other caller
+    and its docstring claims to have replaced this function; it never actually
+    did. Delegating here finishes that migration, so a letter on a Grade row and
+    the letter printed on a card cannot disagree.
+    """
+    from app.services.grading import letter_for
+
+    # letter_for walks the bands in order and takes the first whose min_score is
+    # reached, so it needs them highest-threshold first. The caller sorts by
+    # -max_score, which happens to coincide today; sorting here by the field
+    # actually being compared keeps that a fact rather than a coincidence.
+    ordered = sorted(bands, key=lambda b: float(b.min_score or 0), reverse=True)
+    return letter_for(pct, 100, ordered)
 
 
 def _pick_display_cumulative(cumulatives, sub_term_id):
@@ -2893,6 +2908,62 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         n += 1
     average = (pct_sum / n) if n else money(0)
 
+    # ── Sessional Score ──────────────────────────────────────────────────────
+    # The unweighted mean of this pupil's average in each of the session's terms,
+    # computed at read time from the same cumulative structure the card above
+    # uses. Nothing is stored, so it cannot drift from the marks behind it.
+    #
+    # The assessment set is loaded SEPARATELY and never merged into `assessments`
+    # above. Sub-terms are org-wide (AcademicSubTerm carries no term link), so a
+    # single sub_term_id is shared by all three terms — widening `assessments`
+    # would pull other terms' assessments into `asmt_cols`, which filters on
+    # sub_term_id alone, and print Summer's columns on an Autumn card.
+    all_terms = (await db.execute(select(AcademicTerm).where(
+        AcademicTerm.org_id == org).order_by(AcademicTerm.position, AcademicTerm.name))).scalars().all()
+    sessional_terms: list[SessionalTerm] = []
+    subject_term_pcts: dict[str, list] = {}
+    if len(all_terms) > 1:
+        all_asmts = {a.id: a for a in (await db.execute(select(Assessment).where(
+            Assessment.org_id == org))).scalars().all()}
+        all_cumuls = (await db.execute(select(Cumulative).where(Cumulative.org_id == org))).scalars().all()
+        all_cumul_by_id = {c.id: c for c in all_cumuls}
+        my_scores: dict[tuple, object] = {}
+        if all_asmts:
+            for r in (await db.execute(select(StudentAssessmentScore).where(
+                StudentAssessmentScore.org_id == org,
+                StudentAssessmentScore.student_id == student_id))).scalars().all():
+                my_scores[(r.subject_id, r.assessment_id)] = r.score
+
+        for t in all_terms:
+            t_asmts = {aid: a for aid, a in all_asmts.items() if a.term_id == t.id}
+            t_display = _pick_display_cumulative(
+                [c for c in all_cumuls if c.term_id == t.id], sub_term_id)
+            t_pcts = []
+            if t_display and t_asmts:
+                for sid in {s for (s, aid) in my_scores if aid in t_asmts}:
+                    scores = {aid: my_scores.get((sid, aid)) for aid in t_asmts}
+                    if all(v is None for v in scores.values()):
+                        continue
+                    v, mx = evaluate_cumulative(t_display.id, all_cumul_by_id, components, t_asmts, scores)
+                    if mx:
+                        pct_t = v / mx * 100
+                        t_pcts.append(pct_t)
+                        subject_term_pcts.setdefault(sid, []).append(pct_t)
+            t_avg = (sum(t_pcts) / len(t_pcts)) if t_pcts else None
+            sessional_terms.append(SessionalTerm(
+                term_id=t.id, term_name=t.name,
+                average=(round_dp(t_avg, 2) if t_avg is not None else None)))
+
+    sessional_raw, sessional_counted = sessional_average([s.average for s in sessional_terms])
+    # A single term is the term's own average, not a session's — reporting it as
+    # a Sessional Score would be a different number wearing the same name.
+    sessional_score = round_dp(sessional_raw, 2) if sessional_counted > 1 else None
+    if sessional_counted > 1:
+        for row in subj_rows:
+            pcts = subject_term_pcts.get(row.subject_id) or []
+            if len(pcts) > 1:
+                row.sessional = round_dp(sum(pcts) / len(pcts), 2)
+
     # StudentReport is unique on (student_id, term, org_id). Filtering by student
     # alone returned an ARBITRARY term's row, so attendance and comments could come
     # from the wrong term as soon as a second term was authored. Match the term
@@ -2947,6 +3018,8 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         total=round_dp(my_total, 2), average=round_dp(average, 2), grade=_grade_for(average, bands) if n else None,
         position=position, class_size=len(classmates),
         class_average=(round_dp(sum(peer_averages) / len(peer_averages), 2) if peer_averages else None),
+        sessional_score=sessional_score, sessional_terms=sessional_terms,
+        sessional_terms_counted=sessional_counted,
         attendance_present=(sr.attendance_present if sr else None), attendance_total=(sr.attendance_total if sr else None),
         attendance_punctual=punctual,
         # The authored comments live on StudentReport (180 rows populated), while the
@@ -2977,6 +3050,11 @@ async def report_cards_bulk(class_id: str, term_id: str, sub_term_id: str,
     this is ever pointed at a whole YEAR GROUP (or the school), hoist the
     classmate/arm-average pass out of report_card() and share it across pupils
     first, or it will not hold up.
+
+    The Sessional Score adds to that same per-pupil cost: two org-wide config
+    reads (assessments, cumulatives) that are identical for every pupil, plus one
+    genuinely per-pupil read of their own scores across the session. Hoist the
+    first two along with the classmate pass whenever that day comes.
     """
     org = current_user.org_id
     cls = (await db.execute(select(SchoolClass).where(
