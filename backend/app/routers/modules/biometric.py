@@ -301,7 +301,7 @@ async def biometric_summary(db: AsyncSession = Depends(get_db), current_user: Us
 
 
 @router.get("/attendance", response_model=list[AttendanceHistoryRow], dependencies=[_read])
-async def attendance_history(device_id: str | None = Query(default=None), db: AsyncSession = Depends(get_db),
+async def attendance_history(device_id: str | None = None, db: AsyncSession = Depends(get_db),
                              current_user: User = Depends(get_current_active_user)):
     """Recent attendance events (Attendance History tab): who, when, in/out, mode."""
     org_id = current_user.org_id
@@ -330,7 +330,7 @@ def _command_response(c: BiometricCommand, device_id: str | None = None) -> Biom
 
 
 @router.get("/commands", response_model=list[BiometricCommandResponse], dependencies=[_read])
-async def list_commands(device_pk: str | None = Query(default=None), db: AsyncSession = Depends(get_db),
+async def list_commands(device_pk: str | None = None, db: AsyncSession = Depends(get_db),
                         current_user: User = Depends(get_current_active_user)):
     q = (select(BiometricCommand, BiometricDevice.device_id)
          .join(BiometricDevice, BiometricDevice.id == BiometricCommand.device_pk)
@@ -370,7 +370,7 @@ async def device_pending_commands(device: BiometricDevice = Depends(authenticate
 
 
 @ingest_router.post("/commands/{command_id}/ack")
-async def device_ack_command(command_id: str, status: str = Query(default="success"), result: str | None = Query(default=None),
+async def device_ack_command(command_id: str, status: str = "success", result: str | None = None,
                              device: BiometricDevice = Depends(authenticate_device), db: AsyncSession = Depends(get_db)):
     if status not in ("success", "failed"):
         raise HTTPException(status_code=422, detail="status must be success or failed.")
@@ -439,7 +439,7 @@ async def ingest_punches(payload: IngestPunchesRequest, db: AsyncSession = Depen
 # ── Quarantine review ────────────────────────────────────────────────────────────
 
 @router.get("/quarantine", response_model=list[UnmappedPunchResponse], dependencies=[_read])
-async def list_quarantine(status: str = Query(default="pending"), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def list_quarantine(status: str = "pending", db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     base = select(UnmappedPunch).where(UnmappedPunch.org_id == current_user.org_id)
     if status:
         base = base.where(UnmappedPunch.status == status)

@@ -30,8 +30,8 @@ _can_delete = Depends(PermissionChecker("users:delete"))
 async def list_users(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
-    search: str | None = Query(default=None),
-    status: UserStatus | None = Query(default=None),
+    search: str | None = None,
+    status: UserStatus | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -98,7 +98,7 @@ async def list_available_roles(
 @router.get("/by-role/{role_slug}", dependencies=[_can_read])
 async def list_users_by_role(
     role_slug: str,
-    search: str | None = Query(default=None),
+    search: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -132,7 +132,7 @@ async def list_users_by_role(
 
 @router.get("/staff", response_model=list[UserResponse], dependencies=[_can_read])
 async def list_staff(
-    search: str | None = Query(default=None),
+    search: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

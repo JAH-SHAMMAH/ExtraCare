@@ -48,7 +48,7 @@ def _account_row(u: User, p: HRProfile | None) -> AccountRow:
 
 @router.get("/pim/accounts", response_model=list[AccountRow], dependencies=[_can_hr])
 async def list_accounts(
-    search: str | None = Query(default=None),
+    search: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -108,7 +108,7 @@ def _transfer_response(t: StaffTransfer, staff_name: str | None = None) -> Trans
 
 @router.get("/pim/transfers", response_model=list[TransferResponse], dependencies=[_can_hr])
 async def list_transfers(
-    staff_user_id: str | None = Query(default=None),
+    staff_user_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

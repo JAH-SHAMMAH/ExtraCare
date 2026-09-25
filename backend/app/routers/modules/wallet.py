@@ -408,7 +408,7 @@ def _pm_item_response(i: PocketMoneyItem) -> PocketMoneyItemResponse:
 
 
 @router.get("/pocketmoney-items", response_model=list[PocketMoneyItemResponse], dependencies=[_fin_read])
-async def list_pocketmoney_items(active_only: bool = Query(default=False),
+async def list_pocketmoney_items(active_only: bool = False,
                                  db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     q = select(PocketMoneyItem).where(PocketMoneyItem.org_id == current_user.org_id)
     if active_only:
@@ -477,7 +477,7 @@ async def list_pocketmoney_transactions(
 @router.get("/pocketmoney-students", response_model=PocketMoneyStudentListResponse, dependencies=[_spend])
 async def list_pocketmoney_students(
     page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1, le=100),
-    search: str | None = Query(default=None),
+    search: str | None = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     """POCKET MONEY STUDENT LIST — active students with their parent, class, and

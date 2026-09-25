@@ -287,7 +287,7 @@ def _cash_response(t: CashTransaction, cash_name: str | None, counter_name: str 
 
 @router.get("/cash", response_model=CashTxnListResponse, dependencies=[_fin_read])
 async def list_cash(
-    type: str | None = Query(default=None), page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=100),
+    type: str | None = None, page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     base = select(CashTransaction).where(CashTransaction.org_id == current_user.org_id)

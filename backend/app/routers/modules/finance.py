@@ -131,8 +131,8 @@ def _account_response(a: LedgerAccount) -> LedgerAccountResponse:
 
 @router.get("/accounts", response_model=list[LedgerAccountResponse], dependencies=[_finadmin_read])
 async def list_accounts(
-    type: str | None = Query(default=None),
-    active_only: bool = Query(default=False),
+    type: str | None = None,
+    active_only: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -443,8 +443,8 @@ async def financial_statements(
 
 @router.get("/broad-view/dashboard", response_model=BroadViewDashboard, dependencies=[_finadmin_read])
 async def broad_view_dashboard(
-    session: str | None = Query(default=None),
-    term: str | None = Query(default=None),
+    session: str | None = None,
+    term: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -536,7 +536,7 @@ async def broad_view_account_head_summary(db: AsyncSession = Depends(get_db), cu
 
 
 @router.get("/broad-view/termly-summary", response_model=TermlySummary, dependencies=[_finadmin_read])
-async def broad_view_termly_summary(session: str | None = Query(default=None), term: str | None = Query(default=None),
+async def broad_view_termly_summary(session: str | None = None, term: str | None = None,
                                     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Fee-category totals for the selected session/term (from student fee records)."""
     org_id = current_user.org_id
@@ -609,7 +609,7 @@ async def broad_view_invoice_items(db: AsyncSession = Depends(get_db), current_u
 
 
 @router.get("/broad-view/students-ledger", response_model=StudentsLedger, dependencies=[_finadmin_read])
-async def broad_view_students_ledger(session: str | None = Query(default=None), term: str | None = Query(default=None),
+async def broad_view_students_ledger(session: str | None = None, term: str | None = None,
                                      db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Per-student invoiced / paid / balance from the fee records."""
     org_id = current_user.org_id
@@ -672,7 +672,7 @@ async def broad_view_transactions_log(db: AsyncSession = Depends(get_db), curren
 
 
 @router.get("/broad-view/audit-report", response_model=AuditReport, dependencies=[_finadmin_read])
-async def broad_view_audit_report(status: str | None = Query(default=None),
+async def broad_view_audit_report(status: str | None = None,
                                   db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Invoice audit: transaction count, total / paid / unpaid amounts + the list."""
     org_id = current_user.org_id
@@ -689,7 +689,7 @@ async def broad_view_audit_report(status: str | None = Query(default=None),
 
 
 @router.get("/broad-view/payment-transactions", response_model=PaymentTxnList, dependencies=[_finadmin_read])
-async def broad_view_payment_transactions(admission_only: bool = Query(default=False),
+async def broad_view_payment_transactions(admission_only: bool = False,
                                           db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Online gateway payments (PaymentTransaction). Backs the Online Transactions
     Log, Payment Refs, and Admission Form Pay Log tabs. ``admission_only`` filters
@@ -845,7 +845,7 @@ async def _load_invoice(db, iid, org_id) -> Invoice:
 
 @router.get("/invoices", response_model=InvoiceListResponse, dependencies=[_fin_read])
 async def list_invoices(
-    status: str | None = Query(default=None),
+    status: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -1081,7 +1081,7 @@ async def _load_run(db, rid, org_id) -> PayrollRun:
 
 @router.get("/payroll", response_model=PayrollListResponse, dependencies=[_finadmin_read])
 async def list_payroll(
-    status: str | None = Query(default=None),
+    status: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),

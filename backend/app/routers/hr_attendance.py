@@ -133,9 +133,9 @@ async def list_my_attendance(
 
 @router.get("/attendance/events", response_model=list[AttendanceEventResponse], dependencies=[_can_hr])
 async def list_events(
-    staff_user_id: str | None = Query(default=None),
-    from_date: date | None = Query(default=None),
-    to_date: date | None = Query(default=None),
+    staff_user_id: str | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
     limit: int = Query(default=500, le=2000),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),

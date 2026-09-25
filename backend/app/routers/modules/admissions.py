@@ -155,9 +155,9 @@ async def _load_application(db: AsyncSession, app_id: str, org_id: str) -> Admis
 
 @router.get("/applications", response_model=AdmissionApplicationListResponse, dependencies=[_adm_read])
 async def list_applications(
-    status: str | None = Query(default=None),
+    status: str | None = None,
     appointment_status: str | None = None,  # none|scheduled|attended|no_show — Enquiry Appointment view
-    search: str | None = Query(default=None),
+    search: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -343,7 +343,7 @@ async def _load_exam(db: AsyncSession, exam_id: str, org_id: str) -> EntranceExa
 
 @router.get("/entrance-exams", response_model=EntranceExamListResponse, dependencies=[_adm_read])
 async def list_entrance_exams(
-    status: str | None = Query(default=None),
+    status: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -556,7 +556,7 @@ async def _load_promotion_students(db: AsyncSession, org_id: str, student_ids: l
 
 @router.get("/promotions", response_model=PromotionListResponse, dependencies=[_roster_admin_read])
 async def list_promotions(
-    student_id: str | None = Query(default=None),
+    student_id: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -764,7 +764,7 @@ async def _load_transfer(db: AsyncSession, transfer_id: str, org_id: str) -> Tra
 
 @router.get("/transfers", response_model=TransferListResponse, dependencies=[_roster_admin_read])
 async def list_transfers(
-    status: str | None = Query(default=None),
+    status: str | None = None,
     transfer_type: str | None = None,  # transfer_out | withdrawal
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),

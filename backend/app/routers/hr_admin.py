@@ -60,7 +60,7 @@ async def list_catalog(db: AsyncSession = Depends(get_db), current_user: User = 
 @router.get("/admin/lists/{list_type}", response_model=list[HrItemResponse], dependencies=[_can_hr])
 async def list_items(
     list_type: str,
-    include_inactive: bool = Query(default=True),
+    include_inactive: bool = True,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

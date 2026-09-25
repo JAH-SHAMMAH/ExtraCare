@@ -36,7 +36,7 @@ def _response(d: HrDocument) -> DocumentResponse:
 
 @router.get("/documents", response_model=list[DocumentResponse], dependencies=[_can_hr])
 async def list_documents(
-    category: str | None = Query(default=None),
+    category: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

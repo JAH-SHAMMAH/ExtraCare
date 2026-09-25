@@ -76,8 +76,8 @@ async def _load(db: AsyncSession, rid: str, org_id: str) -> StudentMedicalRecord
 
 @router.get("/records", response_model=MedicalRecordListResponse, dependencies=[_med_read])
 async def list_medical_records(
-    student_id: str | None = Query(default=None),
-    record_type: str | None = Query(default=None),
+    student_id: str | None = None,
+    record_type: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),

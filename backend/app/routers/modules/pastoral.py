@@ -335,7 +335,7 @@ async def _exeat_with_names(db: AsyncSession, e: ExeatRequest, org_id: str) -> E
 
 @router.get("/exeats", response_model=ExeatListResponse, dependencies=[_hostel_read])
 async def list_exeats(
-    status: str | None = Query(default=None),
+    status: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -472,8 +472,8 @@ def _mentor_response(m: MentorReport, sname: str | None, mentor: str | None) -> 
 
 @router.get("/mentor-reports", response_model=MentorReportListResponse, dependencies=[_beh_read])
 async def list_mentor_reports(
-    student_id: str | None = Query(default=None),
-    mentor_id: str | None = Query(default=None),
+    student_id: str | None = None,
+    mentor_id: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),

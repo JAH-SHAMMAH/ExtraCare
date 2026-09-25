@@ -461,8 +461,8 @@ async def generate_timetable(job_id: str, db: AsyncSession = Depends(get_db), cu
 @router.get("/subject-attendance", response_model=SubjectAttendanceResponse, dependencies=[_can_read])
 async def subject_student_attendance(
     class_id: str,
-    start_date: date | None = Query(default=None),
-    end_date: date | None = Query(default=None),
+    start_date: date | None = None,
+    end_date: date | None = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     """A per-student attendance roll-up for a class over a date range. (We capture

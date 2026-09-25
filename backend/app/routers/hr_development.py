@@ -188,8 +188,8 @@ async def _load_assessment(db: AsyncSession, aid: str, org_id: str) -> StaffAsse
 
 @router.get("/assessments", response_model=StaffAssessmentListResponse, dependencies=[_can_hr])
 async def list_assessments(
-    staff_user_id: str | None = Query(default=None),
-    status: str | None = Query(default=None),
+    staff_user_id: str | None = None,
+    status: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -331,7 +331,7 @@ async def _load_candidate(db: AsyncSession, cid: str, org_id: str) -> TalentCand
 
 @router.get("/talent", response_model=TalentCandidateListResponse, dependencies=[_can_hr])
 async def list_candidates(
-    stage: str | None = Query(default=None),
+    stage: str | None = None,
     search: str | None = Query(default=None, description="Filter by name, email, or role applied."),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),

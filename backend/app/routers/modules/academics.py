@@ -123,9 +123,9 @@ def _selection_response(s: SubjectSelection, sname: str | None, subj: str | None
 
 @router.get("/subject-selections", response_model=SubjectSelectionListResponse, dependencies=[_subj_read])
 async def list_subject_selections(
-    student_id: str | None = Query(default=None),
-    subject_id: str | None = Query(default=None),
-    status: str | None = Query(default=None),
+    student_id: str | None = None,
+    subject_id: str | None = None,
+    status: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -263,7 +263,7 @@ async def _entries_for(db: AsyncSession, transcript_ids: list[str]) -> dict[str,
 
 @router.get("/transcripts", response_model=TranscriptListResponse, dependencies=[_grade_read])
 async def list_transcripts(
-    student_id: str | None = Query(default=None),
+    student_id: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -418,7 +418,7 @@ def _report_response(r: ReportApproval, cname: str | None) -> ReportApprovalResp
 
 @router.get("/report-workflow", response_model=ReportApprovalListResponse, dependencies=[_report_write])
 async def list_report_workflow(
-    stage: str | None = Query(default=None),
+    stage: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -549,7 +549,7 @@ async def class_list(
 
 @router.get("/report-analysis/grades", dependencies=[Depends(PermissionChecker("school:reports:read"))])
 async def list_grade_analysis(
-    # Plain None defaults, not Query(default=None). FastAPI treats these as query
+    # Plain None defaults, not None. FastAPI treats these as query
     # params either way, but Query() carries no validation here and leaves a
     # sentinel OBJECT as the Python default - so a direct call that omits one
     # (the tests call this function directly) gets a truthy Query instance rather
@@ -916,7 +916,7 @@ def _recognition_response(r: Recognition, sname: str | None) -> RecognitionRespo
 
 @router.get("/recognitions/leaderboard", response_model=LeaderboardResponse, dependencies=[_beh_read])
 async def recognition_leaderboard(
-    term: str | None = Query(default=None),
+    term: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -940,10 +940,10 @@ async def recognition_leaderboard(
 
 @router.get("/recognitions", response_model=RecognitionListResponse, dependencies=[_beh_read])
 async def list_recognitions(
-    type: str | None = Query(default=None),
-    student_id: str | None = Query(default=None),
-    house: str | None = Query(default=None),
-    term: str | None = Query(default=None),
+    type: str | None = None,
+    student_id: str | None = None,
+    house: str | None = None,
+    term: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),

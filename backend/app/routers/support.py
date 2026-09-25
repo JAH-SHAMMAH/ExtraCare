@@ -79,7 +79,7 @@ async def create_support_request(
 
 @router.get("", response_model=list[SupportRequestResponse], dependencies=[Depends(PermissionChecker("settings:read"))])
 async def list_support_requests(
-    status: str | None = Query(default=None),
+    status: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

@@ -50,7 +50,7 @@ def _job_response(j: JobOpening, applicant_count: int = 0) -> JobOpeningResponse
 
 
 @router.get("/recruitment/jobs", response_model=list[JobOpeningResponse], dependencies=[_can_hr])
-async def list_jobs(status: str | None = Query(default=None), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def list_jobs(status: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     q = select(JobOpening).where(JobOpening.org_id == current_user.org_id, JobOpening.is_deleted == False)  # noqa: E712
     if status:
         q = q.where(JobOpening.status == status)
@@ -104,7 +104,7 @@ def _applicant_response(a: Applicant) -> ApplicantResponse:
 
 
 @router.get("/recruitment/applicants", response_model=list[ApplicantResponse], dependencies=[_can_hr])
-async def list_applicants(job_id: str | None = Query(default=None), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def list_applicants(job_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     q = select(Applicant).where(Applicant.org_id == current_user.org_id, Applicant.is_deleted == False)  # noqa: E712
     if job_id:
         q = q.where(Applicant.job_id == job_id)
@@ -162,7 +162,7 @@ def _case_response(c: DisciplinaryCase, staff_name: str | None) -> DisciplinaryR
 
 
 @router.get("/disciplinary/cases", response_model=list[DisciplinaryResponse], dependencies=[_can_hr])
-async def list_cases(status: str | None = Query(default=None), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def list_cases(status: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     q = select(DisciplinaryCase).where(DisciplinaryCase.org_id == current_user.org_id, DisciplinaryCase.is_deleted == False)  # noqa: E712
     if status:
         q = q.where(DisciplinaryCase.status == status)
@@ -281,8 +281,8 @@ async def _load_appointment(db, appointment_id, org_id) -> StaffAppointment:
 
 @router.get("/appointments", response_model=list[AppointmentResponse], dependencies=[_can_hr])
 async def list_appointments(
-    staff_user_id: str | None = Query(default=None),
-    status: str | None = Query(default=None),
+    staff_user_id: str | None = None,
+    status: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

@@ -786,7 +786,7 @@ async def delete_subject(
 @router.post("/attendance", dependencies=[_attendance_write])
 async def mark_attendance(
     records: list[dict],  # [{"student_id": ..., "class_id": ..., "status": "present"}]
-    attendance_date: date = Query(default=None),
+    attendance_date: date = None,
     request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -969,7 +969,7 @@ async def update_attendance_settings(
 
 @router.get("/attendance/reasons", response_model=list[AbsenceReasonResponse], dependencies=[_attendance_read])
 async def list_absence_reasons(
-    active_only: bool = Query(default=False),
+    active_only: bool = False,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     await _seed_default_reasons(db, current_user.org_id)

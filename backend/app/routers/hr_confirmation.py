@@ -54,7 +54,7 @@ def _response(c: StaffConfirmation, staff_name: str | None, employment_status: s
 
 @router.get("/confirmations", response_model=list[ConfirmationResponse], dependencies=[_can_hr])
 async def list_confirmations(
-    status: str | None = Query(default=None),
+    status: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

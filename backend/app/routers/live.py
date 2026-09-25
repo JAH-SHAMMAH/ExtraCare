@@ -691,7 +691,7 @@ async def end_session(
 
 @router.get("/sessions", response_model=list[LiveSessionResponse])
 async def list_sessions(
-    active_only: bool = Query(default=True),
+    active_only: bool = True,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

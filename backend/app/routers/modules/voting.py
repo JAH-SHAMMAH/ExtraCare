@@ -172,7 +172,7 @@ async def _get_session(db, org_id, sid) -> VoteSession:
 
 @router.get("/sessions", response_model=list[SessionResponse], dependencies=[_can_read])
 async def list_sessions(
-    status: str | None = Query(default=None), session_id: str | None = Query(default=None),
+    status: str | None = None, session_id: str | None = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     q = select(VoteSession).where(VoteSession.org_id == current_user.org_id, VoteSession.is_deleted == False)  # noqa: E712

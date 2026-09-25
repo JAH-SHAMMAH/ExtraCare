@@ -82,7 +82,7 @@ async def upsert_policy(leave_type: LeaveType, payload: LeavePolicyUpdate, db: A
 
 @router.get("/entitlements", response_model=list[EntitlementRow])
 async def entitlements(
-    user_id: str | None = Query(default=None),
+    user_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

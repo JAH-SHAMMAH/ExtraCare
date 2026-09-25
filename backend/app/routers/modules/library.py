@@ -612,8 +612,8 @@ async def _review_dict(db, r: BookReview, book_title: str | None = None, reviewe
 
 @router.get("/reviews", response_model=list[ReviewResponse], dependencies=[_can_read])
 async def list_reviews(
-    status: str | None = Query(default=None),
-    book_id: str | None = Query(default=None),
+    status: str | None = None,
+    book_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

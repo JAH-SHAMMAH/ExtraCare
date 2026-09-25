@@ -309,7 +309,7 @@ def _birthday_item(*, name: str, role: str, dob: date, today: date) -> BirthdayI
 
 @router.get("/events", response_model=list[EventResponse], dependencies=[_can_admin_read])
 async def list_events(
-    upcoming_only: bool = Query(default=True),
+    upcoming_only: bool = True,
     limit: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),

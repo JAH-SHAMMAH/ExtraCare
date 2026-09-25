@@ -99,9 +99,9 @@ def _program_response(p: EClassroomProgram, sections: dict, sessions: dict) -> P
 
 @router.get("/programs", response_model=list[ProgramResponse], dependencies=[_can_read])
 async def list_programs(
-    session_id: str | None = Query(default=None),
-    section_id: str | None = Query(default=None),
-    cbt_type: str | None = Query(default=None),
+    session_id: str | None = None,
+    section_id: str | None = None,
+    cbt_type: str | None = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     q = select(EClassroomProgram).where(EClassroomProgram.org_id == current_user.org_id, EClassroomProgram.is_deleted == False)  # noqa: E712
@@ -171,9 +171,9 @@ def _schedule_response(s: EClassroomSchedule, sections: dict, sessions: dict, yg
 
 @router.get("/schedules", response_model=list[ScheduleResponse], dependencies=[_room_read])
 async def list_schedules(
-    status: str | None = Query(default=None),
-    year_group_id: str | None = Query(default=None),
-    session_id: str | None = Query(default=None),
+    status: str | None = None,
+    year_group_id: str | None = None,
+    session_id: str | None = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     q = select(EClassroomSchedule).where(EClassroomSchedule.org_id == current_user.org_id, EClassroomSchedule.is_deleted == False)  # noqa: E712
