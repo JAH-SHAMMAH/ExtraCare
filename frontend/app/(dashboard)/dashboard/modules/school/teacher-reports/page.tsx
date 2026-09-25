@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { schoolApi } from "@/lib/api";
+import { academicsApi } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
 import { FileText, CheckCircle2, AlertCircle, Loader2, Eye } from "lucide-react";
 
@@ -26,13 +26,14 @@ const STAGE_LABELS: Record<ReportApproval["stage"], { label: string; color: stri
 
 export default function TeacherReportsPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
-  const { data, isLoading } = useQuery({
+  // Was a raw fetch("/api/academics/report-workflow/mine"): the Next rewrite is
+  // /api/v1/:path*, so that path never reached the backend, and a bare fetch
+  // carries no auth header either. It failed every time, `data` stayed
+  // undefined, and the page rendered "No reports submitted yet" - identical to
+  // genuinely having none, which is why it went unnoticed.
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["teacher-reports"],
-    queryFn: async () => {
-      const response = await fetch("/api/academics/report-workflow/mine");
-      if (!response.ok) throw new Error("Failed to fetch teacher reports");
-      return response.json();
-    },
+    queryFn: () => academicsApi.reportWorkflow.mine(),
   });
 
   const reports = data?.items || [];
@@ -62,11 +63,21 @@ export default function TeacherReportsPage() {
         <div className="flex items-center justify-center py-10 text-slate-400">
           <Loader2 className="w-5 h-5 animate-spin" />
         </div>
+      ) : isError ? (
+        /* A failure is not "you have none". Conflating the two is what hid this
+           page being broken for as long as it was. */
+        <div className="bg-white rounded-xl border border-slate-200 flex flex-col items-center justify-center py-20 text-slate-500">
+          <AlertCircle size={40} className="mb-3 text-slate-300" />
+          <p className="font-semibold">Couldn&apos;t load your reports</p>
+          <p className="text-sm mt-1">Try again in a moment.</p>
+        </div>
       ) : reports.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 flex flex-col items-center justify-center py-20 text-slate-400">
           <FileText size={40} className="mb-3 opacity-40" />
           <p className="font-semibold">No reports submitted yet</p>
-          <p className="text-sm mt-1">Your submitted reports will appear here.</p>
+          <p className="text-sm mt-1">
+            A report appears here once you submit it from Make Report.
+          </p>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">

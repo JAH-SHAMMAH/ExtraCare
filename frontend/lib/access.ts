@@ -258,6 +258,10 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // is blocked for that class). Students see their own report via /report-cards instead.
   { prefix: "/dashboard/modules/school/reports-view", permission: "school:reports:write" },
   // Reports Upload = ADMIN bulk import — school_admin only.
+  // Teacher Comments — the PC teacher's per-pupil comment. reports:write matches
+  // the API (_reports_write), and the endpoint additionally limits PC comments to
+  // that class's PC teacher, so the route is the outer of two gates.
+  { prefix: "/dashboard/modules/school/teacher-comments", permission: "school:reports:write" },
   // Class List — the roster for a (class, subject) the teacher teaches. Gated on
   // students:read, which the classroom tier holds; the API additionally refuses a
   // pair they do not teach, so the page cannot show another class's pupils.

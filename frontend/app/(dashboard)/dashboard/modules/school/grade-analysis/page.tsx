@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useGradeAnalysis } from "@/hooks/useAcademics";
-import { useMyTeachingAssignments, useTerms } from "@/hooks/usePlatform";
+import { useMyTeachingAssignments, useSubTerms, useTerms } from "@/hooks/usePlatform";
 import { classesFromAssignments, formatMark, subjectsForClass } from "@/lib/reportEntry";
 import { cn } from "@/lib/utils";
 import { BarChart3, Loader2, Search } from "lucide-react";
@@ -10,10 +10,12 @@ import { BarChart3, Loader2, Search } from "lucide-react";
 export default function GradeAnalysisPage() {
   const { data: assignments = [], isLoading: loadingAssignments } = useMyTeachingAssignments();
   const { data: terms = [] } = useTerms();
+  const { data: subTerms = [] } = useSubTerms();
 
   const [classId, setClassId] = useState("");
   const [subjectId, setSubjectId] = useState("");
   const [termId, setTermId] = useState("");
+  const [subTermId, setSubTermId] = useState("");
   const [search, setSearch] = useState("");
 
   // The filters offer only what this teacher teaches, derived from the same
@@ -26,6 +28,7 @@ export default function GradeAnalysisPage() {
     class_id: classId || undefined,
     subject_id: subjectId || undefined,
     term_id: termId || undefined,
+    sub_term_id: subTermId || undefined,
     page_size: 100,
   });
 
@@ -63,6 +66,16 @@ export default function GradeAnalysisPage() {
           <select value={termId} onChange={(e) => setTermId(e.target.value)} className="input">
             <option value="">All terms</option>
             {(terms as any[]).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </div>
+        {/* A real filter, not orientation: a term can hold both a Half-Term and a
+            Full-Term assessment in the same group, and without this they are
+            summed into one row the teacher cannot break apart. Defaults to all,
+            so the figures match what the page showed before it existed. */}
+        <div><label className="label">Sub-Term</label>
+          <select value={subTermId} onChange={(e) => setSubTermId(e.target.value)} className="input">
+            <option value="">All sub-terms</option>
+            {(subTerms as any[]).map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
           </select>
         </div>
         <div className="min-w-[180px]"><label className="label">Class</label>

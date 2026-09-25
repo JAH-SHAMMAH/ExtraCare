@@ -549,9 +549,18 @@ async def class_list(
 
 @router.get("/report-analysis/grades", dependencies=[Depends(PermissionChecker("school:reports:read"))])
 async def list_grade_analysis(
-    class_id: str | None = Query(default=None),
-    subject_id: str | None = Query(default=None),
-    term_id: str | None = Query(default=None),
+    # Plain None defaults, not Query(default=None). FastAPI treats these as query
+    # params either way, but Query() carries no validation here and leaves a
+    # sentinel OBJECT as the Python default - so a direct call that omits one
+    # (the tests call this function directly) gets a truthy Query instance rather
+    # than None, and it reaches the SQL as a bind parameter. That is exactly how
+    # adding sub_term_id broke test_grade_analysis_multi_class_same_subject: the
+    # other three only worked because every caller happened to pass them.
+    # page/page_size keep Query() below because they DO carry ge/le validation.
+    class_id: str | None = None,
+    subject_id: str | None = None,
+    term_id: str | None = None,
+    sub_term_id: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -637,6 +646,12 @@ async def list_grade_analysis(
 
     if term_id:
         base_query = base_query.where(AcademicTerm.id == term_id)
+    # Assessment is already joined for the group/term lookups, so scoping to one
+    # sub-term is the same shape as the term filter above. A term can hold both a
+    # Half-Term and a Full-Term assessment, and without this they are summed into
+    # one row per group and cannot be told apart.
+    if sub_term_id:
+        base_query = base_query.where(Assessment.sub_term_id == sub_term_id)
 
     # Paginate
     total = (await db.execute(select(func.count()).select_from(base_query.subquery()))).scalar() or 0

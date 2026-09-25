@@ -123,7 +123,7 @@ export function useClassList(p: { class_id: string; subject_id: string }) {
   });
 }
 
-export function useGradeAnalysis(p: { class_id?: string; subject_id?: string; term_id?: string; page?: number; page_size?: number }) {
+export function useGradeAnalysis(p: { class_id?: string; subject_id?: string; term_id?: string; sub_term_id?: string; page?: number; page_size?: number }) {
   return useQuery({
     queryKey: ["grade-analysis", p],
     queryFn: () => academicsApi.reportAnalysis.grades(p),

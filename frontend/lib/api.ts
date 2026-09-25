@@ -1042,7 +1042,7 @@ export const academicsApi = {
   reportAnalysis: {
     // Teacher-scoped by the API: it derives the visible (class, subject) pairs
     // from the caller's Timetable, so this needs no scoping of its own.
-    grades: (p?: { class_id?: string; subject_id?: string; term_id?: string; page?: number; page_size?: number }) =>
+    grades: (p?: { class_id?: string; subject_id?: string; term_id?: string; sub_term_id?: string; page?: number; page_size?: number }) =>
       api.get("/academics/report-analysis/grades", { params: p }).then((r) => r.data),
   },
   reportWorkflow: {
@@ -1051,6 +1051,11 @@ export const academicsApi = {
     create: (data: object) => api.post("/academics/report-workflow", data).then((r) => r.data),
     update: (id: string, data: object) => api.patch(`/academics/report-workflow/${id}`, data).then((r) => r.data),
     remove: (id: string) => api.delete(`/academics/report-workflow/${id}`),
+    // The signed-in teacher's OWN submissions (submitted_by == me), for
+    // Teacher Reports. Goes through the axios client like everything else:
+    // it carries the auth header and the /api/v1 base the rewrite expects.
+    mine: (p?: { page?: number; page_size?: number }) =>
+      api.get("/academics/report-workflow/mine", { params: p }).then((r) => r.data),
     submit: (data: { class_id: string; term: string; notes?: string }) =>
       api.post("/academics/report-workflow/submit", data).then((r) => r.data),
   },

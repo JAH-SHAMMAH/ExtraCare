@@ -208,7 +208,12 @@ export function CommentGridTab({ kind, label }: { kind: "head" | "pc"; label: st
   const [classId, setClassId] = useState("");
   const [termId, setTermId] = useState("");
   const [subTermId, setSubTermId] = useState("");
-  const { data: grid, isLoading } = useCommentGrid({ class_id: classId, term_id: termId, sub_term_id: subTermId, kind });
+  const { data: grid, isLoading, isError, error } = useCommentGrid({ class_id: classId, term_id: termId, sub_term_id: subTermId, kind });
+  // The class picker offers every class, but the API only lets you write comments
+  // for your own: head comments are admin-only and PC comments are limited to
+  // that class's PC teacher. A refusal used to fall through to "No pupils in this
+  // class", blaming the data for what is actually a permission answer.
+  const denied = isError && (error as any)?.response?.status === 403;
   const save = useSaveComments();
   const [draft, setDraft] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -235,6 +240,17 @@ export function CommentGridTab({ kind, label }: { kind: "head" | "pc"; label: st
         <div className="bg-white rounded-xl border border-dashed border-slate-200 py-14 text-center text-slate-400"><p className="text-sm">Choose a class, term and sub-term to enter {label.toLowerCase()}s.</p></div>
       ) : isLoading ? (
         <div className="py-14 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
+      ) : denied ? (
+        <div className="bg-white rounded-xl border border-amber-200 py-12 px-6 text-center">
+          <p className="text-sm font-bold text-slate-800 mb-1">Not your class</p>
+          <p className="text-sm text-amber-800 max-w-md mx-auto leading-relaxed">
+            {(error as any)?.response?.data?.detail || `You cannot enter ${label.toLowerCase()}s for this class.`}
+          </p>
+        </div>
+      ) : isError ? (
+        <p className="text-sm text-slate-500 py-10 text-center bg-white rounded-xl border border-slate-200">
+          Couldn&apos;t load this class. Try again.
+        </p>
       ) : (grid?.rows ?? []).length === 0 ? (
         <p className="text-sm text-slate-400 py-10 text-center bg-white rounded-xl border border-slate-200">No pupils in this class.</p>
       ) : (
