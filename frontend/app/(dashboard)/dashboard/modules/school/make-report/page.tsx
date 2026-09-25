@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useMyTeachingAssignments, useReportEntryGrid, useSaveReportEntry, useSubTerms, useTerms } from "@/hooks/usePlatform";
 import { cn } from "@/lib/utils";
 import { classesFromAssignments, defaultSubTermId, subjectsForClass, subTermDisplay } from "@/lib/reportEntry";
-import { useSubmitClassReport } from "@/hooks/useAcademics";
-import { Loader2, Save, NotebookPen, AlertTriangle, SendHorizonal, CheckCircle2 } from "lucide-react";
+import { useSubjectReadiness, useSubmitClassReport, useSubmitSubjectReport, useWithdrawSubjectReport } from "@/hooks/useAcademics";
+import { Loader2, Save, NotebookPen, AlertTriangle, SendHorizonal, CheckCircle2, Undo2, Clock } from "lucide-react";
 
 export default function MakeReportPage() {
   const { data: assignments = [], isLoading: loadingA } = useMyTeachingAssignments();
@@ -40,6 +40,20 @@ export default function MakeReportPage() {
   const { data: grid, isLoading } = useReportEntryGrid({ class_id: classId, subject_id: subjectId, term_id: termId, sub_term_id: subTermId || undefined });
   const save = useSaveReportEntry();
   const submitReport = useSubmitClassReport();
+  // Per-subject sign-off. Readiness is fetched for the CLASS, not the selected
+  // subject, because it is what tells this teacher whether they are the one
+  // holding the class up — and lets the class teacher see the whole picture.
+  const { data: readiness, isError: readinessFailed } = useSubjectReadiness({
+    class_id: classId || undefined, term_id: termId || undefined,
+    sub_term_id: subTermId || undefined,
+  });
+  const submitSubject = useSubmitSubjectReport();
+  const withdrawSubject = useWithdrawSubjectReport();
+  // This teacher's own row for the subject currently open.
+  const mySubjectRow = useMemo(
+    () => (readiness?.subjects ?? []).find((r: any) => r.subject_id === subjectId),
+    [readiness, subjectId],
+  );
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
 
   const scores = useMemo(() => {
@@ -105,6 +119,96 @@ export default function MakeReportPage() {
             </div>
             {ready && grid && (grid.students?.length ?? 0) > 0 && <button onClick={submit} disabled={save.isPending} className="btn-primary gap-2 ml-auto">{save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save Scores</button>}
           </div>
+
+          {/* Per-subject sign-off, above the class banner: this is the action
+              MOST teachers on this page can take, where submitting the whole
+              class is only the class teacher's. */}
+          {ready && grid && (grid.students?.length ?? 0) > 0 && (grid.assessments?.length ?? 0) > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-white p-4 mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  {mySubjectRow?.submitted
+                    ? <CheckCircle2 size={18} className="text-emerald-600 mt-0.5 shrink-0" />
+                    : <Clock size={18} className="text-amber-500 mt-0.5 shrink-0" />}
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">
+                      {mySubjectRow?.submitted ? "This subject is signed off" : "Sign off this subject"}
+                    </p>
+                    <p className="text-xs mt-0.5 text-slate-500">
+                      {mySubjectRow?.submitted
+                        ? <>Submitted by {mySubjectRow.submitted_by_name || "a teacher"}
+                            {mySubjectRow.submitted_at ? ` on ${new Date(mySubjectRow.submitted_at).toLocaleDateString("en-GB")}` : ""}.
+                            Withdraw it if the marks need changing.</>
+                        : <>Tells your class teacher your marks for this subject are finished.
+                            It does not submit the whole class.</>}
+                    </p>
+                  </div>
+                </div>
+                {mySubjectRow?.submitted ? (
+                  <button
+                    onClick={() => {
+                      if (confirm("Withdraw this sign-off so the marks can be changed?"))
+                        withdrawSubject.mutate(mySubjectRow.submission_id);
+                    }}
+                    disabled={withdrawSubject.isPending}
+                    className="btn-secondary gap-2 shrink-0"
+                  >
+                    {withdrawSubject.isPending ? <Loader2 size={15} className="animate-spin" /> : <Undo2 size={15} />}
+                    Withdraw sign-off
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => submitSubject.mutate({
+                      class_id: classId, subject_id: subjectId, term_id: termId,
+                      sub_term_id: subTermId || undefined,
+                    })}
+                    disabled={submitSubject.isPending}
+                    className="btn-primary gap-2 shrink-0"
+                  >
+                    {submitSubject.isPending ? <Loader2 size={15} className="animate-spin" /> : <SendHorizonal size={15} />}
+                    Sign off {mySubjects.find((s) => s.id === subjectId)?.name ?? "subject"}
+                  </button>
+                )}
+              </div>
+
+              {/* The whole class's picture. Three states are distinguished because
+                  they need different actions: done, marks in but unsigned, and
+                  nothing entered at all. */}
+              {readinessFailed ? (
+                <p className="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-100">
+                  Couldn&apos;t load the rest of this class&apos;s subjects.
+                </p>
+              ) : (readiness?.subjects?.length ?? 0) > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-2">
+                    {readiness.class_name} · {readiness.submitted_count} of {readiness.total_count} subjects signed off
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {readiness.subjects.map((r: any) => (
+                      <span
+                        key={r.subject_id}
+                        title={r.submitted
+                          ? `Signed off by ${r.submitted_by_name || "a teacher"}`
+                          : r.score_count > 0
+                            ? `Marks entered, not signed off${r.teacher_name ? ` — ${r.teacher_name}` : ""}`
+                            : `No marks entered${r.teacher_name ? ` — ${r.teacher_name}` : ""}`}
+                        className={cn(
+                          "text-[11px] px-2 py-0.5 rounded-full border font-semibold",
+                          r.submitted
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : r.score_count > 0
+                              ? "border-amber-200 bg-amber-50 text-amber-700"
+                              : "border-slate-200 bg-slate-50 text-slate-500",
+                        )}
+                      >
+                        {r.subject_name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Above the table, not below it: a class can run to forty pupils, and a
               teacher should not have to scroll past all of them to find out the

@@ -147,6 +147,44 @@ export function useSubmitClassReport() {
   });
 }
 
+/** Which of a class's subjects have been signed off, and by whom. */
+export function useSubjectReadiness(p: { class_id?: string; term_id?: string; sub_term_id?: string }) {
+  return useQuery({
+    queryKey: ["subject-readiness", p],
+    queryFn: () => academicsApi.reportWorkflow.subjectReadiness(p as { class_id: string; term_id: string; sub_term_id?: string }),
+    enabled: !!p.class_id && !!p.term_id,
+  });
+}
+
+export function useSubmitSubjectReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { class_id: string; subject_id: string; term_id: string; sub_term_id?: string; notes?: string }) =>
+      academicsApi.reportWorkflow.submitSubject(data),
+    onSuccess: () => {
+      // The readiness grid IS the state this button reflects, so it has to
+      // refetch or the teacher still sees their subject as outstanding.
+      qc.invalidateQueries({ queryKey: ["subject-readiness"] });
+      toast.success("Subject signed off. Your class teacher can see it is done.");
+    },
+    onError: (e: any) =>
+      toast.error(e?.response?.data?.detail || "Couldn't sign off this subject."),
+  });
+}
+
+export function useWithdrawSubjectReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => academicsApi.reportWorkflow.withdrawSubject(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["subject-readiness"] });
+      toast.success("Sign-off withdrawn. You can change the marks and submit again.");
+    },
+    onError: (e: any) =>
+      toast.error(e?.response?.data?.detail || "Couldn't withdraw this sign-off."),
+  });
+}
+
 export function useUpdateReportWorkflow() {
   const qc = useQueryClient();
   return useMutation({

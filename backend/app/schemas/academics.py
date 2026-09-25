@@ -187,6 +187,72 @@ class ReportApprovalListResponse(BaseModel):
     page_size: int
 
 
+class SubjectSubmitRequest(BaseModel):
+    """A subject teacher signing off their own marks for one class.
+
+    Takes `term_id`, not a term NAME, unlike ReportSubmitRequest. That string is
+    what let a production term rename drift away from the rows referencing it;
+    a new endpoint has no reason to repeat it.
+    """
+    class_id: str
+    subject_id: str
+    term_id: str
+    sub_term_id: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SubjectSubmissionResponse(BaseModel):
+    id: str
+    class_id: str
+    class_name: Optional[str] = None
+    subject_id: str
+    subject_name: Optional[str] = None
+    term_id: str
+    term_name: Optional[str] = None
+    sub_term_id: Optional[str] = None
+    sub_term_name: Optional[str] = None
+    submitted_by: Optional[str] = None
+    submitted_by_name: Optional[str] = None
+    submitted_at: Optional[datetime] = None
+    score_count: Optional[int] = None
+    notes: Optional[str] = None
+    org_id: str
+
+
+class SubjectReadinessRow(BaseModel):
+    """One subject's readiness for a class's report. `submitted` False with
+    `score_count` 0 means nobody has entered anything; False with marks present
+    means the marks are in but unsigned — a distinction the PC teacher needs,
+    since the two call for different conversations."""
+    subject_id: str
+    subject_name: Optional[str] = None
+    submitted: bool = False
+    submission_id: Optional[str] = None
+    submitted_by: Optional[str] = None
+    submitted_by_name: Optional[str] = None
+    submitted_at: Optional[datetime] = None
+    score_count: int = 0
+    # Who is expected to sign this off, where that is knowable. None when no
+    # teacher is assigned — which is why the class submit does not gate on this.
+    teacher_id: Optional[str] = None
+    teacher_name: Optional[str] = None
+
+
+class SubjectReadinessResponse(BaseModel):
+    class_id: str
+    class_name: Optional[str] = None
+    term_id: str
+    term_name: Optional[str] = None
+    sub_term_id: Optional[str] = None
+    sub_term_name: Optional[str] = None
+    subjects: list[SubjectReadinessRow] = Field(default_factory=list)
+    submitted_count: int = 0
+    total_count: int = 0
+    # The class-level workflow stage, so one call tells the PC teacher both
+    # whether their colleagues are done and whether they have already submitted.
+    class_stage: Optional[str] = None
+
+
 # ── Merit & Awards (one typed model) ───────────────────────────────────────────
 
 class RecognitionCreate(BaseModel):

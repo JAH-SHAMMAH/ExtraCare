@@ -1058,6 +1058,15 @@ export const academicsApi = {
       api.get("/academics/report-workflow/mine", { params: p }).then((r) => r.data),
     submit: (data: { class_id: string; term: string; notes?: string }) =>
       api.post("/academics/report-workflow/submit", data).then((r) => r.data),
+    // Per-subject sign-off — a finer grain than `submit` above, which speaks for
+    // the whole class and stays PC-teacher-only. These take term_id, not a term
+    // NAME, because a name is what drifted away from its rows in production.
+    submitSubject: (data: { class_id: string; subject_id: string; term_id: string; sub_term_id?: string; notes?: string }) =>
+      api.post("/academics/report-workflow/submit-subject", data).then((r) => r.data),
+    withdrawSubject: (id: string) =>
+      api.delete(`/academics/report-workflow/submit-subject/${id}`),
+    subjectReadiness: (p: { class_id: string; term_id: string; sub_term_id?: string }) =>
+      api.get("/academics/report-workflow/subject-readiness", { params: p }).then((r) => r.data),
   },
   recognitions: {
     list: (p?: { type?: string; student_id?: string; house?: string; term?: string; page?: number; page_size?: number }) =>

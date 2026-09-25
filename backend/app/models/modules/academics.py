@@ -4,6 +4,8 @@
   • Transcript (+ TranscriptEntry) — a formal, consolidated academic record
     snapshot (distinct from the live Grade gradebook).
   • ReportApproval — the report-card approval workflow (draft → published).
+  • SubjectReportSubmission — one subject teacher's sign-off, at the (class,
+    subject, term) grain that ReportApproval deliberately does not cover.
   • Recognition — ONE typed model for both conduct points and academic awards
     (``type`` = conduct_point | academic_award), shared backend, tabbed UI.
 
@@ -93,6 +95,55 @@ class ReportApproval(Base, UUIDMixin, TimestampMixin, TenantMixin):
         # and NULL class_id (an org-wide row) stays unconstrained, as Postgres
         # treats NULLs as distinct.
         UniqueConstraint("class_id", "term", name="uq_report_approval_class_term"),
+    )
+
+
+class SubjectReportSubmission(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """One subject teacher's sign-off that their marks for a (class, subject,
+    term, sub-term) are finished.
+
+    WHY A SEPARATE TABLE. `report_approvals` is unique on (class_id, term), so a
+    row there is a statement about the WHOLE class — which is why only the class's
+    PC teacher may create one. A subject teacher needed a way to say "my part is
+    done" without speaking for every other subject, and that is a different grain.
+    ReportApproval is deliberately untouched: the approval ladder that gates
+    publishing a class's cards keeps exactly the meaning it had.
+
+    EXISTENCE IS THE STATE. A row means submitted; withdrawing deletes it. There
+    is no `stage` column because there is only one state to be in, and no
+    soft-delete flag because every query would then have to remember to filter it
+    — a filter this codebase has already been bitten by forgetting. The history
+    lives in the audit log, which records both the submission and the withdrawal.
+
+    TERM IS A REAL FK, unlike ReportApproval.term, which is free text. That
+    string is what let a production term rename drift away from the approvals
+    referencing it and blank every parent's report card. A new table has no
+    reason to inherit that.
+
+    `sub_term_id` is nullable so a school that does not split its terms can sign
+    off per term alone. Postgres treats NULLs as distinct in a unique index, so
+    the constraint below does not prevent two NULL-sub-term rows for the same
+    subject — the endpoint checks for an existing row before inserting, which is
+    what actually enforces one sign-off per grain.
+    """
+    __tablename__ = "subject_report_submissions"
+
+    class_id = Column(String(36), ForeignKey("school_classes.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False, index=True)
+    term_id = Column(String(36), ForeignKey("academic_terms.id", ondelete="CASCADE"), nullable=False, index=True)
+    sub_term_id = Column(String(36), ForeignKey("academic_sub_terms.id", ondelete="CASCADE"), nullable=True, index=True)
+    submitted_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    # How many marks existed at sign-off. Not used as a gate — it is the record of
+    # what the teacher was actually attesting to, so a later dispute about a
+    # missing mark can be settled against what was there at the time.
+    score_count = Column(Integer, nullable=True)
+    notes = Column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("class_id", "subject_id", "term_id", "sub_term_id",
+                         name="uq_subject_report_submission"),
+        Index("ix_subject_report_submissions_class_term", "class_id", "term_id"),
     )
 
 

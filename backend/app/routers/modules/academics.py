@@ -32,6 +32,7 @@ from app.models.user import User
 from app.models.modules.school import Student, Subject, SchoolClass, Timetable
 from app.models.modules.academics import (
     SubjectSelection, Transcript, TranscriptEntry, ReportApproval, Recognition,
+    SubjectReportSubmission,
 )
 from app.models.modules.platform import (
     Assessment, AssessmentGroup, StudentAssessmentScore, AcademicTerm, AcademicSubTerm,
@@ -42,6 +43,8 @@ from app.schemas.academics import (
     TranscriptEntryCreate, TranscriptEntryResponse,
     ReportApprovalCreate, ReportApprovalUpdate, ReportApprovalResponse, ReportApprovalListResponse,
     ReportSubmitRequest,
+    SubjectSubmitRequest, SubjectSubmissionResponse,
+    SubjectReadinessRow, SubjectReadinessResponse,
     RecognitionCreate, RecognitionUpdate, RecognitionResponse, RecognitionListResponse,
     HouseLeaderboardRow, LeaderboardResponse,
     SELECTION_STATUSES, TRANSCRIPT_STATUSES, RECOGNITION_TYPES, AWARD_TYPES,
@@ -751,8 +754,16 @@ async def submit_class_report(
     SCOPE, and why: the row is unique on (class_id, term), so submitting is a
     statement about the WHOLE class, not one subject. Only the class's PC teacher
     may make it — a subject teacher claiming the class is ready would be claiming
-    it on behalf of every other subject teacher. Per-subject sign-off would need
-    its own table; see docs/future-features.md.
+    it on behalf of every other subject teacher.
+
+    Per-subject sign-off now exists alongside this, on its own table — see
+    POST /report-workflow/submit-subject and GET /report-workflow/subject-readiness.
+    This endpoint deliberately does NOT gate on it. Requiring every subject to be
+    signed off first would wedge any class holding a subject with no assigned
+    teacher, since nobody would be permitted to sign that subject off, and the
+    class report could then never be submitted at all — a working workflow broken
+    by an empty table. The readiness grid is advisory: it tells the PC teacher
+    what is outstanding and leaves the judgement with them.
 
     The only transition granted is draft -> submitted. Everything onward stays
     admin-only, so this adds a step to the ladder without widening it.
@@ -838,6 +849,401 @@ async def submit_class_report(
     )
     cnames = await _class_names(db, org_id, {r.class_id})
     return _report_response(r, cnames.get(r.class_id))
+
+
+# ── Per-subject report sign-off ───────────────────────────────────────────────
+#
+# ReportApproval answers "is this CLASS's report ready", at one row per (class,
+# term), which is why only the PC teacher may submit it. These endpoints answer
+# the different question "is MY SUBJECT done", so a subject teacher can hand off
+# their own part without speaking for colleagues. The two do not interfere:
+# nothing here reads or writes report_approvals except to report its stage.
+
+
+async def _subject_score_count(db, org_id: str, class_id: str, subject_id: str,
+                               term_id: str, sub_term_id: str | None = None) -> int:
+    """How many marks exist for one subject in one class for a term.
+
+    Counted through Assessment so the term actually scopes it -- scores carry no
+    term of their own, they inherit it from the assessment they belong to.
+    """
+    q = (
+        select(func.count(StudentAssessmentScore.id))
+        .select_from(StudentAssessmentScore)
+        .join(Assessment, Assessment.id == StudentAssessmentScore.assessment_id)
+        .join(Student, Student.id == StudentAssessmentScore.student_id)
+        .where(
+            StudentAssessmentScore.org_id == org_id,
+            StudentAssessmentScore.subject_id == subject_id,
+            Student.class_id == class_id,
+            Student.is_deleted == False,  # noqa: E712
+            Assessment.term_id == term_id,
+        )
+    )
+    if sub_term_id:
+        q = q.where(Assessment.sub_term_id == sub_term_id)
+    return (await db.execute(q)).scalar() or 0
+
+
+async def _may_sign_off(db, current_user: User, class_id: str, subject_id: str) -> bool:
+    """Whether this user may sign off (class, subject).
+
+    Reuses `_teacher_assignments` -- the same authority that decides who may
+    ENTER marks for a pair. Anyone who can put the marks in is the right person
+    to say they are finished, and tying the two together means a teacher can
+    never be shown an entry grid they are then forbidden to submit.
+    """
+    from app.routers.modules.platform import _report_admin, _teacher_assignments
+
+    if _report_admin(current_user):
+        return True
+    return (class_id, subject_id) in await _teacher_assignments(
+        db, current_user.org_id, current_user.id)
+
+
+async def _submission_response(db, org_id: str, s: SubjectReportSubmission) -> SubjectSubmissionResponse:
+    cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == s.class_id))).scalars().first()
+    subj = (await db.execute(select(Subject).where(Subject.id == s.subject_id))).scalars().first()
+    term = (await db.execute(select(AcademicTerm).where(AcademicTerm.id == s.term_id))).scalars().first()
+    sub = None
+    if s.sub_term_id:
+        sub = (await db.execute(select(AcademicSubTerm).where(
+            AcademicSubTerm.id == s.sub_term_id))).scalars().first()
+    who = None
+    if s.submitted_by:
+        who = (await db.execute(select(User).where(User.id == s.submitted_by))).scalars().first()
+    return SubjectSubmissionResponse(
+        id=s.id, class_id=s.class_id, class_name=(cls.name if cls else None),
+        subject_id=s.subject_id, subject_name=(subj.name if subj else None),
+        term_id=s.term_id, term_name=(term.name if term else None),
+        sub_term_id=s.sub_term_id, sub_term_name=(sub.name if sub else None),
+        submitted_by=s.submitted_by,
+        submitted_by_name=(getattr(who, "full_name", None) if who else None),
+        submitted_at=s.submitted_at, score_count=s.score_count, notes=s.notes,
+        org_id=s.org_id,
+    )
+
+
+@router.post("/report-workflow/submit-subject", response_model=SubjectSubmissionResponse,
+             status_code=201,
+             dependencies=[Depends(PermissionChecker("school:reports:write"))])
+async def submit_subject_report(
+    payload: SubjectSubmitRequest,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """A subject teacher signs off their own marks for one class.
+
+    Distinct from POST /report-workflow/submit, which is a statement about the
+    whole class and stays PC-teacher-only. This is the grain a subject teacher
+    can honestly speak to.
+
+    Refuses to sign off a subject with NO marks. A sign-off is an attestation
+    that the work is done, and letting one be recorded against an empty subject
+    would make the readiness grid confidently wrong -- the PC teacher would see
+    green and submit a class whose marks were never entered.
+    """
+    org_id = current_user.org_id
+
+    cls = (await db.execute(select(SchoolClass).where(
+        SchoolClass.id == payload.class_id, SchoolClass.org_id == org_id))).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="class not found in your organisation.")
+    subj = (await db.execute(select(Subject).where(
+        Subject.id == payload.subject_id, Subject.org_id == org_id))).scalar_one_or_none()
+    if not subj:
+        raise HTTPException(status_code=404, detail="subject not found in your organisation.")
+    term = (await db.execute(select(AcademicTerm).where(
+        AcademicTerm.id == payload.term_id, AcademicTerm.org_id == org_id))).scalar_one_or_none()
+    if not term:
+        raise HTTPException(status_code=404, detail="term not found in your organisation.")
+    if payload.sub_term_id:
+        sub_ok = (await db.execute(select(AcademicSubTerm.id).where(
+            AcademicSubTerm.id == payload.sub_term_id,
+            AcademicSubTerm.org_id == org_id))).scalar_one_or_none()
+        if not sub_ok:
+            raise HTTPException(status_code=404, detail="sub-term not found in your organisation.")
+
+    if not await _may_sign_off(db, current_user, payload.class_id, payload.subject_id):
+        raise HTTPException(
+            status_code=403,
+            detail=f"You do not teach {subj.name} to {cls.name}, so you cannot submit "
+                   f"its marks. The teacher who enters a subject's marks is the one "
+                   f"who signs them off.",
+        )
+
+    n = await _subject_score_count(db, org_id, payload.class_id, payload.subject_id,
+                                   payload.term_id, payload.sub_term_id)
+    if n == 0:
+        raise HTTPException(
+            status_code=422,
+            detail=f"No marks have been entered for {subj.name} in {cls.name} for "
+                   f"{term.name}. Enter the marks under Report Entry before submitting.",
+        )
+
+    existing = (await db.execute(select(SubjectReportSubmission).where(
+        SubjectReportSubmission.org_id == org_id,
+        SubjectReportSubmission.class_id == payload.class_id,
+        SubjectReportSubmission.subject_id == payload.subject_id,
+        SubjectReportSubmission.term_id == payload.term_id,
+        SubjectReportSubmission.sub_term_id == payload.sub_term_id,
+    ))).scalars().first()
+    if existing:
+        who = None
+        if existing.submitted_by:
+            who = (await db.execute(select(User).where(
+                User.id == existing.submitted_by))).scalars().first()
+        name = getattr(who, "full_name", None) or "another teacher"
+        raise HTTPException(
+            status_code=409,
+            detail=f"{subj.name} for {cls.name} was already submitted by {name}. "
+                   f"Withdraw that submission first if the marks need changing.",
+        )
+
+    s = SubjectReportSubmission(
+        org_id=org_id, class_id=payload.class_id, subject_id=payload.subject_id,
+        term_id=payload.term_id, sub_term_id=payload.sub_term_id,
+        submitted_by=current_user.id, submitted_at=datetime.now(timezone.utc),
+        score_count=n, notes=payload.notes,
+    )
+    db.add(s)
+    try:
+        await db.flush()
+    except IntegrityError:
+        # Two submissions racing. Recover onto the row that won rather than 500 --
+        # the same shape as create_report_workflow's guard.
+        await db.rollback()
+        s = (await db.execute(select(SubjectReportSubmission).where(
+            SubjectReportSubmission.org_id == org_id,
+            SubjectReportSubmission.class_id == payload.class_id,
+            SubjectReportSubmission.subject_id == payload.subject_id,
+            SubjectReportSubmission.term_id == payload.term_id,
+            SubjectReportSubmission.sub_term_id == payload.sub_term_id,
+        ))).scalars().first()
+        if s is None:
+            raise HTTPException(status_code=409,
+                                detail="Could not record this submission. Please try again.")
+        return await _submission_response(db, org_id, s)
+
+    await log_action(
+        db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
+        resource_type="SubjectReportSubmission", resource_id=s.id,
+        resource_label=f"submitted {subj.name} marks for {cls.name} ({term.name})",
+        new_values={"score_count": n}, request=request,
+    )
+    return await _submission_response(db, org_id, s)
+
+
+@router.delete("/report-workflow/submit-subject/{submission_id}", status_code=204,
+               dependencies=[Depends(PermissionChecker("school:reports:write"))])
+async def withdraw_subject_report(
+    submission_id: str,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Withdraw a subject sign-off, so its marks can be corrected.
+
+    Deleting the row IS the withdrawal -- existence is the state, and the audit
+    log keeps the history of both the submission and this.
+
+    Refused once the class report has moved past draft. After the PC teacher has
+    handed the class to the office, a subject quietly becoming unsubmitted would
+    change what that submission meant after the fact; an administrator moving the
+    class back to draft is the intended route.
+    """
+    from app.routers.modules.platform import _report_admin
+
+    org_id = current_user.org_id
+    s = (await db.execute(select(SubjectReportSubmission).where(
+        SubjectReportSubmission.id == submission_id,
+        SubjectReportSubmission.org_id == org_id))).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Submission not found.")
+
+    if not _report_admin(current_user) and s.submitted_by != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the teacher who submitted this subject, or an administrator, "
+                   "can withdraw it.",
+        )
+
+    term = (await db.execute(select(AcademicTerm).where(AcademicTerm.id == s.term_id))).scalars().first()
+    if term:
+        appr = (await db.execute(select(ReportApproval).where(
+            ReportApproval.org_id == org_id, ReportApproval.class_id == s.class_id,
+            ReportApproval.term == term.name))).scalars().first()
+        if appr and appr.stage != "draft":
+            raise HTTPException(
+                status_code=409,
+                detail=f"This class's {term.name} report is already at "
+                       f"'{appr.stage}', so its subjects cannot be withdrawn. Ask an "
+                       f"administrator to move it back to 'draft' first.",
+            )
+
+    cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == s.class_id))).scalars().first()
+    subj = (await db.execute(select(Subject).where(Subject.id == s.subject_id))).scalars().first()
+    await log_action(
+        db, AuditAction.RECORD_DELETED, org_id, actor=current_user,
+        resource_type="SubjectReportSubmission", resource_id=s.id,
+        resource_label=f"withdrew {(subj.name if subj else 'subject')} submission for "
+                       f"{(cls.name if cls else 'class')}",
+        old_values={"submitted_by": s.submitted_by, "score_count": s.score_count},
+        request=request,
+    )
+    await db.delete(s)
+    await db.flush()
+    return None
+
+
+@router.get("/report-workflow/subject-readiness", response_model=SubjectReadinessResponse,
+            dependencies=[Depends(PermissionChecker("school:reports:read"))])
+async def subject_readiness(
+    class_id: str,
+    term_id: str,
+    sub_term_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Which of a class's subjects have been signed off, and by whom.
+
+    What the PC teacher consults before submitting the class. Three states are
+    distinguished on purpose, because they call for different actions:
+
+      submitted                 -> done
+      not submitted, marks in   -> chase the teacher for a sign-off
+      not submitted, no marks   -> the marks themselves are missing
+
+    WHICH SUBJECTS COUNT. There is no class-to-subject table in this schema, so
+    the expected set is derived: subjects that already have marks for this class
+    and term, plus subjects timetabled to the class. The union matters -- marks
+    alone would hide a subject nobody has started, and the timetable alone would
+    miss a subject being marked without a timetable row (which is the situation
+    today, where the Timetable is empty and Subject.teacher_id is org-wide).
+    """
+    from app.routers.modules.platform import _pc_teacher_id, _report_admin
+
+    org_id = current_user.org_id
+    cls = (await db.execute(select(SchoolClass).where(
+        SchoolClass.id == class_id, SchoolClass.org_id == org_id))).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="class not found in your organisation.")
+    term = (await db.execute(select(AcademicTerm).where(
+        AcademicTerm.id == term_id, AcademicTerm.org_id == org_id))).scalar_one_or_none()
+    if not term:
+        raise HTTPException(status_code=404, detail="term not found in your organisation.")
+    sub = None
+    if sub_term_id:
+        sub = (await db.execute(select(AcademicSubTerm).where(
+            AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org_id))).scalars().first()
+
+    # Readable by the class's PC teacher, by a teacher who teaches the class, or
+    # by an admin. A subject teacher seeing the grid is the point -- it is how
+    # they learn their own subject is the one holding the class up.
+    if not _report_admin(current_user):
+        from app.routers.modules.platform import _teacher_assignments
+        pc = await _pc_teacher_id(db, org_id, class_id)
+        pairs = await _teacher_assignments(db, org_id, current_user.id)
+        teaches_here = any(cid == class_id for (cid, _sid) in pairs)
+        if pc != current_user.id and not teaches_here:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not teach this class, so you cannot see its report readiness.",
+            )
+
+    # Subjects with marks for this class + term.
+    mark_q = (
+        select(StudentAssessmentScore.subject_id, func.count(StudentAssessmentScore.id))
+        .select_from(StudentAssessmentScore)
+        .join(Assessment, Assessment.id == StudentAssessmentScore.assessment_id)
+        .join(Student, Student.id == StudentAssessmentScore.student_id)
+        .where(
+            StudentAssessmentScore.org_id == org_id,
+            Student.class_id == class_id,
+            Student.is_deleted == False,  # noqa: E712
+            Assessment.term_id == term_id,
+        )
+        .group_by(StudentAssessmentScore.subject_id)
+    )
+    if sub_term_id:
+        mark_q = mark_q.where(Assessment.sub_term_id == sub_term_id)
+    counts = {sid: n for (sid, n) in (await db.execute(mark_q)).all()}
+
+    # Subjects timetabled to the class, which catches one nobody has started.
+    timetabled = {r[0] for r in (await db.execute(
+        select(Timetable.subject_id).where(
+            Timetable.org_id == org_id, Timetable.class_id == class_id,
+            Timetable.subject_id.isnot(None)))).all()}
+
+    subject_ids = set(counts) | timetabled
+    if not subject_ids:
+        return SubjectReadinessResponse(
+            class_id=class_id, class_name=cls.name, term_id=term_id, term_name=term.name,
+            sub_term_id=sub_term_id, sub_term_name=(sub.name if sub else None),
+            subjects=[], submitted_count=0, total_count=0,
+            class_stage=None,
+        )
+
+    subjects = {s.id: s for s in (await db.execute(select(Subject).where(
+        Subject.org_id == org_id, Subject.id.in_(list(subject_ids))))).scalars().all()}
+
+    subs = {s.subject_id: s for s in (await db.execute(select(SubjectReportSubmission).where(
+        SubjectReportSubmission.org_id == org_id,
+        SubjectReportSubmission.class_id == class_id,
+        SubjectReportSubmission.term_id == term_id,
+        SubjectReportSubmission.sub_term_id == sub_term_id,
+    ))).scalars().all()}
+
+    # Teacher names for both the sign-off stamp and the expected-teacher column.
+    want_users = {s.submitted_by for s in subs.values() if s.submitted_by}
+    want_users |= {x.teacher_id for x in subjects.values() if x.teacher_id}
+    users = {u.id: u for u in (await db.execute(select(User).where(
+        User.id.in_(list(want_users)))))
+        .scalars().all()} if want_users else {}
+
+    # Per-class teacher assignment where the Timetable provides it; otherwise the
+    # subject's org-wide teacher.
+    tt_teacher = {}
+    for cid, sid, tid in (await db.execute(select(
+            Timetable.class_id, Timetable.subject_id, Timetable.teacher_id).where(
+            Timetable.org_id == org_id, Timetable.class_id == class_id))).all():
+        if sid and tid:
+            tt_teacher[sid] = tid
+
+    rows: list[SubjectReadinessRow] = []
+    for sid in subject_ids:
+        subj = subjects.get(sid)
+        s = subs.get(sid)
+        who = users.get(s.submitted_by) if (s and s.submitted_by) else None
+        t_id = tt_teacher.get(sid) or (subj.teacher_id if subj else None)
+        t_user = users.get(t_id) if t_id else None
+        rows.append(SubjectReadinessRow(
+            subject_id=sid, subject_name=(subj.name if subj else None),
+            submitted=s is not None,
+            submission_id=(s.id if s else None),
+            submitted_by=(s.submitted_by if s else None),
+            submitted_by_name=(getattr(who, "full_name", None) if who else None),
+            submitted_at=(s.submitted_at if s else None),
+            score_count=counts.get(sid, 0),
+            teacher_id=t_id,
+            teacher_name=(getattr(t_user, "full_name", None) if t_user
+                          else (subj.teacher_name if subj else None)),
+        ))
+    rows.sort(key=lambda r: (r.subject_name or ""))
+
+    appr = (await db.execute(select(ReportApproval).where(
+        ReportApproval.org_id == org_id, ReportApproval.class_id == class_id,
+        ReportApproval.term == term.name))).scalars().first()
+
+    return SubjectReadinessResponse(
+        class_id=class_id, class_name=cls.name, term_id=term_id, term_name=term.name,
+        sub_term_id=sub_term_id, sub_term_name=(sub.name if sub else None),
+        subjects=rows,
+        submitted_count=sum(1 for r in rows if r.submitted),
+        total_count=len(rows),
+        class_stage=(appr.stage if appr else None),
+    )
 
 
 @router.patch("/report-workflow/{workflow_id}", response_model=ReportApprovalResponse, dependencies=[_report_write])
