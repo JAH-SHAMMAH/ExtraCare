@@ -1,14 +1,67 @@
 # Fairview School Portal — Deployment Guide
 
-**Version:** 1.0 · **Status:** Code frozen, ready for deployment preparation.
+**Version:** 1.0
 
 A single-school portal (one organisation, school-only). Backend: FastAPI +
-async SQLAlchemy. Frontend: Next.js 15 (standalone). Production runs on
-MySQL/TiDB (or PostgreSQL) behind nginx with TLS.
+async SQLAlchemy. Frontend: Next.js 15 (standalone).
 
 ---
 
-## 1. Architecture at a glance
+## 0. HOW FAIRVIEW ACTUALLY DEPLOYS — read this first
+
+Fairview runs on **Render**, on **PostgreSQL**, as **two services**:
+
+| | |
+|---|---|
+| backend | `Fairview_Portal` — API at `https://fairview-portal.onrender.com` |
+| frontend | a separate Node/Next service |
+| database | Render PostgreSQL (`fairview_ndata`), driver `asyncpg` |
+
+### ⚠️ MIGRATIONS DO NOT APPLY THEMSELVES
+
+`backend/entrypoint.sh` does run `alembic upgrade head` — and **Render never
+executes it.** The backend service is not built from `backend/Dockerfile`, so the
+Dockerfile's `ENTRYPOINT` is never invoked. Confirmed on 2026-09-26: a deploy put
+new code live (new routes answering, `/health` reporting
+`environment: production`) while `alembic_version` stayed put.
+
+It follows that **no migration has ever reached this database via a Render
+deploy** — whatever applied revisions 1–125 did so by some other route. If you
+are looking for the automation, there isn't any.
+
+So after merging a migration, do ONE of these:
+
+**(a) Apply it manually** — what has always actually happened:
+
+```bash
+cd backend
+# ALWAYS look first: know exactly which revisions will run.
+DATABASE_URL="postgresql+asyncpg://<prod-dsn>" python -m alembic current
+DATABASE_URL="postgresql+asyncpg://<prod-dsn>" python -m alembic history -r current:head
+DATABASE_URL="postgresql+asyncpg://<prod-dsn>" python -m alembic upgrade head
+```
+
+**(b) Set a Render Pre-Deploy Command** (the durable fix) — see §7.
+
+Verify either way by reading the database, never by probing the API: a healthy
+API response proves nothing, because the old instance serves happily while
+nothing new has shipped.
+
+```sql
+SELECT version_num FROM alembic_version;
+SELECT to_regclass('public.<new_table>') IS NOT NULL;
+```
+
+### The docker-compose material below is NOT how Fairview runs
+
+Sections 1-6 describe a self-hosted nginx + MySQL + docker-compose stack. It is
+kept for local development (`docker-compose.yml`) and as a self-hosting
+reference. **It does not describe production.** Do not diagnose a production
+problem from it.
+
+---
+
+## 1. Architecture at a glance — self-hosted topology (see §0 for Render)
 
 ```
 Browser ──HTTPS──▶ nginx ──/────▶ web  (Next.js standalone, :3000)
@@ -52,10 +105,17 @@ Production uses MySQL 8 / TiDB (driver `aiomysql`, in `requirements.txt`).
 `DATABASE_URL=mysql+aiomysql://user:pass@host:port/fairview` and drop the `db`
 service. (PostgreSQL: swap to `asyncpg` and `postgresql+asyncpg://…`.)
 
-**Migrations run automatically on boot** — `entrypoint.sh` runs
-`alembic upgrade head` whenever `ENVIRONMENT` is `production`/`staging`, before
-uvicorn serves traffic. Alembic reads `DATABASE_URL` from settings.
-Migration chain: `baseline → 001_payment → 002_attendance (head)`.
+**Migrations on Render: NOT automatic — see §0.** `entrypoint.sh` would run
+`alembic upgrade head` when `ENVIRONMENT` is `production`/`staging`, and that
+happens only under Docker (`docker-compose`, below). Render does not run it.
+Alembic reads `DATABASE_URL` from settings.
+
+The migration chain is long and grows every release — read the current head from
+the code rather than from this file, which will always be out of date:
+
+```bash
+cd backend && python -m alembic heads
+```
 
 ## 5b. Persistent storage for uploaded media (REQUIRED)
 Uploaded images, **documents**, and profile photos must land on durable storage —
@@ -95,7 +155,7 @@ ephemeral in `production`/`staging` **and** `CLOUDINARY_URL` is not set.
 - **Already-lost files** (wiped by earlier ephemeral redeploys) cannot be
   recovered — re-upload them once the disk is attached.
 
-## 6. Initial deployment
+## 6. Initial deployment — SELF-HOSTED DOCKER ONLY (not Fairview; see §0)
 ```bash
 cp .env.production.example .env        # fill secrets
 # place TLS certs in ./certs ; set nginx server_name to your domain
@@ -107,11 +167,41 @@ curl -fsS https://<domain>/health                            # {"status":"ok","e
 ```
 
 ## 7. Application update
+
+### On Render (how Fairview updates)
+
+1. Push to `main`. Render builds the service(s) connected to that branch.
+2. **Apply any new migration yourself** — §0(a) — or set it up once to happen
+   automatically:
+
+   **Pre-Deploy Command** (Render dashboard → the backend service →
+   **Settings** → **Build & Deploy** → **Pre-Deploy Command**):
+
+   ```
+   alembic upgrade head
+   ```
+
+   It runs once per deploy, before the new version takes traffic — the guarantee
+   `entrypoint.sh` was written to give, on the runtime actually in use. Two
+   things to get right:
+
+   - It runs from the service's **Root Directory**. `alembic.ini` lives in
+     `backend/`, so the command above is correct only if Root Directory is
+     `backend`; otherwise use `cd backend && alembic upgrade head`.
+   - Pre-Deploy Command requires a **paid instance type**. On a free instance the
+     field is unavailable, and §0(a) by hand remains the only route.
+
+3. Confirm by reading the database (§0), not by probing the API.
+
+A **pre-deploy backup** is still worth taking: `python scripts/backup_db.py`
+with `DATABASE_URL` pointed at production (see `BACKUP.md`).
+
+### Self-hosted docker-compose (not Fairview)
 ```bash
 docker compose -f docker-compose.prod.yml exec api python scripts/backup_db.py   # pre-deploy backup
 git pull
 docker compose -f docker-compose.prod.yml build              # web image bakes NEXT_PUBLIC_API_URL
-docker compose -f docker-compose.prod.yml up -d              # entrypoint applies new migrations
+docker compose -f docker-compose.prod.yml up -d              # entrypoint DOES apply migrations here
 docker compose -f docker-compose.prod.yml exec api alembic current   # confirm head
 ```
 > The frontend `NEXT_PUBLIC_API_URL` is build-time — always **rebuild** the web image when the API URL changes.
@@ -167,7 +257,8 @@ Check the ceiling on the server itself rather than assuming the plan's
 documentation — `SHOW max_connections;` and `SHOW superuser_reserved_connections;`.
 The current Render Postgres reports 100 and 3.
 
-The spare is not slack. `entrypoint.sh` runs Alembic on every deploy, and
+The spare is not slack. An Alembic run (whether by hand, by a Pre-Deploy
+Command, or by `entrypoint.sh` under Docker) opens its own connection, and
 psql/monitoring/backup jobs each need a slot. The previous defaults (10/20) came
 to 120 — more than the database allows — so under load the app could exhaust its
 own database. If you raise either value, or the worker count in the Dockerfile

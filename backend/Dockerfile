@@ -18,6 +18,9 @@ COPY . .
 RUN mkdir -p /data
 
 # Migration-on-boot entrypoint (runs `alembic upgrade head` in prod/staging).
+# NOTE: this applies to DOCKER deployments only. Fairview's Render backend is not
+# built from this Dockerfile, so ENTRYPOINT never runs there and migrations are
+# applied separately — see entrypoint.sh's banner and DEPLOYMENT.md §0.
 RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 8000
