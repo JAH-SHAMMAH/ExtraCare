@@ -29,9 +29,12 @@ It follows that **no migration has ever reached this database via a Render
 deploy** — whatever applied revisions 1–125 did so by some other route. If you
 are looking for the automation, there isn't any.
 
-So after merging a migration, do ONE of these:
+**The fix in place:** `alembic upgrade head` is folded into the service's **Start
+Command**, so auto-deploy on push now migrates as part of bringing the new
+version up. See §7 for the exact command and its trade-offs. `Pre-Deploy
+Command` would be the better home for it but needs a paid instance type.
 
-**(a) Apply it manually** — what has always actually happened:
+**To apply one by hand** (the escape hatch, and how 126/127 were applied):
 
 ```bash
 cd backend
@@ -40,8 +43,6 @@ DATABASE_URL="postgresql+asyncpg://<prod-dsn>" python -m alembic current
 DATABASE_URL="postgresql+asyncpg://<prod-dsn>" python -m alembic history -r current:head
 DATABASE_URL="postgresql+asyncpg://<prod-dsn>" python -m alembic upgrade head
 ```
-
-**(b) Set a Render Pre-Deploy Command** (the durable fix) — see §7.
 
 Verify either way by reading the database, never by probing the API: a healthy
 API response proves nothing, because the old instance serves happily while
@@ -170,28 +171,62 @@ curl -fsS https://<domain>/health                            # {"status":"ok","e
 
 ### On Render (how Fairview updates)
 
-1. Push to `main`. Render builds the service(s) connected to that branch.
-2. **Apply any new migration yourself** — §0(a) — or set it up once to happen
-   automatically:
-
-   **Pre-Deploy Command** (Render dashboard → the backend service →
-   **Settings** → **Build & Deploy** → **Pre-Deploy Command**):
-
-   ```
-   alembic upgrade head
-   ```
-
-   It runs once per deploy, before the new version takes traffic — the guarantee
-   `entrypoint.sh` was written to give, on the runtime actually in use. Two
-   things to get right:
-
-   - It runs from the service's **Root Directory**. `alembic.ini` lives in
-     `backend/`, so the command above is correct only if Root Directory is
-     `backend`; otherwise use `cd backend && alembic upgrade head`.
-   - Pre-Deploy Command requires a **paid instance type**. On a free instance the
-     field is unavailable, and §0(a) by hand remains the only route.
-
+1. Push to `main`. Render auto-deploys the service(s) connected to that branch
+   (confirmed working).
+2. A migration is applied by the **Start Command** — see below. Nothing else runs
+   it.
 3. Confirm by reading the database (§0), not by probing the API.
+
+#### Migrations via the Start Command (current setup — free instance)
+
+`Pre-Deploy Command` is the natural home for this, but it **requires a paid
+instance type** and is unavailable on ours. So the migration is folded into the
+Start Command instead (dashboard → backend service → **Settings** →
+**Start Command**):
+
+```
+python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+Adapt, don't paste: keep whatever uvicorn flags the service already has, and
+prefix `cd backend && ` if the service's **Root Directory** is the repo root
+rather than `backend` (that is where `alembic.ini` lives). `python -m alembic`
+rather than bare `alembic` pins it to the same interpreter as the app.
+
+No DSN is needed — `alembic/env.py` reads `settings.DATABASE_URL`, so it inherits
+the service's own environment.
+
+**What to understand about this approach:**
+
+- **It runs on every START, not only every deploy.** A free instance spins down
+  when idle, so each wake runs it too. At head that is a verified clean no-op
+  (exit 0, no DDL), so it is safe — it just adds a second or two to an already
+  slow cold start.
+- **It fails CLOSED.** `&&` means a migration error stops uvicorn ever starting:
+  an outage, rather than an app serving against a schema it disagrees with. That
+  is usually the right trade for a school portal, but know that a bad migration
+  takes the service down until it is fixed, and recovery on a free instance means
+  another deploy. Test migrations locally first — `alembic upgrade <rev> --sql`
+  renders the DDL without touching anything.
+- **Workers are NOT a problem.** The command runs once, then execs uvicorn, which
+  forks its workers afterwards — so `--workers N` does not produce N concurrent
+  Alembic runs.
+- **A second INSTANCE would be a problem.** Two instances starting together would
+  run Alembic concurrently, and Alembic takes no lock to make that safe. Revisit
+  this the moment the service scales past one instance, or moves to a paid plan
+  where `Pre-Deploy Command` becomes available — that is strictly better, because
+  it runs once per deploy rather than once per boot.
+
+#### Alternative: the Build Command
+
+`pip install -r requirements.txt && python -m alembic upgrade head` also works and
+runs once per deploy rather than per boot. The trade-off is that a build can
+succeed while the deploy then fails, leaving the schema ahead of the running
+code. Harmless for additive migrations (new tables/columns the old code ignores);
+not harmless for one that drops or rewrites anything. Start Command is preferred
+here for that reason.
+
+Render `Jobs`/`Cron Jobs` are paid features and are not an option on this plan.
 
 A **pre-deploy backup** is still worth taking: `python scripts/backup_db.py`
 with `DATABASE_URL` pointed at production (see `BACKUP.md`).
