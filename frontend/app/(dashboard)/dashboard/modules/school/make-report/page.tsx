@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useMyTeachingAssignments, useReportEntryGrid, useSaveReportEntry, useSubTerms, useTerms } from "@/hooks/usePlatform";
+import { useMyTeachingAssignments, useReportEntryGrid, useSaveReportEntry, useSaveSubjectComments, useSubjectCommentGrid, useSubTerms, useTerms } from "@/hooks/usePlatform";
 import { cn } from "@/lib/utils";
 import { classesFromAssignments, defaultSubTermId, subjectsForClass, subTermDisplay } from "@/lib/reportEntry";
 import { useSubjectReadiness, useSubmitClassReport, useSubmitSubjectReport, useWithdrawSubjectReport } from "@/hooks/useAcademics";
-import { Loader2, Save, NotebookPen, AlertTriangle, SendHorizonal, CheckCircle2, Undo2, Clock } from "lucide-react";
+import { Loader2, Save, NotebookPen, AlertTriangle, SendHorizonal, CheckCircle2, Undo2, Clock, MessageSquare } from "lucide-react";
 
 export default function MakeReportPage() {
   const { data: assignments = [], isLoading: loadingA } = useMyTeachingAssignments();
@@ -49,6 +49,21 @@ export default function MakeReportPage() {
   });
   const submitSubject = useSubmitSubjectReport();
   const withdrawSubject = useWithdrawSubjectReport();
+  // Per-subject remarks for the class+subject already selected above.
+  const { data: commentGrid } = useSubjectCommentGrid({
+    class_id: classId || undefined, subject_id: subjectId || undefined,
+    term_id: termId || undefined, sub_term_id: subTermId || undefined,
+  });
+  const saveComments = useSaveSubjectComments();
+  const [showComments, setShowComments] = useState(false);
+  const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
+  // Unsaved text belongs to one (class, subject, term) — carrying it across a
+  // change of selection would put one class's remarks in front of another's.
+  useEffect(() => { setCommentDraft({}); }, [classId, subjectId, termId, subTermId]);
+  const commentsWritten = useMemo(
+    () => (commentGrid?.rows ?? []).filter((r: any) => (commentDraft[r.student_id] ?? r.text ?? "").trim()).length,
+    [commentGrid, commentDraft],
+  );
   // This teacher's own row for the subject currently open.
   const mySubjectRow = useMemo(
     () => (readiness?.subjects ?? []).find((r: any) => r.subject_id === subjectId),
@@ -327,6 +342,80 @@ export default function MakeReportPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Per-subject remarks. Collapsed by default so the score grid stays
+              the page's job; a teacher opens it when they have something to say.
+              Distinct from the card's School Head / PC Teacher comments, which
+              only those two roles can write. */}
+          {ready && (commentGrid?.rows?.length ?? 0) > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 mt-4">
+              <button
+                onClick={() => setShowComments((v) => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 text-left"
+              >
+                <span className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                  <MessageSquare size={16} className="text-brand-600" />
+                  Subject comments
+                  {commentsWritten > 0 && (
+                    <span className="text-[11px] font-semibold text-brand-700 bg-brand-50 border border-brand-200 rounded-full px-2 py-0.5">
+                      {commentsWritten} written
+                    </span>
+                  )}
+                </span>
+                <span className="text-xs text-slate-400">{showComments ? "Hide" : "Show"}</span>
+              </button>
+
+              {showComments && (
+                <div className="border-t border-slate-100 p-4">
+                  <p className="text-xs text-slate-500 mb-3">
+                    Your remark on each pupil for{" "}
+                    <span className="font-semibold text-slate-700">{commentGrid.subject_name}</span>.
+                    It prints beside the subject on their report card.
+                    {commentGrid.max_length ? ` Up to ${commentGrid.max_length} characters.` : ""}
+                  </p>
+                  <div className="space-y-2">
+                    {commentGrid.rows.map((r: any) => (
+                      <div key={r.student_id} className="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-700 sm:w-48 shrink-0 flex items-center gap-1.5">
+                          {r.student_name}
+                          {/* A pupil with no marks can still be commented on — the
+                              remark may be about missing work — so this informs
+                              rather than blocks. */}
+                          {!r.has_marks && <span title="No marks entered yet" className="text-[10px] text-amber-600">(unmarked)</span>}
+                        </span>
+                        <input
+                          value={commentDraft[r.student_id] ?? r.text ?? ""}
+                          onChange={(e) => setCommentDraft((p) => ({ ...p, [r.student_id]: e.target.value }))}
+                          maxLength={commentGrid.max_length ?? undefined}
+                          placeholder="No comment"
+                          className="input flex-1 py-1.5 text-sm"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-end mt-4">
+                    <button
+                      onClick={() => {
+                        saveComments.mutate({
+                          class_id: classId, subject_id: subjectId,
+                          term_id: termId, sub_term_id: subTermId,
+                          items: commentGrid.rows.map((r: any) => ({
+                            student_id: r.student_id,
+                            text: commentDraft[r.student_id] ?? r.text ?? null,
+                          })),
+                        }, { onSuccess: () => setCommentDraft({}) });
+                      }}
+                      disabled={saveComments.isPending}
+                      className="btn-primary gap-2"
+                    >
+                      {saveComments.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                      Save comments
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>

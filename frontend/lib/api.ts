@@ -1749,6 +1749,13 @@ export const platformApi = {
     grid: (p: { class_id: string; term_id: string; sub_term_id: string; kind: string }) => api.get("/platform/report-comments", { params: p }).then((r) => r.data),
     save: (d: object) => api.post("/platform/report-comments", d).then((r) => r.data),
   },
+  // The subject teacher's own per-pupil remark. Sibling of reportComments above,
+  // which fills the card's two FIXED slots (School Head / PC Teacher); this one
+  // carries a subject dimension and answers to whoever teaches it.
+  subjectComments: {
+    grid: (p: { class_id: string; subject_id: string; term_id: string; sub_term_id: string }) => api.get("/platform/subject-comments", { params: p }).then((r) => r.data),
+    save: (d: { class_id: string; subject_id: string; term_id: string; sub_term_id: string; items: { student_id: string; text: string | null }[] }) => api.post("/platform/subject-comments", d).then((r) => r.data),
+  },
   reportInsight: (p: { term_id: string; sub_term_id: string }) => api.get("/platform/report-insight", { params: p }).then((r) => r.data),
   reportUpload: (term_id: string, formData: FormData) => api.post("/platform/report-upload", formData, { params: { term_id }, headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data),
   reportTemplates: {

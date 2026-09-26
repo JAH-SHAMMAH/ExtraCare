@@ -300,6 +300,16 @@ export function useCommentGrid(p: { class_id: string; term_id: string; sub_term_
 }
 export const useSaveComments = m((d) => platformApi.reportComments.save(d), ["report-comments", "report-card-v2"], "Comments saved.");
 
+// ── Per-subject comments (the subject teacher's own remark) ───────────────────
+export function useSubjectCommentGrid(p: { class_id?: string; subject_id?: string; term_id?: string; sub_term_id?: string }) {
+  return useQuery<any>({
+    queryKey: ["subject-comments", p],
+    queryFn: () => platformApi.subjectComments.grid(p as { class_id: string; subject_id: string; term_id: string; sub_term_id: string }),
+    enabled: !!p.class_id && !!p.subject_id && !!p.term_id && !!p.sub_term_id,
+  });
+}
+export const useSaveSubjectComments = m((d) => platformApi.subjectComments.save(d), ["subject-comments", "report-card-v2"], "Subject comments saved.");
+
 // ── S-5: Result Insight ──────────────────────────────────────────────────────
 export function useReportInsight(p: { term_id: string; sub_term_id: string }) {
   return useQuery<any>({

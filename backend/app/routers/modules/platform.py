@@ -30,7 +30,7 @@ from app.models.modules.platform import (
     ReportCommentType, ResultDefaultComment, ReportBranding,
     ReportLevelSetting, ReportSubjectExclusion,
     AssessmentGroup, Assessment, Cumulative, CumulativeComponent, StudentAssessmentScore,
-    StudentReportComment, ClassPcTeacher,
+    StudentReportComment, SubjectReportComment, ClassPcTeacher,
     CustomFieldDefinition, CustomFieldValue,
     Poll, PollOption, PollVote,
     MailboxMessage, MailboxRecipient,
@@ -61,6 +61,7 @@ from app.schemas.platform import (
     BroadsheetResponse, BroadsheetRow, BroadsheetCell, BroadsheetSubject, BroadsheetBand,
     CardColumn, CardSubjectRow, ReportCardResponse, SessionalTerm,
     REPORT_COMMENT_KINDS, CommentGridRow, CommentGridResponse, CommentItem, CommentGridSave,
+    SubjectCommentGridResponse, SubjectCommentGridRow, SubjectCommentItem, SubjectCommentSave,
     InsightResponse, InsightSubject, InsightGender, InsightClass,
     ScoreUploadResult,
     ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
@@ -162,6 +163,28 @@ async def _gate_comment_access(db: AsyncSession, org_id: str, user: User, class_
         raise HTTPException(status_code=403, detail="Only an administrator can enter the school head's comment.")
     if not class_id or await _pc_teacher_id(db, org_id, class_id) != user.id:
         raise HTTPException(status_code=403, detail="You are not the PC teacher for this class.")
+
+
+async def _gate_subject_comment_access(db: AsyncSession, org_id: str, user: User,
+                                       class_id: str, subject_id: str):
+    """Per-subject comment access: admins pass, otherwise the teacher of that
+    (class, subject).
+
+    A SEPARATE gate from `_gate_comment_access` on purpose. That one governs the
+    card's two fixed slots -- head (admin-only) and pc (PC-teacher-only) -- and is
+    left exactly as it is. A subject remark answers to whoever teaches the
+    subject, which is `_teacher_assignments`: the same authority that decides who
+    may enter the marks and sign them off, so a teacher can never be handed an
+    entry grid whose comment box then refuses them.
+    """
+    if _report_admin(user):
+        return
+    if (class_id, subject_id) not in await _teacher_assignments(db, org_id, user.id):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not teach this subject to this class, so you cannot "
+                   "comment on its pupils.",
+        )
 
 
 # ── School Setup ────────────────────────────────────────────────────────────────
@@ -2908,6 +2931,18 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         n += 1
     average = (pct_sum / n) if n else money(0)
 
+    # Per-subject remarks from the subject teachers, keyed by subject so each
+    # row carries its own. Loaded for the (term, sub-term) being rendered, so a
+    # remark written for Autumn cannot surface on the Spring card.
+    subject_comments = {c.subject_id: c.text for c in (await db.execute(
+        select(SubjectReportComment).where(
+            SubjectReportComment.org_id == org,
+            SubjectReportComment.student_id == student_id,
+            SubjectReportComment.term_id == term_id,
+            SubjectReportComment.sub_term_id == sub_term_id))).scalars().all()}
+    for row in subj_rows:
+        row.comment = subject_comments.get(row.subject_id)
+
     # ── Sessional Score ──────────────────────────────────────────────────────
     # The unweighted mean of this pupil's average in each of the session's terms,
     # computed at read time from the same cumulative structure the card above
@@ -3122,6 +3157,149 @@ async def save_report_comments(payload: CommentGridSave, db: AsyncSession = Depe
         saved += 1
     await db.flush()
     return {"saved": saved}
+
+
+# ── Per-subject report comments ──────────────────────────────────────────────
+#
+# Distinct from /report-comments above, which fills the card's two fixed slots
+# (School Head, PC Teacher). This is the subject teacher's own remark on a pupil
+# in their subject, one row per (student, subject, term, sub-term).
+
+
+async def _subject_comment_max_length(db: AsyncSession, org_id: str) -> int | None:
+    """The configured max length for a subject remark, if the school set one.
+
+    Read from ReportCommentType where a row names the subject slot; None when
+    unconfigured, which the UI treats as unlimited rather than inventing a cap.
+    """
+    rows = (await db.execute(select(ReportCommentType).where(
+        ReportCommentType.org_id == org_id))).scalars().all()
+    for r in rows:
+        if "subject" in (r.name or "").lower():
+            return r.max_length
+    return None
+
+
+@router.get("/subject-comments", response_model=SubjectCommentGridResponse,
+            dependencies=[_reports_write])
+async def subject_comment_grid(class_id: str, subject_id: str, term_id: str, sub_term_id: str,
+                               db: AsyncSession = Depends(get_db),
+                               current_user: User = Depends(get_current_active_user)):
+    """The pupils of a class with this teacher's remark on each, for one subject."""
+    org = current_user.org_id
+    cls = (await db.execute(select(SchoolClass).where(
+        SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found.")
+    subj = (await db.execute(select(Subject).where(
+        Subject.id == subject_id, Subject.org_id == org))).scalar_one_or_none()
+    if not subj:
+        raise HTTPException(status_code=404, detail="Subject not found.")
+    await _gate_subject_comment_access(db, org, current_user, class_id, subject_id)
+
+    students = (await db.execute(
+        select(Student).where(Student.org_id == org, Student.class_id == class_id,
+                              Student.is_deleted == False)  # noqa: E712
+        .order_by(Student.first_name, Student.last_name)
+    )).scalars().all()
+
+    existing = {c.student_id: c.text for c in (await db.execute(
+        select(SubjectReportComment).where(
+            SubjectReportComment.org_id == org, SubjectReportComment.subject_id == subject_id,
+            SubjectReportComment.term_id == term_id,
+            SubjectReportComment.sub_term_id == sub_term_id))).scalars().all()}
+
+    # Which pupils have any mark in this subject this term, so the grid can show
+    # the teacher who they have actually assessed.
+    marked = set((await db.execute(
+        select(StudentAssessmentScore.student_id)
+        .select_from(StudentAssessmentScore)
+        .join(Assessment, Assessment.id == StudentAssessmentScore.assessment_id)
+        .where(StudentAssessmentScore.org_id == org,
+               StudentAssessmentScore.subject_id == subject_id,
+               Assessment.term_id == term_id,
+               StudentAssessmentScore.score.isnot(None)))).scalars().all())
+
+    return SubjectCommentGridResponse(
+        class_id=class_id, class_name=cls.name, subject_id=subject_id, subject_name=subj.name,
+        term_id=term_id, sub_term_id=sub_term_id,
+        rows=[SubjectCommentGridRow(
+            student_id=s.id, student_name=f"{s.first_name} {s.last_name}".strip(),
+            text=existing.get(s.id), has_marks=s.id in marked) for s in students],
+        max_length=await _subject_comment_max_length(db, org),
+    )
+
+
+@router.post("/subject-comments", dependencies=[_reports_write])
+async def save_subject_comments(payload: SubjectCommentSave,
+                                db: AsyncSession = Depends(get_db),
+                                current_user: User = Depends(get_current_active_user)):
+    """Bulk upsert of a subject's remarks for a class.
+
+    An empty or whitespace-only text DELETES the row rather than storing a blank.
+    A row whose text is "" is indistinguishable on the card from no remark at
+    all, and keeping it would leave the grid reporting a comment that prints as
+    nothing.
+    """
+    org = current_user.org_id
+    cls = (await db.execute(select(SchoolClass).where(
+        SchoolClass.id == payload.class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found.")
+    await _gate_subject_comment_access(db, org, current_user, payload.class_id, payload.subject_id)
+
+    cap = await _subject_comment_max_length(db, org)
+    if cap:
+        for it in payload.items:
+            if it.text and len(it.text) > cap:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"A comment is longer than the {cap}-character limit set "
+                           f"for subject remarks.",
+                )
+
+    # Pupils must belong to the class being commented on -- otherwise a teacher
+    # who legitimately teaches this (class, subject) could post a remark onto any
+    # pupil in the school by passing their id.
+    valid = set((await db.execute(select(Student.id).where(
+        Student.org_id == org, Student.class_id == payload.class_id,
+        Student.is_deleted == False))).scalars().all())  # noqa: E712
+    stray = [i.student_id for i in payload.items if i.student_id not in valid]
+    if stray:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{len(stray)} pupil(s) are not in this class.",
+        )
+
+    ids = [i.student_id for i in payload.items]
+    existing = {c.student_id: c for c in (await db.execute(
+        select(SubjectReportComment).where(
+            SubjectReportComment.org_id == org,
+            SubjectReportComment.subject_id == payload.subject_id,
+            SubjectReportComment.term_id == payload.term_id,
+            SubjectReportComment.sub_term_id == payload.sub_term_id,
+            SubjectReportComment.student_id.in_(ids or ["_none_"])))).scalars().all()}
+
+    saved = cleared = 0
+    for it in payload.items:
+        text = (it.text or "").strip() or None
+        row = existing.get(it.student_id)
+        if text is None:
+            if row is not None:
+                await db.delete(row)
+                cleared += 1
+            continue
+        if row:
+            row.text = text
+            row.recorded_by = current_user.id
+        else:
+            db.add(SubjectReportComment(
+                org_id=org, student_id=it.student_id, subject_id=payload.subject_id,
+                term_id=payload.term_id, sub_term_id=payload.sub_term_id,
+                text=text, recorded_by=current_user.id))
+        saved += 1
+    await db.flush()
+    return {"saved": saved, "cleared": cleared}
 
 
 # ── Secondary Report S-5: Result Insight (performance charts) ────────────────

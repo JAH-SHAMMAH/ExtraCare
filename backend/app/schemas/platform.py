@@ -1082,6 +1082,8 @@ class CardSubjectRow(BaseModel):
     # to average, and repeating the term's own figure would dress a single term
     # up as a session.
     sessional: Optional[Decimal] = None
+    # The subject teacher's remark on this pupil for this subject.
+    comment: Optional[str] = None
 
 
 class SessionalTerm(BaseModel):
@@ -1142,6 +1144,42 @@ class ReportCardResponse(BaseModel):
 # ── Secondary Report parity S-4d: report-card comments (Head / PC) ───────────
 
 REPORT_COMMENT_KINDS = {"head", "pc"}
+
+
+class SubjectCommentItem(BaseModel):
+    student_id: str
+    text: Optional[str] = None
+
+
+class SubjectCommentGridRow(BaseModel):
+    student_id: str
+    student_name: str
+    text: Optional[str] = None
+    # Whether this pupil has any mark in this subject. A comment on a pupil with
+    # no marks is legitimate (a remark about missing work), so this informs the
+    # grid rather than gating it.
+    has_marks: bool = False
+
+
+class SubjectCommentGridResponse(BaseModel):
+    class_id: str
+    class_name: Optional[str] = None
+    subject_id: str
+    subject_name: Optional[str] = None
+    term_id: str
+    sub_term_id: str
+    rows: list[SubjectCommentGridRow] = Field(default_factory=list)
+    # Max length the UI should enforce, from the configured comment type where the
+    # school has set one. None means unlimited.
+    max_length: Optional[int] = None
+
+
+class SubjectCommentSave(BaseModel):
+    class_id: str
+    subject_id: str
+    term_id: str
+    sub_term_id: str
+    items: list[SubjectCommentItem] = Field(default_factory=list)
 
 
 class CommentGridRow(BaseModel):

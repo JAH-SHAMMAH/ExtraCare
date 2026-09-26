@@ -76,6 +76,9 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
   const sessionalTerms = card.sessional_terms ?? [];
   const showSessional = card.sessional_score != null && (card.sessional_terms_counted ?? 0) > 1;
   const partialSession = showSessional && card.sessional_terms_counted < sessionalTerms.length;
+  // The Teacher's Remark column appears only when at least one subject carries
+  // one, so a card from a school that does not use them keeps its old width.
+  const showSubjectComments = (card.subjects ?? []).some((r: any) => (r.comment ?? "").trim());
   // Date on the signature line: when the card was produced.
   const printedOn = new Date().toLocaleDateString("en-GB");
   return (
@@ -129,6 +132,7 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
             <th className="border border-slate-300 px-2 py-1 text-center">Remark</th>
             <th className="border border-slate-300 px-2 py-1 text-center">Arm Avg</th>
             {showSessional && <th className="border border-slate-300 px-2 py-1 text-center">Session Avg</th>}
+            {showSubjectComments && <th className="border border-slate-300 px-2 py-1 text-left">Teacher&apos;s Remark</th>}
           </tr>
         </thead>
         <tbody>
@@ -140,9 +144,10 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
               <td className="border border-slate-300 px-2 py-1 text-center">{r.remark || "–"}</td>
               <td className="border border-slate-300 px-2 py-1 text-center tabular-nums">{num(r.subject_arm_average)}</td>
               {showSessional && <td className="border border-slate-300 px-2 py-1 text-center tabular-nums">{r.sessional != null ? num(r.sessional) : "–"}</td>}
+              {showSubjectComments && <td className="border border-slate-300 px-2 py-1 text-[10px] leading-snug">{r.comment || "–"}</td>}
             </tr>
           ))}
-          {card.subjects.length === 0 && <tr><td colSpan={card.columns.length + (showSessional ? 5 : 4)} className="border border-slate-300 px-2 py-3 text-center text-slate-400">No marks entered for this pupil.</td></tr>}
+          {card.subjects.length === 0 && <tr><td colSpan={card.columns.length + 4 + (showSessional ? 1 : 0) + (showSubjectComments ? 1 : 0)} className="border border-slate-300 px-2 py-3 text-center text-slate-400">No marks entered for this pupil.</td></tr>}
         </tbody>
       </table>
 

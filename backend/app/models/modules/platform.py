@@ -446,6 +446,39 @@ class StudentReportComment(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class SubjectReportComment(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A subject teacher's remark on one pupil in one subject, for a (term,
+    sub-term). One row per (student, subject, term, sub-term).
+
+    WHY NOT A THIRD `kind` ON StudentReportComment. That table is unique on
+    (org, student, term, sub_term, kind) and has no subject dimension. Adding a
+    nullable `subject_id` to the constraint would BREAK it: Postgres treats NULLs
+    as distinct, so the head and PC rows -- which would carry NULL -- would stop
+    being unique, and a pupil could silently collect two School Head comments.
+    `kind` is a fixed set of SLOTS on the card; a per-subject remark is a
+    different grain, so it gets its own table, like SubjectReportSubmission.
+
+    WHO WRITES IT: the teacher of that (class, subject), resolved through
+    `_teacher_assignments` -- the same authority that decides who may enter the
+    subject's marks and sign them off. `_gate_comment_access` is deliberately
+    untouched: head stays admin-only and pc stays PC-teacher-only.
+    """
+    __tablename__ = "subject_report_comments"
+
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False, index=True)
+    term_id = Column(String(36), ForeignKey("academic_terms.id", ondelete="CASCADE"), nullable=False, index=True)
+    sub_term_id = Column(String(36), ForeignKey("academic_sub_terms.id", ondelete="CASCADE"), nullable=False, index=True)
+    text = Column(Text, nullable=True)
+    recorded_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "student_id", "subject_id", "term_id", "sub_term_id",
+                         name="uq_subject_report_comment"),
+        Index("ix_subject_report_comments_term", "org_id", "term_id", "sub_term_id"),
+    )
+
+
 class ClassPcTeacher(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """The Pastoral-Care (PC) teacher for a class — a DATA lookup, not a hardcoded
     rule. When no row exists the resolver falls back to the class/form teacher
