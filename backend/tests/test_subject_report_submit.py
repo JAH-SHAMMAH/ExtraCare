@@ -187,7 +187,7 @@ async def test_withdrawal_refused_once_the_class_report_has_moved_on(db, org):
     out = await submit_subject_report(payload=_req(w, w["maths"]), db=db,
                                      current_user=w["maths_t"])
     await submit_class_report(
-        payload=ReportSubmitRequest(class_id=w["cls"].id, term="Autumn"),
+        payload=ReportSubmitRequest(class_id=w["cls"].id, term_id=w["term"].id),
         db=db, current_user=w["pc"])
 
     with pytest.raises(HTTPException) as e:
@@ -259,7 +259,7 @@ async def test_readiness_reports_the_class_stage_too(db, org):
     assert grid.class_stage is None, "no workflow row opened yet"
 
     await submit_class_report(
-        payload=ReportSubmitRequest(class_id=w["cls"].id, term="Autumn"),
+        payload=ReportSubmitRequest(class_id=w["cls"].id, term_id=w["term"].id),
         db=db, current_user=w["pc"])
     grid = await subject_readiness(class_id=w["cls"].id, term_id=w["term"].id,
                                   sub_term_id=w["full"].id, db=db, current_user=w["pc"])
@@ -280,7 +280,7 @@ async def test_class_submit_is_not_gated_on_subject_signoffs(db, org):
     # Nothing signed off at all.
 
     out = await submit_class_report(
-        payload=ReportSubmitRequest(class_id=w["cls"].id, term="Autumn"),
+        payload=ReportSubmitRequest(class_id=w["cls"].id, term_id=w["term"].id),
         db=db, current_user=w["pc"])
 
     assert out.stage == "submitted"

@@ -146,9 +146,15 @@ async def test_transcript_get_detail(db, org, teacher, student):
 
 # ── Report Workflow ────────────────────────────────────────────────────────────
 
-async def _workflow(db, teacher, school_class, term="Term 1"):
+async def _workflow(db, teacher, school_class, term="Autumn"):
+    # Approvals are keyed by term_id (migration 131), so the name is resolved to a
+    # real AcademicTerm. "Autumn" rather than "Term 1": that literal is the drifted
+    # value behind the report-card outage.
+    from tests._terms import a_term
+
+    t = await a_term(db, school_class.org_id, term)
     return await create_report_workflow(
-        ReportApprovalCreate(class_id=school_class.id, term=term),
+        ReportApprovalCreate(class_id=school_class.id, term_id=t.id),
         request=None, db=db, current_user=teacher,
     )
 

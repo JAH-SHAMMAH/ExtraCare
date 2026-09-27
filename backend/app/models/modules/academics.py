@@ -121,7 +121,13 @@ class ReportApproval(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     class_id = Column(String(36), ForeignKey("school_classes.id", ondelete="CASCADE"), nullable=True, index=True)
     academic_year = Column(String(20), nullable=True)
-    term = Column(String(40), nullable=True)
+    # A REAL FK since migration 131. It was free text, and it is the column behind
+    # the 2026-09-27 outage: approvals said 'Term 1' while the selectable terms were
+    # Autumn/Spring/Summer, so the parent report-card gate — which matched BY NAME —
+    # found nothing and told every parent their child's report was unpublished, for
+    # every term. Nullable, matching the column it replaced (an org-wide row may
+    # carry no term).
+    term_id = Column(String(36), ForeignKey("academic_terms.id", ondelete="CASCADE"), nullable=True, index=True)
     # draft | submitted | reviewed | approved | published
     stage = Column(String(20), default="draft", nullable=False)
     notes = Column(Text, nullable=True)
@@ -137,12 +143,12 @@ class ReportApproval(Base, UUIDMixin, TimestampMixin, TenantMixin):
     __table_args__ = (
         Index("ix_report_approvals_org_stage", "org_id", "stage"),
         # One workflow row per class + term. Both gates resolve a class's stage by
-        # (class, term); duplicates would make "the stage" ambiguous and let a
+        # (class, term_id); duplicates would make "the stage" ambiguous and let a
         # stale second row keep releasing a card that was pulled back on the first.
         # `class_id` is a per-org FK, so this is org-scoped without naming org_id —
         # and NULL class_id (an org-wide row) stays unconstrained, as Postgres
         # treats NULLs as distinct.
-        UniqueConstraint("class_id", "term", name="uq_report_approval_class_term"),
+        UniqueConstraint("class_id", "term_id", name="uq_report_approval_class_term"),
     )
 
 
@@ -163,10 +169,10 @@ class SubjectReportSubmission(Base, UUIDMixin, TimestampMixin, TenantMixin):
     — a filter this codebase has already been bitten by forgetting. The history
     lives in the audit log, which records both the submission and the withdrawal.
 
-    TERM IS A REAL FK, unlike ReportApproval.term, which is free text. That
-    string is what let a production term rename drift away from the approvals
-    referencing it and blank every parent's report card. A new table has no
-    reason to inherit that.
+    TERM IS A REAL FK. A free-text term is what let a production rename drift away
+    from the approvals referencing it and blank every parent's report card; this
+    table never inherited that, and migration 131 removed it from ReportApproval
+    too.
 
     `sub_term_id` is nullable so a school that does not split its terms can sign
     off per term alone. Postgres treats NULLs as distinct in a unique index, so

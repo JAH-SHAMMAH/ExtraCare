@@ -56,7 +56,7 @@ async def _fixture(db, org, *, stage: str | None = None):
                    sub_term_id=sub.id, org_id=org.id)
     db.add_all([stu, a])
     if stage:
-        db.add(ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term=TERM_NAME,
+        db.add(ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term_id=term.id,
                               stage=stage, org_id=org.id))
     await db.commit()
     # Marks require subject enrolment (migration 128). This fixture is about the

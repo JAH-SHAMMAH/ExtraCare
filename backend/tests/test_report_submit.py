@@ -39,7 +39,10 @@ from app.schemas.academics import (
     REPORT_PUBLISHABLE_STAGES, ReportSubmitRequest,
 )
 
-TERM = "Term 1"
+# The term NAME. Approvals are keyed by term_id since migration 131, so the
+# helpers resolve it to a real AcademicTerm. Renamed off "Term 1": that literal is
+# the drifted value that silenced every parent's report card.
+TERM = "Autumn"
 
 
 async def _user(db, org, preset: str) -> User:
@@ -63,8 +66,11 @@ async def _class(db, org, teacher: User | None = None) -> SchoolClass:
 
 
 async def _submit(db, user, cls, term=TERM, notes=None):
+    from tests._terms import a_term
+
+    t = await a_term(db, cls.org_id, term)
     return await submit_class_report(
-        ReportSubmitRequest(class_id=cls.id, term=term, notes=notes),
+        ReportSubmitRequest(class_id=cls.id, term_id=t.id, notes=notes),
         request=None, db=db, current_user=user,
     )
 
@@ -81,7 +87,11 @@ async def test_the_class_teacher_can_submit_and_is_recorded(db, org):
     assert out.stage == "submitted"
     row = (await db.execute(select(ReportApproval))).scalars().one()
     assert row.submitted_by == teacher.id, "the whole point of the column"
-    assert row.class_id == cls.id and row.term == TERM
+    # term_id now, not a name (migration 131) — the row points AT the term rather
+    # than repeating its label.
+    from tests._terms import a_term
+    assert row.class_id == cls.id
+    assert row.term_id == (await a_term(db, cls.org_id, TERM)).id
 
 
 @pytest.mark.asyncio
@@ -103,7 +113,8 @@ async def test_submitting_reuses_an_admin_opened_row_rather_than_duplicating(db,
     sentence, not an IntegrityError."""
     teacher = await _user(db, org, "teacher")
     cls = await _class(db, org, teacher)
-    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term=TERM,
+    _t = await __import__('tests._terms', fromlist=['a_term']).a_term(db, cls.org_id, TERM)
+    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term_id=_t.id,
                           stage="draft", notes="opened by the office", org_id=org.id))
     await db.commit()
 
@@ -227,7 +238,8 @@ async def test_a_report_already_past_submission_cannot_be_pulled_back_by_a_teach
     back is an administrator's call."""
     teacher = await _user(db, org, "teacher")
     cls = await _class(db, org, teacher)
-    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term=TERM,
+    _t = await __import__('tests._terms', fromlist=['a_term']).a_term(db, cls.org_id, TERM)
+    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term_id=_t.id,
                           stage=stage, org_id=org.id))
     await db.commit()
 

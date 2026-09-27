@@ -167,7 +167,9 @@ async def test_a_frozen_report_is_explained_not_generalised(db, org):
     published" is the context they need and names the page to ask about. Hiding
     that behind a generic notice would make it less useful, not safer."""
     cls, subj, _, _ = await _school(db, org)
-    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term=TERM_NAME,
+    from tests._terms import a_term
+    _t = await a_term(db, org, TERM_NAME)
+    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term_id=_t.id,
                           stage="published", org_id=org.id))
     await db.commit()
     exam = await _exam(db, org, cls, subj)
@@ -350,7 +352,9 @@ async def test_the_make_report_grid_explains_an_empty_cbt_column(db, org):
     from app.routers.modules.platform import report_entry_grid
 
     cls, subj, term, _ = await _school(db, org)
-    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term=TERM_NAME,
+    from tests._terms import a_term
+    _t = await a_term(db, org, TERM_NAME)
+    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term_id=_t.id,
                           stage="published", org_id=org.id))
     await db.commit()
     exam = await _exam(db, org, cls, subj)

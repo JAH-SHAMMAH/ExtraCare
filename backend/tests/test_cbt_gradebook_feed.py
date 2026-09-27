@@ -256,7 +256,12 @@ async def test_report_card_shows_cbt_grade_only_after_publish(db, org):
     db.add(cls)
     await db.commit()
     stu, stu_user = await _linked_student(db, org, class_id=cls.id)
-    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term="Term 1",
+    # Keyed by term_id since migration 131, and the freeze check resolves the
+    # exam's term NAME through AcademicTerm to find it — so a real term row is
+    # needed, not just a matching string.
+    from tests._terms import a_term
+    _t = await a_term(db, org, "Term 1")
+    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term_id=_t.id,
                           stage="published", org_id=org.id))
     await db.commit()
     subj = await _subject(db, org)

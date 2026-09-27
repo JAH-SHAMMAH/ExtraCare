@@ -195,6 +195,6 @@ async def test_an_admin_can_still_submit_and_move_the_workflow(db, org):
 
     w = await _world(db, org)
     out = await submit_class_report(
-        payload=ReportSubmitRequest(class_id=w["cls"].id, term="Autumn"),
+        payload=ReportSubmitRequest(class_id=w["cls"].id, term_id=w["term"].id),
         db=db, current_user=w["admin"])
     assert out.stage == "submitted"

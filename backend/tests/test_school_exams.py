@@ -212,7 +212,9 @@ async def test_report_card_position_uses_published_average(db, org, teacher, sch
                               request=None, db=db, current_user=teacher)
     # Position ranks on PUBLISHED grades only — publish, then the ranking appears.
     # Publishing is gated on the class's report workflow reaching `approved`.
-    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=school_class.id, term="Term 1",
+    from tests._terms import a_term
+    _t = await a_term(db, org, "Term 1")
+    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=school_class.id, term_id=_t.id,
                           stage="approved", org_id=org.id))
     await db.commit()
     await publish_grades(GradePublish(term="Term 1", class_id=school_class.id, status="published"),

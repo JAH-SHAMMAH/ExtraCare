@@ -113,7 +113,16 @@ async def assessment_block_reason(
     if exam.class_id:
         from app.services.report_lock import find_published_block
 
-        if await find_published_block(db, org_id, {exam.class_id}, {exam.term}):
+        # `cbt_exams.term` is still a NAME (that table keeps free text for now), and
+        # find_published_block compares IDS since migration 131 — so resolve here.
+        # This is the boundary, and it is explicit rather than assumed: an exam whose
+        # term matches no AcademicTerm resolves to nothing and the freeze simply does
+        # not apply, which is the same outcome as before and not a new failure mode.
+        _term_row = (await db.execute(
+            select(AcademicTerm.id).where(
+                AcademicTerm.org_id == org_id, AcademicTerm.name == exam.term)
+        )).scalars().first() if exam.term else None
+        if _term_row and await find_published_block(db, org_id, {exam.class_id}, {_term_row}):
             return SyncBlock(
                 f"This class's {exam.term} report is published — scores are frozen. "
                 f"Retract it to 'approved' in Report Workflow to accept new marks."

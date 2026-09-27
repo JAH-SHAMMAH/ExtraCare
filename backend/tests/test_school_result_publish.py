@@ -49,8 +49,18 @@ async def _preset_user(db, org, slug) -> User:
 async def _approval(db, org, class_id, term="Term 1", stage="approved") -> ReportApproval:
     """The class's report workflow row — the school's sign-off that results for
     this term may go out. `approved` unlocks publishing; `published` is what the
-    parent card additionally requires."""
-    r = ReportApproval(id=str(uuid.uuid4()), class_id=class_id, term=term,
+    parent card additionally requires.
+
+    Takes a term NAME because the surfaces around it are name-based: the legacy
+    Grade store, the publish payload and the report card all speak names. The
+    approval itself is keyed by term_id (migration 131), so the name is resolved to
+    a real AcademicTerm here — which is also what the endpoints' own name -> id
+    bridges will look up.
+    """
+    from tests._terms import a_term
+
+    t = await a_term(db, org, term)
+    r = ReportApproval(id=str(uuid.uuid4()), class_id=class_id, term_id=t.id,
                        stage=stage, org_id=org.id)
     db.add(r)
     await db.commit()
@@ -369,7 +379,9 @@ async def test_duplicate_workflow_rows_are_refused(db, org, school_class):
     from sqlalchemy.exc import IntegrityError
 
     await _approval(db, org, school_class.id, term="Term 1", stage="approved")
-    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=school_class.id, term="Term 1",
+    from tests._terms import a_term
+    _t = await a_term(db, org, "Term 1")
+    db.add(ReportApproval(id=str(uuid.uuid4()), class_id=school_class.id, term_id=_t.id,
                           stage="draft", org_id=org.id))
     with pytest.raises(IntegrityError):
         await db.commit()

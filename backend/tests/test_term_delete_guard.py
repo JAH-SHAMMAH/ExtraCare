@@ -85,7 +85,13 @@ async def _term_with_hard_rows(db, org):
 
 
 async def _term_with_soft_rows(db, org):
-    """A term nothing points at by KEY, but several rows name by VALUE."""
+    """Rows that name the term by VALUE, plus one that points at it by KEY.
+
+    The ReportApproval here used to be soft (name-matched). Migration 131 gave it a
+    term_id FK with ON DELETE CASCADE, so it is now HARD damage — it is destroyed
+    rather than stranded. Kept in this fixture deliberately, so the test below can
+    assert that the warning puts each row in the right half.
+    """
     t = await _bare_term(db, org)
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="Secondary", org_id=org.id)
     subj = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
@@ -95,7 +101,10 @@ async def _term_with_soft_rows(db, org):
         CBTExam(id=str(uuid.uuid4()), title="Maths CBT", status=ExamStatus.PUBLISHED,
                 total_points=10, class_id=cls.id, subject_id=subj.id, term=TERM,
                 created_by=(await _admin(db, org)).id, org_id=org.id),
-        ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term=TERM,
+        # Keyed by term_id since migration 131. Note this now makes the
+        # approval a real dependent of the term row, which is exactly what
+        # the delete guard is about.
+        ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term_id=t.id,
                        stage="published", org_id=org.id),
     ])
     await db.commit()
@@ -144,8 +153,17 @@ async def test_the_warning_names_the_rows_that_merely_stop_matching(db, org):
 
     detail = e.value.detail
     assert "ORPHANED" in detail
-    assert "1 CBT exams" in detail
-    assert "1 report workflows" in detail
+    # Split the message, because a bare substring check passes whichever half the
+    # row landed in — which is exactly how this test kept passing after migration
+    # 131 moved report workflows from one half to the other.
+    deleted, _, orphaned = detail.partition("LEFT ORPHANED")
+
+    assert "1 CBT exams" in orphaned, "name-matched: stranded, not destroyed"
+    assert "1 report workflows" in deleted, (
+        "term_id FK with ON DELETE CASCADE since migration 131 — a delete DESTROYS "
+        "the release, so warning that it is merely 'orphaned' would understate it")
+    assert "1 report workflows" not in orphaned
+
     # And it must explain WHY orphaned rows matter, not just count them.
     assert "BY NAME" in detail
     assert "freeze" in detail

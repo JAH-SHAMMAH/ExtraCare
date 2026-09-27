@@ -1589,14 +1589,26 @@ async def _term_delete_impact(db: AsyncSession, org_id: str, term_id: str, name:
             StudentReportComment.org_id == org_id, StudentReportComment.term_id == term_id)
     )).scalar() or 0
 
+    # Report workflows moved from SOFT to HARD in migration 131. They used to
+    # reference a term by NAME, so a delete merely stranded them — the name stopped
+    # matching and the row sat there. They now reference term_id with ON DELETE
+    # CASCADE, so a delete DESTROYS them. Each one is a class's report release, so
+    # counting them as "silently stranded" would now understate the damage to the
+    # admin being asked to confirm.
+    from app.models.modules.academics import ReportApproval
+
+    hard_workflows = (await db.execute(
+        select(func.count(ReportApproval.id)).where(
+            ReportApproval.org_id == org_id, ReportApproval.term_id == term_id)
+    )).scalar() or 0
+
     soft: dict[str, int] = {}
     if name:
-        from app.models.modules.academics import ReportApproval
         from app.models.modules.school import CBTExam, Grade, StudentReport
 
         for label, model in (
             ("CBT exams", CBTExam), ("gradebook rows", Grade),
-            ("report workflows", ReportApproval), ("student reports", StudentReport),
+            ("student reports", StudentReport),
             ("academic sessions", AcademicSession),
         ):
             n = (await db.execute(
@@ -1607,9 +1619,11 @@ async def _term_delete_impact(db: AsyncSession, org_id: str, term_id: str, name:
 
     return {
         "hard": {"assessments": hard_assessments, "scores": hard_scores,
-                 "report comments": hard_comments},
+                 "report comments": hard_comments,
+                 "report workflows": hard_workflows},
         "soft": soft,
-        "hard_total": hard_assessments + hard_scores + hard_comments,
+        "hard_total": (hard_assessments + hard_scores + hard_comments
+                       + hard_workflows),
         "soft_total": sum(soft.values()),
     }
 
@@ -2496,17 +2510,20 @@ async def _grid_submission(db: AsyncSession, org: str, class_id: str,
     from app.models.modules.academics import ReportApproval
     from app.schemas.platform import ReportEntrySubmission
 
-    term_name = (await db.execute(
-        select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org)
+    # The approval is keyed by term_id since migration 131, so this compares ids
+    # directly. It used to resolve term_id -> NAME purely to make the comparison,
+    # which is the round trip a drifted name silently failed at.
+    term_exists = (await db.execute(
+        select(AcademicTerm.id).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org)
     )).scalar_one_or_none()
-    if not term_name:
+    if not term_exists:
         return ReportEntrySubmission()
 
     row = (await db.execute(
         select(ReportApproval).where(
             ReportApproval.org_id == org,
             ReportApproval.class_id == class_id,
-            ReportApproval.term == term_name,
+            ReportApproval.term_id == term_id,
         )
     )).scalars().first()
     stage = row.stage if row else None
@@ -2645,21 +2662,25 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
         )).scalars().all()
     ) if student_ids else set()
     if lock_classes:
-        # ReportApproval stores the term NAME; assessments carry a term id.
+        # Both sides speak term IDS now (migration 131). This used to convert the
+        # assessments' ids into NAMES to compare against ReportApproval.term, and
+        # that conversion is where a drifted name silently matched nothing and the
+        # freeze failed to apply. The name is fetched ONLY for the message.
         term_ids = set((await db.execute(
             select(Assessment.term_id).where(
                 Assessment.org_id == org,
                 Assessment.id.in_({i.assessment_id for i in payload.items}),
             )
         )).scalars().all())
-        names = await term_names_for_ids(db, org, term_ids)
-        blocked = await find_published_block(db, org, lock_classes, set(names.values()))
+        blocked = await find_published_block(db, org, lock_classes, term_ids)
         if blocked:
-            blocked_class, blocked_term = blocked
+            blocked_class, blocked_term_id = blocked
             cname = (await db.execute(
                 select(SchoolClass.name).where(SchoolClass.id == blocked_class)
             )).scalar_one_or_none()
-            raise HTTPException(status_code=422, detail=locked_message(blocked_term, cname))
+            tname = (await term_names_for_ids(db, org, {blocked_term_id})).get(
+                blocked_term_id) or "this term"
+            raise HTTPException(status_code=422, detail=locked_message(tname, cname))
 
     # ── the enrolment gate ────────────────────────────────────────────────────
     # A mark requires enrolment in the subject for the current session. The grid
@@ -2925,11 +2946,14 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
 
             if term_record:
                 from app.models.modules.academics import ReportApproval
-                # Check if report is published via ReportApproval workflow
+                # Published? Keyed by term_id since migration 131. THIS is the gate
+                # that told every parent their child's report was unpublished: it
+                # matched ReportApproval.term against the term NAME, and the
+                # approvals said 'Term 1' while the terms were Autumn/Spring/Summer.
                 report_approval = (await db.execute(
                     select(ReportApproval).where(
                         ReportApproval.class_id == cls.id,
-                        ReportApproval.term == term_record.name,
+                        ReportApproval.term_id == term_record.id,
                         ReportApproval.org_id == org,
                     )
                 )).scalar_one_or_none()

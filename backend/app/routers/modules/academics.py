@@ -410,10 +410,11 @@ async def delete_transcript(
 
 # ── Report Workflow ────────────────────────────────────────────────────────────
 
-def _report_response(r: ReportApproval, cname: str | None) -> ReportApprovalResponse:
+def _report_response(r: ReportApproval, cname: str | None,
+                     tname: str | None = None) -> ReportApprovalResponse:
     return ReportApprovalResponse(
         id=r.id, class_id=r.class_id, class_name=cname, academic_year=r.academic_year,
-        term=r.term, stage=r.stage, notes=r.notes,
+        term_id=r.term_id, term_name=tname, stage=r.stage, notes=r.notes,
         published_by=r.published_by, published_at=r.published_at,
         created_at=r.created_at, updated_at=r.updated_at, org_id=r.org_id,
     )
@@ -703,18 +704,19 @@ async def create_report_workflow(
             select(ReportApproval).where(
                 ReportApproval.org_id == current_user.org_id,
                 ReportApproval.class_id == payload.class_id,
-                ReportApproval.term == payload.term,
+                ReportApproval.term_id == payload.term_id,
             )
         )).scalars().first()
         if clash:
             raise HTTPException(
                 status_code=409,
-                detail=f"A report workflow for this class and {payload.term or 'this term'} "
+                detail=f"A report workflow for this class and that term "
                        f"already exists (currently '{clash.stage}'). Move that one along "
                        f"instead of starting a second.",
             )
     r = ReportApproval(
-        class_id=payload.class_id, academic_year=payload.academic_year, term=payload.term,
+        class_id=payload.class_id, academic_year=payload.academic_year,
+        term_id=payload.term_id,
         notes=payload.notes, stage="draft", org_id=current_user.org_id,
     )
     db.add(r)
@@ -794,18 +796,28 @@ async def submit_class_report(
                        "marks you enter are included when they do.",
             )
 
+    # Resolve the term once: it validates the id (a name used to be accepted
+    # unchecked, which is how a drifted one got stored in the first place) and gives
+    # the messages below something a teacher can read.
+    term_row = (await db.execute(
+        select(AcademicTerm).where(
+            AcademicTerm.id == payload.term_id, AcademicTerm.org_id == org_id)
+    )).scalar_one_or_none()
+    if not term_row:
+        raise HTTPException(status_code=404, detail="term not found in your organisation.")
+
     r = (await db.execute(
         select(ReportApproval).where(
             ReportApproval.org_id == org_id,
             ReportApproval.class_id == payload.class_id,
-            ReportApproval.term == payload.term,
+            ReportApproval.term_id == payload.term_id,
         )
     )).scalars().first()
 
     if r is None:
         # Get-or-create: a teacher should not have to ask an admin to open a
         # workflow row before they are allowed to fill it in.
-        r = ReportApproval(class_id=payload.class_id, term=payload.term,
+        r = ReportApproval(class_id=payload.class_id, term_id=payload.term_id,
                            notes=payload.notes, stage="draft", org_id=org_id)
         db.add(r)
         try:
@@ -819,7 +831,7 @@ async def submit_class_report(
                 select(ReportApproval).where(
                     ReportApproval.org_id == org_id,
                     ReportApproval.class_id == payload.class_id,
-                    ReportApproval.term == payload.term,
+                    ReportApproval.term_id == payload.term_id,
                 )
             )).scalars().first()
             if r is None:
@@ -830,7 +842,7 @@ async def submit_class_report(
         # means someone beat them to it, "approved" means it is out of their hands.
         raise HTTPException(
             status_code=409,
-            detail=f"This class's {payload.term} report is already at '{r.stage}' "
+            detail=f"This class's {term_row.name} report is already at '{r.stage}' "
                    f"and cannot be submitted again. Ask an administrator to move it "
                    f"back to 'draft' if it needs more work.",
         )
@@ -843,7 +855,7 @@ async def submit_class_report(
     await log_action(
         db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
         resource_type="ReportApproval", resource_id=r.id,
-        resource_label=f"submitted {cls.name} {payload.term} report for approval",
+        resource_label=f"submitted {cls.name} {term_row.name} report for approval",
         old_values={"stage": "draft"}, new_values={"stage": "submitted"},
         request=request,
     )
@@ -1073,7 +1085,7 @@ async def withdraw_subject_report(
     if term:
         appr = (await db.execute(select(ReportApproval).where(
             ReportApproval.org_id == org_id, ReportApproval.class_id == s.class_id,
-            ReportApproval.term == term.name))).scalars().first()
+            ReportApproval.term_id == term.id))).scalars().first()
         if appr and appr.stage != "draft":
             raise HTTPException(
                 status_code=409,
@@ -1234,7 +1246,7 @@ async def subject_readiness(
 
     appr = (await db.execute(select(ReportApproval).where(
         ReportApproval.org_id == org_id, ReportApproval.class_id == class_id,
-        ReportApproval.term == term.name))).scalars().first()
+        ReportApproval.term_id == term.id))).scalars().first()
 
     return SubjectReadinessResponse(
         class_id=class_id, class_name=cls.name, term_id=term_id, term_name=term.name,

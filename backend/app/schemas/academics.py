@@ -143,7 +143,10 @@ class TranscriptListResponse(BaseModel):
 class ReportApprovalCreate(BaseModel):
     class_id: Optional[str] = None
     academic_year: Optional[str] = None
-    term: Optional[str] = None
+    # An AcademicTerm id, not a name (migration 131). The table is keyed by id, so
+    # accepting a name here would only move the resolution rather than remove it —
+    # and it is a name in exactly this position that caused the 2026-09-27 outage.
+    term_id: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -156,7 +159,7 @@ class ReportSubmitRequest(BaseModel):
     not exist.
     """
     class_id: str
-    term: str
+    term_id: str        # AcademicTerm id, not a name — see ReportApprovalCreate
     notes: Optional[str] = None
 
 
@@ -170,7 +173,8 @@ class ReportApprovalResponse(BaseModel):
     class_id: Optional[str]
     class_name: Optional[str]
     academic_year: Optional[str]
-    term: Optional[str]
+    term_id: Optional[str]
+    term_name: Optional[str] = None     # resolved for display
     stage: str
     notes: Optional[str]
     published_by: Optional[str] = None
@@ -190,9 +194,9 @@ class ReportApprovalListResponse(BaseModel):
 class SubjectSubmitRequest(BaseModel):
     """A subject teacher signing off their own marks for one class.
 
-    Takes `term_id`, not a term NAME, unlike ReportSubmitRequest. That string is
-    what let a production term rename drift away from the rows referencing it;
-    a new endpoint has no reason to repeat it.
+    Takes `term_id`, not a term NAME. A name is what let a production term rename
+    drift away from the rows referencing it. ReportSubmitRequest took a name until
+    migration 131; both are ids now.
     """
     class_id: str
     subject_id: str

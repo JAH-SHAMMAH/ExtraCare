@@ -1284,14 +1284,25 @@ async def get_report_card(
         query = query.where(Grade.status == GradeStatus.PUBLISHED)
         released_terms = set()
         if student.class_id:
-            released_terms = set((await db.execute(
-                select(ReportApproval.term).where(
+            # A BRIDGE, and a deliberate one. ReportApproval is keyed by term_id
+            # (migration 131); the legacy Grade store still keys by term NAME and is
+            # staying that way while it is retired. So the released ids are resolved
+            # to names here, once, to filter grades — rather than leaving either
+            # side name-matched.
+            released_term_ids = set((await db.execute(
+                select(ReportApproval.term_id).where(
                     ReportApproval.org_id == current_user.org_id,
                     ReportApproval.class_id == student.class_id,
                     ReportApproval.stage == REPORT_RELEASED_STAGE,
-                    ReportApproval.term.isnot(None),
+                    ReportApproval.term_id.isnot(None),
                 )
             )).scalars().all())
+            released_terms = set((await db.execute(
+                select(AcademicTerm.name).where(
+                    AcademicTerm.org_id == current_user.org_id,
+                    AcademicTerm.id.in_(released_term_ids or ["_none_"]),
+                )
+            )).scalars().all()) if released_term_ids else set()
         # `.in_(empty)` is a valid no-match, but skipping the round-trip is clearer
         # about the intent: nothing released means nothing to show.
         grades = (
@@ -1826,14 +1837,23 @@ async def _require_report_approval(db, org_id: str, term: str, class_id: str | N
             detail="Cannot resolve a class for this scope — publishing needs a class, either "
                    "given directly or on the exam, so its report approval can be checked.",
         )
+    # This endpoint's payload carries a term NAME (it publishes legacy Grade rows,
+    # which are name-keyed), while the approval it must check is keyed by term_id.
+    # Resolve once, explicitly. An unresolvable name finds no approval and the
+    # publish is refused — which is the safe direction: releasing marks with no
+    # approval behind them is the thing this gate exists to prevent.
+    approval_term_id = (await db.execute(
+        select(AcademicTerm.id).where(
+            AcademicTerm.org_id == org_id, AcademicTerm.name == term)
+    )).scalars().first() if term else None
     approval = (await db.execute(
         select(ReportApproval).where(
             ReportApproval.org_id == org_id,
             ReportApproval.class_id == class_id,
-            ReportApproval.term == term,
+            ReportApproval.term_id == approval_term_id,
             ReportApproval.stage.in_(REPORT_PUBLISHABLE_STAGES),
         ).order_by(ReportApproval.updated_at.desc())
-    )).scalars().first()
+    )).scalars().first() if approval_term_id else None
     if approval is None:
         raise HTTPException(
             status_code=422,

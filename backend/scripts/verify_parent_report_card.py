@@ -1,14 +1,17 @@
 """Read-only: can a PARENT actually open their child's report card?
 
-The new report card gates parents on the workflow row, resolved BY TERM NAME:
+The report card gates parents on the workflow row, resolved BY TERM ID:
 
-    ReportApproval.class_id == cls.id AND ReportApproval.term == term_record.name
+    ReportApproval.class_id == cls.id AND ReportApproval.term_id == term_record.id
     ... and stage must be 'published', else 403.
 
-While approvals said 'Term 1' and the only selectable terms were
-Autumn/Spring/Summer, that lookup matched nothing and every parent got
-"This report has not been published yet" for every term — a silent second
-symptom of the same term drift that broke the CBT sync.
+It used to match on the term NAME, and that is how this broke: approvals said
+'Term 1' while the only selectable terms were Autumn/Spring/Summer, so the
+lookup matched nothing and every parent got "This report has not been published
+yet" for every term — a silent second symptom of the term drift that broke the
+CBT sync. Migration 131 replaced the name with a foreign key, so a name can no
+longer drift out from under the gate. This script still earns its keep: it
+proves the gate OPENS, which a schema change on its own does not.
 
 Reasoning about the data is not proof the gate opens. This drives the endpoint
 as the real parent user, which is the only thing that actually answers it.
