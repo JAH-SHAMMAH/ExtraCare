@@ -1182,6 +1182,54 @@ class SubjectCommentSave(BaseModel):
     items: list[SubjectCommentItem] = Field(default_factory=list)
 
 
+# ── Subject enrolment (the register, and the gate on marks) ───────────────────
+
+class EnrollmentSubject(BaseModel):
+    subject_id: str
+    subject_name: Optional[str] = None
+    enrolled: bool = False
+    # True when the pupil has a mark in this subject. A subject with marks but no
+    # enrolment is the state migration 128's backfill exists to prevent, so
+    # surfacing it means a later gap is visible rather than silent.
+    has_marks: bool = False
+
+
+class EnrollmentStudentRow(BaseModel):
+    student_id: str
+    student_name: str
+    admission_no: Optional[str] = None
+    subjects: list[EnrollmentSubject] = Field(default_factory=list)
+    enrolled_count: int = 0
+
+
+class EnrollmentGridResponse(BaseModel):
+    """The shape Educare's Subject Enrollment screen needs: a class's pupils down
+    the side, the available subjects across the top, a tick in each cell."""
+    class_id: str
+    class_name: Optional[str] = None
+    academic_year: str
+    subjects: list[EnrollmentSubject] = Field(default_factory=list)   # the columns
+    students: list[EnrollmentStudentRow] = Field(default_factory=list)
+    total_enrolled: int = 0
+
+
+class EnrollmentStudentSet(BaseModel):
+    student_id: str
+    subject_ids: list[str] = Field(default_factory=list)
+
+
+class EnrollmentSave(BaseModel):
+    """Replaces each listed pupil's enrolment set for the session.
+
+    A REPLACE, not a merge, because that is what a checkbox grid means: unticking
+    a box has to remove the enrolment, and a merge-only endpoint could never
+    express that. Only the pupils named in `items` are touched.
+    """
+    class_id: str
+    academic_year: Optional[str] = None      # defaults to the current session
+    items: list[EnrollmentStudentSet] = Field(default_factory=list)
+
+
 class CommentGridRow(BaseModel):
     student_id: str
     student_name: str

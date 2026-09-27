@@ -62,6 +62,10 @@ async def test_broadsheet_full_pipeline(db, org):
 
     await bootstrap_assessments(db=db, current_user=admin)
     await bootstrap_cumulatives(db=db, current_user=admin)
+    # Marks require subject enrolment (migration 128); this test is about the
+    # report pipeline, not the gate.
+    from tests._enrolment import enrol_all
+    await enrol_all(db, org)
     asmts = {a.name: a for a in await list_assessments(term_id=autumn.id, db=db, current_user=admin)}
 
     # Ada scores a perfect 100 in Maths (CBT20+THY20 -> CA1 20; PRJ10+PBT10+EXAM60 -> TOTAL 100).

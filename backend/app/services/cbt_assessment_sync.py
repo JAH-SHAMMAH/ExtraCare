@@ -336,6 +336,40 @@ async def sync_cbt_to_assessment_score(
         )).scalars().all()
     }
 
+    # ── the enrolment discrepancy, REPORTED and never enforced ────────────────
+    # Subject enrolment gates the two human mark-entry paths (see
+    # services/subject_enrollment.py). It deliberately does NOT gate this one.
+    #
+    # A pupil who sat and was graded on a CBT exam demonstrably takes that
+    # subject. If the register disagrees, the register is what is wrong — the
+    # likely causes are an enrolment nobody recorded or a pupil added after
+    # enrolment was set. Refusing the score would discard a real, already-marked
+    # exam result over a missing checkbox, and the damage would land on a child's
+    # report card where nobody would think to look for it. So the score is
+    # written and the inconsistency is surfaced for an administrator to fix.
+    unenrolled_names: list[str] = []
+    try:
+        from app.services.subject_enrollment import (
+            enrolled_student_ids, resolve_academic_year_for_check,
+        )
+        from app.models.modules.school import Student as _Student
+
+        year = await resolve_academic_year_for_check(db, org_id)
+        if year:
+            allowed = await enrolled_student_ids(
+                db, org_id, exam.subject_id, year, list(best.keys()))
+            missing = [sid for sid in best if sid not in allowed]
+            if missing:
+                unenrolled_names = [
+                    f"{s.first_name} {s.last_name}".strip()
+                    for s in (await db.execute(select(_Student).where(
+                        _Student.id.in_(missing)))).scalars().all()
+                ]
+    except Exception:
+        # A reporting nicety must never break the sync it reports on. If the
+        # check itself fails, the scores still flow.
+        unenrolled_names = []
+
     written = 0
     for student_id, (_attempt, raw_pct) in best.items():
         pct = round(raw_pct, 2)
@@ -358,4 +392,19 @@ async def sync_cbt_to_assessment_score(
         written += 1
 
     await db.flush()
+
+    # The scores are in. If the register disagreed, say so — admin_only, because
+    # a subject teacher cannot fix an enrolment and telling them would only
+    # worry them. Returned as a SyncBlock for presentation only; the marks were
+    # written regardless, which is the whole point of not gating this path.
+    if unenrolled_names:
+        shown = ", ".join(sorted(unenrolled_names)[:5])
+        more = f" and {len(unenrolled_names) - 5} more" if len(unenrolled_names) > 5 else ""
+        return written, SyncBlock(
+            f"Scores were recorded, but {len(unenrolled_names)} pupil(s) are not "
+            f"enrolled in {exam.title or 'this subject'} for the current session "
+            f"({shown}{more}). Enrol them under Subject Enrollment so the register "
+            f"matches the marks.",
+            admin_only=True,
+        )
     return written, None

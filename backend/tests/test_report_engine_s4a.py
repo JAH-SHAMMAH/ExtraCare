@@ -93,6 +93,10 @@ async def test_report_entry_round_trip(db, org):
     await db.commit()
 
     await bootstrap_assessments(db=db, current_user=admin)
+    # Marks require subject enrolment (migration 128); this test is about the
+    # evaluator round-trip, not the gate.
+    from tests._enrolment import enrol_all
+    await enrol_all(db, org)
     asmts = await list_assessments(term_id=autumn.id, db=db, current_user=admin)
     cbt = next(a for a in asmts if a.name == "CBT")
 

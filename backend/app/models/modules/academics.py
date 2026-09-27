@@ -6,6 +6,8 @@
   • ReportApproval — the report-card approval workflow (draft → published).
   • SubjectReportSubmission — one subject teacher's sign-off, at the (class,
     subject, term) grain that ReportApproval deliberately does not cover.
+  • StudentSubjectEnrollment — the register of who takes what, and the GATE on
+    mark entry (distinct from SubjectSelection's elective-request flow).
   • Recognition — ONE typed model for both conduct points and academic awards
     (``type`` = conduct_point | academic_award), shared backend, tabbed UI.
 
@@ -32,6 +34,52 @@ class SubjectSelection(Base, UUIDMixin, TimestampMixin, TenantMixin):
     __table_args__ = (
         UniqueConstraint("student_id", "subject_id", "academic_year", name="uq_subject_selection"),
         Index("ix_subject_selections_org_status", "org_id", "status"),
+    )
+
+
+class StudentSubjectEnrollment(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """A pupil is taking a subject for an academic session. THE GATE ON MARKS.
+
+    DISTINCT FROM SubjectSelection above, which is an elective *request* flow
+    (requested / approved / rejected, chosen by the pupil). This is the register:
+    the school's statement that this child takes this subject, and no mark may be
+    entered for a (pupil, subject) pair without a row here.
+
+    PER SESSION, NOT PER TERM. `academic_year` is the session string, e.g.
+    "2025/2026", matching Educare's own enrolment screen, which selects a session
+    rather than a term. The cost is that a pupil dropping a subject mid-year
+    cannot be expressed; accepted deliberately as rare.
+
+    `academic_year` IS A STRING, NOT A FK to academic_sessions, and that is
+    load-bearing. That table's single row carries BOTH `name='2025/2026'` AND
+    `term='Autumn'` — it is a session/term hybrid. Keying enrolment on its id
+    would silently bind every enrolment to Autumn, so next term's marks would all
+    be refused by a gate that looks correct. SubjectSelection already uses a
+    string for the same reason.
+
+    WHAT ENFORCES IT: `app/services/subject_enrollment.py`, called from the two
+    human write paths (the Report Entry grid and Reports Upload). The automated
+    CBT sync deliberately does NOT block — a pupil who sat the exam demonstrably
+    takes the subject, and discarding a real result over a missing checkbox would
+    put the error on a child's report card. It reports the discrepancy instead.
+    """
+    __tablename__ = "student_subject_enrollments"
+
+    student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False, index=True)
+    academic_year = Column(String(20), nullable=False, index=True)
+    enrolled_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    enrolled_at = Column(DateTime(timezone=True), nullable=True)
+    # How the row came to exist: 'manual' from the enrolment screen/API,
+    # 'backfill' from migration 128 reading existing marks. Kept so a later
+    # question about why a pupil is enrolled has an answer.
+    source = Column(String(20), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "student_id", "subject_id", "academic_year",
+                         name="uq_student_subject_enrollment"),
+        Index("ix_student_subject_enrollments_year", "org_id", "academic_year"),
+        Index("ix_student_subject_enrollments_lookup", "org_id", "student_id", "subject_id", "academic_year"),
     )
 
 

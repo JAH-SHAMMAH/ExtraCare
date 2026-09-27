@@ -62,6 +62,7 @@ from app.schemas.platform import (
     CardColumn, CardSubjectRow, ReportCardResponse, SessionalTerm,
     REPORT_COMMENT_KINDS, CommentGridRow, CommentGridResponse, CommentItem, CommentGridSave,
     SubjectCommentGridResponse, SubjectCommentGridRow, SubjectCommentItem, SubjectCommentSave,
+    EnrollmentGridResponse, EnrollmentStudentRow, EnrollmentSubject, EnrollmentSave,
     InsightResponse, InsightSubject, InsightGender, InsightClass,
     ScoreUploadResult,
     ReportTemplateCreate, ReportTemplateUpdate, ReportTemplateResponse, AutoMapResult,
@@ -2370,6 +2371,31 @@ async def report_entry_grid(class_id: str, subject_id: str, term_id: str,
             Student.org_id == org, Student.class_id == class_id, Student.is_deleted == False)  # noqa: E712
         .order_by(Student.first_name, Student.last_name)
     )).scalars().all()
+
+    # Enrolment filter. Marks require enrolment in the subject, so the grid must
+    # show only pupils whose marks could actually be saved — otherwise a teacher
+    # fills in a row and the save refuses it, and the gate reads as a bug rather
+    # than as a rule. The block in save_report_entry is the backstop; in normal
+    # use it should never fire, because the row was never offered.
+    #
+    # A pupil who ALREADY HAS A MARK in this subject is kept regardless. Migration
+    # 128 backfilled enrolment from existing marks, so this only arises where that
+    # enrolment was later removed or the mark arrived by another route; hiding the
+    # row would strand an existing mark with no way to correct it.
+    from app.services.subject_enrollment import (
+        enrolled_student_ids, resolve_academic_year_for_check,
+    )
+    year = await resolve_academic_year_for_check(db, org)
+    allowed = await enrolled_student_ids(
+        db, org, subject_id, year, [s.id for s in students])
+    with_marks = set((await db.execute(
+        select(StudentAssessmentScore.student_id).where(
+            StudentAssessmentScore.org_id == org,
+            StudentAssessmentScore.subject_id == subject_id,
+            StudentAssessmentScore.student_id.in_([s.id for s in students] or ["_none_"]),
+        ))).scalars().all())
+    students = [s for s in students if s.id in allowed or s.id in with_marks]
+
     a_ids = [a.id for a in assessments]
     s_ids = [s.id for s in students]
     scores: dict[str, dict[str, object]] = {sid: {} for sid in s_ids}
@@ -2562,6 +2588,37 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
                 select(SchoolClass.name).where(SchoolClass.id == blocked_class)
             )).scalar_one_or_none()
             raise HTTPException(status_code=422, detail=locked_message(blocked_term, cname))
+
+    # ── the enrolment gate ────────────────────────────────────────────────────
+    # A mark requires enrolment in the subject for the current session. The grid
+    # is already filtered to enrolled pupils, so this refuses only a request that
+    # did not come from that grid — a stale tab, a scripted call, or an enrolment
+    # withdrawn mid-edit. Refusing the WHOLE batch rather than silently dropping
+    # the offending rows: a partial save that reports success is how a teacher
+    # comes to believe marks are recorded when they are not.
+    #
+    # A pupil who already has a mark in this subject is exempt, matching the
+    # grid's own rule, so an existing mark never becomes uncorrectable.
+    from app.services.subject_enrollment import (
+        enrolled_student_ids, not_enrolled_message, resolve_academic_year_for_check,
+    )
+    year = await resolve_academic_year_for_check(db, org)
+
+    incoming = [i.student_id for i in payload.items]
+    if incoming:
+        allowed = await enrolled_student_ids(db, org, payload.subject_id, year, incoming)
+        already_marked = set((await db.execute(
+            select(StudentAssessmentScore.student_id).where(
+                StudentAssessmentScore.org_id == org,
+                StudentAssessmentScore.subject_id == payload.subject_id,
+                StudentAssessmentScore.student_id.in_(incoming),
+            ))).scalars().all())
+        unenrolled = {sid for sid in incoming if sid not in allowed and sid not in already_marked}
+        if unenrolled:
+            subj_name = (await db.execute(select(Subject.name).where(
+                Subject.id == payload.subject_id))).scalar_one_or_none()
+            raise HTTPException(status_code=422,
+                                detail=not_enrolled_message(subj_name, len(unenrolled)))
 
     valid_assessments = set((await db.execute(select(Assessment.id).where(Assessment.org_id == org))).scalars().all())
     keys = {(i.student_id, i.assessment_id) for i in payload.items}
@@ -3159,6 +3216,179 @@ async def save_report_comments(payload: CommentGridSave, db: AsyncSession = Depe
     return {"saved": saved}
 
 
+# ── Subject enrolment: the register of who takes what ────────────────────────
+#
+# Enrolment GATES mark entry: no mark may be saved for a (pupil, subject) pair
+# without a row for the current session. The rule and its deliberate exceptions
+# live in services/subject_enrollment.py.
+
+
+@router.get("/subject-enrollments", response_model=EnrollmentGridResponse,
+            dependencies=[_school_read])
+async def subject_enrollment_grid(class_id: str, academic_year: str | None = None,
+                                  db: AsyncSession = Depends(get_db),
+                                  current_user: User = Depends(get_current_active_user)):
+    """A class's pupils against the available subjects, with a tick per enrolment.
+
+    The shape Educare's Subject Enrollment screen needs. `has_marks` rides along
+    per cell so a pupil holding marks in a subject they are NOT enrolled in is
+    visible — the state migration 128's backfill exists to prevent, and one worth
+    seeing rather than discovering through a refused save.
+    """
+    from app.services.subject_enrollment import AcademicYearUnresolved, resolve_academic_year
+
+    org = current_user.org_id
+    cls = (await db.execute(select(SchoolClass).where(
+        SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found.")
+
+    if not academic_year:
+        try:
+            academic_year = await resolve_academic_year(db, org)
+        except AcademicYearUnresolved as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+    students = (await db.execute(
+        select(Student).where(Student.org_id == org, Student.class_id == class_id,
+                              Student.is_deleted == False)  # noqa: E712
+        .order_by(Student.first_name, Student.last_name)
+    )).scalars().all()
+    subjects = (await db.execute(select(Subject).where(
+        Subject.org_id == org).order_by(Subject.name))).scalars().all()
+
+    from app.models.modules.academics import StudentSubjectEnrollment
+    sids = [s.id for s in students] or ["_none_"]
+    enrolled = {(r.student_id, r.subject_id) for r in (await db.execute(
+        select(StudentSubjectEnrollment).where(
+            StudentSubjectEnrollment.org_id == org,
+            StudentSubjectEnrollment.academic_year == academic_year,
+            StudentSubjectEnrollment.student_id.in_(sids)))).scalars().all()}
+
+    marked = {(r[0], r[1]) for r in (await db.execute(
+        select(StudentAssessmentScore.student_id, StudentAssessmentScore.subject_id).where(
+            StudentAssessmentScore.org_id == org,
+            StudentAssessmentScore.student_id.in_(sids)))).all()}
+
+    rows = []
+    for st in students:
+        cells = [EnrollmentSubject(
+            subject_id=sub.id, subject_name=sub.name,
+            enrolled=(st.id, sub.id) in enrolled,
+            has_marks=(st.id, sub.id) in marked) for sub in subjects]
+        rows.append(EnrollmentStudentRow(
+            student_id=st.id, student_name=f"{st.first_name} {st.last_name}".strip(),
+            admission_no=st.student_id, subjects=cells,
+            enrolled_count=sum(1 for c in cells if c.enrolled)))
+
+    return EnrollmentGridResponse(
+        class_id=class_id, class_name=cls.name, academic_year=academic_year,
+        subjects=[EnrollmentSubject(subject_id=x.id, subject_name=x.name) for x in subjects],
+        students=rows,
+        total_enrolled=sum(r.enrolled_count for r in rows),
+    )
+
+
+@router.put("/subject-enrollments", dependencies=[_write])
+async def save_subject_enrollments(payload: EnrollmentSave,
+                                   request: Request = None,
+                                   db: AsyncSession = Depends(get_db),
+                                   current_user: User = Depends(get_current_active_user)):
+    """Replace the enrolment set of each listed pupil for the session.
+
+    A REPLACE, because that is what a checkbox grid means — unticking a box must
+    remove the enrolment, which a merge-only endpoint could never express. Only
+    the pupils named in `items` are touched.
+
+    Removing an enrolment a pupil HAS MARKS for is refused. Doing so would leave a
+    mark that can no longer be edited (the gate would refuse the next save) and a
+    report card built on a subject the register says they do not take. Delete the
+    marks first if that is really the intent.
+    """
+    from app.models.modules.academics import StudentSubjectEnrollment
+    from app.services.subject_enrollment import AcademicYearUnresolved, resolve_academic_year
+
+    org = current_user.org_id
+    cls = (await db.execute(select(SchoolClass).where(
+        SchoolClass.id == payload.class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found.")
+
+    year = payload.academic_year
+    if not year:
+        try:
+            year = await resolve_academic_year(db, org)
+        except AcademicYearUnresolved as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+    # Pupils must be in the named class, so a valid caller cannot enrol arbitrary
+    # pupils elsewhere in the school by passing their ids.
+    in_class = set((await db.execute(select(Student.id).where(
+        Student.org_id == org, Student.class_id == payload.class_id,
+        Student.is_deleted == False))).scalars().all())  # noqa: E712
+    stray = [i.student_id for i in payload.items if i.student_id not in in_class]
+    if stray:
+        raise HTTPException(status_code=422,
+                            detail=f"{len(stray)} pupil(s) are not in this class.")
+
+    valid_subjects = set((await db.execute(select(Subject.id).where(
+        Subject.org_id == org))).scalars().all())
+    for it in payload.items:
+        bad = [x for x in it.subject_ids if x not in valid_subjects]
+        if bad:
+            raise HTTPException(status_code=422,
+                                detail=f"{len(bad)} unknown subject id(s).")
+
+    sids = [i.student_id for i in payload.items] or ["_none_"]
+    existing = {(r.student_id, r.subject_id): r for r in (await db.execute(
+        select(StudentSubjectEnrollment).where(
+            StudentSubjectEnrollment.org_id == org,
+            StudentSubjectEnrollment.academic_year == year,
+            StudentSubjectEnrollment.student_id.in_(sids)))).scalars().all()}
+    marked = {(r[0], r[1]) for r in (await db.execute(
+        select(StudentAssessmentScore.student_id, StudentAssessmentScore.subject_id).where(
+            StudentAssessmentScore.org_id == org,
+            StudentAssessmentScore.student_id.in_(sids)))).all()}
+
+    added = removed = 0
+    blocked: list[str] = []
+    for it in payload.items:
+        want = set(it.subject_ids)
+        have = {sub for (stu, sub) in existing if stu == it.student_id}
+        for sub_id in want - have:
+            db.add(StudentSubjectEnrollment(
+                org_id=org, student_id=it.student_id, subject_id=sub_id,
+                academic_year=year, enrolled_by=current_user.id,
+                enrolled_at=datetime.now(timezone.utc), source="manual"))
+            added += 1
+        for sub_id in have - want:
+            if (it.student_id, sub_id) in marked:
+                blocked.append(sub_id)
+                continue
+            await db.delete(existing[(it.student_id, sub_id)])
+            removed += 1
+
+    if blocked:
+        names = {x.id: x.name for x in (await db.execute(select(Subject).where(
+            Subject.id.in_(list(set(blocked)))))).scalars().all()}
+        listed = ", ".join(sorted({names.get(b, b) for b in blocked}))
+        raise HTTPException(
+            status_code=422,
+            detail=f"Cannot un-enrol a pupil from a subject they already have marks "
+                   f"in ({listed}). Those marks would become uneditable and would "
+                   f"still print on the report card. Remove the marks first.",
+        )
+
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org, actor=current_user,
+        resource_type="StudentSubjectEnrollment", resource_id=payload.class_id,
+        resource_label=f"subject enrolment for {cls.name} ({year})",
+        new_values={"added": added, "removed": removed}, request=request,
+    )
+    return {"added": added, "removed": removed, "academic_year": year}
+
+
 # ── Per-subject report comments ──────────────────────────────────────────────
 #
 # Distinct from /report-comments above, which fills the card's two fixed slots
@@ -3419,6 +3649,22 @@ async def report_upload(term_id: str, file: UploadFile = File(...),
                 StudentAssessmentScore.org_id == org, StudentAssessmentScore.assessment_id.in_(a_ids)))).scalars().all():
             existing[(r.student_id, r.subject_id, r.assessment_id)] = r
 
+    # Enrolment gate data, loaded ONCE for the whole file rather than per row — a
+    # three-hundred-row import would otherwise make two queries per row.
+    from app.models.modules.academics import StudentSubjectEnrollment
+    from app.services.subject_enrollment import resolve_academic_year_for_check
+    year = await resolve_academic_year_for_check(db, org)
+    _enr_q = select(StudentSubjectEnrollment.student_id, StudentSubjectEnrollment.subject_id).where(
+        StudentSubjectEnrollment.org_id == org)
+    if year is not None:
+        _enr_q = _enr_q.where(StudentSubjectEnrollment.academic_year == year)
+    enrolled_pairs = {(r[0], r[1]) for r in (await db.execute(_enr_q)).all()}
+    # Pairs that already hold a mark are exempt, matching the grid and save paths,
+    # so a re-upload correcting existing marks is never refused.
+    pre_marked = {(r[0], r[1]) for r in (await db.execute(
+        select(StudentAssessmentScore.student_id, StudentAssessmentScore.subject_id)
+        .where(StudentAssessmentScore.org_id == org))).all()}
+
     imported = 0
     errors: list[str] = []
     for i, raw in enumerate(parsed, start=2):
@@ -3432,6 +3678,15 @@ async def report_upload(term_id: str, file: UploadFile = File(...),
         subj = subjects_by_name.get((row.get("subject") or "").lower())
         if not subj:
             errors.append(f"row {i}: subject not found ({row.get('subject') or '—'})")
+            continue
+        # Enrolment gate, as a per-row error rather than a failed import: this
+        # endpoint already reports per-row problems non-fatally, so one
+        # unenrolled pupil should not discard a file of three hundred good rows.
+        # Exempt where a mark already exists, matching the grid and save paths.
+        if (student.id, subj.id) not in enrolled_pairs and (student.id, subj.id) not in pre_marked:
+            errors.append(f"row {i}: {student.first_name} {student.last_name} is not "
+                          f"enrolled in {subj.name} — enrol them under Subject "
+                          f"Enrollment first")
             continue
         wrote_any = False
         for col, val in row.items():

@@ -59,6 +59,11 @@ async def _fixture(db, org, *, stage: str | None = None):
         db.add(ReportApproval(id=str(uuid.uuid4()), class_id=cls.id, term=TERM_NAME,
                               stage=stage, org_id=org.id))
     await db.commit()
+    # Marks require subject enrolment (migration 128). This fixture is about the
+    # publish LOCK, not the enrolment gate, so enrol up front and let each test
+    # exercise the thing it is actually named after.
+    from tests._enrolment import enrol
+    await enrol(db, org, stu, subj)
     return cls, stu, subj, a
 
 
@@ -160,6 +165,8 @@ async def test_a_different_class_is_not_frozen(db, org):
                    class_id=other.id, org_id=org.id)
     db.add(stu2)
     await db.commit()
+    from tests._enrolment import enrol
+    await enrol(db, org, stu2, subj)
 
     assert (await _save(db, user, other, subj, a, stu2))["saved"] == 1
 

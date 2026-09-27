@@ -75,6 +75,9 @@ async def _session(db, org, term_names):
     await _scale(db, org)
     await bootstrap_assessments(db=db, current_user=admin)
     await bootstrap_cumulatives(db=db, current_user=admin)
+    # Marks require subject enrolment (migration 128).
+    from tests._enrolment import enrol_all
+    await enrol_all(db, org)
     return admin, terms, full, maths, pupil
 
 

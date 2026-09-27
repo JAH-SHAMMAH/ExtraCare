@@ -60,6 +60,12 @@ async def _fixture(db, org):
                   class_id=cls.id, org_id=org.id)
     db.add_all([a_half, a_full, stu])
     await db.commit()
+    # The grid only offers pupils whose marks could be saved, so an unenrolled
+    # pupil would vanish from it — and this file's tests assert on the STUDENT
+    # list to show the class still loads when the columns are gone. Enrol so those
+    # assertions keep measuring the sub-term selector rather than the gate.
+    from tests._enrolment import enrol
+    await enrol(db, org, stu, subj)
     return cls, subj, term, half, full, a_half, a_full
 
 

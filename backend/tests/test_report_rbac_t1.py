@@ -63,6 +63,10 @@ async def _fixture(db, org):
     await db.commit()
     await bootstrap_assessments(db=db, current_user=admin)
     await bootstrap_cumulatives(db=db, current_user=admin)
+    # Marks require subject enrolment (migration 128); this test is about the
+    # report pipeline, not the gate.
+    from tests._enrolment import enrol_all
+    await enrol_all(db, org)
     A = {a.name: a for a in await list_assessments(term_id=autumn.id, db=db, current_user=admin)}
     return dict(admin=admin, ct=ct, st=st, other=other, autumn=autumn, half=half, full=full,
                cls=cls, maths=maths, eng=eng, stu=stu, A=A)

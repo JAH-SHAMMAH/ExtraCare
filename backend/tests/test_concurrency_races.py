@@ -94,6 +94,12 @@ async def races(tmp_path):
                        sub_term_id=sub.id, org_id=org.id)
         db.add_all([srole, su, stu, arole, au, a])
         await db.commit()
+        # Marks require subject enrolment (migration 128). These tests are about
+        # CONCURRENT saves colliding on the unique constraint, so the pair is
+        # enrolled up front; without it every save would be refused by the gate
+        # and the race would never be reached.
+        from tests._enrolment import enrol
+        await enrol(db, org, stu, subj)
         ids = dict(org=org.id, cls=cls.id, subj=subj.id, stu=stu.id,
                    stu_user=su.id, admin=au.id, assessment=a.id)
     try:
@@ -249,6 +255,13 @@ async def test_a_collision_does_not_lose_the_rest_of_the_batch(races):
         db.add(other)
         await db.commit()
         other_id = other.id
+        # The batch marks BOTH pupils, so the new one needs enrolling as well or
+        # the gate refuses the whole batch and the collision never happens.
+        from tests._enrolment import enrol
+
+        class _O:
+            id = ids["org"]
+        await enrol(db, _O(), other, ids["subj"])
 
     async def contended():
         async with Session() as db:
