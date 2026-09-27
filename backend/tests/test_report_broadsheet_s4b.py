@@ -64,13 +64,14 @@ async def test_broadsheet_full_pipeline(db, org):
     await bootstrap_cumulatives(db=db, current_user=admin)
     # Marks require subject enrolment (migration 128); this test is about the
     # report pipeline, not the gate.
-    from tests._enrolment import enrol_all
+    from tests._enrolment import enrol_all, teach_everything
     await enrol_all(db, org)
+    await teach_everything(db, org, admin)
     asmts = {a.name: a for a in await list_assessments(term_id=autumn.id, db=db, current_user=admin)}
 
     # Ada scores a perfect 100 in Maths (CBT20+THY20 -> CA1 20; PRJ10+PBT10+EXAM60 -> TOTAL 100).
     def full_marks(student_id, subject_id):
-        return ReportEntrySave(subject_id=subject_id, items=[
+        return ReportEntrySave(subject_id=subject_id, class_id=cls.id, items=[
             ScoreItem(student_id=student_id, assessment_id=asmts["CBT"].id, score=Decimal("20")),
             ScoreItem(student_id=student_id, assessment_id=asmts["THEORY"].id, score=Decimal("20")),
             ScoreItem(student_id=student_id, assessment_id=asmts["PRJ"].id, score=Decimal("10")),
@@ -80,7 +81,7 @@ async def test_broadsheet_full_pipeline(db, org):
     await save_report_entry(payload=full_marks(s1.id, maths.id), db=db, current_user=admin)
     await save_report_entry(payload=full_marks(s1.id, eng.id), db=db, current_user=admin)
     # Ben: CBT18 THY16 (CA1 = 34/40*20 = 17), PRJ8 PBT9 EXAM50 -> TOTAL 84, in Maths only.
-    await save_report_entry(payload=ReportEntrySave(subject_id=maths.id, items=[
+    await save_report_entry(payload=ReportEntrySave(subject_id=maths.id, class_id=cls.id, items=[
         ScoreItem(student_id=s2.id, assessment_id=asmts["CBT"].id, score=Decimal("18")),
         ScoreItem(student_id=s2.id, assessment_id=asmts["THEORY"].id, score=Decimal("16")),
         ScoreItem(student_id=s2.id, assessment_id=asmts["PRJ"].id, score=Decimal("8")),

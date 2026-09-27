@@ -59,12 +59,13 @@ async def test_report_card_full_term(db, org):
     await bootstrap_cumulatives(db=db, current_user=admin)
     # Marks require subject enrolment (migration 128); this test is about the
     # report pipeline, not the gate.
-    from tests._enrolment import enrol_all
+    from tests._enrolment import enrol_all, teach_everything
     await enrol_all(db, org)
+    await teach_everything(db, org, admin)
     A = {a.name: a for a in await list_assessments(term_id=autumn.id, db=db, current_user=admin)}
 
     async def enter(student, subj, cbt, thy, prj, pbt, exam):
-        await save_report_entry(payload=ReportEntrySave(subject_id=subj, items=[
+        await save_report_entry(payload=ReportEntrySave(subject_id=subj, class_id=cls.id, items=[
             ScoreItem(student_id=student, assessment_id=A["CBT"].id, score=Decimal(cbt)),
             ScoreItem(student_id=student, assessment_id=A["THEORY"].id, score=Decimal(thy)),
             ScoreItem(student_id=student, assessment_id=A["PRJ"].id, score=Decimal(prj)),

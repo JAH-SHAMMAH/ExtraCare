@@ -1,4 +1,13 @@
-"""Test helper: make a (pupil, subject) pair markable.
+"""Test helpers: the two preconditions for saving a mark.
+
+Saving a mark now requires BOTH:
+
+  * the pupil ENROLLED in the subject      -> `enrol` / `enrol_all`
+  * the actor ASSIGNED to teach it         -> `assign_teaching`
+
+Entering a mark is a teaching act, so there is no administrative bypass: a
+superuser fixture with no teaching assignment is refused like anyone else. Tests
+that drive mark entry therefore have to say who teaches the subject.
 
 Subject enrolment gates mark entry (migration 128, services/subject_enrollment).
 Any test that saves a mark therefore has to enrol first — the same thing a real
@@ -70,3 +79,62 @@ async def enrol_all(db, org, academic_year: str = "2025/2026"):
         Student.org_id == org.id, Student.is_deleted == False))).scalars().all()  # noqa: E712
     subjects = (await db.execute(select(Subject).where(Subject.org_id == org.id))).scalars().all()
     await enrol(db, org, students, subjects, academic_year)
+
+
+async def assign_teaching(db, org, teacher, class_obj, subject, day: int = 0):
+    """Make `teacher` the teacher of (class, subject), via the Timetable.
+
+    The Timetable is the primary source `_teacher_assignments` reads, and how all
+    120 live (class, subject) pairs at Fairview are covered. `day_of_week`,
+    `start_time` and `end_time` are NOT NULL, so a bare (class, subject, teacher)
+    triple will not insert — hence this helper rather than an inline row.
+
+    NOTE the fallback in `_teacher_assignments`: a teacher with ANY Timetable row
+    is scoped to their Timetable pairs ONLY. Giving a teacher one assignment
+    therefore NARROWS them to it, where before they may have matched every class
+    through Subject.teacher_id.
+    """
+    import uuid as _uuid
+
+    from app.models.modules.school import Timetable
+
+    db.add(Timetable(
+        id=str(_uuid.uuid4()),
+        class_id=getattr(class_obj, "id", class_obj),
+        subject_id=getattr(subject, "id", subject),
+        teacher_id=getattr(teacher, "id", teacher),
+        day_of_week=day, start_time="08:00", end_time="09:00",
+        org_id=org.id if hasattr(org, "id") else org,
+    ))
+    await db.commit()
+
+
+async def allow_marks(db, org, teacher, class_obj, subject, pupils, academic_year="2025/2026"):
+    """Both preconditions at once: assign the teacher, enrol the pupils."""
+    await assign_teaching(db, org, teacher, class_obj, subject)
+    await enrol(db, org, pupils, subject, academic_year)
+
+
+async def teach_everything(db, org, user):
+    """Make `user` the subject teacher for every subject that has none.
+
+    Uses `Subject.teacher_id` rather than Timetable rows on purpose: with no
+    Timetable rows for this user, `_teacher_assignments` falls back to
+    Subject.teacher_id and yields (every class x their subjects) — which is
+    exactly the reach the removed admin bypass used to give. One field per
+    subject, and it leaves any subject that already names a teacher alone, so a
+    test that deliberately scopes somebody out keeps working.
+
+    For tests whose subject is the report PIPELINE rather than who may author a
+    mark. A test about the teaching gate itself should use `assign_teaching` with
+    an explicit pair instead.
+    """
+    from sqlalchemy import select
+
+    from app.models.modules.school import Subject
+
+    subjects = (await db.execute(select(Subject).where(
+        Subject.org_id == org.id, Subject.teacher_id.is_(None)))).scalars().all()
+    for s in subjects:
+        s.teacher_id = getattr(user, "id", user)
+    await db.commit()

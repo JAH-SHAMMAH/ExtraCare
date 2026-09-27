@@ -38,6 +38,11 @@ async def _admin(db, org) -> User:
     u.roles = [role]
     db.add_all([role, u])
     await db.commit()
+    # Entering marks now needs a teaching assignment — there is no admin
+    # bypass. These tests are about the publish lock / sub-term selector, so
+    # the acting user is given one here.
+    from tests._enrolment import teach_everything
+    await teach_everything(db, org, u)
     return u
 
 

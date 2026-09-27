@@ -52,8 +52,9 @@ async def test_report_upload(db, org):
     await bootstrap_cumulatives(db=db, current_user=admin)
     # Marks require subject enrolment (migration 128); this test is about the
     # report pipeline, not the gate.
-    from tests._enrolment import enrol_all
+    from tests._enrolment import enrol_all, teach_everything
     await enrol_all(db, org)
+    await teach_everything(db, org, admin)
 
     csv = ("admission_no,student,subject,CBT,THEORY,PRJ,PBT,EXAM\n"
            "FS/1,Ada Obi,Mathematics,20,20,10,10,60\n"          # matched by admission -> full marks

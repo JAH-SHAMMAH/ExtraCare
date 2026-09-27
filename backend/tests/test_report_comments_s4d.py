@@ -46,10 +46,11 @@ async def test_comment_grid_and_card_wiring(db, org):
     await bootstrap_cumulatives(db=db, current_user=admin)
     # Marks require subject enrolment (migration 128); this test is about the
     # report pipeline, not the gate.
-    from tests._enrolment import enrol_all
+    from tests._enrolment import enrol_all, teach_everything
     await enrol_all(db, org)
+    await teach_everything(db, org, admin)
     A = {a.name: a for a in await list_assessments(term_id=autumn.id, db=db, current_user=admin)}
-    await save_report_entry(payload=ReportEntrySave(subject_id=maths.id, items=[
+    await save_report_entry(payload=ReportEntrySave(subject_id=maths.id, class_id=cls.id, items=[
         ScoreItem(student_id=s1.id, assessment_id=A["EXAM"].id, score=Decimal("50"))]), db=db, current_user=admin)
 
     # Empty grid first.

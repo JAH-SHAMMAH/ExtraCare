@@ -95,8 +95,9 @@ async def test_report_entry_round_trip(db, org):
     await bootstrap_assessments(db=db, current_user=admin)
     # Marks require subject enrolment (migration 128); this test is about the
     # evaluator round-trip, not the gate.
-    from tests._enrolment import enrol_all
+    from tests._enrolment import enrol_all, teach_everything
     await enrol_all(db, org)
+    await teach_everything(db, org, admin)
     asmts = await list_assessments(term_id=autumn.id, db=db, current_user=admin)
     cbt = next(a for a in asmts if a.name == "CBT")
 
@@ -105,14 +106,14 @@ async def test_report_entry_round_trip(db, org):
     assert {a.name for a in grid.assessments} == {"CBT", "THEORY", "PRJ", "PBT", "EXAM"}
     assert grid.scores[s1.id] == {}    # nothing entered yet
 
-    await save_report_entry(payload=ReportEntrySave(subject_id=subj.id, items=[
+    await save_report_entry(payload=ReportEntrySave(subject_id=subj.id, class_id=cls.id, items=[
         ScoreItem(student_id=s1.id, assessment_id=cbt.id, score=Decimal("18"))]), db=db, current_user=admin)
 
     grid2 = await report_entry_grid(class_id=cls.id, subject_id=subj.id, term_id=autumn.id, db=db, current_user=admin)
     assert grid2.scores[s1.id][cbt.id] == Decimal("18")
 
     # Re-save updates in place (no duplicate row).
-    await save_report_entry(payload=ReportEntrySave(subject_id=subj.id, items=[
+    await save_report_entry(payload=ReportEntrySave(subject_id=subj.id, class_id=cls.id, items=[
         ScoreItem(student_id=s1.id, assessment_id=cbt.id, score=Decimal("20"))]), db=db, current_user=admin)
     grid3 = await report_entry_grid(class_id=cls.id, subject_id=subj.id, term_id=autumn.id, db=db, current_user=admin)
     assert grid3.scores[s1.id][cbt.id] == Decimal("20")

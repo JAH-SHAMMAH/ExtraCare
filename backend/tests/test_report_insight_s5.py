@@ -45,12 +45,13 @@ async def test_report_insight(db, org):
     await bootstrap_cumulatives(db=db, current_user=admin)
     # Marks require subject enrolment (migration 128); this test is about the
     # report pipeline, not the gate.
-    from tests._enrolment import enrol_all
+    from tests._enrolment import enrol_all, teach_everything
     await enrol_all(db, org)
+    await teach_everything(db, org, admin)
     A = {a.name: a for a in await list_assessments(term_id=autumn.id, db=db, current_user=admin)}
 
     async def enter(student, exam):   # only EXAM scored -> TOTAL = exam value
-        await save_report_entry(payload=ReportEntrySave(subject_id=maths.id, items=[
+        await save_report_entry(payload=ReportEntrySave(subject_id=maths.id, class_id=c10.id, items=[
             ScoreItem(student_id=student, assessment_id=A["EXAM"].id, score=Decimal(exam))]), db=db, current_user=admin)
 
     await enter(boy.id, 60)     # TOTAL 60 -> 60%

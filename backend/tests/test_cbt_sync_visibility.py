@@ -356,6 +356,12 @@ async def test_the_make_report_grid_explains_an_empty_cbt_column(db, org):
     exam = await _exam(db, org, cls, subj)
 
     admin = await _user(db, org, "org_admin")
+    # Opening the entry grid now requires teaching the subject — there is no
+    # admin bypass. `_report_admin` still decides which AUDIENCE a notice is
+    # written for, so an admin who teaches the subject is what exercises the
+    # admin-facing message.
+    from tests._enrolment import assign_teaching
+    await assign_teaching(db, org, admin, cls, subj)
     grid = await report_entry_grid(
         class_id=cls.id, subject_id=subj.id, term_id=term.id,
         db=db, current_user=admin,
@@ -377,6 +383,13 @@ async def test_the_grid_notice_respects_the_viewers_audience(db, org):
     # and the audience split would never be exercised.
     subj.teacher_id = teacher.id
     await db.commit()
+    # The admin needs to reach the grid as well, and subj.teacher_id is already
+    # the teacher's — so give the admin an explicit Timetable assignment. After
+    # the bypass removal, seeing the admin-audience notice ON THE GRID requires
+    # being both an admin AND a teacher of the subject. (The CBT results panel
+    # still surfaces the same reason to admins who teach nothing.)
+    from tests._enrolment import assign_teaching
+    await assign_teaching(db, org, admin, cls, subj, day=1)
 
     async def notices(user):
         g = await report_entry_grid(class_id=cls.id, subject_id=subj.id,
@@ -398,6 +411,12 @@ async def test_a_healthy_grid_carries_no_notices(db, org):
     cls, subj, term, _ = await _school(db, org)
     await _exam(db, org, cls, subj)
     admin = await _user(db, org, "org_admin")
+    # Opening the entry grid now requires teaching the subject — there is no
+    # admin bypass. `_report_admin` still decides which AUDIENCE a notice is
+    # written for, so an admin who teaches the subject is what exercises the
+    # admin-facing message.
+    from tests._enrolment import assign_teaching
+    await assign_teaching(db, org, admin, cls, subj)
 
     grid = await report_entry_grid(class_id=cls.id, subject_id=subj.id,
                                    term_id=term.id, db=db, current_user=admin)

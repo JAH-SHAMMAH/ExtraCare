@@ -98,8 +98,10 @@ async def races(tmp_path):
         # CONCURRENT saves colliding on the unique constraint, so the pair is
         # enrolled up front; without it every save would be refused by the gate
         # and the race would never be reached.
-        from tests._enrolment import enrol
+        from tests._enrolment import enrol, teach_everything
         await enrol(db, org, stu, subj)
+        # ...and the actor must teach it: mark entry has no admin bypass.
+        await teach_everything(db, org, au)
         ids = dict(org=org.id, cls=cls.id, subj=subj.id, stu=stu.id,
                    stu_user=su.id, admin=au.id, assessment=a.id)
     try:

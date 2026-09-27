@@ -77,6 +77,12 @@ async def _world(db, org, *, session_name=YEAR, is_current=True):
                       group_id=grp.id, decimal_places=0, position=0, org_id=org.id)
     db.add(asmt)
     await db.commit()
+    # Mark entry also requires a teaching assignment now (there is no admin
+    # bypass). These tests are about the ENROLMENT gate, so satisfy the teaching
+    # precondition here and let each test exercise the one it is named for.
+    from tests._enrolment import assign_teaching
+    await assign_teaching(db, org, admin, cls, maths, day=0)
+    await assign_teaching(db, org, admin, cls, eng, day=1)
     return dict(admin=admin, sess=sess, term=term, full=full, cls=cls,
                 maths=maths, eng=eng, a=a, b=b, asmt=asmt)
 

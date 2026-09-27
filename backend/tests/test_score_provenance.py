@@ -90,6 +90,10 @@ async def test_editing_a_mark_re_stamps_the_editor(db, org):
     number that has since been replaced."""
     w = await _world(db, org)
     other = await _user(db, org, "super_user", ["*"], "Second Person")
+    # Mark entry needs a teaching assignment; this test is about WHO the row
+    # credits after an edit, not about who is permitted to make one.
+    from tests._enrolment import assign_teaching
+    await assign_teaching(db, org, other, w["cls"], w["maths"], day=1)
 
     for actor, score in ((w["teacher"], 70), (other, 85)):
         await save_report_entry(

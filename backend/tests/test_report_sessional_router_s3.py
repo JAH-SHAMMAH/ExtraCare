@@ -76,8 +76,9 @@ async def _session(db, org, term_names):
     await bootstrap_assessments(db=db, current_user=admin)
     await bootstrap_cumulatives(db=db, current_user=admin)
     # Marks require subject enrolment (migration 128).
-    from tests._enrolment import enrol_all
+    from tests._enrolment import enrol_all, teach_everything
     await enrol_all(db, org)
+    await teach_everything(db, org, admin)
     return admin, terms, full, maths, pupil
 
 
@@ -86,7 +87,10 @@ async def _enter(db, admin, pupil, subj, term, marks):
     CA 1 (20, rescaled from CBT+THEORY out of 40) + PRJ 10 + PBT 10 + EXAM 60."""
     A = {a.name: a for a in await list_assessments(term_id=term.id, db=db, current_user=admin)}
     cbt, thy, prj, pbt, exam = marks
-    await save_report_entry(payload=ReportEntrySave(subject_id=subj.id, items=[
+    # class_id is required of every caller now (the admin bypass is gone); the
+    # pupil already carries the class this fixture put them in.
+    await save_report_entry(payload=ReportEntrySave(
+        subject_id=subj.id, class_id=pupil.class_id, items=[
         ScoreItem(student_id=pupil.id, assessment_id=A["CBT"].id, score=Decimal(cbt)),
         ScoreItem(student_id=pupil.id, assessment_id=A["THEORY"].id, score=Decimal(thy)),
         ScoreItem(student_id=pupil.id, assessment_id=A["PRJ"].id, score=Decimal(prj)),

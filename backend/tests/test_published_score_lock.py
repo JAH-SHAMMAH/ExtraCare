@@ -76,6 +76,11 @@ async def _admin(db, org) -> User:
     u.roles = [role]
     db.add_all([role, u])
     await db.commit()
+    # Entering marks now needs a teaching assignment — there is no admin
+    # bypass. These tests are about the publish lock / sub-term selector, so
+    # the acting user is given one here.
+    from tests._enrolment import teach_everything
+    await teach_everything(db, org, u)
     return u
 
 
@@ -171,9 +176,20 @@ async def test_a_different_class_is_not_frozen(db, org):
     assert (await _save(db, user, other, subj, a, stu2))["saved"] == 1
 
 
-async def test_omitting_class_id_does_not_bypass_the_freeze(db, org):
-    """class_id is optional for an admin, so the class is resolved from the pupils
-    when it is absent — otherwise leaving it out would be a way around the lock."""
+async def test_omitting_class_id_is_now_refused_outright(db, org):
+    """This used to check that omitting class_id did not sneak past the publish
+    freeze: it was optional for an admin, so the class had to be resolved from the
+    pupils instead, and the lock then applied to the resolved class.
+
+    Removing the admin bypass from mark entry closed that hole at the door rather
+    than downstream — class_id is required of everyone now, because the bypass was
+    the only reason it could ever be absent. So the request is rejected before the
+    freeze is even consulted, and there is no longer a path where the class has to
+    be inferred.
+
+    Kept, retargeted, because the property still matters: a save with no class_id
+    must not succeed. It just fails earlier and for a plainer reason.
+    """
     cls, stu, subj, a = await _fixture(db, org, stage="published")
     user = await _admin(db, org)
 
@@ -184,7 +200,14 @@ async def test_omitting_class_id_does_not_bypass_the_freeze(db, org):
             db=db, current_user=user,
         )
     assert exc.value.status_code == 422
-    assert "frozen" in exc.value.detail
+    assert "class_id is required" in exc.value.detail
+
+    # And the freeze itself is untouched — with class_id supplied, the published
+    # class is still refused.
+    with pytest.raises(HTTPException) as exc2:
+        await _save(db, user, cls, subj, a, stu, score=55)
+    assert exc2.value.status_code == 422
+    assert "frozen" in exc2.value.detail
 
 
 # ── CBT auto-sync ─────────────────────────────────────────────────────────────
