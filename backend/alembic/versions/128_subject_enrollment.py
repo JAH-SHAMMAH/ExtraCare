@@ -38,9 +38,6 @@ and `resolve_academic_year` are FROZEN for this migration's sake: change what
 they select and you change what an already-shipped migration would do on a fresh
 database. New behaviour belongs in a new module and a new revision.
 """
-import uuid
-from datetime import datetime, timezone
-
 import sqlalchemy as sa
 from alembic import op
 
@@ -87,69 +84,21 @@ def upgrade() -> None:
 def _backfill() -> None:
     """Enrol every (pupil, subject) pair that already has a mark.
 
-    Written with the core SQL expression language rather than the ORM, because a
-    migration must not depend on the current shape of the model classes — they
-    will drift, and this revision has to keep doing the same thing years from now.
-    The SELECT mirrors services/subject_enrollment.BACKFILL_SQL exactly.
+    Delegates to app/services/subject_enrollment so the dry-run script previews
+    THIS code rather than a copy of it — the same arrangement migration 125 uses
+    with report_approval_backfill. A second copy of the SELECT here would drift,
+    and the preview would then stop describing what this migration does.
     """
+    from app.services.subject_enrollment import (
+        apply_backfill_sync, current_year_by_org, plan_backfill_sync,
+    )
+
     conn = op.get_bind()
-    now = datetime.now(timezone.utc)
-
-    orgs = [r[0] for r in conn.execute(sa.text("SELECT id FROM organizations")).fetchall()]
+    years = current_year_by_org(conn)          # orgs with no resolvable session are absent
     total = 0
-
-    for org_id in orgs:
-        # The session string to key enrolments on: current session, else the only
-        # one. An org with neither is skipped — see the module docstring.
-        year = conn.execute(sa.text(
-            "SELECT name FROM academic_sessions "
-            " WHERE org_id = :org AND is_current = true AND coalesce(name,'') <> '' "
-            " LIMIT 1"), {"org": org_id}).scalar()
-        if not year:
-            names = [r[0] for r in conn.execute(sa.text(
-                "SELECT name FROM academic_sessions "
-                " WHERE org_id = :org AND coalesce(name,'') <> ''"),
-                {"org": org_id}).fetchall()]
-            if len(names) != 1:
-                continue
-            year = names[0]
-        year = year.strip()
-
-        pairs = conn.execute(sa.text("""
-            SELECT DISTINCT student_id, subject_id FROM student_assessment_scores
-             WHERE org_id = :org
-            UNION
-            SELECT DISTINCT student_id, subject_id FROM grades
-             WHERE org_id = :org
-        """), {"org": org_id}).fetchall()
-        if not pairs:
-            continue
-
-        already = {(r[0], r[1]) for r in conn.execute(sa.text(
-            "SELECT student_id, subject_id FROM student_subject_enrollments "
-            " WHERE org_id = :org AND academic_year = :yr"),
-            {"org": org_id, "yr": year}).fetchall()}
-
-        rows = [
-            {
-                "id": str(uuid.uuid4()), "org_id": org_id,
-                "student_id": s, "subject_id": sub, "academic_year": year,
-                "enrolled_by": None, "enrolled_at": now, "source": "backfill",
-                "created_at": now, "updated_at": now,
-            }
-            for (s, sub) in {(r[0], r[1]) for r in pairs} - already
-        ]
-        if not rows:
-            continue
-
-        conn.execute(sa.text("""
-            INSERT INTO student_subject_enrollments
-                (id, org_id, student_id, subject_id, academic_year,
-                 enrolled_by, enrolled_at, source, created_at, updated_at)
-            VALUES (:id, :org_id, :student_id, :subject_id, :academic_year,
-                    :enrolled_by, :enrolled_at, :source, :created_at, :updated_at)
-        """), rows)
-        total += len(rows)
+    for org_id, year in years.items():
+        pairs = plan_backfill_sync(conn, org_id=org_id, academic_year=year)
+        total += apply_backfill_sync(conn, org_id=org_id, academic_year=year, pairs=pairs)
 
     print(f"[128] backfilled {total} subject enrolment(s) from existing marks")
 

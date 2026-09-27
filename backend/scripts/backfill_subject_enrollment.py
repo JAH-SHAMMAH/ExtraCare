@@ -40,7 +40,8 @@ from app.models.modules.academics import StudentSubjectEnrollment
 from app.models.modules.school import SchoolClass, Student, Subject
 from app.models.organization import Organization
 from app.services.subject_enrollment import (
-    AcademicYearUnresolved, plan_backfill, resolve_academic_year,
+    AcademicYearUnresolved, apply_backfill_sync, plan_backfill,
+    resolve_academic_year,
 )
 
 
@@ -126,12 +127,11 @@ async def main() -> int:
 
             grand += len(pairs)
             if write:
-                now = datetime.now(timezone.utc)
-                for s, sub in pairs:
-                    db.add(StudentSubjectEnrollment(
-                        id=str(uuid.uuid4()), org_id=org.id, student_id=s,
-                        subject_id=sub, academic_year=year, enrolled_by=None,
-                        enrolled_at=now, source="backfill"))
+                # The same insert the migration performs, for the same reason the
+                # planner is shared: one definition of what a backfilled row is.
+                conn = await db.connection()
+                await conn.run_sync(lambda c: apply_backfill_sync(
+                    c, org_id=org.id, academic_year=year, pairs=pairs))
             print()
 
         if write:

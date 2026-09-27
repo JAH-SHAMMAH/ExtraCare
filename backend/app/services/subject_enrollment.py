@@ -149,6 +149,12 @@ def not_enrolled_message(subject_name: str | None, n: int) -> str:
 
 
 # ── the backfill (FROZEN — migration 128 depends on this) ────────────────────
+#
+# SYNC and connection-based, deliberately, so migration 128 can call exactly this
+# and the dry-run script previews the same code rather than a copy of it. Following
+# app/services/report_approval_backfill.py, which migration 125 uses the same way.
+# A second copy of the SELECT living in the migration would drift, and then the
+# preview would stop describing what the migration does.
 
 BACKFILL_SQL = text("""
     SELECT DISTINCT student_id, subject_id FROM student_assessment_scores
@@ -158,12 +164,39 @@ BACKFILL_SQL = text("""
      WHERE org_id = :org
 """)
 
+ENROLMENT_TABLE = "student_subject_enrollments"
 
-async def plan_backfill(db: AsyncSession, org_id: str, academic_year: str) -> list[tuple[str, str]]:
+
+def current_year_by_org(conn) -> dict[str, str]:
+    """{org_id: session string}, for orgs where it can be resolved at all.
+
+    Current session, else the only one. An org with neither is ABSENT from the
+    result and so is skipped by the backfill: enrolments split across two
+    different year strings would make the gate refuse marks for reasons nobody
+    could see. Mirrors `resolve_academic_year` above, in sync form.
+    """
+    rows = conn.execute(text(
+        "SELECT org_id, name, is_current FROM academic_sessions "
+        " WHERE coalesce(name, '') <> ''")).fetchall()
+    by_org: dict[str, list[tuple[str, bool]]] = {}
+    for org_id, name, is_current in rows:
+        by_org.setdefault(org_id, []).append((name.strip(), bool(is_current)))
+
+    out: dict[str, str] = {}
+    for org_id, names in by_org.items():
+        current = [n for (n, c) in names if c]
+        if current:
+            out[org_id] = current[0]
+        elif len(names) == 1:
+            out[org_id] = names[0][0]
+    return out
+
+
+def plan_backfill_sync(conn, org_id: str, academic_year: str) -> list[tuple[str, str]]:
     """The (student_id, subject_id) pairs to enrol, from marks that already exist.
 
     WHY THE UNION OF BOTH MARK STORES. `student_assessment_scores` is the new
-    report engine's store; `grades` is the older gradebook. At Fairview they were
+    report engine's store; `grades` is the older gradebook. At Fairview they held
     1,799 and 1,800 pairs, and the one pair only in `grades` was a real pupil —
     FSN-0031 Musa Yusuf, Biology — whose assessment-score row was lost when a CBT
     re-sync dropped mid-run. Backfilling from the new store alone would have left
@@ -174,17 +207,54 @@ async def plan_backfill(db: AsyncSession, org_id: str, academic_year: str) -> li
     mark already in the system becomes uneditable the moment the gate ships,
     because re-saving an existing mark would be refused.
 
-    Pairs already enrolled for `academic_year` are excluded, so this is
-    idempotent — running it twice creates nothing.
+    Pairs already enrolled for `academic_year` are excluded, so this is idempotent.
+    The exclusion is skipped when the enrolment table does not exist yet, so the
+    dry-run script can preview the plan BEFORE migration 128 has run — which is
+    the one moment the preview is most worth having.
     """
-    from app.models.modules.academics import StudentSubjectEnrollment
+    from sqlalchemy import inspect as sa_inspect
 
-    pairs = {(r[0], r[1]) for r in (await db.execute(BACKFILL_SQL, {"org": org_id})).all()}
+    pairs = {(r[0], r[1]) for r in conn.execute(BACKFILL_SQL, {"org": org_id}).fetchall()}
 
-    already = {(r[0], r[1]) for r in (await db.execute(
-        select(StudentSubjectEnrollment.student_id, StudentSubjectEnrollment.subject_id)
-        .where(StudentSubjectEnrollment.org_id == org_id,
-               StudentSubjectEnrollment.academic_year == academic_year)
-    )).all()}
+    already: set[tuple[str, str]] = set()
+    if ENROLMENT_TABLE in sa_inspect(conn).get_table_names():
+        already = {(r[0], r[1]) for r in conn.execute(text(
+            f"SELECT student_id, subject_id FROM {ENROLMENT_TABLE}"
+            "  WHERE org_id = :org AND academic_year = :yr"),
+            {"org": org_id, "yr": academic_year}).fetchall()}
 
     return sorted(pairs - already)
+
+
+def apply_backfill_sync(conn, org_id: str, academic_year: str,
+                        pairs: list[tuple[str, str]]) -> int:
+    """Insert `pairs` as enrolments. Returns how many rows were written."""
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    if not pairs:
+        return 0
+    now = datetime.now(timezone.utc)
+    conn.execute(text(f"""
+        INSERT INTO {ENROLMENT_TABLE}
+            (id, org_id, student_id, subject_id, academic_year,
+             enrolled_by, enrolled_at, source, created_at, updated_at)
+        VALUES (:id, :org_id, :student_id, :subject_id, :academic_year,
+                NULL, :now, 'backfill', :now, :now)
+    """), [
+        {"id": str(_uuid.uuid4()), "org_id": org_id, "student_id": s,
+         "subject_id": sub, "academic_year": academic_year, "now": now}
+        for (s, sub) in pairs
+    ])
+    return len(pairs)
+
+
+async def plan_backfill(db: AsyncSession, org_id: str, academic_year: str) -> list[tuple[str, str]]:
+    """Async wrapper over `plan_backfill_sync`, for callers holding an AsyncSession.
+
+    A thin delegation rather than a second implementation, so the migration, the
+    dry-run script and the tests all exercise one definition of what gets enrolled.
+    """
+    conn = await db.connection()
+    return await conn.run_sync(
+        lambda c: plan_backfill_sync(c, org_id=org_id, academic_year=academic_year))
