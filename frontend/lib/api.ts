@@ -315,9 +315,11 @@ export const schoolApi = {
     publish: (data: { term: string; status: "published" | "draft"; class_id?: string; exam_id?: string; subject_id?: string }) =>
       api.post("/school/grades/publish", data).then((r) => r.data),
     // R3 assessment-domain ratings (EYFS / skills / Cambridge) per student+term.
-    domainRatings: (student_id: string, term: string) =>
-      api.get(`/school/students/${student_id}/domain-ratings`, { params: { term } }).then((r) => r.data),
-    saveDomainRatings: (student_id: string, data: { term: string; ratings: object[] }) =>
+    // Takes an AcademicTerm ID, not a name — migration 130 removed the last
+    // string-matched term reference in the codebase.
+    domainRatings: (student_id: string, term_id: string) =>
+      api.get(`/school/students/${student_id}/domain-ratings`, { params: { term_id } }).then((r) => r.data),
+    saveDomainRatings: (student_id: string, data: { term_id: string; ratings: object[] }) =>
       api.put(`/school/students/${student_id}/domain-ratings`, data).then((r) => r.data),
   },
   // Library (Phase 6.5). Routes live under /library/* — separate router.

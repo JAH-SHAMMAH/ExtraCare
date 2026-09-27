@@ -19,8 +19,9 @@ from app.models.modules.school import (
     YearGroup, TeacherSection,
 )
 from app.models.modules.platform import (
-    AcademicSession, SchoolSection, ReportTemplate, GradingBand, ReportSubjectAssessment,
-    AssessmentDomain, StudentDomainRating, MailboxMessage, MailboxRecipient,
+    AcademicSession, AcademicTerm, SchoolSection, ReportTemplate, GradingBand,
+    ReportSubjectAssessment, AssessmentDomain, StudentDomainRating, MailboxMessage,
+    MailboxRecipient,
 )
 from app.models.modules.academics import ReportApproval
 from app.models.role import Role, user_roles
@@ -1447,7 +1448,16 @@ async def _report_domains(db, org_id, cls, student_id, term):
     """The section's assessment domains with this student's rating for the term —
     the criterion-referenced / non-cognitive layer of the report card. Returns a
     flat list (grouped client-side by domain_type + parent); empty when the class is
-    unassigned or its section defines no domains."""
+    unassigned or its section defines no domains.
+
+    `term` is a term NAME, because its only caller is the LEGACY report card, which
+    is name-based throughout (StudentReport.term, _class_position). The ratings
+    store is keyed by term_id since migration 130, so the name is resolved to an id
+    here — one bridge at one point, rather than rippling term_id through the whole
+    legacy path for the sake of this one block. An unresolvable name yields no
+    ratings rather than an error: a legacy card asking for a term that is not
+    configured should show an empty domain block, not fail to render.
+    """
     if cls is None or not getattr(cls, "section_id", None):
         return []
     domains = (await db.execute(
@@ -1462,7 +1472,13 @@ async def _report_domains(db, org_id, cls, student_id, term):
         StudentDomainRating.domain_id.in_([d.id for d in domains]),
     )
     if term:
-        rq = rq.where(StudentDomainRating.term == term)
+        term_row = (await db.execute(
+            select(AcademicTerm).where(
+                AcademicTerm.org_id == org_id, AcademicTerm.name == term)
+        )).scalars().first()
+        if term_row is None:
+            return []       # a term nobody configured has no ratings to show
+        rq = rq.where(StudentDomainRating.term_id == term_row.id)
     ratings = {r.domain_id: r for r in (await db.execute(rq)).scalars().all()}
     subj_names = await _subject_names(db, org_id, {d.parent_subject_id for d in domains if d.parent_subject_id})
     out = []
@@ -1478,30 +1494,93 @@ async def _report_domains(db, org_id, cls, student_id, term):
     return out
 
 
-def _domain_rating_response(r: StudentDomainRating) -> DomainRatingResponse:
+def _domain_rating_response(r: StudentDomainRating,
+                            term_name: str | None = None) -> DomainRatingResponse:
     return DomainRatingResponse(
-        id=r.id, student_id=r.student_id, term=r.term, domain_id=r.domain_id,
-        rating=r.rating, comment=r.comment, org_id=r.org_id,
+        id=r.id, student_id=r.student_id, term_id=r.term_id, term_name=term_name,
+        domain_id=r.domain_id, rating=r.rating, comment=r.comment, org_id=r.org_id,
     )
+
+
+async def _ensure_rating_author(db: AsyncSession, current_user: User, student_id: str):
+    """Only the pupil's CLASS TEACHER may author their domain ratings.
+
+    The same rule the numeric path now follows: recording an assessment against a
+    child is a teaching act, so there is no administrative bypass. Admins keep
+    READ access (GET below, via `_ensure_student_visible`, the report card's own
+    visibility contract) — oversight without authorship.
+
+    A descriptive EYFS report is the whole of an Early Years child's report, so it
+    would be odd to hold it to a looser standard than a Secondary mark.
+
+    There is no subject to scope by here: ratings hang off assessment DOMAINS, not
+    subjects, so the class teacher is the whole of the relationship.
+    """
+    from app.routers.modules.platform import _pc_teacher_id
+
+    org_id = current_user.org_id
+    stu = (await db.execute(
+        select(Student).where(
+            Student.id == student_id, Student.org_id == org_id,
+            Student.is_deleted == False,  # noqa: E712
+        )
+    )).scalar_one_or_none()
+    if not stu:
+        raise HTTPException(status_code=404, detail="student not found in your organisation.")
+    if not stu.class_id:
+        raise HTTPException(
+            status_code=422,
+            detail="This pupil is not in a class, so there is no class teacher to "
+                   "record their assessment. Assign them to a class first.",
+        )
+    teacher_id = await _pc_teacher_id(db, org_id, stu.class_id)
+    if teacher_id is None:
+        # Distinguished from "someone else teaches them": telling a teacher it is
+        # not them sends them looking for a colleague who does not exist.
+        raise HTTPException(
+            status_code=403,
+            detail="No class teacher is assigned to this pupil's class, so there is "
+                   "no one who can record their assessment. Ask an administrator to "
+                   "assign one.",
+        )
+    if teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only this pupil's class teacher can record their assessment "
+                   "ratings.",
+        )
+    return stu
 
 
 @router.get("/students/{student_id}/domain-ratings", dependencies=[_reports_read])
 async def list_domain_ratings(
     student_id: str,
-    term: str = Query(...),
+    term_id: str = Query(..., description="AcademicTerm id (not a name)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """A student's assessment-domain ratings for a term (the entry grid + report
-    source). Same visibility contract as the report card."""
+    source). Same visibility contract as the report card, so a parent sees their
+    own child and an administrator sees anyone — reading is oversight.
+
+    Takes an AcademicTerm id. It took a term NAME until migration 130; that was the
+    last string-matched term reference in the codebase.
+    """
     await _ensure_student_visible(db, current_user, student_id)
+    term = (await db.execute(
+        select(AcademicTerm).where(
+            AcademicTerm.id == term_id, AcademicTerm.org_id == current_user.org_id)
+    )).scalar_one_or_none()
+    if not term:
+        raise HTTPException(status_code=404, detail="term not found in your organisation.")
     rows = (await db.execute(
         select(StudentDomainRating).where(
             StudentDomainRating.org_id == current_user.org_id,
-            StudentDomainRating.student_id == student_id, StudentDomainRating.term == term,
+            StudentDomainRating.student_id == student_id,
+            StudentDomainRating.term_id == term_id,
         )
     )).scalars().all()
-    return [_domain_rating_response(r) for r in rows]
+    return [_domain_rating_response(r, term.name) for r in rows]
 
 
 @router.put("/students/{student_id}/domain-ratings", dependencies=[_reports_write])
@@ -1512,16 +1591,23 @@ async def set_domain_ratings(
     current_user: User = Depends(get_current_active_user),
 ):
     """Bulk upsert a student's domain ratings for a term (staff report authoring).
-    An item with empty rating AND comment clears that domain's row."""
+    An item with empty rating AND comment clears that domain's row.
+
+    CLASS-TEACHER ONLY. Authoring an assessment is a teaching act, so admins are
+    refused here while keeping read access on the GET — the same split the numeric
+    mark path now enforces. Previously any holder of school:reports:write (every
+    teacher in the school) could rate ANY pupil, which was the looser of the two
+    standards and the wrong one.
+    """
     org_id = current_user.org_id
-    student = (await db.execute(
-        select(Student).where(
-            Student.id == student_id, Student.org_id == org_id, Student.is_deleted == False,  # noqa: E712
-        )
+    student = await _ensure_rating_author(db, current_user, student_id)
+    term = (await db.execute(
+        select(AcademicTerm).where(
+            AcademicTerm.id == payload.term_id, AcademicTerm.org_id == org_id)
     )).scalar_one_or_none()
-    if not student:
-        raise HTTPException(status_code=404, detail="student not found in your organisation.")
-    term = payload.term
+    if not term:
+        raise HTTPException(status_code=404, detail="term not found in your organisation.")
+    term_id = payload.term_id
     domain_ids = [i.domain_id for i in payload.ratings]
     valid = {
         d.id for d in (await db.execute(
@@ -1537,7 +1623,7 @@ async def set_domain_ratings(
         r.domain_id: r for r in (await db.execute(
             select(StudentDomainRating).where(
                 StudentDomainRating.org_id == org_id, StudentDomainRating.student_id == student_id,
-                StudentDomainRating.term == term, StudentDomainRating.domain_id.in_(domain_ids),
+                StudentDomainRating.term_id == term_id, StudentDomainRating.domain_id.in_(domain_ids),
             )
         )).scalars().all()
     } if domain_ids else {}
@@ -1550,7 +1636,8 @@ async def set_domain_ratings(
                 await db.delete(r)      # clear
             continue
         if not r:
-            r = StudentDomainRating(student_id=student_id, term=term, domain_id=item.domain_id, org_id=org_id)
+            r = StudentDomainRating(student_id=student_id, term_id=term_id,
+                                    domain_id=item.domain_id, org_id=org_id)
             db.add(r)
         r.rating = rating
         r.comment = comment
@@ -1558,10 +1645,10 @@ async def set_domain_ratings(
     rows = (await db.execute(
         select(StudentDomainRating).where(
             StudentDomainRating.org_id == org_id, StudentDomainRating.student_id == student_id,
-            StudentDomainRating.term == term,
+            StudentDomainRating.term_id == term_id,
         )
     )).scalars().all()
-    return [_domain_rating_response(r) for r in rows]
+    return [_domain_rating_response(r, term.name) for r in rows]
 
 
 def _student_dict(s: Student) -> dict:

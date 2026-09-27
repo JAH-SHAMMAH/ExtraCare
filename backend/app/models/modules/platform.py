@@ -651,18 +651,26 @@ class AssessmentDomain(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
 
 class StudentDomainRating(Base, UUIDMixin, TimestampMixin, TenantMixin):
-    """A student's assessment against one domain for a term (School Reports R3)."""
+    """A student's assessment against one domain for a term (School Reports R3).
+
+    `term_id` IS A REAL FK, and that is load-bearing. It was a free-text
+    String(50) whose own schema example was "Term 1" — the exact drifted string
+    that silenced every parent's report card when the configured terms were
+    Autumn/Spring/Summer. That was the last place in the codebase a term was
+    matched by name. Migration 130 converted it while the table still held zero
+    rows, which was the cheapest this would ever be.
+    """
     __tablename__ = "student_domain_ratings"
 
     student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
-    term = Column(String(50), nullable=False)
+    term_id = Column(String(36), ForeignKey("academic_terms.id", ondelete="CASCADE"), nullable=False, index=True)
     domain_id = Column(String(36), ForeignKey("assessment_domains.id", ondelete="CASCADE"), nullable=False, index=True)
-    rating = Column(String(60), nullable=True)   # descriptor label (e.g. "Secure")
+    rating = Column(String(60), nullable=True)   # descriptor label (e.g. "Expected")
     comment = Column(Text, nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("student_id", "term", "domain_id", name="uq_student_domain_rating"),
-        Index("ix_student_domain_ratings_term", "org_id", "term"),
+        UniqueConstraint("student_id", "term_id", "domain_id", name="uq_student_domain_rating"),
+        Index("ix_student_domain_ratings_term", "org_id", "term_id"),
     )
 
 

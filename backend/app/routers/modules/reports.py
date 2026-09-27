@@ -54,32 +54,6 @@ class DomainResponse(BaseModel):
         from_attributes = True
 
 
-class StudentRatingCreate(BaseModel):
-    """One student's rating for one domain."""
-    domain_id: str
-    rating: str | None = Field(None, description="Descriptor label (e.g., 'Excellent')")
-    comment: str | None = Field(None, description="Optional teacher notes")
-
-
-class StudentRatingResponse(BaseModel):
-    """Serialized StudentDomainRating."""
-    id: str
-    student_id: str
-    term: str
-    domain_id: str
-    rating: str | None
-    comment: str | None
-
-    class Config:
-        from_attributes = True
-
-
-class StudentRatingBulk(BaseModel):
-    """Bulk upsert ratings for one student."""
-    ratings: list[StudentRatingCreate] = Field(..., description="Array of domain ratings")
-    term: str = Field(..., description="Academic term (e.g., 'Term 1')")
-
-
 # ── Dependencies ───────────────────────────────────────────────────────────
 
 async def _require_setup_write(current_user: User = Depends(get_current_active_user)) -> User:
@@ -89,17 +63,18 @@ async def _require_setup_write(current_user: User = Depends(get_current_active_u
     return current_user
 
 
-async def _require_reports_write(current_user: User = Depends(get_current_active_user)) -> User:
-    """Require school:assessments:write for rating entry."""
-    if not current_user.has_permission("school:assessments:write"):
-        raise HTTPException(status_code=403, detail="Permission denied: school:assessments:write required")
-    return current_user
-
-
 async def _require_reports_read(current_user: User = Depends(get_current_active_user)) -> User:
-    """Require school:assessments:read for viewing ratings."""
-    if not current_user.has_permission("school:assessments:read"):
-        raise HTTPException(status_code=403, detail="Permission denied: school:assessments:read required")
+    """Require school:reports:read to list assessment domains.
+
+    WAS school:assessments:read, which no teacher held. That scope existed in this
+    file and nowhere else in the codebase — not even in the frontend route map —
+    and was reachable only by admin roles through the school:write hierarchy. So an
+    Early Years teacher could not so much as LIST the domains she was meant to rate
+    her class against. school:reports:read is the scope the rest of the report
+    pipeline uses and that the teacher preset grants explicitly.
+    """
+    if not current_user.has_permission("school:reports:read"):
+        raise HTTPException(status_code=403, detail="Permission denied: school:reports:read required")
     return current_user
 
 
@@ -204,89 +179,3 @@ async def delete_domain(
 
 
 # ── Endpoints: Student Domain Ratings ──────────────────────────────────────
-
-@router.get("/students/{student_id}/domain-ratings", dependencies=[Depends(_require_reports_read)])
-async def get_student_ratings(
-    student_id: str,
-    term: str | None = None,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> list[StudentRatingResponse]:
-    """Get all domain ratings for a student, optionally filtered by term."""
-    # Verify student exists and is visible to user
-    student = await db.get(Student, student_id)
-    if not student or student.org_id != current_user.org_id:
-        raise HTTPException(status_code=404, detail="Student not found")
-
-    query = select(StudentDomainRating).where(
-        StudentDomainRating.org_id == current_user.org_id,
-        StudentDomainRating.student_id == student_id,
-    )
-
-    if term:
-        query = query.where(StudentDomainRating.term == term)
-
-    ratings = (await db.execute(query)).scalars().all()
-    return [StudentRatingResponse.from_orm(r) for r in ratings]
-
-
-@router.post("/students/{student_id}/domain-ratings/bulk", dependencies=[Depends(_require_reports_write)])
-async def upsert_student_ratings(
-    student_id: str,
-    payload: StudentRatingBulk,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> dict:
-    """Upsert (create or update) multiple domain ratings for a student in a term."""
-    # Verify student exists
-    student = await db.get(Student, student_id)
-    if not student or student.org_id != current_user.org_id:
-        raise HTTPException(status_code=404, detail="Student not found")
-
-    # Verify term exists
-    term_obj = (await db.execute(
-        select(AcademicTerm).where(
-            AcademicTerm.org_id == current_user.org_id,
-            AcademicTerm.name == payload.term
-        )
-    )).scalar_one_or_none()
-    if not term_obj:
-        raise HTTPException(status_code=404, detail="Academic term not found")
-
-    upserted = 0
-    for rating_data in payload.ratings:
-        # Verify domain exists
-        domain = await db.get(AssessmentDomain, rating_data.domain_id)
-        if not domain or domain.org_id != current_user.org_id:
-            raise HTTPException(status_code=404, detail=f"Domain {rating_data.domain_id} not found")
-
-        # Upsert: try to find existing rating
-        existing = (await db.execute(
-            select(StudentDomainRating).where(
-                StudentDomainRating.student_id == student_id,
-                StudentDomainRating.term == payload.term,
-                StudentDomainRating.domain_id == rating_data.domain_id,
-                StudentDomainRating.org_id == current_user.org_id,
-            )
-        )).scalar_one_or_none()
-
-        if existing:
-            # Update
-            existing.rating = rating_data.rating
-            existing.comment = rating_data.comment
-        else:
-            # Create
-            rating = StudentDomainRating(
-                org_id=current_user.org_id,
-                student_id=student_id,
-                term=payload.term,
-                domain_id=rating_data.domain_id,
-                rating=rating_data.rating,
-                comment=rating_data.comment,
-            )
-            db.add(rating)
-
-        upserted += 1
-
-    await db.commit()
-    return {"upserted": upserted}

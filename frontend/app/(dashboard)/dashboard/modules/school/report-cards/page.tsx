@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useStudents, useReportCard, useSaveReportMeta, useSaveDomainRatings, useClasses } from "@/hooks/useSchool";
-import { useTermState, useGradingScales, useSections } from "@/hooks/usePlatform";
+import { useTermState, useGradingScales, useSections, useTerms } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { useAuthStore } from "@/lib/store";
 import { cn, getInitials } from "@/lib/utils";
@@ -386,6 +386,14 @@ function DomainReportBlock({ domains }: { domains: ReportCardDomain[] }) {
 
 function DomainRatingsForm({ domains, term, studentId, onDone }: { domains: ReportCardDomain[]; term: string; studentId: string; onDone: () => void }) {
   const save = useSaveDomainRatings();
+  // This page is the LEGACY, name-based report card (useTermState holds "Autumn",
+  // not an id), but ratings are keyed by term_id since migration 130. Resolve the
+  // name here rather than thread term_id through the whole legacy page.
+  const { data: terms = [] } = useTerms();
+  const termId = useMemo(
+    () => (terms as any[]).find((t) => t.name === term)?.id as string | undefined,
+    [terms, term],
+  );
   const { data: scales = [] } = useGradingScales();
   const scaleOptions = useMemo(() => {
     const m = new Map<string, string[]>();
@@ -401,10 +409,13 @@ function DomainRatingsForm({ domains, term, studentId, onDone }: { domains: Repo
     setRows((rs) => rs.map((r) => (r.domain_id === id ? { ...r, ...patch } : r)));
   const val = (id: string) => rows.find((r) => r.domain_id === id) || { rating: "", comment: "" };
 
-  const submit = () => save.mutate(
-    { student_id: studentId, data: { term, ratings: rows.map((r) => ({ domain_id: r.domain_id, rating: r.rating || null, comment: r.comment || null })) } },
-    { onSuccess: onDone },
-  );
+  const submit = () => {
+    if (!termId) return;   // the button is disabled without it; belt and braces
+    save.mutate(
+      { student_id: studentId, data: { term_id: termId, ratings: rows.map((r) => ({ domain_id: r.domain_id, rating: r.rating || null, comment: r.comment || null })) } },
+      { onSuccess: onDone },
+    );
+  };
 
   const { areas, goals, strands, skills } = partition(domains);
   const flat: { header: string; items: ReportCardDomain[] }[] = [];
@@ -447,7 +458,7 @@ function DomainRatingsForm({ domains, term, studentId, onDone }: { domains: Repo
       </div>
       <div className="flex justify-end gap-3 mt-4">
         <button onClick={onDone} className="btn-secondary">Cancel</button>
-        <button onClick={submit} disabled={save.isPending} className="btn-primary gap-2">{save.isPending && <Loader2 size={15} className="animate-spin" />}Save ratings</button>
+        <button onClick={submit} disabled={save.isPending || !termId} className="btn-primary gap-2" title={!termId ? `No academic term named "${term}" is configured` : undefined}>{save.isPending && <Loader2 size={15} className="animate-spin" />}Save ratings</button>
       </div>
     </div>
   );

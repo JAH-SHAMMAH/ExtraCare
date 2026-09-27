@@ -504,14 +504,19 @@ class DomainRatingItem(BaseModel):
 
 
 class DomainRatingsSet(BaseModel):
-    term: str = Field(min_length=1, max_length=50)
+    # An AcademicTerm id, not a name. The rest of the report pipeline
+    # (report-card, broadsheet, report-entry) takes term_id, and a name here was
+    # the last string-matched term reference in the codebase — the mechanism
+    # behind the report-card blanking incident.
+    term_id: str = Field(min_length=1, description="AcademicTerm id (not a name)")
     ratings: list[DomainRatingItem] = Field(default_factory=list)
 
 
 class DomainRatingResponse(BaseModel):
     id: str
     student_id: str
-    term: str
+    term_id: str
+    term_name: Optional[str] = None
     domain_id: str
     rating: Optional[str] = None
     comment: Optional[str] = None

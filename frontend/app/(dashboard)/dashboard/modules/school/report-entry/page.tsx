@@ -5,7 +5,8 @@ import { useClasses, useSubjects } from "@/hooks/useSchool";
 import { defaultSubTermId } from "@/lib/reportEntry";
 import { useTerms, useSubTerms, useReportEntryGrid, useSaveReportEntry } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
-import { useAssessmentDomains, useStudentDomainRatings, useUpsertStudentRatings } from "@/hooks/useAssessmentDomains";
+import { useAssessmentDomains } from "@/hooks/useAssessmentDomains";
+import { useSaveDomainRatings } from "@/hooks/useSchool";
 import { ReportDomainGrid } from "@/components/ReportDomainGrid";
 import { Loader2, NotebookPen, Save } from "lucide-react";
 
@@ -39,7 +40,7 @@ export default function ReportEntryPage() {
 
   // Behaviour & Skills domain hooks
   const { data: domains = [] } = useAssessmentDomains(sectionId, undefined);
-  const upsertRatings = useUpsertStudentRatings();
+  const upsertRatings = useSaveDomainRatings();
   const [domainRatingsDraft, setDomainRatingsDraft] = useState<Record<string, Array<{ domain_id: string; rating: string | null }>>>({});
 
   // draft[studentId][assessmentId] = string
@@ -98,9 +99,13 @@ export default function ReportEntryPage() {
       const ratings = domainRatingsDraft[s.id] || [];
       if (ratings.some((r) => r.rating !== null)) {
         upsertRatings.mutate({
-          studentId: s.id,
-          term: termId,
-          ratings: ratings.map((r) => ({ domain_id: r.domain_id, rating: r.rating })),
+          student_id: s.id,
+          data: {
+            // An AcademicTerm id. The retired endpoint matched this by NAME, so
+            // passing termId here could only ever have 404'd.
+            term_id: termId,
+            ratings: ratings.map((r) => ({ domain_id: r.domain_id, rating: r.rating })),
+          },
         });
       }
     }
@@ -189,7 +194,7 @@ export default function ReportEntryPage() {
           <ReportDomainGrid
             domains={domains}
             students={grid?.students || []}
-            ratings={[]} // Ratings will be hydrated when useStudentDomainRatings is wired in
+            ratings={[]} // TODO: hydrate via useDomainRatings(student_id, termId)
             readOnly={!canWrite}
             onRatingChange={handleDomainRatingChange}
             isLoading={false}

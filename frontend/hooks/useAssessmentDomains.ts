@@ -118,53 +118,20 @@ export function useDeleteDomain() {
 
 // ── Student Rating Hooks ───────────────────────────────────────────────────
 
-export function useStudentDomainRatings(studentId: string, term?: string) {
-  return useQuery({
-    queryKey: ['studentDomainRatings', studentId, term],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (term) params.append('term', term);
-
-      const response = await fetch(`/api/v1/reports/students/${studentId}/domain-ratings?${params}`, {
-        credentials: 'include',
-      });
-      if (!response.ok) throw new Error('Failed to fetch ratings');
-      return response.json() as Promise<StudentDomainRating[]>;
-    },
-    enabled: !!studentId,
-  });
-}
-
-export function useUpsertStudentRatings() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      studentId,
-      term,
-      ratings,
-    }: {
-      studentId: string;
-      term: string;
-      ratings: Array<{
-        domain_id: string;
-        rating?: string | null;
-        comment?: string | null;
-      }>;
-    }) => {
-      const response = await fetch(`/api/v1/reports/students/${studentId}/domain-ratings/bulk`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ term, ratings }),
-        credentials: 'include',
-      });
-      if (!response.ok) throw new Error('Failed to save ratings');
-      return response.json();
-    },
-    onSuccess: (_, { studentId, term }) => {
-      queryClient.invalidateQueries({
-        queryKey: ['studentDomainRatings', studentId, term],
-      });
-    },
-  });
-}
+// Domain RATINGS deliberately do not live here any more.
+//
+// This file used to carry useStudentDomainRatings / useUpsertStudentRatings, which
+// called /api/v1/reports/students/{id}/domain-ratings with a raw fetch. That path
+// was dead three times over: the endpoint required school:assessments:write, a
+// scope no teacher held; it had no class scoping at all; and the raw fetch sent no
+// Authorization header, so it 401'd with cookie-auth off and tripped CSRF with it
+// on. The caller also passed a term ID into a field the endpoint matched by NAME.
+//
+// The ratings endpoints in reports.py have been retired. Use the school.py pair
+// instead, already wired and correctly gated:
+//
+//   useDomainRatings(student_id, term_id)   — read  (hooks/useSchool)
+//   useSaveDomainRatings()                 — write (hooks/useSchool)
+//
+// Both go through the axios client, so they carry auth, and the write is gated to
+// the pupil's class teacher.
