@@ -941,6 +941,16 @@ export function useDomainRatings(student_id: string, term_id: string) {
   });
 }
 
+/** A whole class's domain ratings for a term — hydrates the entry grid in one call.
+ *  Class-teacher gated, like the Make Report grid. */
+export function useClassDomainRatings(class_id: string, term_id: string) {
+  return useQuery({
+    queryKey: ["class-domain-ratings", class_id, term_id],
+    queryFn: () => schoolApi.grades.classDomainRatings(class_id, term_id),
+    enabled: !!class_id && !!term_id,
+  });
+}
+
 export function useSaveDomainRatings() {
   const qc = useQueryClient();
   return useMutation({
@@ -948,6 +958,9 @@ export function useSaveDomainRatings() {
       schoolApi.grades.saveDomainRatings(student_id, data),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ["domain-ratings", vars.student_id, vars.data.term_id] });
+      // The class grid is what the entry form reads, so it has to refetch too or a
+      // teacher saves and still sees what was there before.
+      qc.invalidateQueries({ queryKey: ["class-domain-ratings"] });
       qc.invalidateQueries({ queryKey: ["report-card", vars.student_id, vars.data.term_id] });
       toast.success("Assessment ratings saved.");
     },

@@ -251,7 +251,10 @@ async def test_an_admin_cannot_author_ratings(db, org, school_class, student):
             db=db, current_user=admin,
         )
     assert ei.value.status_code == 403
-    assert "class teacher" in ei.value.detail
+    # One message for both scopes now: _ensure_rating_author delegates to the
+    # class-level rule, so the per-pupil write reports "this class's teacher"
+    # rather than keeping a second, near-identical sentence in sync.
+    assert "teacher can record" in ei.value.detail
 
 
 async def test_an_admin_can_still_READ_ratings(db, org, school_class, student, teacher):
@@ -316,3 +319,128 @@ async def test_the_orphan_assessments_scope_is_gone(db, org):
     t = await _preset_user(db, org, "teacher")
     assert t.has_permission("school:reports:read"), "the scope domains now require"
     assert not t.has_permission("school:assessments:read"), "the scope they used to"
+
+
+# ── The class-scoped grid (hydration) ───────────────────────────────────────────
+#
+# The entry form could not hydrate itself: the per-pupil GET needs one request per
+# child, so the page shipped with `ratings={[]}` and a TODO, and a teacher reopening
+# it saw blanks instead of what she had entered. This is the one-call grid, shaped
+# after ReportEntryGrid and gated like it.
+
+
+async def test_the_grid_hydrates_what_was_entered(db, org, school_class, student, teacher):
+    """The bug this closes. A rating saved must come back on the next load."""
+    from app.routers.modules.school import class_domain_ratings_grid
+
+    admin = await _preset_user(db, org, "org_admin")
+    term = await _autumn(db, org)
+    goal = await _goal_for(db, org, admin, school_class)
+    await set_domain_ratings(
+        student.id, DomainRatingsSet(term_id=term.id, ratings=[
+            DomainRatingItem(domain_id=goal.id, rating="Expected", comment="Settling in")]),
+        db=db, current_user=teacher,
+    )
+
+    grid = await class_domain_ratings_grid(
+        class_id=school_class.id, term_id=term.id, db=db, current_user=teacher)
+
+    assert grid.class_id == school_class.id and grid.term_name == "Autumn"
+    assert grid.section_name == "EY"
+    row = next(r for r in grid.students if r.student_id == student.id)
+    assert row.ratings[goal.id].rating == "Expected"
+    assert row.ratings[goal.id].comment == "Settling in"
+
+
+async def test_the_grid_carries_the_descriptor_options_per_domain(db, org, school_class, student, teacher):
+    """So a cell knows what it may be set to without the page fetching every
+    grading scale separately."""
+    from app.routers.modules.school import class_domain_ratings_grid
+
+    admin = await _preset_user(db, org, "org_admin")
+    term = await _autumn(db, org)
+    await _goal_for(db, org, admin, school_class)
+
+    grid = await class_domain_ratings_grid(
+        class_id=school_class.id, term_id=term.id, db=db, current_user=teacher)
+
+    assert grid.domains, "the section's domains are the columns"
+    assert all(d.options == ["Emerging", "Expected", "Exceeding"] for d in grid.domains)
+    areas = [d for d in grid.domains if d.domain_type == "eyfs_area"]
+    goals = [d for d in grid.domains if d.domain_type == "eyfs_goal"]
+    assert len(areas) == 7 and len(goals) == 17
+    assert all(g.parent_domain_id for g in goals), "goals nest under their area"
+
+
+async def test_an_unrated_pupil_has_an_empty_ratings_map(db, org, school_class, student, teacher):
+    """Absent keys mean unrated — not a zero, and not a fabricated blank."""
+    from app.routers.modules.school import class_domain_ratings_grid
+
+    admin = await _preset_user(db, org, "org_admin")
+    term = await _autumn(db, org)
+    await _goal_for(db, org, admin, school_class)
+
+    grid = await class_domain_ratings_grid(
+        class_id=school_class.id, term_id=term.id, db=db, current_user=teacher)
+    row = next(r for r in grid.students if r.student_id == student.id)
+    assert row.ratings == {}
+
+
+async def test_the_grid_is_class_teacher_only(db, org, school_class, student, teacher):
+    """Consistent with the Make Report grid: the authoring surface is not offered to
+    someone who cannot save it. Admins read a pupil via the per-pupil GET."""
+    from app.routers.modules.school import class_domain_ratings_grid
+
+    admin = await _preset_user(db, org, "org_admin")
+    term = await _autumn(db, org)
+    await _goal_for(db, org, admin, school_class)
+
+    with pytest.raises(HTTPException) as ei:
+        await class_domain_ratings_grid(
+            class_id=school_class.id, term_id=term.id, db=db, current_user=admin)
+    assert ei.value.status_code == 403
+
+    other = await _preset_user(db, org, "teacher")
+    with pytest.raises(HTTPException) as ei2:
+        await class_domain_ratings_grid(
+            class_id=school_class.id, term_id=term.id, db=db, current_user=other)
+    assert ei2.value.status_code == 403
+
+
+async def test_a_class_with_no_section_yields_an_empty_grid_not_an_error(db, org, school_class, student, teacher):
+    """A class assessing against nothing is an empty grid the page can explain, not
+    a 404 that reads as broken."""
+    from app.routers.modules.school import class_domain_ratings_grid
+
+    term = await _autumn(db, org)
+    school_class.section_id = None
+    await db.commit()
+
+    grid = await class_domain_ratings_grid(
+        class_id=school_class.id, term_id=term.id, db=db, current_user=teacher)
+    assert grid.domains == []
+    assert len(grid.students) == 1, "the class still loads; only the columns are gone"
+
+
+async def test_the_grid_and_the_per_pupil_write_share_one_rule(db, org, school_class, student, teacher):
+    """_ensure_rating_author delegates to _ensure_class_rating_author, so read and
+    write cannot drift apart — whoever may open the grid may save it."""
+    from app.routers.modules.school import class_domain_ratings_grid
+
+    admin = await _preset_user(db, org, "org_admin")
+    term = await _autumn(db, org)
+    goal = await _goal_for(db, org, admin, school_class)
+    school_class.teacher_id = None
+    await db.commit()
+
+    for call in (
+        lambda: class_domain_ratings_grid(class_id=school_class.id, term_id=term.id,
+                                          db=db, current_user=teacher),
+        lambda: set_domain_ratings(student.id, DomainRatingsSet(term_id=term.id, ratings=[
+            DomainRatingItem(domain_id=goal.id, rating="Expected")]),
+            db=db, current_user=teacher),
+    ):
+        with pytest.raises(HTTPException) as ei:
+            await call()
+        assert ei.value.status_code == 403
+        assert "No class teacher is assigned" in ei.value.detail

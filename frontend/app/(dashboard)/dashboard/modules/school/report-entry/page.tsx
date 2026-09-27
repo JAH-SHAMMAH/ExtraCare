@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useClasses, useSubjects } from "@/hooks/useSchool";
 import { defaultSubTermId } from "@/lib/reportEntry";
 import { useTerms, useSubTerms, useReportEntryGrid, useSaveReportEntry } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { useAssessmentDomains } from "@/hooks/useAssessmentDomains";
-import { useSaveDomainRatings } from "@/hooks/useSchool";
+import { useClassDomainRatings, useSaveDomainRatings } from "@/hooks/useSchool";
 import { ReportDomainGrid } from "@/components/ReportDomainGrid";
 import { Loader2, NotebookPen, Save } from "lucide-react";
 
@@ -41,6 +41,19 @@ export default function ReportEntryPage() {
   // Behaviour & Skills domain hooks
   const { data: domains = [] } = useAssessmentDomains(sectionId, undefined);
   const upsertRatings = useSaveDomainRatings();
+  // Hydrate the grid from ONE class-scoped call. The per-pupil read would need a
+  // request per child, which is why this form previously shipped showing blanks.
+  const { data: ratingsGrid, isError: ratingsFailed } = useClassDomainRatings(classId, termId);
+  // The grid component takes a flat list keyed by (student, domain).
+  const domainRatings = useMemo(() => {
+    const out: Array<{ student_id: string; domain_id: string; rating: string | null; comment: string | null }> = [];
+    ((ratingsGrid?.students ?? []) as any[]).forEach((s) => {
+      Object.entries(s.ratings ?? {}).forEach(([domain_id, cell]: [string, any]) => {
+        out.push({ student_id: s.student_id, domain_id, rating: cell?.rating ?? null, comment: cell?.comment ?? null });
+      });
+    });
+    return out;
+  }, [ratingsGrid]);
   const [domainRatingsDraft, setDomainRatingsDraft] = useState<Record<string, Array<{ domain_id: string; rating: string | null }>>>({});
 
   // draft[studentId][assessmentId] = string
@@ -191,10 +204,21 @@ export default function ReportEntryPage() {
             )}
           </div>
 
+          {/* A failed hydration must not look like an unrated class. Blanks are
+              indistinguishable from "nothing entered", and a teacher would re-enter
+              ratings that are already saved. */}
+          {ratingsFailed && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 mb-3 text-xs text-amber-900">
+              <span className="font-semibold">Existing ratings could not be loaded.</span>{" "}
+              Anything already saved for this class is not shown below — reload before
+              entering, or you may overwrite it.
+            </div>
+          )}
+
           <ReportDomainGrid
             domains={domains}
             students={grid?.students || []}
-            ratings={[]} // TODO: hydrate via useDomainRatings(student_id, termId)
+            ratings={domainRatings}
             readOnly={!canWrite}
             onRatingChange={handleDomainRatingChange}
             isLoading={false}

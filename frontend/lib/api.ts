@@ -321,6 +321,10 @@ export const schoolApi = {
       api.get(`/school/students/${student_id}/domain-ratings`, { params: { term_id } }).then((r) => r.data),
     saveDomainRatings: (student_id: string, data: { term_id: string; ratings: object[] }) =>
       api.put(`/school/students/${student_id}/domain-ratings`, data).then((r) => r.data),
+    // A whole class's ratings in ONE call — what hydrates the entry grid. The
+    // per-pupil read above would need a request per child.
+    classDomainRatings: (class_id: string, term_id: string) =>
+      api.get(`/school/classes/${class_id}/domain-ratings`, { params: { term_id } }).then((r) => r.data),
   },
   // Library (Phase 6.5). Routes live under /library/* — separate router.
   library: {

@@ -15,9 +15,13 @@ export interface AssessmentDomain {
 }
 
 export interface StudentDomainRating {
-  id: string;
+  // Optional: rows flattened out of the class-scoped grid are keyed by
+  // (student_id, domain_id) and carry no row id of their own.
+  id?: string;
   student_id: string;
-  term: string;
+  // An AcademicTerm id since migration 130 — never a name.
+  term_id?: string;
+  term_name?: string | null;
   domain_id: string;
   rating: string | null;
   comment: string | null;

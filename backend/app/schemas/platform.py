@@ -512,6 +512,50 @@ class DomainRatingsSet(BaseModel):
     ratings: list[DomainRatingItem] = Field(default_factory=list)
 
 
+class DomainRatingColumn(BaseModel):
+    """One assessment domain as a column of the ratings grid.
+
+    Carries its own descriptor `options`, so the grid does not need a separate
+    grading-scales round trip to know what a cell may be set to — the same reason
+    ReportEntryAssessment carries max_score.
+    """
+    domain_id: str
+    name: str
+    domain_type: str
+    parent_domain_id: Optional[str] = None
+    parent_subject_id: Optional[str] = None
+    options: list[str] = Field(default_factory=list)
+
+
+class DomainRatingCell(BaseModel):
+    rating: Optional[str] = None
+    comment: Optional[str] = None
+
+
+class DomainRatingsStudentRow(BaseModel):
+    student_id: str
+    student_name: str
+    admission_no: Optional[str] = None
+    # domain_id -> the pupil's rating for it. Absent keys mean unrated.
+    ratings: dict[str, DomainRatingCell] = Field(default_factory=dict)
+
+
+class DomainRatingsGrid(BaseModel):
+    """A whole class's domain ratings for one term, in ONE call.
+
+    The per-pupil GET could not hydrate a class grid without one request per
+    child, which is why the entry form was shipping with `ratings={[]}` and a TODO.
+    Shaped after ReportEntryGrid so the two authoring surfaces read alike.
+    """
+    class_id: str
+    class_name: Optional[str] = None
+    term_id: str
+    term_name: Optional[str] = None
+    section_name: Optional[str] = None
+    domains: list[DomainRatingColumn] = Field(default_factory=list)
+    students: list[DomainRatingsStudentRow] = Field(default_factory=list)
+
+
 class DomainRatingResponse(BaseModel):
     id: str
     student_id: str

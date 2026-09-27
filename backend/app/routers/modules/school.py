@@ -44,7 +44,10 @@ from app.schemas.exam import ExamCreate, ExamUpdate, ExamResultRow, EXAM_TYPES, 
 from app.schemas.rating import RatingCreate
 from app.schemas.grade import GradePublish, ReportMetaUpdate
 from app.schemas.academics import REPORT_PUBLISHABLE_STAGES, REPORT_RELEASED_STAGE
-from app.schemas.platform import DomainRatingsSet, DomainRatingResponse
+from app.schemas.platform import (
+    DomainRatingsSet, DomainRatingResponse, DomainRatingsGrid,
+    DomainRatingColumn, DomainRatingCell, DomainRatingsStudentRow,
+)
 from app.schemas.lesson_planner import (
     CategoryCreate, CategoryUpdate, CategoryResponse,
     PlannerSettingsResponse, PlannerSettingsUpdate,
@@ -1502,6 +1505,33 @@ def _domain_rating_response(r: StudentDomainRating,
     )
 
 
+async def _ensure_class_rating_author(db: AsyncSession, current_user: User, class_id: str):
+    """Only a class's CLASS TEACHER may author or open its ratings grid.
+
+    No administrative bypass, matching the Make Report grid: the grid IS the
+    authoring surface, and showing an administrator a form they cannot save would
+    be the same trap that made filtering necessary on the numeric side. Admins keep
+    oversight through the per-pupil GET (which uses the report card's own
+    visibility contract) and through the card itself.
+    """
+    from app.routers.modules.platform import _pc_teacher_id
+
+    teacher_id = await _pc_teacher_id(db, current_user.org_id, class_id)
+    if teacher_id is None:
+        # Distinguished from "someone else teaches them": telling a teacher it is
+        # not them sends them looking for a colleague who does not exist.
+        raise HTTPException(
+            status_code=403,
+            detail="No class teacher is assigned to this class, so there is no one "
+                   "who can record its assessments. Ask an administrator to assign one.",
+        )
+    if teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only this class's teacher can record its assessment ratings.",
+        )
+
+
 async def _ensure_rating_author(db: AsyncSession, current_user: User, student_id: str):
     """Only the pupil's CLASS TEACHER may author their domain ratings.
 
@@ -1516,8 +1546,6 @@ async def _ensure_rating_author(db: AsyncSession, current_user: User, student_id
     There is no subject to scope by here: ratings hang off assessment DOMAINS, not
     subjects, so the class teacher is the whole of the relationship.
     """
-    from app.routers.modules.platform import _pc_teacher_id
-
     org_id = current_user.org_id
     stu = (await db.execute(
         select(Student).where(
@@ -1533,22 +1561,8 @@ async def _ensure_rating_author(db: AsyncSession, current_user: User, student_id
             detail="This pupil is not in a class, so there is no class teacher to "
                    "record their assessment. Assign them to a class first.",
         )
-    teacher_id = await _pc_teacher_id(db, org_id, stu.class_id)
-    if teacher_id is None:
-        # Distinguished from "someone else teaches them": telling a teacher it is
-        # not them sends them looking for a colleague who does not exist.
-        raise HTTPException(
-            status_code=403,
-            detail="No class teacher is assigned to this pupil's class, so there is "
-                   "no one who can record their assessment. Ask an administrator to "
-                   "assign one.",
-        )
-    if teacher_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Only this pupil's class teacher can record their assessment "
-                   "ratings.",
-        )
+    # Delegated so the per-pupil and class-wide rules cannot drift apart.
+    await _ensure_class_rating_author(db, current_user, stu.class_id)
     return stu
 
 
@@ -1581,6 +1595,115 @@ async def list_domain_ratings(
         )
     )).scalars().all()
     return [_domain_rating_response(r, term.name) for r in rows]
+
+
+@router.get("/classes/{class_id}/domain-ratings", response_model=DomainRatingsGrid,
+            dependencies=[_reports_write])
+async def class_domain_ratings_grid(
+    class_id: str,
+    term_id: str = Query(..., description="AcademicTerm id (not a name)"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """A whole class's domain ratings for one term — the grid, in ONE call.
+
+    Exists because the entry form could not hydrate itself: the per-pupil GET would
+    need one request per child, so the page shipped with `ratings={[]}` and a TODO
+    and a teacher reopening it saw blanks instead of what she had entered.
+
+    Gated to the class teacher, like the Make Report grid and for the same reason:
+    this is the authoring surface, and offering an administrator a form they cannot
+    save is the trap that made student-filtering necessary on the numeric side.
+    Admins read a pupil's ratings through the per-pupil GET or the report card.
+
+    The domains come from the CLASS's section, so an Early Years class gets the
+    EYFS areas and goals while a Primary/Secondary class gets psychomotor,
+    affective and any Cambridge strands — one endpoint, whatever that section
+    assesses against.
+    """
+    org_id = current_user.org_id
+    cls = (await db.execute(
+        select(SchoolClass).where(SchoolClass.id == class_id, SchoolClass.org_id == org_id)
+    )).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="class not found in your organisation.")
+    await _ensure_class_rating_author(db, current_user, class_id)
+
+    term = (await db.execute(
+        select(AcademicTerm).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org_id)
+    )).scalar_one_or_none()
+    if not term:
+        raise HTTPException(status_code=404, detail="term not found in your organisation.")
+
+    section_name = None
+    if cls.section_id:
+        section_name = (await db.execute(
+            select(SchoolSection.name).where(SchoolSection.id == cls.section_id)
+        )).scalar_one_or_none()
+
+    # A class with no section assesses against nothing — an empty grid the page can
+    # explain, rather than a 404 that reads as a broken feature.
+    domains = []
+    if cls.section_id:
+        domains = (await db.execute(
+            select(AssessmentDomain).where(
+                AssessmentDomain.org_id == org_id,
+                AssessmentDomain.section_id == cls.section_id,
+            ).order_by(AssessmentDomain.position, AssessmentDomain.name)
+        )).scalars().all()
+
+    # Descriptor labels per rating scale, so a cell knows its options without the
+    # page fetching every grading scale separately.
+    scale_ids = {d.rating_scale_id for d in domains if d.rating_scale_id}
+    options: dict[str, list[str]] = {}
+    if scale_ids:
+        for b in (await db.execute(
+            select(GradingBand).where(
+                GradingBand.org_id == org_id, GradingBand.scale_id.in_(list(scale_ids))
+            ).order_by(GradingBand.position)
+        )).scalars().all():
+            options.setdefault(b.scale_id, []).append(b.grade)
+
+    students = (await db.execute(
+        select(Student).where(
+            Student.org_id == org_id, Student.class_id == class_id,
+            Student.is_deleted == False,  # noqa: E712
+        ).order_by(Student.first_name, Student.last_name)
+    )).scalars().all()
+
+    rated: dict[tuple, StudentDomainRating] = {}
+    if students and domains:
+        for r in (await db.execute(
+            select(StudentDomainRating).where(
+                StudentDomainRating.org_id == org_id,
+                StudentDomainRating.term_id == term_id,
+                StudentDomainRating.student_id.in_([x.id for x in students]),
+                StudentDomainRating.domain_id.in_([d.id for d in domains]),
+            )
+        )).scalars().all():
+            rated[(r.student_id, r.domain_id)] = r
+
+    return DomainRatingsGrid(
+        class_id=class_id, class_name=cls.name, term_id=term_id, term_name=term.name,
+        section_name=section_name,
+        domains=[DomainRatingColumn(
+            domain_id=d.id, name=d.name, domain_type=d.domain_type,
+            parent_domain_id=d.parent_domain_id, parent_subject_id=d.parent_subject_id,
+            options=options.get(d.rating_scale_id, []),
+        ) for d in domains],
+        students=[DomainRatingsStudentRow(
+            student_id=st.id,
+            student_name=f"{st.first_name} {st.last_name}".strip(),
+            admission_no=st.student_id,
+            ratings={
+                d.id: DomainRatingCell(
+                    rating=rated[(st.id, d.id)].rating,
+                    comment=rated[(st.id, d.id)].comment,
+                )
+                for d in domains if (st.id, d.id) in rated
+            },
+        ) for st in students],
+    )
 
 
 @router.put("/students/{student_id}/domain-ratings", dependencies=[_reports_write])
