@@ -93,6 +93,16 @@ def _backfill() -> None:
         apply_backfill_sync, current_year_by_org, plan_backfill_sync,
     )
 
+    # `alembic upgrade --sql` emits statements without running them, so a read
+    # returns None. This backfill is DATA-DERIVED — one row per existing mark — so
+    # it cannot be rendered as static SQL at all, unlike the CREATE TABLE above.
+    # Skipping it offline keeps the table's DDL reviewable without a database,
+    # which is how this project checks a migration before it reaches production.
+    # Online behaviour is unchanged.
+    if op.get_context().as_sql:
+        print("[128] offline render — data-derived backfill skipped (see docstring)")
+        return
+
     conn = op.get_bind()
     years = current_year_by_org(conn)          # orgs with no resolvable session are absent
     total = 0

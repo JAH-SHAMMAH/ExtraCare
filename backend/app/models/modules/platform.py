@@ -420,6 +420,15 @@ class StudentAssessmentScore(Base, UUIDMixin, TimestampMixin, TenantMixin):
     assessment_id = Column(String(36), ForeignKey("assessments.id", ondelete="CASCADE"), nullable=False, index=True)
     score = Column(Numeric(6, 2), nullable=True)
     recorded_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # HOW the mark got here: entry (the Report Entry grid) | upload (Reports
+    # Upload) | cbt_sync (the automated CBT feed).
+    #
+    # `recorded_by` alone cannot answer "who put this mark on the card", because a
+    # NULL there is ambiguous — it could mean a machine wrote it, or that a human
+    # author was lost. Every one of the 1,799 marks in production was NULL, so no
+    # mark was traceable to anyone. With `source`, a NULL author becomes a stated
+    # fact ("cbt_sync, no person involved") instead of a gap.
+    source = Column(String(20), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("org_id", "student_id", "subject_id", "assessment_id", name="uq_student_assessment_score"),

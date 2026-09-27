@@ -1349,7 +1349,8 @@ async def publish_exam_results(
     # This is idempotent: calling twice updates existing scores, never duplicates.
     # Sync happens regardless of gradebook feed result — assessment and gradebook are
     # independent systems.
-    assessment_synced, assessment_reason = await sync_cbt_to_assessment_score(db, exam_id, org_id)
+    assessment_synced, assessment_reason = await sync_cbt_to_assessment_score(
+        db, exam_id, org_id, actor_id=current_user.id)
     if assessment_synced > 0:
         await log_action(
             db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
@@ -1405,7 +1406,8 @@ async def sync_exam_to_assessment(
     """
     org_id = current_user.org_id
     exam = await _get_exam_or_404(db, exam_id, org_id)
-    synced, reason = await sync_cbt_to_assessment_score(db, exam_id, org_id)
+    synced, reason = await sync_cbt_to_assessment_score(
+        db, exam_id, org_id, actor_id=current_user.id)
     if synced > 0:
         await log_action(
             db, AuditAction.RECORD_CREATED, org_id, actor=current_user,

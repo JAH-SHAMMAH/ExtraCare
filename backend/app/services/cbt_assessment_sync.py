@@ -245,6 +245,7 @@ async def sync_cbt_to_assessment_score(
     db: AsyncSession,
     exam_id: str,
     org_id: str,
+    actor_id: str | None = None,
 ) -> tuple[int, str | None]:
     """
     Sync one exam's CBT results to StudentAssessmentScore.
@@ -255,10 +256,21 @@ async def sync_cbt_to_assessment_score(
 
     Idempotent: calling twice updates existing rows, never creates duplicates.
 
+    ACCOUNTABILITY. Every score written here carries `source='cbt_sync'`, and
+    `recorded_by=actor_id` when a person triggered it (publishing results, or the
+    manual re-sync) — both router call sites have that user and already name it as
+    the audit actor. A background or script-driven run passes no actor, so
+    `recorded_by` stays NULL; `source` is what then says "a machine wrote this",
+    rather than leaving a NULL that is indistinguishable from a lost author.
+
+    Before this, every score the sync wrote had a NULL author and no source, which
+    is why all 1,799 marks in production were untraceable to anyone.
+
     Args:
         db: AsyncSession
         exam_id: CBTExam ID
         org_id: Organization ID
+        actor_id: the user who triggered this sync, if a person did
 
     Returns:
         (row_count, error_reason)
@@ -377,8 +389,13 @@ async def sync_cbt_to_assessment_score(
         existing_score = existing.get(key)
 
         if existing_score:
-            # UPDATE: idempotent, safe if called twice
+            # UPDATE: idempotent, safe if called twice. The author is re-stamped
+            # because the mark itself is being replaced — CBT is authoritative
+            # here, so the row's provenance must follow the value it now holds
+            # rather than describe whoever wrote a number that is gone.
             existing_score.score = pct
+            existing_score.recorded_by = actor_id
+            existing_score.source = "cbt_sync"
         else:
             # CREATE: first time
             db.add(StudentAssessmentScore(
@@ -387,6 +404,8 @@ async def sync_cbt_to_assessment_score(
                 subject_id=exam.subject_id,
                 assessment_id=assessment_id,
                 score=pct,
+                recorded_by=actor_id,
+                source="cbt_sync",
                 org_id=org_id,
             ))
         written += 1

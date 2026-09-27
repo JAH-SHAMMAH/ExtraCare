@@ -2633,6 +2633,7 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
         if row:
             row.score = it.score
             row.recorded_by = current_user.id
+            row.source = "entry"
         else:
             # The row set was read at the top, so "no row exists" can be stale by
             # the time we get here: a second teacher saving the same cell inserts
@@ -2647,7 +2648,7 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
                     db.add(StudentAssessmentScore(
                         org_id=org, student_id=it.student_id, subject_id=payload.subject_id,
                         assessment_id=it.assessment_id, score=it.score,
-                        recorded_by=current_user.id))
+                        recorded_by=current_user.id, source="entry"))
             except IntegrityError:
                 row = (await db.execute(
                     select(StudentAssessmentScore).where(
@@ -2659,6 +2660,7 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
                 )).scalar_one()
                 row.score = it.score
                 row.recorded_by = current_user.id
+                row.source = "entry"
         saved += 1
     await db.flush()
     return {"saved": saved}
@@ -3705,9 +3707,11 @@ async def report_upload(term_id: str, file: UploadFile = File(...),
             if row_obj:
                 row_obj.score = score
                 row_obj.recorded_by = current_user.id
+                row_obj.source = "upload"
             else:
                 new = StudentAssessmentScore(org_id=org, student_id=student.id, subject_id=subj.id,
-                                             assessment_id=a.id, score=score, recorded_by=current_user.id)
+                                             assessment_id=a.id, score=score,
+                                             recorded_by=current_user.id, source="upload")
                 db.add(new)
                 existing[key] = new
             wrote_any = True
