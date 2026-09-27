@@ -60,6 +60,7 @@ from app.schemas.platform import (
     ReportEntryGrid, ReportEntryAssessment, ReportEntryStudent, ScoreItem, ReportEntrySave, TeachingAssignment,
     BroadsheetResponse, BroadsheetRow, BroadsheetCell, BroadsheetSubject, BroadsheetBand,
     CardColumn, CardSubjectRow, ReportCardResponse, SessionalTerm,
+    AnalysisPupil, AnalysisSubjectMark, ResultAnalysisResponse,
     REPORT_COMMENT_KINDS, CommentGridRow, CommentGridResponse, CommentItem, CommentGridSave,
     SubjectCommentGridResponse, SubjectCommentGridRow, SubjectCommentItem, SubjectCommentSave,
     EnrollmentGridResponse, EnrollmentStudentRow, EnrollmentSubject, EnrollmentSave,
@@ -686,8 +687,56 @@ async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_us
     level aliases, the school's REAL grading scale + bands, and a template per
     section. Idempotent + self-healing: re-running updates templates in place, so an
     earlier provisional seed is replaced by the confirmed constants (one shared A–F
-    scale; CA/exam 40/60 for Primary + Secondary; EYFS descriptors for Early Years)."""
+    scale; CA/exam 40/60 for Primary + Secondary; EYFS descriptors for Early Years).
+
+    FIRST-RUN ONLY. It REFUSES once a numeric grade scale exists — see the guard
+    below. This is a fresh-school setup tool and on a configured school it can only
+    do harm.
+    """
     org_id = current_user.org_id
+
+    # ── the guard ─────────────────────────────────────────────────────────────
+    # This endpoint identifies "the grading scale" BY NAME ("Grading Scale (A–F)"),
+    # so on a school whose scale is named anything else it does not recognise it and
+    # creates a SECOND one — carrying the old 5-band 70/60/50/45/40, with `purpose`
+    # defaulting to 'grade' and `show_in_table` to True.
+    #
+    # That is not a cosmetic duplicate. Both scale resolvers
+    # (services/grading.load_grade_bands and report_card's own picker) select
+    # numeric + purpose='grade' ordered ONLY by show_in_table and then take
+    # .first() — so two rows tied on show_in_table resolve ARBITRARILY. Every
+    # letter on every report card could silently move to the wrong scale. At
+    # Fairview that would have replaced the verified nine-band A*–F with a five-band
+    # scale across 1,799 marks.
+    #
+    # The guard keys on a numeric grade scale EXISTING, not on `is_provisional`:
+    # Fairview's real nine-band scale is flagged provisional (the school never
+    # cleared the flag), so a provisional-based check would not fire on the one
+    # database it needs to protect.
+    # It refuses on a FOREIGN scale only. Re-running over its own output is the
+    # documented self-healing behaviour (a second run replaces an earlier
+    # provisional seed with the confirmed constants), and blocking that would
+    # remove a capability rather than a hazard. The hazard is specifically a scale
+    # this endpoint did not create and therefore does not recognise.
+    foreign = [x for x in (await db.execute(
+        select(GradingScale).where(
+            GradingScale.org_id == org_id,
+            GradingScale.scale_type == "numeric",
+            GradingScale.purpose == "grade",
+        )
+    )).scalars().all() if (x.name or "").casefold() != _BOOTSTRAP_GRADE_SCALE.casefold()]
+    if foreign:
+        names = ", ".join(repr(x.name) for x in foreign)
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This organisation already has a numeric grading scale ({names}), so "
+                f"one-click setup will not run: it would create a second one and the "
+                f"report card resolves between them arbitrarily, which can change "
+                f"every pupil's grade. Configure sections, scales and templates "
+                f"individually under Report Setup instead."
+            ),
+        )
     existing_secs = {s.name.casefold(): s for s in (await db.execute(select(SchoolSection).where(SchoolSection.org_id == org_id))).scalars().all()}
     existing_scales = {s.name.casefold(): s for s in (await db.execute(select(GradingScale).where(GradingScale.org_id == org_id))).scalars().all()}
 
@@ -712,7 +761,7 @@ async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_us
     # for both Primary and Secondary (70/60/50/45/40 → A/B/C/D/E, <40 F); CA/exam
     # 40/60 both. EYFS descriptors for Nursery. Non-provisional — real numbers.
     scale_specs = [
-        ("Grading Scale (A–F)", "numeric", [
+        (_BOOTSTRAP_GRADE_SCALE, "numeric", [
             ("A", 70, 100, "Excellent"), ("B", 60, 69, "Very good"), ("C", 50, 59, "Good"),
             ("D", 45, 49, "Fair"), ("E", 40, 44, "Pass"), ("F", 0, 39, "Fail")]),
         ("EYFS descriptors", "descriptor", [
@@ -971,6 +1020,11 @@ async def delete_domain(domain_id: str, db: AsyncSession = Depends(get_db), curr
 
 # Standard taxonomies the seed lays down. All EDITABLE afterwards — a starting
 # scaffold, never a locked constant (the school renames/prunes to taste).
+# The numeric grade scale `bootstrap_report_config` creates. Named once, because
+# the guard below and the seed itself must agree on it — if they drift, the guard
+# either blocks the endpoint's own re-run or stops recognising its own output.
+_BOOTSTRAP_GRADE_SCALE = "Grading Scale (A–F)"
+
 _EYFS_AREAS = [
     ("Communication and Language", ["Listening, Attention and Understanding", "Speaking"]),
     ("Physical Development", ["Gross Motor Skills", "Fine Motor Skills"]),
@@ -3632,6 +3686,109 @@ async def report_insight(term_id: str, sub_term_id: str,
 
     return InsightResponse(term_name=term_name, sub_term_name=sub_name,
                            subjects=subj_out, gender=gender_out, classes=class_out)
+
+
+# ── Result Analysis — Wave 1 ─────────────────────────────────────────────────
+#
+# Both reports read ONE computation (services/result_analysis.analyse_term). They
+# are deliberately thin: the moment a second copy of the evaluator loop exists,
+# two reports can disagree about the same pupil's average.
+#
+# ADMIN-ONLY (school_admin:read), matching Result Insight. These are oversight
+# views across the whole school; a teacher's own class results are the Broadsheet.
+
+
+def _analysis_pupil(p, subject_names, *, below=None, position=None) -> AnalysisPupil:
+    return AnalysisPupil(
+        student_id=p.student_id, student_name=p.student_name,
+        admission_no=p.admission_no, class_id=p.class_id, class_name=p.class_name,
+        average=round_dp(p.average, 2) if p.average is not None else None,
+        grade=p.grade, subjects_counted=p.subjects_counted,
+        subjects_below=[AnalysisSubjectMark(
+            subject_id=sid, subject_name=subject_names.get(sid),
+            percentage=round_dp(pct, 2)) for sid, pct in (below or [])],
+        position=position,
+    )
+
+
+@router.get("/result-analysis/remedial", response_model=ResultAnalysisResponse,
+            dependencies=[Depends(PermissionChecker("school_admin:read"))])
+async def remedial_list(term_id: str, sub_term_id: str, class_id: str | None = None,
+                        db: AsyncSession = Depends(get_db),
+                        current_user: User = Depends(get_current_active_user)):
+    """Pupils whose average falls below the pass mark, and in which subjects.
+
+    The subject breakdown is the point: a list of names says who is struggling, a
+    list of names with subjects says what to do about it.
+
+    An UNMARKED pupil is never listed. Their average is unknown, not low, and
+    printing a child as needing remediation because nobody has entered their marks
+    would be a real error on a real child. They are counted in `unmarked` instead.
+    """
+    from app.services.result_analysis import analyse_term, resolve_thresholds
+
+    org = current_user.org_id
+    analysis = await analyse_term(db, org, term_id, sub_term_id, class_id=class_id)
+    passmark, _honours, source = await resolve_thresholds(db, org, analysis.sub_term_name)
+
+    cls_name = None
+    if class_id:
+        cls_name = (await db.execute(select(SchoolClass.name).where(
+            SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+
+    marked = [p for p in analysis.pupils if p.average is not None]
+    failing = [p for p in marked if p.average < passmark]
+    # Worst first: a remedial list is a work queue, so the pupil needing most help
+    # belongs at the top.
+    failing.sort(key=lambda p: p.average)
+
+    return ResultAnalysisResponse(
+        term_name=analysis.term_name, sub_term_name=analysis.sub_term_name,
+        class_name=cls_name, threshold=passmark, threshold_source=source,
+        considered=len(marked), unmarked=len(analysis.pupils) - len(marked),
+        not_configured=analysis.not_configured,
+        pupils=[_analysis_pupil(
+            p, analysis.subject_names,
+            below=sorted(((sid, pct) for sid, pct in p.subject_pct.items() if pct < passmark),
+                         key=lambda x: x[1]),
+        ) for p in failing],
+    )
+
+
+@router.get("/result-analysis/honour-roll", response_model=ResultAnalysisResponse,
+            dependencies=[Depends(PermissionChecker("school_admin:read"))])
+async def honour_roll(term_id: str, sub_term_id: str, class_id: str | None = None,
+                      db: AsyncSession = Depends(get_db),
+                      current_user: User = Depends(get_current_active_user)):
+    """Pupils at or above the honours average, best first.
+
+    AT or above: `min_average_honours` is the qualifying mark, so a pupil who
+    scores exactly it has qualified. Excluding them would make the configured
+    number mean something one hundredth away from what it says.
+    """
+    from app.services.result_analysis import analyse_term, resolve_thresholds
+
+    org = current_user.org_id
+    analysis = await analyse_term(db, org, term_id, sub_term_id, class_id=class_id)
+    _passmark, honours, source = await resolve_thresholds(db, org, analysis.sub_term_name)
+
+    cls_name = None
+    if class_id:
+        cls_name = (await db.execute(select(SchoolClass.name).where(
+            SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+
+    marked = [p for p in analysis.pupils if p.average is not None]
+    honoured = sorted([p for p in marked if p.average >= honours],
+                      key=lambda p: p.average, reverse=True)
+
+    return ResultAnalysisResponse(
+        term_name=analysis.term_name, sub_term_name=analysis.sub_term_name,
+        class_name=cls_name, threshold=honours, threshold_source=source,
+        considered=len(marked), unmarked=len(analysis.pupils) - len(marked),
+        not_configured=analysis.not_configured,
+        pupils=[_analysis_pupil(p, analysis.subject_names, position=i)
+                for i, p in enumerate(honoured, start=1)],
+    )
 
 
 # ── Secondary Report S-6: Reports Upload (bulk score import) ─────────────────

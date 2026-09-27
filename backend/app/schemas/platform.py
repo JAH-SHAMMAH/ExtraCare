@@ -1335,6 +1335,51 @@ class InsightResponse(BaseModel):
     classes: list[InsightClass] = Field(default_factory=list)
 
 
+# ── Result Analysis (Wave 1: Remedial List + Honour Roll) ────────────────────
+
+class AnalysisSubjectMark(BaseModel):
+    subject_id: str
+    subject_name: Optional[str] = None
+    percentage: Decimal
+
+
+class AnalysisPupil(BaseModel):
+    student_id: str
+    student_name: str
+    admission_no: Optional[str] = None
+    class_id: Optional[str] = None
+    class_name: Optional[str] = None
+    average: Optional[Decimal] = None
+    grade: Optional[str] = None
+    subjects_counted: int = 0
+    # Remedial List: the subjects below the passmark, so the list says WHAT to
+    # remediate rather than only who. Empty on the Honour Roll.
+    subjects_below: list[AnalysisSubjectMark] = Field(default_factory=list)
+    # Honour Roll: 1-based standing within the returned list.
+    position: Optional[int] = None
+
+
+class ResultAnalysisResponse(BaseModel):
+    term_name: Optional[str] = None
+    sub_term_name: Optional[str] = None
+    class_name: Optional[str] = None       # when scoped to one class
+    threshold: Decimal
+    # 'configured' | 'partial' | 'default' — which thresholds were actually used.
+    # Surfaced so a page can say so: naming a pupil as failing against a threshold
+    # nobody set should not look like a settled fact.
+    threshold_source: str = "configured"
+    pupils: list[AnalysisPupil] = Field(default_factory=list)
+    # How many pupils were assessed at all, so "3 of 180" is expressible rather
+    # than a bare list of three.
+    considered: int = 0
+    # Pupils in scope with NO marks. They are neither failing nor honoured, and
+    # counting them either way would be wrong — reported separately instead.
+    unmarked: int = 0
+    # True when the term has no display cumulative or no assessments, i.e. nothing
+    # was computable. An empty list then means "not set up", not "nobody qualified".
+    not_configured: bool = False
+
+
 # ── Secondary Report parity S-6: Reports Upload (bulk score import) ──────────
 
 class ScoreUploadResult(BaseModel):
