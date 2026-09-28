@@ -146,7 +146,21 @@ class ReportApprovalCreate(BaseModel):
     # An AcademicTerm id, not a name (migration 131). The table is keyed by id, so
     # accepting a name here would only move the resolution rather than remove it —
     # and it is a name in exactly this position that caused the 2026-09-27 outage.
-    term_id: Optional[str] = None
+    #
+    # REQUIRED, and that is the fix for what migration 131 left behind. It was
+    # Optional, matching the nullable column, while the UI still posted `term`; a
+    # Pydantic model ignores unknown fields, so the name was dropped and the
+    # workflow saved with no term at all. A termless workflow is not a lesser
+    # workflow, it is a broken one: every gate that reads it — the publish freeze,
+    # the parent report-card gate — matches on term_id and would never find it.
+    # Required means a caller that omits it gets a 422 saying so, instead of a row
+    # that looks saved and gates nothing.
+    #
+    # It also makes the clash check downstream structurally sound: that query
+    # compares term_id to this value, and `== None` renders as IS NULL, so a
+    # termless create used to collide with any other termless row for the class and
+    # report a conflict "for this class and that term" about no term at all.
+    term_id: str
     notes: Optional[str] = None
 
 

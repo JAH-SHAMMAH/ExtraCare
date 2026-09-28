@@ -691,6 +691,21 @@ async def create_report_workflow(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    # The term is resolved FIRST, before anything below can compare against it. The
+    # schema already guarantees it is present (a missing one is a 422), and this
+    # guarantees it is real and ours — so by the time the clash check runs, term_id
+    # is a known term of this org and can never be NULL. That ordering is the point:
+    # the clash query renders `term_id == None` as IS NULL, which used to make a
+    # termless create collide with any other termless row for the class.
+    # 404 rather than 422 for an unknown id, matching submit_report and the class
+    # check below — within this router "not found in your organisation" is a 404.
+    term_row = (await db.execute(
+        select(AcademicTerm).where(
+            AcademicTerm.id == payload.term_id, AcademicTerm.org_id == current_user.org_id)
+    )).scalar_one_or_none()
+    if not term_row:
+        raise HTTPException(status_code=404, detail="term not found in your organisation.")
+
     if payload.class_id:
         cls = (await db.execute(
             select(SchoolClass).where(SchoolClass.id == payload.class_id, SchoolClass.org_id == current_user.org_id)

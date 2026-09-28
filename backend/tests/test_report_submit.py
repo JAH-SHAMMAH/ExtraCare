@@ -413,3 +413,82 @@ async def test_what_the_grid_offers_matches_what_the_endpoint_allows(db, org):
             await db.commit()
 
         assert offered == allowed, f"{user.full_name}: offered={offered} allowed={allowed}"
+
+
+# ── the create path: a workflow without a term is not a workflow ───────────────
+#
+# Migration 131 moved this table from a term NAME to term_id and left
+# ReportApprovalCreate.term_id Optional, matching the nullable column. The UI went
+# on posting `term`, a Pydantic model ignores unknown fields, and so every workflow
+# created from that page was saved with no term — silently, with no error, and
+# gating nothing: the publish freeze and the parent report-card gate both match on
+# term_id and would never find it. These pin the fix.
+
+def test_the_create_schema_refuses_a_workflow_with_no_term():
+    """A 422 the caller can read, instead of a row that looks saved."""
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    from app.schemas.academics import ReportApprovalCreate
+
+    with _pytest.raises(ValidationError) as e:
+        ReportApprovalCreate(class_id="c1", academic_year="2025/2026")
+    assert "term_id" in str(e.value)
+
+
+def test_the_create_schema_still_ignores_a_term_NAME_but_now_cannot_save_one():
+    """The exact shape of the bug: posting `term` is not an error, it is ignored.
+
+    That is Pydantic's documented behaviour and not worth fighting — what matters is
+    that ignoring it can no longer produce a saved row, because term_id is required
+    and its absence is now the 422 above.
+    """
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    from app.schemas.academics import ReportApprovalCreate
+
+    with _pytest.raises(ValidationError):
+        ReportApprovalCreate(class_id="c1", term="Autumn")          # a NAME
+
+    ok = ReportApprovalCreate(class_id="c1", term="Autumn", term_id="t1")
+    assert ok.term_id == "t1"
+    assert not hasattr(ok, "term"), "the name is dropped, so it must not be stored"
+
+
+@pytest.mark.asyncio
+async def test_creating_a_workflow_for_a_term_that_is_not_ours_is_refused(db, org):
+    """Resolved BEFORE the clash check, so that check can never see a NULL term_id —
+    which is what made a termless create collide with any other termless row and
+    report a conflict 'for this class and that term' about no term at all."""
+    from app.routers.modules.academics import create_report_workflow
+    from app.schemas.academics import ReportApprovalCreate
+
+    admin = await _user(db, org, "org_admin")
+    cls = await _class(db, org)
+
+    with pytest.raises(HTTPException) as e:
+        await create_report_workflow(
+            payload=ReportApprovalCreate(class_id=cls.id, term_id=str(uuid.uuid4())),
+            request=None, db=db, current_user=admin)
+    assert e.value.status_code == 404
+    assert "term" in str(e.value.detail).lower()
+    assert (await db.execute(select(ReportApproval))).scalars().first() is None
+
+
+@pytest.mark.asyncio
+async def test_creating_a_workflow_with_a_real_term_stores_that_term(db, org):
+    from app.routers.modules.academics import create_report_workflow
+    from app.schemas.academics import ReportApprovalCreate
+
+    admin = await _user(db, org, "org_admin")
+    cls = await _class(db, org)
+    t = await _term(db, org)
+
+    await create_report_workflow(
+        payload=ReportApprovalCreate(class_id=cls.id, term_id=t.id),
+        request=None, db=db, current_user=admin)
+
+    row = (await db.execute(select(ReportApproval))).scalars().one()
+    assert row.term_id == t.id, "the workflow must point at the term it is for"
+    assert row.stage == "draft"

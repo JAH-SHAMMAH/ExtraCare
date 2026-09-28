@@ -9,7 +9,7 @@ import { useCurrentSession } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn, formatDate } from "@/lib/utils";
 import { FolderOpen, Plus, X, Loader2, Trash2, AlertTriangle } from "lucide-react";
-import { TERMS } from "@/lib/terms";
+import { useTerms } from "@/hooks/usePlatform";
 
 const STAGES = ["draft", "submitted", "reviewed", "approved", "published"];
 
@@ -33,7 +33,11 @@ export default function ReportWorkflowPage() {
   const canWrite = useHasPermission("school:reports:write");
   const [stageFilter, setStageFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ class_id: "", academic_year: "", term: "", notes: "" });
+  // term_id, not term. The workflow row is keyed by term_id (migration 131) and the
+  // create schema requires it; this form posted a NAME, which a Pydantic model
+  // silently ignores, so every workflow made here was saved with no term and gated
+  // nothing. The name was never rejected — it just went nowhere.
+  const [form, setForm] = useState({ class_id: "", academic_year: "", term_id: "", notes: "" });
 
   const { data, isLoading, isError, refetch } = useReportWorkflow(stageFilter ? { stage: stageFilter } : undefined);
   const { data: classData } = useClassOptions();
@@ -43,11 +47,24 @@ export default function ReportWorkflowPage() {
   const remove = useDeleteReportWorkflow();
 
   const { data: cur } = useCurrentSession();
-  useEffect(() => { if (cur?.term || cur?.name) setForm((f) => ({ ...f, term: f.term || cur?.term || "", academic_year: f.academic_year || cur?.name || "" })); }, [cur?.term, cur?.name]);
+  const { data: terms } = useTerms();
+  const termRows = (terms || []) as Array<{ id: string; name: string }>;
+  // The current session stores a term NAME, so the default is resolved through the
+  // real list to an id, and left empty if it does not resolve rather than guessed.
+  const currentTermId = termRows.find((t) => t.name === cur?.term)?.id || "";
+  useEffect(() => {
+    if (currentTermId || cur?.name) {
+      setForm((f) => ({
+        ...f,
+        term_id: f.term_id || currentTermId,
+        academic_year: f.academic_year || cur?.name || "",
+      }));
+    }
+  }, [currentTermId, cur?.name]);
 
-  const reset = () => { setForm({ class_id: "", academic_year: cur?.name || "", term: cur?.term || "", notes: "" }); setShowForm(false); };
+  const reset = () => { setForm({ class_id: "", academic_year: cur?.name || "", term_id: currentTermId, notes: "" }); setShowForm(false); };
   const submit = () => create.mutate(
-    { class_id: form.class_id || null, academic_year: form.academic_year || null, term: form.term || null, notes: form.notes || null },
+    { class_id: form.class_id || null, academic_year: form.academic_year || null, term_id: form.term_id, notes: form.notes || null },
     { onSuccess: reset },
   );
 
@@ -83,12 +100,24 @@ export default function ReportWorkflowPage() {
               </select>
             </div>
             <div><label className="label">Academic Year</label><input value={form.academic_year} onChange={(e) => setForm({ ...form, academic_year: e.target.value })} className="input" placeholder="2025/2026" /></div>
-            <div><label className="label">Term</label><select value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input"><option value="">— Term —</option>{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
+            <div>
+              <label className="label">Term *</label>
+              <select value={form.term_id} onChange={(e) => setForm({ ...form, term_id: e.target.value })} className="input">
+                <option value="">— Term —</option>
+                {termRows.map((t) => (<option key={t.id} value={t.id}>{t.name}</option>))}
+              </select>
+              {!termRows.length && (
+                <p className="text-[11px] text-amber-600 mt-1">No academic terms are set up yet — add them under Report Setup first.</p>
+              )}
+            </div>
             <div className="md:col-span-3"><label className="label">Notes</label><textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="input" rows={2} /></div>
           </div>
           <div className="flex justify-end gap-3 mt-4">
             <button onClick={reset} className="btn-secondary">Cancel</button>
-            <button onClick={submit} disabled={create.isPending} className="btn-primary gap-2">{create.isPending && <Loader2 size={15} className="animate-spin" />}Create</button>
+            {/* A workflow with no term gates nothing, and the API now says so with a
+                422 rather than accepting it. Disabled rather than letting the click
+                fail: the reason is visible before pressing, not after. */}
+            <button onClick={submit} disabled={create.isPending || !form.term_id} title={!form.term_id ? "Pick a term first — a workflow without one cannot be published." : undefined} className="btn-primary gap-2">{create.isPending && <Loader2 size={15} className="animate-spin" />}Create</button>
           </div>
         </div>
       )}
@@ -105,7 +134,7 @@ export default function ReportWorkflowPage() {
               rows.map((r) => (
                 <tr key={r.id} className="hover:bg-slate-50/70">
                   <td className="px-5 py-4 text-sm font-medium text-slate-800">{r.class_name || "—"}</td>
-                  <td className="px-5 py-4 text-xs text-slate-500">{[r.academic_year, r.term].filter(Boolean).join(" · ") || "—"}</td>
+                  <td className="px-5 py-4 text-xs text-slate-500">{[r.academic_year, r.term_name].filter(Boolean).join(" · ") || "—"}</td>
                   <td className="px-5 py-4">
                     {canWrite ? (
                       <select value={r.stage} onChange={(e) => update.mutate({ id: r.id, data: { stage: e.target.value } })} className={cn("input py-1 text-xs capitalize w-36 border", STAGE_STYLE[r.stage] || "")}>
