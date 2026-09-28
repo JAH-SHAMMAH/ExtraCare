@@ -82,9 +82,17 @@ from app.schemas.platform import (
     TrackerCell,
     TrackerRow,
     AnalysisClassOption,
+    OrderOfMeritResponse,
+    MeritRow,
+    GradeSummaryResponse,
+    GradeSummaryRow,
+    SubjectPerformanceResponse,
+    SubjectPerformanceRow,
 )
 from app.services.ledger import money  # Decimal helper for grading bands
-from app.services.report_engine import evaluate_cumulative, round_dp, sessional_average
+from app.services.report_engine import (
+    evaluate_cumulative, is_fully_marked, round_dp, sessional_average,
+)
 from app.services.report_lock import (
     find_published_block, locked_message, term_names_for_ids,
 )
@@ -3063,8 +3071,23 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     asmt_cols = sorted([a for a in assessments.values() if a.sub_term_id == sub_term_id], key=lambda a: (a.position or 0, a.name))
     cumul_cols = sorted([c for c in cumulatives if c.sub_term_id == sub_term_id], key=lambda c: (c.position or 0, c.name))
     display = _pick_display_cumulative(cumulatives, sub_term_id)
+    # A CAPPED cumulative carries its ceiling, so the header reads "/40" or "/60".
+    # Without it, "Exam 36.37" looks like a poor mark when it is 60.62% expressed
+    # out of 60, and "CA 27.07" out of 40 reads worse still — the figure is scaled
+    # and the scale was invisible.
+    #
+    # Deliberately ONLY custom_percentage. A `percentage` cumulative is already out
+    # of 100 and reads correctly bare; giving it a "/100" would be a visible change
+    # to the twelve Autumn cards already with parents, in service of nothing. A
+    # `score` cumulative's ceiling is the sum of its components, which is a
+    # different calculation and not what is misleading here.
+    def _ceiling(c):
+        return c.max_percent if (c.cumul_type == "custom_percentage"
+                                 and c.max_percent is not None) else None
+
     columns = ([CardColumn(key=a.id, name=a.name, kind="assessment", max_score=a.max_score) for a in asmt_cols]
-               + [CardColumn(key=c.id, name=c.name, kind="cumulative") for c in cumul_cols])
+               + [CardColumn(key=c.id, name=c.name, kind="cumulative",
+                             max_score=_ceiling(c)) for c in cumul_cols])
 
     # All classmates' scores (for arm average + position).
     classmates = (await db.execute(select(Student).where(
@@ -3128,20 +3151,45 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         values: dict[str, object] = {}
         for a in asmt_cols:
             values[a.id] = scores.get(a.id)
+        # A cumulative whose components are not all marked shows NOTHING, not a
+        # number. `evaluate_cumulative` scores a missing component as zero, so a
+        # pupil with an exam mark and no CA would print 60% of their real standing
+        # — on the page their parent reads. A blank says "not entered"; a number
+        # says "this is what your child scored", and only one of those is true.
+        incomplete: list[str] = []
         for c in cumul_cols:
+            if not is_fully_marked(c.id, cumul_by_id, components, assessments, scores):
+                values[c.id] = None
+                incomplete.append(c.name)
+                continue
             v, _m = evaluate_cumulative(c.id, cumul_by_id, components, assessments, scores)
             values[c.id] = round_dp(v, c.decimal_places or 0)
-        dval, dmax = evaluate_cumulative(display.id, cumul_by_id, components, assessments, scores) if display else (money(0), money(0))
-        pct = (dval / dmax * 100) if dmax else money(0)
-        g = _grade_for(pct, bands)
-        remark = next((b.remark for b in bands if b.grade == g), None)
+
+        display_ok = bool(display) and is_fully_marked(
+            display.id, cumul_by_id, components, assessments, scores)
+        if display_ok:
+            dval, dmax = evaluate_cumulative(display.id, cumul_by_id, components,
+                                             assessments, scores)
+            pct = (dval / dmax * 100) if dmax else money(0)
+            g = _grade_for(pct, bands)
+            remark = next((b.remark for b in bands if b.grade == g), None)
+        else:
+            # No grade either: a letter derived from a deflated total is the same
+            # false claim in one character.
+            dval, pct, g, remark = money(0), None, None, None
         vals_list = arm.get(sid, [])
         arm_avg = round_dp(sum(vals_list) / len(vals_list), 2) if vals_list else None
-        subj_rows.append(CardSubjectRow(subject_id=sid, subject_name=subj_names.get(sid, sid), values=values,
-                                        grade=g, remark=remark, subject_arm_average=arm_avg))
-        my_total += dval
-        pct_sum += pct
-        n += 1
+        subj_rows.append(CardSubjectRow(
+            subject_id=sid, subject_name=subj_names.get(sid, sid), values=values,
+            grade=g, remark=remark, subject_arm_average=arm_avg,
+            incomplete_components=incomplete))
+        if display_ok:
+            # An incomplete subject is left OUT of the average and the total, rather
+            # than folded in at a deflated value — one unmarked component would
+            # otherwise drag down every other subject's contribution too.
+            my_total += dval
+            pct_sum += pct
+            n += 1
     average = (pct_sum / n) if n else money(0)
 
     # Per-subject remarks from the subject teachers, keyed by subject so each
@@ -4222,3 +4270,193 @@ async def result_analysis_classes(
         for c in classes
         if c.teacher_id == current_user.id and (not c.section_id or c.section_id in sections)
     ]
+
+
+# ── Result Analysis wave 2 ────────────────────────────────────────────────────
+#
+# Three pivots of `analyse_term`, admin-only. Each one deliberately computes no
+# percentage of its own: the figure a pupil is ranked, banded or averaged on is
+# the same figure the Booster List and the Performance Tracker read, so two
+# screens cannot disagree about the same child.
+
+
+def _scoped_class_name(classes: dict, class_id: str | None) -> str | None:
+    return classes.get(class_id) if class_id else None
+
+
+@router.get("/result-analysis/order-of-merit", response_model=OrderOfMeritResponse,
+            dependencies=[Depends(PermissionChecker("school_admin:read"))])
+async def order_of_merit(term_id: str, sub_term_id: str, class_id: str | None = None,
+                         section_id: str | None = None,
+                         db: AsyncSession = Depends(get_db),
+                         current_user: User = Depends(get_current_active_user)):
+    """Pupils ranked by average, best first.
+
+    STANDARD COMPETITION RANKING (1, 2, 2, 4). Two pupils with the same average
+    are the same position, and the next pupil takes the position their count
+    implies — printing equal averages as 2nd and 3rd would assert an order the
+    marks do not contain. Educare's own convention is unverified; if it uses dense
+    ranking (1, 2, 2, 3) this is the one place to change.
+
+    An UNMARKED pupil is never ranked. Their standing is unknown, not last, and a
+    merit list that placed them would be inventing a result for a child.
+    """
+    from app.services.result_analysis import analyse_term
+
+    org = current_user.org_id
+    analysis = await analyse_term(db, org, term_id, sub_term_id,
+                                  class_id=class_id, section_id=section_id)
+    classes = {c.id: c.name for c in (await db.execute(select(SchoolClass).where(
+        SchoolClass.org_id == org))).scalars().all()}
+
+    marked = [p for p in analysis.pupils if p.average is not None]
+    marked.sort(key=lambda p: (-p.average, (p.student_name or "").lower()))
+
+    rows: list[MeritRow] = []
+    position = 0
+    for i, p in enumerate(marked):
+        if i and p.average == marked[i - 1].average:
+            pass                      # same average -> same position as the one above
+        else:
+            position = i + 1          # competition ranking: skip the shared places
+        rows.append(MeritRow(
+            position=position, student_id=p.student_id, student_name=p.student_name,
+            admission_no=p.admission_no, class_name=p.class_name,
+            average=round_dp(p.average, 2), grade=p.grade,
+            subjects_counted=p.subjects_counted))
+    counts: dict[int, int] = {}
+    for r in rows:
+        counts[r.position] = counts.get(r.position, 0) + 1
+    for r in rows:
+        r.tied = counts[r.position] > 1
+
+    return OrderOfMeritResponse(
+        term_name=analysis.term_name, sub_term_name=analysis.sub_term_name,
+        class_name=_scoped_class_name(classes, class_id),
+        rows=rows, considered=len(marked),
+        unmarked=len(analysis.pupils) - len(marked),
+        not_configured=analysis.not_configured)
+
+
+@router.get("/result-analysis/grade-summary", response_model=GradeSummaryResponse,
+            dependencies=[Depends(PermissionChecker("school_admin:read"))])
+async def grade_summary(term_id: str, sub_term_id: str, class_id: str | None = None,
+                        section_id: str | None = None,
+                        db: AsyncSession = Depends(get_db),
+                        current_user: User = Depends(get_current_active_user)):
+    """How many marks fell in each band, per subject and overall.
+
+    The report that makes a distribution visible at a glance — and the one that
+    would have shown, in September, that every subject was grading F.
+
+    Bands come from the school's own scale in its own order, not a hardcoded
+    A–F: the columns are whatever Fairview configured, so a school that renames or
+    re-cuts its bands sees its own.
+    """
+    from app.services.result_analysis import analyse_term
+
+    org = current_user.org_id
+    analysis = await analyse_term(db, org, term_id, sub_term_id,
+                                  class_id=class_id, section_id=section_id)
+    classes = {c.id: c.name for c in (await db.execute(select(SchoolClass).where(
+        SchoolClass.org_id == org))).scalars().all()}
+
+    scale = (await db.execute(select(GradingScale).where(
+        GradingScale.org_id == org, GradingScale.scale_type == "numeric",
+        GradingScale.purpose == "grade").order_by(
+        GradingScale.show_in_table.desc()))).scalars().first()
+    bands = (await db.execute(select(GradingBand).where(
+        GradingBand.scale_id == scale.id, GradingBand.org_id == org))).scalars().all() \
+        if scale else []
+    order = [b.grade for b in sorted(bands, key=lambda b: -(b.min_score or 0))]
+
+    per_subject: dict[str, list] = {}
+    for p in analysis.pupils:
+        for sid, pct in p.subject_pct.items():
+            per_subject.setdefault(sid, []).append(pct)
+
+    rows: list[GradeSummaryRow] = []
+    for sid, pcts in per_subject.items():
+        counts = {g: 0 for g in order}
+        for pct in pcts:
+            g = _grade_for(pct, bands)
+            if g in counts:
+                counts[g] += 1
+        rows.append(GradeSummaryRow(
+            subject_id=sid, subject_name=analysis.subject_names.get(sid, sid),
+            counts=counts, entered=len(pcts),
+            average=round_dp(sum(pcts) / len(pcts), 2) if pcts else None))
+    rows.sort(key=lambda r: r.subject_name.lower())
+
+    every = [pct for pcts in per_subject.values() for pct in pcts]
+    total_counts = {g: 0 for g in order}
+    for r in rows:
+        for g, n in r.counts.items():
+            total_counts[g] = total_counts.get(g, 0) + n
+    total_row = GradeSummaryRow(
+        subject_id=None, subject_name="All subjects", counts=total_counts,
+        entered=len(every),
+        average=round_dp(sum(every) / len(every), 2) if every else None)
+
+    return GradeSummaryResponse(
+        term_name=analysis.term_name, sub_term_name=analysis.sub_term_name,
+        class_name=_scoped_class_name(classes, class_id),
+        grades=order, rows=rows, total_row=total_row,
+        not_configured=analysis.not_configured)
+
+
+@router.get("/result-analysis/subject-performance", response_model=SubjectPerformanceResponse,
+            dependencies=[Depends(PermissionChecker("school_admin:read"))])
+async def subject_performance(term_id: str, sub_term_id: str, class_id: str | None = None,
+                              section_id: str | None = None,
+                              db: AsyncSession = Depends(get_db),
+                              current_user: User = Depends(get_current_active_user)):
+    """Per subject: how many sat it, the mean, the range, and the pass rate.
+
+    The pass mark is the school's own and is SUB-TERM AWARE (a mid-term passmark
+    differs from a full-term one), and `threshold_source` says whether it was
+    configured, partially configured or defaulted — a pass rate measured against a
+    threshold nobody set should not read as a settled fact.
+
+    `incomplete` counts pupils who have marks in the subject but not every
+    component the total needs. They are in NO other figure here: a mean that
+    folded them in at a deflated value would understate the subject, and a pass
+    rate would fail children for a mark their teacher has not entered.
+    """
+    from app.services.result_analysis import analyse_term, resolve_thresholds
+
+    org = current_user.org_id
+    analysis = await analyse_term(db, org, term_id, sub_term_id,
+                                  class_id=class_id, section_id=section_id)
+    passmark, _honours, source = await resolve_thresholds(db, org, analysis.sub_term_name)
+    classes = {c.id: c.name for c in (await db.execute(select(SchoolClass).where(
+        SchoolClass.org_id == org))).scalars().all()}
+
+    per_subject: dict[str, list] = {}
+    incomplete: dict[str, int] = {}
+    for p in analysis.pupils:
+        for sid, pct in p.subject_pct.items():
+            per_subject.setdefault(sid, []).append(pct)
+        for sid in p.incomplete_subjects:
+            incomplete[sid] = incomplete.get(sid, 0) + 1
+
+    rows: list[SubjectPerformanceRow] = []
+    for sid in set(per_subject) | set(incomplete):
+        pcts = per_subject.get(sid, [])
+        passed = sum(1 for x in pcts if x >= passmark)
+        rows.append(SubjectPerformanceRow(
+            subject_id=sid, subject_name=analysis.subject_names.get(sid, sid),
+            entered=len(pcts),
+            average=round_dp(sum(pcts) / len(pcts), 2) if pcts else None,
+            highest=round_dp(max(pcts), 2) if pcts else None,
+            lowest=round_dp(min(pcts), 2) if pcts else None,
+            passed=passed, failed=len(pcts) - passed,
+            pass_rate=round_dp(Decimal(passed) / Decimal(len(pcts)) * 100, 1) if pcts else None,
+            incomplete=incomplete.get(sid, 0)))
+    rows.sort(key=lambda r: r.subject_name.lower())
+
+    return SubjectPerformanceResponse(
+        term_name=analysis.term_name, sub_term_name=analysis.sub_term_name,
+        class_name=_scoped_class_name(classes, class_id),
+        passmark=passmark, threshold_source=source, rows=rows,
+        not_configured=analysis.not_configured)

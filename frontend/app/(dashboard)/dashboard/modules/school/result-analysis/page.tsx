@@ -4,17 +4,26 @@ import { Fragment, useMemo, useState } from "react";
 import {
   useAnalysisClasses, usePerformanceTracker, useBoosterList, useHonoursRoll,
   useMyTeachingAssignments, useTerms, useSubTerms, useCurrentSession,
+  useOrderOfMerit, useGradeSummary, useSubjectPerformance,
 } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
+import { MeritTab, SummaryTab, SubjectsTab } from "@/components/reports/ResultAnalysisAdminTabs";
 import { cn } from "@/lib/utils";
 import { Download, Loader2, AlertCircle } from "lucide-react";
 
-type Tab = "tracker" | "booster" | "honours";
+type Tab = "tracker" | "booster" | "honours" | "merit" | "summary" | "subjects";
 
-const TABS: { key: Tab; label: string }[] = [
+// The three a class teacher sees. An administrator sees these plus the
+// whole-school reports below — one route, two views, resolved by permission.
+const TEACHER_TABS: { key: Tab; label: string }[] = [
   { key: "tracker", label: "Performance Tracker" },
   { key: "booster", label: "Booster List" },
   { key: "honours", label: "Honours Roll" },
+];
+const ADMIN_TABS: { key: Tab; label: string }[] = [
+  { key: "merit", label: "Order of Merit" },
+  { key: "summary", label: "Grade Summary" },
+  { key: "subjects", label: "Subject Performance" },
 ];
 
 // An unmarked cell is not a zero. Everything that renders a score goes through
@@ -58,6 +67,16 @@ export default function ResultAnalysisPage() {
   const tracker = usePerformanceTracker(classId, subjectId);
   const booster = useBoosterList(termId, subTermId, classId);
   const honours = useHonoursRoll(termId, subTermId, classId);
+  // Whole-school when no class is chosen — these are an administrator's reports,
+  // and class_id is optional on all three.
+  const merit = useOrderOfMerit(termId, subTermId, classId || undefined);
+  const summary = useGradeSummary(termId, subTermId, classId || undefined);
+  // `subjectPerf`, not `subjects`: the latter is the teacher's own subject list
+  // for the tracker dropdown, and shadowing it silently broke that dropdown.
+  const subjectPerf = useSubjectPerformance(termId, subTermId, classId || undefined);
+  const visibleTabs = isAdmin ? [...TEACHER_TABS, ...ADMIN_TABS] : TEACHER_TABS;
+  // These need a term and sub-term, like Booster and Honours; the tracker does not.
+  const needsTerm = tab !== "tracker";
 
   const onClass = (v: string) => { setClassId(v); setSubjectId(""); };
 
@@ -123,7 +142,7 @@ export default function ResultAnalysisPage() {
       </div>
 
       <div className="flex gap-1 border-b border-slate-200">
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={cn("px-4 py-2 text-sm font-medium -mb-px border-b-2",
               tab === t.key ? "border-emerald-600 text-emerald-700" : "border-transparent text-slate-500 hover:text-slate-700")}>
@@ -144,6 +163,9 @@ export default function ResultAnalysisPage() {
         <ThresholdTab title="Honours Roll" query={honours} classId={classId}
                       termId={termId} subTermId={subTermId} kind="honours" />
       )}
+      {tab === "merit" && <MeritTab query={merit} termId={termId} subTermId={subTermId} />}
+      {tab === "summary" && <SummaryTab query={summary} termId={termId} subTermId={subTermId} />}
+      {tab === "subjects" && <SubjectsTab query={subjectPerf} termId={termId} subTermId={subTermId} />}
     </div>
   );
 }
@@ -258,11 +280,16 @@ function TrackerTab({ classId, subjectId, setSubjectId, subjects, query }: {
                 <th /><th />
                 {data.columns.map((c: any) => (
                   <Fragment key={c.key}>
-                    <th className="px-2 py-1 font-normal border-l border-slate-200">Score</th>
+                    {/* Every tracker value is a percentage — subject_pct is
+                        value/max*100 — which is what makes Autumn and Spring
+                        comparable side by side. The unit was missing from the
+                        header, so a capped figure elsewhere could be read into
+                        these. */}
+                    <th className="px-2 py-1 font-normal border-l border-slate-200">Score %</th>
                     <th className="px-2 py-1 font-normal">Grade</th>
                   </Fragment>
                 ))}
-                <th className="px-2 py-1 font-normal border-l border-slate-200">Score</th>
+                <th className="px-2 py-1 font-normal border-l border-slate-200">Score %</th>
                 <th className="px-2 py-1 font-normal">Grade</th>
               </tr>
             </thead>

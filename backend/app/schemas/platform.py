@@ -1123,6 +1123,13 @@ class CardSubjectRow(BaseModel):
     subject_id: str
     subject_name: str
     values: dict[str, Optional[Decimal]] = Field(default_factory=dict)   # column key -> value
+    # Cumulative columns whose components are not all marked for this pupil. Their
+    # entry in `values` is None rather than a number: an unmarked component is
+    # scored as zero by the evaluator, so a total built on one understates what the
+    # child actually earned, on the page their parent reads. `grade` is withheld
+    # for the same reason — a letter from a deflated total is the same false claim
+    # in one character — and the subject is left out of the average and total.
+    incomplete_components: list[str] = Field(default_factory=list)
     grade: Optional[str] = None
     remark: Optional[str] = None
     subject_arm_average: Optional[Decimal] = None
@@ -1447,3 +1454,83 @@ class AnalysisClassOption(BaseModel):
     id: str
     name: Optional[str] = None
     section_id: Optional[str] = None
+
+
+# ── Result Analysis wave 2: Order of Merit, Grade Summary, Subject Performance ──
+#
+# All three are PIVOTS of `analyse_term`. None computes a percentage of its own:
+# the Booster List, the Honour Roll, the Performance Tracker and these read one
+# function, so no two screens can disagree about what a pupil scored.
+
+class MeritRow(BaseModel):
+    position: int
+    student_id: str
+    student_name: str
+    admission_no: Optional[str] = None
+    class_name: Optional[str] = None
+    average: Decimal
+    grade: Optional[str] = None
+    subjects_counted: int = 0
+    # True when this pupil shares their position with another. Standard
+    # competition ranking (1, 2, 2, 4) — two equal averages are equal, and
+    # printing them as 2nd and 3rd would assert an order the marks do not contain.
+    tied: bool = False
+
+
+class OrderOfMeritResponse(BaseModel):
+    term_name: Optional[str] = None
+    sub_term_name: Optional[str] = None
+    class_name: Optional[str] = None
+    rows: list[MeritRow] = Field(default_factory=list)
+    considered: int = 0
+    # Pupils in scope with no marks. Never ranked: their standing is unknown, not
+    # last, and a merit list that places them would be inventing a result.
+    unmarked: int = 0
+    not_configured: bool = False
+
+
+class GradeSummaryRow(BaseModel):
+    subject_id: Optional[str] = None      # None on the "All subjects" total row
+    subject_name: str
+    # grade letter -> count, for the school's own bands in their own order.
+    counts: dict[str, int] = Field(default_factory=dict)
+    entered: int = 0                      # marks counted in this row
+    average: Optional[Decimal] = None
+
+
+class GradeSummaryResponse(BaseModel):
+    term_name: Optional[str] = None
+    sub_term_name: Optional[str] = None
+    class_name: Optional[str] = None
+    grades: list[str] = Field(default_factory=list)   # column order, best first
+    rows: list[GradeSummaryRow] = Field(default_factory=list)
+    total_row: Optional[GradeSummaryRow] = None
+    not_configured: bool = False
+
+
+class SubjectPerformanceRow(BaseModel):
+    subject_id: str
+    subject_name: str
+    entered: int = 0                      # pupils with a usable mark
+    average: Optional[Decimal] = None
+    highest: Optional[Decimal] = None
+    lowest: Optional[Decimal] = None
+    passed: int = 0
+    failed: int = 0
+    pass_rate: Optional[Decimal] = None   # None when nobody has a mark
+    # Pupils who HAVE marks in this subject but not every component the total
+    # needs. Excluded from every figure above rather than scored low, and surfaced
+    # so a mean computed over 12 of 15 pupils does not read as the whole class.
+    incomplete: int = 0
+
+
+class SubjectPerformanceResponse(BaseModel):
+    term_name: Optional[str] = None
+    sub_term_name: Optional[str] = None
+    class_name: Optional[str] = None
+    passmark: Decimal
+    # 'configured' | 'partial' | 'default' — naming a subject's pass rate against a
+    # threshold nobody set should not look like a settled fact.
+    threshold_source: str = "configured"
+    rows: list[SubjectPerformanceRow] = Field(default_factory=list)
+    not_configured: bool = False

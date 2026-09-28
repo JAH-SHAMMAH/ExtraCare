@@ -263,6 +263,30 @@ export function useHonoursRoll(term_id: string, sub_term_id: string, class_id: s
   });
 }
 
+// Wave 2 admin reports. Same enabled-gating as the tabs above: a request that
+// cannot succeed is never sent, so a refusal can never render as an empty table.
+export function useOrderOfMerit(term_id: string, sub_term_id: string, class_id?: string) {
+  return useQuery<any>({
+    queryKey: ["order-of-merit", term_id, sub_term_id, class_id ?? "all"],
+    queryFn: () => platformApi.resultAnalysis.merit({ term_id, sub_term_id, class_id }),
+    enabled: !!term_id && !!sub_term_id,
+  });
+}
+export function useGradeSummary(term_id: string, sub_term_id: string, class_id?: string) {
+  return useQuery<any>({
+    queryKey: ["grade-summary", term_id, sub_term_id, class_id ?? "all"],
+    queryFn: () => platformApi.resultAnalysis.gradeSummary({ term_id, sub_term_id, class_id }),
+    enabled: !!term_id && !!sub_term_id,
+  });
+}
+export function useSubjectPerformance(term_id: string, sub_term_id: string, class_id?: string) {
+  return useQuery<any>({
+    queryKey: ["subject-performance", term_id, sub_term_id, class_id ?? "all"],
+    queryFn: () => platformApi.resultAnalysis.subjectPerformance({ term_id, sub_term_id, class_id }),
+    enabled: !!term_id && !!sub_term_id,
+  });
+}
+
 export function useTermPeriods(sessionId?: string) {
   return useQuery<any[]>({ queryKey: ["term-periods", sessionId ?? "all"], queryFn: () => platformApi.termPeriods.list(sessionId), enabled: !!sessionId });
 }
