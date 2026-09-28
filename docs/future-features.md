@@ -175,3 +175,48 @@ id → name helper, and is where a display-name lookup would naturally live.
 **Open question:** is a rename actually wanted? If Fairview will always say
 "Term 1/2/3", the indirection is cost with no payoff and only the comments need
 fixing.
+
+---
+
+## 8. An all-unmarked class passes the publish guard
+
+**Found while:** verifying the component-coverage guard across all 31 classes after
+Spring was configured. Logged rather than fixed — it is a different failure from
+the one the guard was built for, and it predates that guard.
+
+`component_coverage` refuses a publish when a component of the term's display
+cumulative is unmarked *for a pupil who has other marks in that subject*. A pupil
+with **no marks at all** in a subject is deliberately not listed: unassessed is a
+different situation from part-marked, is not fixed by entering one component, and
+listing them would bury the real gaps under every subject a class does not take.
+
+The consequence is that a class where **nobody** has been marked has nothing
+missing, and passes.
+
+Measured on 2026-09-28, Spring, immediately after the marks were written:
+
+| | classes |
+|---|---|
+| pass with marks (Secondary: JSS1–3, SSS1–3 A/B) | 12 |
+| pass with **no marks at all** (Nursery, Pre-Nursery, Reception, Year 1–6) | 19 |
+| blocked | 0 |
+
+So "31 classes pass the guard" is true and misleading: 19 of them would publish a
+card with no marks on it. The guard stops a *wrong* number reaching a parent; it
+does not stop an *empty* one.
+
+**Why it is not simply a bug.** Refusing every unmarked class would block a school
+that has legitimately not started marking a term, and would fire on the 19 Primary
+and Early Years classes for as long as they have no Secondary-style assessments —
+which, for Early Years, is permanent by design (EYFS domains, not subject marks).
+A fix has to distinguish "not marked yet" from "not marked in this scheme at all",
+and that distinction does not exist in the schema today.
+
+**If it is taken up:** the cheapest honest version is a separate, explicit check at
+publish — "this class has no marks for this term, publish anyway?" — rather than
+folding it into component coverage, whose contract is about partial marking. The
+two failures deserve two messages.
+
+**Not urgent:** nothing publishes itself, publishing is an administrator's
+deliberate act, and the workflow ladder (draft → submitted → reviewed → approved →
+published) already puts three steps in front of it.
