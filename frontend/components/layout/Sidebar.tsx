@@ -130,11 +130,6 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/subject-selection", label: "Subject Selection", icon: BookMarked },
       { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: FileText },
       { href: "/dashboard/modules/school/report-workflow", label: "Report Workflow", icon: FolderOpen },
-      // One entry, two views. It resolves by permission inside the page: an admin
-      // gets the whole-school reports, a class teacher gets their own class's
-      // Performance Tracker / Booster List / Honours Roll. Shown to both rather
-      // than duplicated, because it is the same question asked at two scopes.
-      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3 },
     ],
   },
   {
@@ -279,6 +274,12 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/grade-analysis", label: "Grade Analysis", icon: BarChart3 },
+      // One route, two views, resolved by permission inside the page: a class
+      // teacher gets their own class's Performance Tracker / Booster List /
+      // Honours Roll, an administrator the whole-school reports. It belongs in
+      // every report section beside Grade Analysis — the section filter above
+      // then shows it only for the levels a teacher actually teaches in.
+      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3 },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
       { href: "/dashboard/modules/school/promotion", label: "Promotion Manager", icon: BarChart3 },
       { href: "/dashboard/modules/school/transfer", label: "Transfer Manager", icon: UserCog },
@@ -303,6 +304,12 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/grade-analysis", label: "Grade Analysis", icon: BarChart3 },
+      // One route, two views, resolved by permission inside the page: a class
+      // teacher gets their own class's Performance Tracker / Booster List /
+      // Honours Roll, an administrator the whole-school reports. It belongs in
+      // every report section beside Grade Analysis — the section filter above
+      // then shows it only for the levels a teacher actually teaches in.
+      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3 },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
       { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: BookOpen },
     ],
@@ -322,6 +329,12 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/grade-analysis", label: "Grade Analysis", icon: BarChart3 },
+      // One route, two views, resolved by permission inside the page: a class
+      // teacher gets their own class's Performance Tracker / Booster List /
+      // Honours Roll, an administrator the whole-school reports. It belongs in
+      // every report section beside Grade Analysis — the section filter above
+      // then shows it only for the levels a teacher actually teaches in.
+      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3 },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
     ],
   },

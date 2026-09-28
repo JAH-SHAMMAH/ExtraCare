@@ -128,6 +128,13 @@ const HIDDEN = [
 const VISIBLE = [
   "/dashboard/modules/school/reports-view",
   "/dashboard/modules/school/make-report",
+  // Result Analysis — ONE route, two views. A class teacher gets their own
+  // class's Performance Tracker / Booster List / Honours Roll; an admin gets the
+  // whole-school reports. Gated on school:reports:read so the classroom tier can
+  // open it at all, with the per-class and per-subject scoping enforced
+  // server-side. If this ever flips to school_admin:read the teacher view becomes
+  // unreachable while still existing, which is the worst of both.
+  "/dashboard/modules/school/result-analysis",
   "/dashboard/modules/school/mark-books",
   "/dashboard/modules/school/report-cards",
   "/dashboard/modules/school/grades",
