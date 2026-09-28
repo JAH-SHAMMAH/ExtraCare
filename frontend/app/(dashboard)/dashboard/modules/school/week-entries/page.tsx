@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTermState, useTermNames } from "@/hooks/usePlatform";
 import { useWeeks, useCreateWeek, useGenerateWeeks, useUpdateWeek, useDeleteWeek } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
-import { TERMS } from "@/lib/terms";
+
 import { cn, formatDate } from "@/lib/utils";
 import {
   CalendarClock, Plus, X, Loader2, Lock, Unlock, Trash2, Sparkles, Sun, Pencil, AlertTriangle,
@@ -19,7 +20,10 @@ function defaultAcademicYear(): string {
 export default function WeekEntriesPage() {
   const canWrite = useHasPermission("settings:write");
   const [year, setYear] = useState(defaultAcademicYear());
-  const [term, setTerm] = useState<string>(TERMS[0]);
+  // Was TERMS[0] — the first entry of a hardcoded list, i.e. a guess at what the
+  // school calls its first term. useTermState seeds from the school's real default.
+  const [term, setTerm] = useTermState();
+  const termNames = useTermNames();
   const [showAdd, setShowAdd] = useState(false);
   const [showGen, setShowGen] = useState(false);
   const [editing, setEditing] = useState<AcademicWeek | null>(null);
@@ -43,7 +47,7 @@ export default function WeekEntriesPage() {
       {/* Scope */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 mb-5 flex flex-wrap items-end gap-3">
         <div><label className="label">Academic year</label><input value={year} onChange={(e) => setYear(e.target.value)} placeholder="2025/2026" className="input w-40" /></div>
-        <div><label className="label">Term</label><select value={term} onChange={(e) => setTerm(e.target.value)} className="input w-36">{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
+        <div><label className="label">Term</label><select value={term} onChange={(e) => setTerm(e.target.value)} className="input w-36">{termNames.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
         {canWrite && scoped && (
           <div className="flex gap-2 ml-auto">
             {weeks.length === 0 && <button onClick={() => setShowGen(true)} className="btn-secondary gap-2"><Sparkles size={15} />Auto-generate</button>}

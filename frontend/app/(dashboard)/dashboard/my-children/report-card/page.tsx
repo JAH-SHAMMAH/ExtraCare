@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTermState, useTermNames } from "@/hooks/usePlatform";
 import Link from "next/link";
 import { useMyContexts, type ParentChild } from "@/hooks/useMyContexts";
 import { useReportCard } from "@/hooks/useSchool";
 import { getInitials } from "@/lib/utils";
 import { formatMark } from "@/lib/reportEntry";
 import { GraduationCap, Loader2, ArrowLeft, FileText, ShieldCheck } from "lucide-react";
-import { TERMS, DEFAULT_TERM } from "@/lib/terms";
+
 
 /**
  * Parent report card — the child-scoped view a parent actually uses. Data is
@@ -20,7 +21,11 @@ export default function ParentReportCardPage() {
   const children: ParentChild[] = data?.as_parent?.children ?? [];
 
   const [childId, setChildId] = useState("");
-  const [term, setTerm] = useState<string>(DEFAULT_TERM);
+  // A parent holds school:reports:read, which GET /platform/academic-terms accepts,
+  // so the real list loads here too. useTermState seeds from the school's default
+  // once it arrives and never overrides a term the parent has picked.
+  const [term, setTerm] = useTermState();
+  const termNames = useTermNames();
 
   useEffect(() => {
     if (!childId && children.length) setChildId(children[0].id);
@@ -61,7 +66,7 @@ export default function ParentReportCardPage() {
             <div className="min-w-[140px]">
               <label className="label">Term</label>
               <select value={term} onChange={(e) => setTerm(e.target.value)} className="input">
-                {TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}
+                {termNames.map((t) => (<option key={t} value={t}>{t}</option>))}
               </select>
             </div>
           </div>

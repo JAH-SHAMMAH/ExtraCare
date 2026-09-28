@@ -1,14 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTermNames } from "@/hooks/usePlatform";
 import { usePastoralStudents, usePointTypes, useAddPoint, usePointEntries } from "@/hooks/usePastoral";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
 import { Loader2, PlusCircle, Award } from "lucide-react";
 
-const TERMS = ["Opening", "Autumn Term", "Spring Term", "Summer Term"];
 
 export default function PointEntryPage() {
+  // The school's real terms. This page carried its own copy —
+  // ["Opening", "Autumn Term", "Spring Term", "Summer Term"] — which the database never used:
+  // the terms are named Autumn / Spring / Summer and there is no term called
+  // "Opening" at all, so every value this dropdown produced matched nothing. Nothing surfaced it because these tables are empty.
+  const termNames = useTermNames();
   const canWrite = useHasPermission("school:behaviour:write");
   const [search, setSearch] = useState("");
   const { data: roster = [] } = usePastoralStudents(search ? { search } : undefined);
@@ -66,7 +71,7 @@ export default function PointEntryPage() {
               <div>
                 <label className="label">Term</label>
                 <select value={f.term} onChange={(e) => setF({ ...f, term: e.target.value })} className="input">
-                  {TERMS.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {termNames.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
             </div>

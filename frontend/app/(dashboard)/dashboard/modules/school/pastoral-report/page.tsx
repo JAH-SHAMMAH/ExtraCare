@@ -1,15 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import { useTermNames } from "@/hooks/usePlatform";
 import { usePastoralReport, useRemarkBank, useAddPastoralRemark, useDeletePastoralRemark } from "@/hooks/usePastoral";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
 import { cn } from "@/lib/utils";
 import { Loader2, FileText, Trash2, Home, BedDouble } from "lucide-react";
 
-const TERMS = ["Autumn Term", "Spring Term", "Summer Term"];
 
 export default function PastoralReportPage() {
+  // The school's real terms. This page carried its own copy —
+  // ["Autumn Term", "Spring Term", "Summer Term"] — which the database never used:
+  // the terms are named Autumn / Spring / Summer, so every value this dropdown
+  // produced matched nothing. Nothing surfaced it because these tables are empty.
+  const termNames = useTermNames();
   const canWrite = useHasPermission("school:hostel:write");
   const [studentId, setStudentId] = useState<string | null>(null);
   const [term, setTerm] = useState("");
@@ -31,7 +36,7 @@ export default function PastoralReportPage() {
 
       <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3 mb-6">
         <div className="flex-1 min-w-[220px]"><label className="label">Student</label><EntityPicker type="student" value={studentId} onChange={setStudentId} /></div>
-        <div><label className="label">Term</label><select value={term} onChange={(e) => setTerm(e.target.value)} className="input"><option value="">All terms</option>{TERMS.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+        <div><label className="label">Term</label><select value={term} onChange={(e) => setTerm(e.target.value)} className="input"><option value="">All terms</option>{termNames.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
       </div>
 
       {!studentId ? (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTermNames } from "@/hooks/usePlatform";
 import {
   useHostels, useHostelStudents, useHostelLifeGrades, useHostelCommentBank,
   useHostelLifeComments, useAddHostelLifeComment, useDeleteHostelLifeComment, useHostelResults,
@@ -9,7 +10,6 @@ import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn } from "@/lib/utils";
 import { Loader2, Heart, Trash2, ClipboardList } from "lucide-react";
 
-const TERMS = ["Autumn Term", "Spring Term", "Summer Term"];
 type Tab = "entry" | "results";
 
 export default function HostelLifePage() {
@@ -34,6 +34,11 @@ export default function HostelLifePage() {
 }
 
 function LifeComments({ canWrite }: { canWrite: boolean }) {
+  // The school's real terms. This page carried its own copy —
+  // ["Autumn Term", "Spring Term", "Summer Term"] — which the database never used:
+  // the terms are named Autumn / Spring / Summer, so every value this dropdown
+  // produced matched nothing. Nothing surfaced it because these tables are empty.
+  const termNames = useTermNames();
   const { data: hostelData } = useHostels();
   const hostels = hostelData?.items ?? [];
   const [f, setF] = useState({ hostel_id: "", student_id: "", term: "Autumn Term", grade: "", comment: "" });
@@ -70,7 +75,7 @@ function LifeComments({ canWrite }: { canWrite: boolean }) {
             <div>
               <label className="label">Term</label>
               <select value={f.term} onChange={(e) => setF({ ...f, term: e.target.value })} className="input">
-                {TERMS.map((t) => <option key={t} value={t}>{t}</option>)}
+                {termNames.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
           </div>
@@ -133,6 +138,11 @@ function LifeComments({ canWrite }: { canWrite: boolean }) {
 }
 
 function ResultView() {
+  // The school's real terms. This page carried its own copy —
+  // ["Autumn Term", "Spring Term", "Summer Term"] — which the database never used:
+  // the terms are named Autumn / Spring / Summer, so every value this dropdown
+  // produced matched nothing. Nothing surfaced it because these tables are empty.
+  const termNames = useTermNames();
   const { data: hostelData } = useHostels();
   const hostels = hostelData?.items ?? [];
   const [hostelId, setHostelId] = useState("");
@@ -148,7 +158,7 @@ function ResultView() {
         </select>
         <select value={term} onChange={(e) => setTerm(e.target.value)} className="input w-auto">
           <option value="">All terms</option>
-          {TERMS.map((t) => <option key={t} value={t}>{t}</option>)}
+          {termNames.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
       </div>
 

@@ -72,11 +72,42 @@ export function useCurrentTerm(): string {
   const { data } = useCurrentSession();
   return data?.term ?? "";
 }
-// A term state seeded from the org's current term: applies it once when it loads,
-// but never overrides a value the user has picked (touched wins). `fallback` is
-// the value used until/unless a current term exists.
-export function useTermState(fallback = ""): [string, (v: string) => void] {
+// The school's own term NAMES, in configured order.
+//
+// This is the term vocabulary. It used to be a hardcoded array in lib/terms.ts
+// that had to be edited by hand whenever a term was renamed in Report Setup —
+// and when it fell out of step (the file said "Term 1/2/3" while the school's
+// terms were Autumn/Spring/Summer) nothing errored: the queries simply matched
+// nothing and every parent opened an empty report card. A list that cannot drift
+// is the fix; there is no second copy to keep in step.
+//
+// Readable by every role that needs it: GET /platform/academic-terms accepts
+// school:read OR school:reports:read, and parents, students and the classroom
+// tier all hold the latter.
+export function useTermNames(): string[] {
+  const { data } = useTerms();
+  return ((data || []) as Array<{ name: string }>).map((t) => t.name);
+}
+
+// The term a form should start on: the org's current term when it has one and that
+// term still exists, else the school's first configured term. Never a hardcoded
+// name — the old DEFAULT_TERM was a guess that outlived the term it named.
+export function useTermDefault(): string {
   const current = useCurrentTerm();
+  const names = useTermNames();
+  if (current && names.includes(current)) return current;
+  return names[0] || "";
+}
+
+// A term state seeded from the org's default term: applies it once when it loads,
+// but never overrides a value the user has picked (touched wins). `fallback` is
+// the value used until that arrives.
+//
+// Seeded from useTermDefault rather than useCurrentTerm so that a school with no
+// current session still lands on a real term instead of nothing — previously the
+// callers papered over that by passing a hardcoded DEFAULT_TERM.
+export function useTermState(fallback = ""): [string, (v: string) => void] {
+  const current = useTermDefault();
   const [term, setTermRaw] = useState(fallback);
   const touched = useRef(false);
   useEffect(() => { if (!touched.current && current) setTermRaw(current); }, [current]);

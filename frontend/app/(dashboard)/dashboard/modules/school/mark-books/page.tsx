@@ -5,7 +5,7 @@ import {
   useTranscripts, useCreateTranscript, useUpdateTranscript, useDeleteTranscript,
   useAddTranscriptEntry, useDeleteTranscriptEntry,
 } from "@/hooks/useAcademics";
-import { useCurrentSession } from "@/hooks/usePlatform";
+import { useCurrentSession, useTermNames } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
 import { PrintLetterhead } from "@/components/branding/Brand";
@@ -13,12 +13,13 @@ import { cn } from "@/lib/utils";
 import {
   FileText, Plus, X, Loader2, Trash2, AlertTriangle, ArrowLeft, CheckCircle2, Printer,
 } from "lucide-react";
-import { TERMS } from "@/lib/terms";
+
 import type { Transcript } from "@/types";
 
 type EntryDraft = { subject_name: string; score: string; grade: string };
 
 export default function MarkBooksPage() {
+  const termNames = useTermNames();
   const canWrite = useHasPermission("school:grades:write");
   const [openId, setOpenId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -64,7 +65,7 @@ export default function MarkBooksPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div><label className="label">Student *</label><EntityPicker type="student" value={form.student_id || null} onChange={(id) => setForm({ ...form, student_id: id || "" })} /></div>
             <div><label className="label">Academic Year</label><input value={form.academic_year} onChange={(e) => setForm({ ...form, academic_year: e.target.value })} className="input" placeholder="2025/2026" /></div>
-            <div><label className="label">Term</label><select value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input"><option value="">— Term —</option>{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
+            <div><label className="label">Term</label><select value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input"><option value="">— Term —</option>{termNames.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
           </div>
           <label className="label">Subjects</label>
           <div className="space-y-2 mb-3">

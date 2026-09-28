@@ -5,12 +5,13 @@ import {
   useSessions, useCreateSession, useUpdateSession, useDeleteSession,
   useHouses, useCreateHouse, useDeleteHouse,
   useBands, useCreateBand, useDeleteBand,
+  useTermNames,
 } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Settings, Loader2, Trash2, Plus, Pencil } from "lucide-react";
-import { TERMS } from "@/lib/terms";
+
 import type { AcademicSession } from "@/types";
 import { ReportConfig } from "./ReportConfig";
 import { SchoolSections } from "./SchoolSections";
@@ -48,6 +49,7 @@ export default function SchoolSetupPage() {
 const BLANK_SESSION = { name: "", term: "", start_date: "", end_date: "", is_current: false };
 
 function Sessions({ canWrite }: { canWrite: boolean }) {
+  const termNames = useTermNames();
   const { data } = useSessions();
   const create = useCreateSession();
   const update = useUpdateSession();
@@ -72,7 +74,7 @@ function Sessions({ canWrite }: { canWrite: boolean }) {
       {canWrite && (
         <div className="bg-white rounded-xl border border-slate-200 p-5 mb-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
           <div><label className="label">Session *</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className="input" placeholder="2025/2026" /></div>
-          <div><label className="label">Term</label><select value={f.term} onChange={(e) => setF({ ...f, term: e.target.value })} className="input"><option value="">— Term —</option>{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
+          <div><label className="label">Term</label><select value={f.term} onChange={(e) => setF({ ...f, term: e.target.value })} className="input"><option value="">— Term —</option>{termNames.map((t) => (<option key={t} value={t}>{t}</option>))}</select></div>
           <div><label className="label">Start</label><input type="date" value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} className="input" /></div>
           <div><label className="label">End</label><input type="date" value={f.end_date} onChange={(e) => setF({ ...f, end_date: e.target.value })} className="input" /></div>
           <button onClick={submit} disabled={!f.name.trim() || busy} className="btn-primary justify-center">{busy ? <Loader2 size={14} className="animate-spin" /> : editingId ? "Update" : "Add"}</button>

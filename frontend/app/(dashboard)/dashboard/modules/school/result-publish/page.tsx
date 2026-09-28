@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useClasses, useGradePublishStatus, usePublishGrades } from "@/hooks/useSchool";
-import { useTermState } from "@/hooks/usePlatform";
+import { useTermState, useTermNames } from "@/hooks/usePlatform";
 import { cn } from "@/lib/utils";
 import { CheckCircle2, EyeOff, Loader2, ShieldAlert, Send } from "lucide-react";
-import { TERMS, DEFAULT_TERM } from "@/lib/terms";
+
 import type { SchoolClass } from "@/types";
 
 /**
@@ -16,7 +16,8 @@ import type { SchoolClass } from "@/types";
  */
 export default function ResultPublishPage() {
   const [classId, setClassId] = useState("");
-  const [term, setTerm] = useTermState(DEFAULT_TERM);
+  const [term, setTerm] = useTermState();
+  const termNames = useTermNames();
 
   const { data: classesData } = useClasses({ page_size: 100 });
   const classes: SchoolClass[] = classesData?.items || [];
@@ -53,7 +54,7 @@ export default function ResultPublishPage() {
         <div>
           <label className="label">Term</label>
           <select value={term} onChange={(e) => setTerm(e.target.value)} className="input">
-            {TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}
+            {termNames.map((t) => (<option key={t} value={t}>{t}</option>))}
           </select>
         </div>
       </div>

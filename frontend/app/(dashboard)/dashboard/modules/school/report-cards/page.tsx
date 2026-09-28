@@ -3,13 +3,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useStudents, useReportCard, useSaveReportMeta, useSaveDomainRatings, useClasses } from "@/hooks/useSchool";
-import { useTermState, useGradingScales, useSections, useTerms } from "@/hooks/usePlatform";
+import { useTermState, useTermNames, useGradingScales, useSections, useTerms } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { useAuthStore } from "@/lib/store";
 import { cn, getInitials } from "@/lib/utils";
 import { FileText, Search, Printer, Loader2, Pencil, X, ClipboardCheck, GraduationCap } from "lucide-react";
 import { PrintLetterhead } from "@/components/branding/Brand";
-import { TERMS, DEFAULT_TERM } from "@/lib/terms";
+
 import type { Student, ReportCardDomain, SchoolClass, SchoolSection } from "@/types";
 
 export default function ReportCardsPage() {
@@ -26,7 +26,8 @@ export default function ReportCardsPage() {
 // ── Student view: just term dropdown, show own report ──
 
 function StudentReportCardsView() {
-  const [term, setTerm] = useTermState(DEFAULT_TERM);
+  const [term, setTerm] = useTermState();
+  const termNames = useTermNames();
   // The report-card endpoint keys on Student.id, which is NOT the signed-in
   // User.id. Passing the user id 403s ("You can only access your own records")
   // and this page renders its empty state as though no report existed — which
@@ -47,7 +48,7 @@ function StudentReportCardsView() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex items-center justify-between gap-3 no-print">
-        <select value={term} onChange={(e) => setTerm(e.target.value)} className="input w-40">{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select>
+        <select value={term} onChange={(e) => setTerm(e.target.value)} className="input w-40">{termNames.map((t) => (<option key={t} value={t}>{t}</option>))}</select>
         {reportCard && (<button onClick={() => window.print()} className="btn-secondary gap-2"><Printer size={14} />Print</button>)}
       </div>
 
@@ -74,7 +75,8 @@ function TeacherReportCardsView() {
   const [search, setSearch] = useState("");
   const [classId, setClassId] = useState("");
   const [selectedStudent, setSelectedStudent] = useState("");
-  const [term, setTerm] = useTermState(DEFAULT_TERM);
+  const [term, setTerm] = useTermState();
+  const termNames = useTermNames();
   const canWrite = useHasPermission("school:reports:write");
 
   const { data: sections = [] } = useSections();
@@ -144,7 +146,7 @@ function TeacherReportCardsView() {
         {/* Report card */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex items-center justify-between gap-3 no-print">
-            <select value={term} onChange={(e) => setTerm(e.target.value)} className="input w-40">{TERMS.map((t) => (<option key={t} value={t}>{t}</option>))}</select>
+            <select value={term} onChange={(e) => setTerm(e.target.value)} className="input w-40">{termNames.map((t) => (<option key={t} value={t}>{t}</option>))}</select>
             {reportCard && (<button onClick={() => window.print()} className="btn-secondary gap-2"><Printer size={14} />Print</button>)}
           </div>
 
