@@ -14,25 +14,44 @@ Fairview runs on **Render**, on **PostgreSQL**, as **two services**:
 | | |
 |---|---|
 | backend | `Fairview_Portal` — API at `https://fairview-portal.onrender.com` |
-| frontend | a separate Node/Next service |
+| frontend | a separate Node/Next service — `https://fairview-portal-nebp.onrender.com` |
 | database | Render PostgreSQL (`fairview_ndata`), driver `asyncpg` |
 
-### ⚠️ MIGRATIONS DO NOT APPLY THEMSELVES
+### MIGRATIONS APPLY THEMSELVES ON PUSH — via the Start Command
 
-`backend/entrypoint.sh` does run `alembic upgrade head` — and **Render never
-executes it.** The backend service is not built from `backend/Dockerfile`, so the
-Dockerfile's `ENTRYPOINT` is never invoked. Confirmed on 2026-09-26: a deploy put
-new code live (new routes answering, `/health` reporting
-`environment: production`) while `alembic_version` stayed put.
+`alembic upgrade head` is folded into the backend service's **Start Command**, so
+pushing to `main` migrates the database as part of bringing the new version up.
+Revisions **128, 129, 130, 131 and 132 all applied this way**, unattended, in
+roughly 40–60 seconds from push. §7 has the exact command.
 
-It follows that **no migration has ever reached this database via a Render
-deploy** — whatever applied revisions 1–125 did so by some other route. If you
-are looking for the automation, there isn't any.
+This is worth stating plainly because this document used to say the opposite, in
+bold, at the top: that migrations never applied themselves and that no migration
+had ever reached this database via a Render deploy. That was true when written —
+126 and 127 were applied by hand — and it stopped being true once the Start
+Command was changed. It is left here rather than deleted because a runbook that
+quietly reverses itself teaches nobody anything.
 
-**The fix in place:** `alembic upgrade head` is folded into the service's **Start
-Command**, so auto-deploy on push now migrates as part of bringing the new
-version up. See §7 for the exact command and its trade-offs. `Pre-Deploy
-Command` would be the better home for it but needs a paid instance type.
+**What still bites, and does not go away because it now works:**
+
+- **It runs on every START, not only on every deploy.** A free instance spins
+  down when idle, so every wake runs it too. At head that is a clean no-op, so it
+  costs a second or two of an already slow cold start.
+- **It fails CLOSED.** `&&` means a failing migration stops uvicorn from ever
+  starting. That is deliberate — an outage beats an app serving against a schema
+  it disagrees with — but a bad migration takes the service down until it is
+  fixed. Render a migration with `alembic upgrade <rev> --sql` first.
+- **A second INSTANCE would break it.** Two instances starting together run
+  Alembic concurrently and Alembic takes no lock. This is safe only while the
+  service runs exactly one instance. Scaling up means moving the migration out of
+  the Start Command first. (Multiple uvicorn *workers* are fine — the command
+  runs once, then execs uvicorn, which forks afterwards.)
+- **`Pre-Deploy Command` is still the better home** and still needs a **paid**
+  instance type, which is why it is not used.
+
+`backend/entrypoint.sh` also runs `alembic upgrade head`, and **Render still
+never executes it**: the service is not built from `backend/Dockerfile`, so that
+`ENTRYPOINT` is never invoked. It is dead code on Render. Do not "fix" a
+migration problem by editing it — nothing runs it.
 
 **To apply one by hand** (the escape hatch, and how 126/127 were applied):
 
@@ -44,9 +63,10 @@ DATABASE_URL="postgresql+asyncpg://<prod-dsn>" python -m alembic history -r curr
 DATABASE_URL="postgresql+asyncpg://<prod-dsn>" python -m alembic upgrade head
 ```
 
-Verify either way by reading the database, never by probing the API: a healthy
-API response proves nothing, because the old instance serves happily while
-nothing new has shipped.
+Verify either way by READING `alembic_version`, never by probing the API. A
+healthy API response proves nothing: the old instance serves happily while
+nothing new has shipped, and on a free instance it may not even have restarted
+yet. The only thing that answers "did the migration run" is the row itself.
 
 ```sql
 SELECT version_num FROM alembic_version;
