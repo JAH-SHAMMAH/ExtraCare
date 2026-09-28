@@ -128,9 +128,16 @@ async def test_override_enables_beta_on_free(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_override_false_clawsback_plan_default(client: AsyncClient):
-    """Enterprise ships ai_assistant=True by default, but an org can be
-    explicitly clawed back (e.g. compliance opt-out)."""
+async def test_a_per_tenant_false_no_longer_refuses(client: AsyncClient):
+    """This asserted the clawback path: features={"ai_assistant": False} used to
+    produce a 403. The expectation is inverted deliberately.
+
+    Fairview's portal sells no plans, so there is no entitlement to claw back to,
+    and a teacher meeting "not available on your plan" was being told to buy
+    something that does not exist. `has_feature` now always allows; the override
+    remains in the column and in `resolve_features` for display, and stops being a
+    way to reintroduce a tier refusal by hand.
+    """
     res = await _register(client, "ff-clawback", "school")
     await _mutate_org(
         client, "ff-clawback",
@@ -139,21 +146,22 @@ async def test_override_false_clawsback_plan_default(client: AsyncClient):
     )
 
     r = await client.get("/api/v1/_test/ai", headers=_auth(res["access_token"]))
-    assert r.status_code == 403, r.text
-    detail = r.json()["detail"]
-    assert detail["error"] == "feature_disabled"
-    assert detail["flag"] == "ai_assistant"
+    assert r.status_code == 200, r.text
 
 
 @pytest.mark.asyncio
-async def test_require_feature_403_for_missing_flag(client: AsyncClient):
-    """Free plan doesn't have ai_assistant and org hasn't overridden."""
+async def test_the_free_tier_no_longer_refuses_an_unlisted_flag(client: AsyncClient):
+    """FREE with no overrides — the exact shape of Fairview's own org row, and the
+    reason a teacher could not start a live class.
+
+    FREE's catalog entry lists no default features, so every gated route refused
+    for every user of this portal. It must not any more.
+    """
     res = await _register(client, "ff-free", "school")
     await _mutate_org(client, "ff-free", subscription_tier=SubscriptionTier.FREE, features={})
 
     r = await client.get("/api/v1/_test/ai", headers=_auth(res["access_token"]))
-    assert r.status_code == 403
-    assert r.json()["detail"]["error"] == "feature_disabled"
+    assert r.status_code == 200, r.text
 
 
 @pytest.mark.asyncio

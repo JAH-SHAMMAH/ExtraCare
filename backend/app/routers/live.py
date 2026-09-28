@@ -401,9 +401,30 @@ async def ice_config(
 
     Ephemeral TURN creds are scoped to the calling user id so usage is
     attributable and revocation is possible by rotating TURN_SECRET.
+
+    `turn_configured` is reported alongside, because STUN-only is not a neutral
+    default. Peers on ordinary networks connect fine; peers behind symmetric NAT
+    or a restrictive school firewall never will, and without this the failure is
+    a call that simply never connects, with nothing to read. That silent failure
+    is what the removed plan gate used to hide behind a clear (if wrong) refusal,
+    so the honest message replaces it rather than nothing replacing it.
     """
     settings = get_settings()
-    return {"iceServers": build_ice_servers(settings, user_id=current_user.id)}
+    servers = build_ice_servers(settings, user_id=current_user.id)
+    turn_configured = any(
+        s.get("urls") and "turn" in str(s.get("urls")) for s in servers
+    )
+    return {
+        "iceServers": servers,
+        "turn_configured": turn_configured,
+        "turn_notice": None if turn_configured else (
+            "No TURN relay is configured, so live video connects only on networks "
+            "that allow direct peer-to-peer. On a restrictive school or mobile "
+            "network the call will not connect. To fix this, set TURN_URLS and "
+            "either TURN_SECRET (recommended, mints short-lived credentials) or "
+            "TURN_USERNAME with TURN_CREDENTIAL."
+        ),
+    }
 
 
 # ── REST: start / end / list ────────────────────────────────────────────────

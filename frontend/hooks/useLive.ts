@@ -95,12 +95,12 @@ export function useStartLiveFromTimetable() {
       qc.invalidateQueries({ queryKey: ["live"] });
     },
     onError: (e: any) => {
+      // The `feature_disabled` branch is gone with the plan gate. This portal has
+      // no plans, so "not enabled on your plan" was never a true reason — it told
+      // a teacher to buy something that was not for sale. Whatever the API says
+      // now is a real reason, so it is shown as-is.
       const d = e?.response?.data?.detail;
-      if (d?.error === "feature_disabled") {
-        toast.error("Live classes aren't enabled on your plan.");
-      } else {
-        toast.error(d?.message || d || "Could not start live session.");
-      }
+      toast.error(d?.message || d || "Could not start live session.");
     },
   });
 }

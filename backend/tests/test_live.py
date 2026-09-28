@@ -586,9 +586,20 @@ async def test_livestream_flag_enabled_on_pro(db, teacher):
     assert has_feature(org, "livestream") is True
 
 
-async def test_livestream_flag_disabled_on_free(db, org):
-    from app.core.features import has_feature
-    assert has_feature(org, "livestream") is False
+async def test_livestream_is_not_gated_by_the_plan(db, org):
+    """Was `has_feature(org, "livestream") is False` on the FREE tier.
+
+    That single assertion is the whole incident in miniature: a teacher pressed
+    Start on a live class and was told it was not available on their plan, of a
+    product with no plans. Who may host is still decided by permissions and the
+    ownership checks in the route; the tier no longer decides anything.
+    """
+    from app.core.features import has_feature, resolve_features
+    assert has_feature(org, "livestream") is True
+    # The catalog still computes its own answer, for the billing page to display.
+    # It is deliberately allowed to disagree: that map is a price list, not a
+    # description of what this product permits.
+    assert resolve_features(org).get("livestream", False) is False
 
 
 # ── Reconnect semantics ──────────────────────────────────────────────────────

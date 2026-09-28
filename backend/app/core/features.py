@@ -40,16 +40,50 @@ def resolve_features(org: Organization | None) -> dict[str, bool]:
 
 
 def has_feature(org: Organization | None, flag: str) -> bool:
+    """Always True. Fairview's portal has no plans, so nothing is sold per tier.
+
+    This is ONE helper rather than edits at four call sites, so `require_feature`
+    keeps its shape and the routes keep their dependency lists: if tiers ever come
+    back, this function is the only thing to restore.
+
+    WHAT THIS DOES NOT CHANGE: permissions. `livestream` was never a permission —
+    who may start a live class is still decided by the scope on the route and the
+    ownership checks inside it. A teacher gains nothing here they could not already
+    have been granted; they simply stop being told their plan forbids it.
+
+    `subscription_tier` is deliberately LEFT IN PLACE and merely unread. Dropping
+    the column would be a migration in service of a decision that might reverse,
+    and `resolve_features` below still computes the real map for the billing page
+    to display. Nothing gates on it.
+
+    This is why the four gated endpoints (three on /live, one on /ai/assist) stop
+    returning `feature_disabled`: on a FREE tier, which Fairview is, the plan
+    catalog grants no features at all, so every one of them refused.
+    """
+    return True
+
+
+def resolved_feature(org: Organization | None, flag: str) -> bool:
+    """What the plan catalog WOULD say — for display, never for gating.
+
+    Kept separate from `has_feature` so a reader cannot mistake one for the other:
+    the billing page may want to show what a tier includes, and that is a different
+    question from whether the product allows something.
+    """
     return bool(resolve_features(org).get(flag, False))
 
 
 def require_feature(flag: str):
-    """Route dependency — 403 if the tenant doesn't have `flag` enabled.
+    """Route dependency. Retained deliberately, and currently a no-op.
 
-    We use 403 (not 402) because feature flags are frequently used for beta
-    gating where "upgrade to fix it" doesn't apply — an enterprise tenant
-    can still have `ai_assistant=false`. The frontend distinguishes between
-    402 (open /billing) and 403+feature_disabled (hide the entry point).
+    It stays for two reasons: the four routes that declare it keep documenting
+    WHICH capability they are, and if per-tenant gating ever returns it comes back
+    in one place rather than being re-threaded through the routes.
+
+    It no longer refuses anything, because `has_feature` always allows. The 403 +
+    `feature_disabled` body below is therefore unreachable; it is left standing so
+    that restoring gating is a one-line change to `has_feature` rather than
+    rebuilding the error contract the frontend already understands.
     """
     from app.database import get_db
     from app.deps import get_current_active_user
