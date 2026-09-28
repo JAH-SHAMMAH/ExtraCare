@@ -9,6 +9,7 @@ are derived from votes, never a mutable tally.
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
+from decimal import Decimal
 
 from app.models.audit import AuditAction
 from app.services.audit_service import log_action
@@ -76,6 +77,11 @@ from app.schemas.platform import (
     CommentTypeCreate, CommentTypeUpdate, CommentTypeResponse,
     DefaultCommentCreate, DefaultCommentUpdate, DefaultCommentResponse,
     COMMENT_LENGTH_TYPES, TEACHER_TYPES,
+    PerformanceTrackerResponse,
+    TrackerColumn,
+    TrackerCell,
+    TrackerRow,
+    AnalysisClassOption,
 )
 from app.services.ledger import money  # Decimal helper for grading bands
 from app.services.report_engine import evaluate_cumulative, round_dp, sessional_average
@@ -2828,27 +2834,51 @@ def _pick_display_cumulative(cumulatives, sub_term_id):
     return None
 
 
+async def _class_for_reports_or_403(db: AsyncSession, org: str, user: User,
+                                    class_id: str) -> SchoolClass:
+    """The class, if this user may see its RESULTS — else 404/403 with a reason.
+
+    Extracted from report_broadsheet so Result Analysis shares one gate rather than
+    growing a second that drifts from it. Two rules, both server-side, because a
+    hidden menu item is not access control:
+
+      1. a non-admin must be the class's CLASS teacher (Educare: "You are not a
+         class teacher"). Deliberately NOT `_pc_teacher_id` — that is the ratings
+         grid's authoring check and has no admin bypass, which is right for a form
+         and wrong for a read-only report an administrator must be able to open.
+      2. a non-admin must also teach in the class's academic SECTION.
+
+    A class with NO class teacher assigned falls to rule 1 for everyone except an
+    admin, and says so — one class at Fairview (Playgroup) is in exactly that state.
+    """
+    cls = (await db.execute(select(SchoolClass).where(
+        SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found.")
+    if _report_admin(user):
+        return cls
+    if cls.teacher_id is None:
+        raise HTTPException(
+            status_code=403,
+            detail="This class has no class teacher assigned, so its results are "
+                   "not available here. Ask an administrator to assign one.")
+    if cls.teacher_id != user.id:
+        raise HTTPException(status_code=403,
+                            detail="You are not the class teacher for this class.")
+    if cls.section_id:
+        teacher_sections = (await db.execute(select(TeacherSection.section_id).where(
+            TeacherSection.teacher_id == user.id, TeacherSection.org_id == org))).scalars().all()
+        if cls.section_id not in teacher_sections:
+            raise HTTPException(status_code=403,
+                                detail="You do not teach in this academic section.")
+    return cls
+
+
 @router.get("/report-broadsheet", response_model=BroadsheetResponse, dependencies=[Depends(PermissionChecker("school:reports:write"))])
 async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
                             db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     org = current_user.org_id
-    cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
-    if not cls:
-        raise HTTPException(status_code=404, detail="Class not found.")
-    # Class-teacher gate: a non-admin sees a class's results only if they are its
-    # class/form teacher (Educare: "You are not a class teacher").
-    if not _report_admin(current_user) and cls.teacher_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You are not the class teacher for this class.")
-    # Section-scoping: a teacher may only view reports for their assigned section(s).
-    if not _report_admin(current_user) and cls.section_id:
-        teacher_sections = (await db.execute(
-            select(TeacherSection.section_id).where(
-                TeacherSection.teacher_id == current_user.id,
-                TeacherSection.org_id == org,
-            )
-        )).scalars().all()
-        if cls.section_id not in teacher_sections:
-            raise HTTPException(status_code=403, detail="You do not teach in this academic section.")
+    cls = await _class_for_reports_or_403(db, org, current_user, class_id)
     level = getattr(cls, "level", None)
     term_name = (await db.execute(select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org))).scalar_one_or_none()
     sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
@@ -3764,7 +3794,7 @@ def _analysis_pupil(p, subject_names, *, below=None, position=None) -> AnalysisP
 
 
 @router.get("/result-analysis/remedial", response_model=ResultAnalysisResponse,
-            dependencies=[Depends(PermissionChecker("school_admin:read"))])
+            dependencies=[Depends(AnyPermissionChecker("school_admin:read", "school:reports:read"))])
 async def remedial_list(term_id: str, sub_term_id: str, class_id: str | None = None,
                         db: AsyncSession = Depends(get_db),
                         current_user: User = Depends(get_current_active_user)):
@@ -3780,6 +3810,17 @@ async def remedial_list(term_id: str, sub_term_id: str, class_id: str | None = N
     from app.services.result_analysis import analyse_term, resolve_thresholds
 
     org = current_user.org_id
+    # A teacher reaches this for their OWN class only, and must name one: the
+    # org-wide view (class_id omitted) is an administrator's report. Enforced here
+    # rather than by hiding the control, and through the SAME gate Reports View
+    # uses, so there is one answer to "may this person see this class's results".
+    if not _report_admin(current_user):
+        if not class_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Select a class. The whole-school view is available to "
+                       "administrators only.")
+        await _class_for_reports_or_403(db, org, current_user, class_id)
     analysis = await analyse_term(db, org, term_id, sub_term_id, class_id=class_id)
     passmark, _honours, source = await resolve_thresholds(db, org, analysis.sub_term_name)
 
@@ -3808,7 +3849,7 @@ async def remedial_list(term_id: str, sub_term_id: str, class_id: str | None = N
 
 
 @router.get("/result-analysis/honour-roll", response_model=ResultAnalysisResponse,
-            dependencies=[Depends(PermissionChecker("school_admin:read"))])
+            dependencies=[Depends(AnyPermissionChecker("school_admin:read", "school:reports:read"))])
 async def honour_roll(term_id: str, sub_term_id: str, class_id: str | None = None,
                       db: AsyncSession = Depends(get_db),
                       current_user: User = Depends(get_current_active_user)):
@@ -3821,6 +3862,17 @@ async def honour_roll(term_id: str, sub_term_id: str, class_id: str | None = Non
     from app.services.result_analysis import analyse_term, resolve_thresholds
 
     org = current_user.org_id
+    # A teacher reaches this for their OWN class only, and must name one: the
+    # org-wide view (class_id omitted) is an administrator's report. Enforced here
+    # rather than by hiding the control, and through the SAME gate Reports View
+    # uses, so there is one answer to "may this person see this class's results".
+    if not _report_admin(current_user):
+        if not class_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Select a class. The whole-school view is available to "
+                       "administrators only.")
+        await _class_for_reports_or_403(db, org, current_user, class_id)
     analysis = await analyse_term(db, org, term_id, sub_term_id, class_id=class_id)
     _passmark, honours, source = await resolve_thresholds(db, org, analysis.sub_term_name)
 
@@ -3948,3 +4000,225 @@ async def report_upload(term_id: str, file: UploadFile = File(...),
             errors.append(f"row {i}: no matching assessment columns")
     await db.flush()
     return ScoreUploadResult(rows=len(parsed), imported=imported, errors=errors[:50])
+
+
+# ── Performance Tracker: the teacher's Result Analysis view ───────────────────
+
+# The report layout Fairview prints, in teaching order. The terms' own `position`
+# column is 0 for all three in production, so it cannot supply this order — and a
+# tracker whose columns come out in an arbitrary order is unreadable. Names first,
+# position as the tie-break, anything unrecognised appended so a school that adds
+# a term still sees it.
+_TERM_ORDER = ("Autumn", "Spring", "Summer")
+# Mock belongs to Spring alone on the printed report. Sub-terms are ORG-WIDE in
+# this schema — there is no per-term sub-term table — so "Mock only under Spring"
+# is a DISPLAY rule here, not configuration. If it ever needs to vary per school
+# that needs a real link table, not a longer tuple.
+_SUB_TERMS_BY_TERM = {
+    "Autumn": ("Half-Term", "Full-Term"),
+    "Spring": ("Half-Term", "Mock", "Full-Term"),
+    "Summer": ("Half-Term", "Full-Term"),
+}
+_DEFAULT_SUB_TERMS = ("Half-Term", "Full-Term")
+_PROMOTIONAL_ASSESSMENT = "Promotional Exam Score"
+
+
+def _ordered_terms(terms: list) -> list:
+    known = {n: i for i, n in enumerate(_TERM_ORDER)}
+    return sorted(terms, key=lambda t: (known.get(t.name, len(known)), t.position or 0, t.name))
+
+
+@router.get("/result-analysis/performance-tracker",
+            response_model=PerformanceTrackerResponse,
+            dependencies=[Depends(AnyPermissionChecker("school_admin:read", "school:reports:read"))])
+async def performance_tracker(
+    class_id: str, subject_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """One subject, one class: every pupil's score and grade across the session.
+
+    Columns are the Promotional Exam, then each term's sub-terms in teaching
+    order, then the Sessional Score. The grid is assembled from `analyse_term` —
+    the same core the Remedial List and Honour Roll use — once per (term,
+    sub-term), rather than by a second calculation path that could disagree with
+    them about what a pupil scored.
+
+    BOTH scoping rules run HERE, on the server, not only in the dropdowns:
+      * the class must be one this user may see results for (its class teacher, or
+        an admin) via `_class_for_reports_or_403`, shared with Reports View;
+      * the subject must be one they actually teach IN THIS CLASS, via
+        `_teacher_assignments` — the same set Make Report gates mark entry on.
+    A hidden option is not a permission check; either rule enforced only in the UI
+    would be no rule at all.
+
+    An unmarked cell is absent, never zero. A pupil who has not been assessed has
+    an unknown score, and printing 0 would invent a mark they did not receive.
+    """
+    from app.services.grading import letter_for, load_grade_bands
+    from app.services.report_engine import sessional_average
+    from app.services.result_analysis import analyse_term
+
+    org = current_user.org_id
+    cls = await _class_for_reports_or_403(db, org, current_user, class_id)
+
+    subject = (await db.execute(select(Subject).where(
+        Subject.id == subject_id, Subject.org_id == org))).scalar_one_or_none()
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found.")
+    if not _report_admin(current_user):
+        taught = await _teacher_assignments(db, org, current_user.id)
+        if (class_id, subject_id) not in taught:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not teach this subject in this class.")
+
+    terms = _ordered_terms((await db.execute(select(AcademicTerm).where(
+        AcademicTerm.org_id == org))).scalars().all())
+    subs = {s.name: s for s in (await db.execute(select(AcademicSubTerm).where(
+        AcademicSubTerm.org_id == org))).scalars().all()}
+    bands = await load_grade_bands(db, org)
+    # Which (term, sub-term) pairs actually have a cumulative OF THEIR OWN.
+    #
+    # `_pick_display_cumulative` falls back to ANY cumulative when none matches the
+    # sub-term, which is reasonable for a single report card and wrong for this
+    # grid: it made the Autumn Half-Term column repeat the Full-Term mark, which
+    # asserts a half-term score nobody recorded. A column with no cumulative of its
+    # own is NOT COMPUTABLE here, and says so, rather than borrowing a number from
+    # the column beside it. It also means the grid only calls analyse_term for
+    # columns that can produce a figure.
+    configured_pairs = {
+        (c.term_id, c.sub_term_id)
+        for c in (await db.execute(select(Cumulative).where(
+            Cumulative.org_id == org))).scalars().all()
+        if c.sub_term_id
+    }
+    session_name = (await db.execute(select(AcademicSession.name).where(
+        AcademicSession.org_id == org, AcademicSession.is_current == True  # noqa: E712
+    ))).scalars().first()
+
+    columns: list[TrackerColumn] = []
+    cells: dict[str, dict[str, Decimal]] = {}      # column key -> student_id -> pct
+    pupils: dict[str, object] = {}                 # student_id -> a PupilResult
+    # Per-term FULL-TERM values, which is what the Sessional Score averages.
+    full_term_by_student: dict[str, list] = {}
+
+    # ── the Promotional Exam column: a raw ASSESSMENT, not a cumulative ────────
+    # It is one named assessment rather than a (term, sub-term) cumulative, so it
+    # is read directly. At Fairview it sits under Summer and has no marks yet.
+    promo = (await db.execute(select(Assessment).where(
+        Assessment.org_id == org, Assessment.name == _PROMOTIONAL_ASSESSMENT))).scalars().first()
+    columns.append(TrackerColumn(
+        key="promotional", label="Promotional Exam Score", group=None,
+        term_id=getattr(promo, "term_id", None), available=promo is not None))
+    if promo is not None:
+        promo_rows = (await db.execute(
+            select(StudentAssessmentScore.student_id, StudentAssessmentScore.score)
+            .join(Student, Student.id == StudentAssessmentScore.student_id)
+            .where(StudentAssessmentScore.org_id == org,
+                   StudentAssessmentScore.assessment_id == promo.id,
+                   StudentAssessmentScore.subject_id == subject_id,
+                   Student.class_id == class_id)
+        )).all()
+        mx = Decimal(str(promo.max_score or 100))
+        cells["promotional"] = {
+            r[0]: (Decimal(str(r[1])) / mx * 100) if mx else Decimal(0)
+            for r in promo_rows if r[1] is not None}
+
+    # ── one column per (term, sub-term), via the shared analysis core ──────────
+    for term in terms:
+        for sname in _SUB_TERMS_BY_TERM.get(term.name, _DEFAULT_SUB_TERMS):
+            sub = subs.get(sname)
+            if sub is None:
+                # The school has not defined this sub-term. Shown, never computed.
+                columns.append(TrackerColumn(
+                    key=f"{term.id}:{sname}", term_id=term.id, term_name=term.name,
+                    sub_term_name=sname, label=sname, group=term.name, available=False))
+                continue
+            key = f"{term.id}:{sub.id}"
+            if (term.id, sub.id) not in configured_pairs:
+                columns.append(TrackerColumn(
+                    key=key, term_id=term.id, term_name=term.name,
+                    sub_term_id=sub.id, sub_term_name=sub.name, label=sub.name,
+                    group=term.name, available=False))
+                continue
+            analysis = await analyse_term(db, org, term.id, sub.id, class_id=class_id)
+            columns.append(TrackerColumn(
+                key=key, term_id=term.id, term_name=term.name,
+                sub_term_id=sub.id, sub_term_name=sub.name, label=sub.name,
+                group=term.name, available=not analysis.not_configured))
+            got: dict[str, Decimal] = {}
+            for p in analysis.pupils:
+                pupils.setdefault(p.student_id, p)
+                pct = p.subject_pct.get(subject_id)
+                if pct is not None:
+                    got[p.student_id] = pct
+                    if sub.name == "Full-Term":
+                        full_term_by_student.setdefault(p.student_id, []).append(pct)
+            cells[key] = got
+
+    def cell(key: str, sid: str) -> TrackerCell:
+        pct = cells.get(key, {}).get(sid)
+        if pct is None:
+            return TrackerCell()                   # not entered — not zero
+        return TrackerCell(score=round_dp(pct, 2), grade=letter_for(pct, 100, bands))
+
+    ordered = sorted(pupils.values(), key=lambda p: (p.student_name or "").lower())
+    rows_out: list[TrackerRow] = []
+    for i, p in enumerate(ordered, start=1):
+        sess, counted = sessional_average(full_term_by_student.get(p.student_id, []))
+        # Blank until more than one term has marks: a "sessional" score built from a
+        # single term is not a session, and showing one would present a term average
+        # as though the year were finished.
+        show = sess is not None and counted > 1
+        rows_out.append(TrackerRow(
+            sn=i, student_id=p.student_id, student_name=p.student_name,
+            admission_no=p.admission_no,
+            cells={c.key: cell(c.key, p.student_id) for c in columns},
+            sessional_score=round_dp(sess, 2) if show else None,
+            sessional_grade=letter_for(sess, 100, bands) if show else None,
+            sessional_terms_counted=counted,
+        ))
+
+    return PerformanceTrackerResponse(
+        class_id=class_id, class_name=cls.name,
+        subject_id=subject_id, subject_name=subject.name,
+        session_name=session_name, columns=columns, rows=rows_out,
+        not_configured=not any(c.available for c in columns),
+    )
+
+
+@router.get("/result-analysis/my-classes", response_model=list[AnalysisClassOption],
+            dependencies=[Depends(AnyPermissionChecker("school_admin:read", "school:reports:read"))])
+async def result_analysis_classes(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """The classes this user may open Result Analysis for.
+
+    Derived from the SAME rule that enforces access — an admin gets every class, a
+    teacher gets the ones they are class teacher of, within a section they teach
+    in. Building the dropdown from the rule rather than alongside it is what stops
+    the list and the gate disagreeing: an option that 403s when clicked is worse
+    than no option, and an option missing from a list that would have been allowed
+    is a feature nobody can find.
+
+    Note this is NOT "classes I teach in". Ngozi teaches subjects across several
+    classes but is class teacher of two, and Result Analysis is a class teacher's
+    view of their own class.
+    """
+    org = current_user.org_id
+    classes = (await db.execute(select(SchoolClass).where(
+        SchoolClass.org_id == org).order_by(SchoolClass.name))).scalars().all()
+    if _report_admin(current_user):
+        return [AnalysisClassOption(id=c.id, name=c.name, section_id=c.section_id)
+                for c in classes]
+
+    sections = set((await db.execute(select(TeacherSection.section_id).where(
+        TeacherSection.teacher_id == current_user.id,
+        TeacherSection.org_id == org))).scalars().all())
+    return [
+        AnalysisClassOption(id=c.id, name=c.name, section_id=c.section_id)
+        for c in classes
+        if c.teacher_id == current_user.id and (not c.section_id or c.section_id in sections)
+    ]

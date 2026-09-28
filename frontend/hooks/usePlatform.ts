@@ -217,9 +217,14 @@ export const useUpdateTerm = m((v: { id: string; data: object }) => platformApi.
 // Two-phase on purpose. The first DELETE carries no confirm, so the API answers
 // 409 with a report of what would be destroyed and what would be left orphaned.
 // The caller shows that, and only then re-sends with confirm. Deleting a term
-// cascades away every assessment and score beneath it, and silently strands
-// five tables that match the term BY NAME - which is how a September 2026
-// Report Setup rebuild wiped the CBT feed with no warning and no audit trail.
+// cascades away every assessment and score beneath it — which is how a September
+// 2026 Report Setup rebuild wiped the CBT feed with no warning and no audit trail.
+//
+// It used to strand FIVE tables that matched the term by name. Migrations 131 and
+// 132 moved report approvals and CBT exams onto term_id, so three remain
+// name-keyed (the gradebook, student reports, sessions) and the API's warning now
+// separates the two mechanisms. Renaming a term no longer strands anything the
+// foreign keys cover.
 export const useDeleteTerm = m(
   (v: { id: string; confirm?: boolean }) => platformApi.terms.remove(v.id, v.confirm),
   ["academic-terms"], "Removed.",
@@ -227,6 +232,36 @@ export const useDeleteTerm = m(
 export const useCreateSubTerm = m((d) => platformApi.subTerms.create(d), ["academic-sub-terms"], "Sub-term added.");
 export const useUpdateSubTerm = m((v: { id: string; data: object }) => platformApi.subTerms.update(v.id, v.data), ["academic-sub-terms"], "Updated.");
 export const useDeleteSubTerm = m((id: string) => platformApi.subTerms.remove(id), ["academic-sub-terms"], "Removed.");
+
+// ── Result Analysis ──────────────────────────────────────────────────────────
+// Each of these is `enabled`-gated on its inputs. A tracker request with no
+// subject would 422, and a failed request renders the same empty table as a class
+// nobody has marked — so the query does not run until it can succeed, and the page
+// shows a "choose a subject" state rather than an empty grid that looks like data.
+export function useAnalysisClasses() {
+  return useQuery<any[]>({ queryKey: ["analysis-classes"], queryFn: () => platformApi.resultAnalysis.myClasses() });
+}
+export function usePerformanceTracker(class_id: string, subject_id: string) {
+  return useQuery<any>({
+    queryKey: ["performance-tracker", class_id, subject_id],
+    queryFn: () => platformApi.resultAnalysis.tracker({ class_id, subject_id }),
+    enabled: !!class_id && !!subject_id,
+  });
+}
+export function useBoosterList(term_id: string, sub_term_id: string, class_id: string) {
+  return useQuery<any>({
+    queryKey: ["booster-list", term_id, sub_term_id, class_id],
+    queryFn: () => platformApi.resultAnalysis.booster({ term_id, sub_term_id, class_id }),
+    enabled: !!term_id && !!sub_term_id && !!class_id,
+  });
+}
+export function useHonoursRoll(term_id: string, sub_term_id: string, class_id: string) {
+  return useQuery<any>({
+    queryKey: ["honours-roll", term_id, sub_term_id, class_id],
+    queryFn: () => platformApi.resultAnalysis.honours({ term_id, sub_term_id, class_id }),
+    enabled: !!term_id && !!sub_term_id && !!class_id,
+  });
+}
 
 export function useTermPeriods(sessionId?: string) {
   return useQuery<any[]>({ queryKey: ["term-periods", sessionId ?? "all"], queryFn: () => platformApi.termPeriods.list(sessionId), enabled: !!sessionId });

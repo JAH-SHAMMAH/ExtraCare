@@ -253,6 +253,12 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // Teacher Reports = read-only status view of teacher's own submitted reports in the
   // approval workflow. Gated on school:reports:read (view only, no admin access needed).
   { prefix: "/dashboard/modules/school/teacher-reports", permission: "school:reports:read" },
+  // Result Analysis — ONE route, two views. An admin sees the whole-school
+  // reports; a class teacher sees their own class's three tabs. Gated on the
+  // classroom scope so teachers can open it at all, with the real scoping done
+  // server-side per class and per subject: the page cannot show a teacher another
+  // class's results even if they reach the URL directly.
+  { prefix: "/dashboard/modules/school/result-analysis", permission: "school:reports:read" },
   // Reports View (broadsheet etc.) — class results view, admin/teacher only (gated on
   // school:reports:write). The API further class-teacher-gates it (a non-class-teacher
   // is blocked for that class). Students see their own report via /report-cards instead.

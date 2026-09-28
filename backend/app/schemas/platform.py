@@ -1386,3 +1386,64 @@ class ScoreUploadResult(BaseModel):
     rows: int = 0
     imported: int = 0
     errors: list[str] = Field(default_factory=list)
+
+
+# ── Performance Tracker (teacher Result Analysis) ─────────────────────────────
+
+class TrackerColumn(BaseModel):
+    """One column of the tracker: a (term, sub-term) pair, or the sessional total.
+
+    `key` is what a cell is looked up by. `available` is False when that term and
+    sub-term have no cumulative or no assessments configured — the column is still
+    SHOWN (the layout is the school's reporting shape, not a reflection of what
+    happens to be marked) but every cell in it reads as not-entered rather than 0.
+    """
+    key: str
+    term_id: Optional[str] = None
+    term_name: Optional[str] = None
+    sub_term_id: Optional[str] = None
+    sub_term_name: Optional[str] = None
+    label: str
+    group: Optional[str] = None          # "Autumn" / "Spring" / "Summer" / None
+    available: bool = True
+
+
+class TrackerCell(BaseModel):
+    # None means NOT ENTERED — never 0. A blank cell and a zero are different
+    # claims about a child, and the second one is a mark they did not receive.
+    score: Optional[Decimal] = None
+    grade: Optional[str] = None
+
+
+class TrackerRow(BaseModel):
+    sn: int
+    student_id: str
+    student_name: str
+    admission_no: Optional[str] = None
+    # column key -> cell. A missing key is a cell with no mark.
+    cells: dict[str, TrackerCell] = Field(default_factory=dict)
+    sessional_score: Optional[Decimal] = None
+    sessional_grade: Optional[str] = None
+    # How many terms fed the sessional score, so "based on 1 of 3 terms" is
+    # expressible and a one-term figure is not presented as a full session.
+    sessional_terms_counted: int = 0
+
+
+class PerformanceTrackerResponse(BaseModel):
+    class_id: str
+    class_name: Optional[str] = None
+    subject_id: str
+    subject_name: Optional[str] = None
+    session_name: Optional[str] = None
+    columns: list[TrackerColumn] = Field(default_factory=list)
+    rows: list[TrackerRow] = Field(default_factory=list)
+    # True when NO column in the whole grid is configured — the difference between
+    # "this class has not been marked" and "reports are not set up at all".
+    not_configured: bool = False
+
+
+class AnalysisClassOption(BaseModel):
+    """A class the signed-in user may open Result Analysis for."""
+    id: str
+    name: Optional[str] = None
+    section_id: Optional[str] = None

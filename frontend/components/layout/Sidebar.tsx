@@ -130,6 +130,11 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/subject-selection", label: "Subject Selection", icon: BookMarked },
       { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: FileText },
       { href: "/dashboard/modules/school/report-workflow", label: "Report Workflow", icon: FolderOpen },
+      // One entry, two views. It resolves by permission inside the page: an admin
+      // gets the whole-school reports, a class teacher gets their own class's
+      // Performance Tracker / Booster List / Honours Roll. Shown to both rather
+      // than duplicated, because it is the same question asked at two scopes.
+      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3 },
     ],
   },
   {
