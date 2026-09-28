@@ -1588,7 +1588,13 @@ export interface ReportApproval {
   class_id: string | null;
   class_name: string | null;
   academic_year: string | null;
-  term: string | null;
+  // term_id since migration 131; term_name is resolved server-side for display.
+  // This interface still said `term` afterwards, so `r.term` type-checked happily
+  // while the API had stopped sending it — the Term column rendered nothing and
+  // nothing complained. A type that describes a shape the server no longer returns
+  // is worse than no type.
+  term_id: string | null;
+  term_name: string | null;
   stage: ReportStage | string;
   notes: string | null;
   created_at: string;

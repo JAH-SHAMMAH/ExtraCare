@@ -51,6 +51,7 @@ from app.schemas.academics import (
     stage_transition_error,
 )
 from app.services.audit_service import log_action
+from app.services.report_lock import term_names_for_ids
 from app.models.audit import AuditAction
 
 router = APIRouter(
@@ -420,6 +421,22 @@ def _report_response(r: ReportApproval, cname: str | None,
     )
 
 
+async def _report_responses(db: AsyncSession, org_id: str,
+                            rows: list[ReportApproval]) -> list[ReportApprovalResponse]:
+    """Rows -> responses, with the class AND term names resolved.
+
+    `tname` was an optional argument that every one of the five call sites omitted,
+    so term_name came back None on every row and the UI's Term column rendered
+    blank — the response carried the field and never the value. Resolving both names
+    in one place is what stops the next caller forgetting one; nothing builds these
+    responses by hand any more.
+    """
+    cnames = await _class_names(db, org_id, {r.class_id for r in rows})
+    tnames = await term_names_for_ids(db, org_id, {r.term_id for r in rows})
+    return [_report_response(r, cnames.get(r.class_id), tnames.get(r.term_id))
+            for r in rows]
+
+
 @router.get("/report-workflow", response_model=ReportApprovalListResponse, dependencies=[_report_write])
 async def list_report_workflow(
     stage: str | None = None,
@@ -435,9 +452,8 @@ async def list_report_workflow(
     rows = (await db.execute(
         base.order_by(ReportApproval.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
     )).scalars().all()
-    cnames = await _class_names(db, current_user.org_id, {r.class_id for r in rows})
     return ReportApprovalListResponse(
-        items=[_report_response(r, cnames.get(r.class_id)) for r in rows],
+        items=await _report_responses(db, current_user.org_id, rows),
         total=total, page=page, page_size=page_size,
     )
 
@@ -463,9 +479,8 @@ async def list_my_report_workflow(
     rows = (await db.execute(
         base.order_by(ReportApproval.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
     )).scalars().all()
-    cnames = await _class_names(db, current_user.org_id, {r.class_id for r in rows})
     return ReportApprovalListResponse(
-        items=[_report_response(r, cnames.get(r.class_id)) for r in rows],
+        items=await _report_responses(db, current_user.org_id, rows),
         total=total, page=page, page_size=page_size,
     )
 
@@ -748,8 +763,7 @@ async def create_report_workflow(
         db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
         resource_type="ReportApproval", resource_id=r.id, resource_label="report workflow", request=request,
     )
-    cnames = await _class_names(db, current_user.org_id, {r.class_id})
-    return _report_response(r, cnames.get(r.class_id))
+    return (await _report_responses(db, current_user.org_id, [r]))[0]
 
 
 @router.post("/report-workflow/submit", response_model=ReportApprovalResponse,
@@ -874,8 +888,7 @@ async def submit_class_report(
         old_values={"stage": "draft"}, new_values={"stage": "submitted"},
         request=request,
     )
-    cnames = await _class_names(db, org_id, {r.class_id})
-    return _report_response(r, cnames.get(r.class_id))
+    return (await _report_responses(db, current_user.org_id, [r]))[0]
 
 
 # ── Per-subject report sign-off ───────────────────────────────────────────────
@@ -1318,8 +1331,7 @@ async def update_report_workflow(
     for field, value in data.items():
         setattr(r, field, value)
     await db.flush()
-    cnames = await _class_names(db, current_user.org_id, {r.class_id})
-    return _report_response(r, cnames.get(r.class_id))
+    return (await _report_responses(db, current_user.org_id, [r]))[0]
 
 
 @router.delete("/report-workflow/{workflow_id}", status_code=204, dependencies=[_report_write])
