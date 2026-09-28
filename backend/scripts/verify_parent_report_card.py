@@ -17,6 +17,11 @@ Reasoning about the data is not proof the gate opens. This drives the endpoint
 as the real parent user, which is the only thing that actually answers it.
 
     python scripts/verify_parent_report_card.py <DSN>
+    python scripts/verify_parent_report_card.py <DSN> --student "Musa Yusuf"
+
+Without --student it samples whatever parent/child pairs the data offers, which
+answers "does the gate open at all". With --student it drives one named child,
+which is what you want when somebody reports that ONE card will not open.
 """
 from __future__ import annotations
 
@@ -29,8 +34,25 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 
+def _wanted_student(argv) -> str | None:
+    """The value of --student, whether written as `--student X` or `--student=X`."""
+    for i, a in enumerate(argv):
+        if a == "--student" and i + 1 < len(argv):
+            return argv[i + 1].strip()
+        if a.startswith("--student="):
+            return a.split("=", 1)[1].strip()
+    return None
+
+
 def _resolve(argv) -> str:
+    skip = False
     for a in argv[1:]:
+        if skip:                      # this one is --student's value, not the DSN
+            skip = False
+            continue
+        if a == "--student":
+            skip = True
+            continue
         if not a.startswith("--"):
             return a.split("?")[0]
     env = os.environ.get("DATABASE_URL", "").strip()
@@ -63,7 +85,32 @@ async def main() -> int:
 
         # A real parent with a real linked child, picked from the data rather
         # than constructed — a synthetic user would not prove the live gate.
-        link = (await db.execute(select(ParentGuardian).limit(50))).scalars().all()
+        wanted = _wanted_student(sys.argv)
+        if wanted:
+            parts = wanted.split()
+            q = select(Student)
+            for p in parts:
+                q = q.where(
+                    (Student.first_name.ilike(f"%{p}%")) | (Student.last_name.ilike(f"%{p}%"))
+                )
+            kids = (await db.execute(q.limit(10))).scalars().all()
+            if not kids:
+                sys.exit(f"No student matches {wanted!r}.")
+            if len(kids) > 1:
+                names = ", ".join(f"{k.first_name} {k.last_name}" for k in kids)
+                sys.exit(f"{wanted!r} is ambiguous — matched: {names}")
+            kid = kids[0]
+            print(f"student : {kid.first_name} {kid.last_name} ({kid.id})")
+            link = (await db.execute(
+                select(ParentGuardian).where(ParentGuardian.student_id == kid.id)
+            )).scalars().all()
+            if not link:
+                sys.exit(f"{kid.first_name} {kid.last_name} has no linked parent/guardian, "
+                         f"so there is no parent whose access could be tested.")
+            print(f"parents : {len(link)} linked")
+            print()
+        else:
+            link = (await db.execute(select(ParentGuardian).limit(50))).scalars().all()
         checked = 0
         for pg in link:
             parent = (await db.execute(
@@ -109,7 +156,7 @@ async def main() -> int:
                       f"total={getattr(s, 'total', None)}")
             print()
             checked += 1
-            if checked >= 3:
+            if not wanted and checked >= 3:
                 break
 
         if not checked:
