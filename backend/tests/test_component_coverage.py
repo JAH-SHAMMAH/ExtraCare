@@ -233,3 +233,86 @@ async def test_an_autumn_shaped_class_still_publishes(db, org):
                                  request=None, db=db, current_user=admin)
     await db.refresh(r)
     assert r.stage == "published"
+
+
+# ── the flagging: what the surfaces SHOW when a component is unmarked ─────────
+#
+# The gate stops a publish. These pin what happens before anyone reaches it: an
+# incomplete total must never be rendered as a number, because the number is
+# `evaluate_cumulative` reading a missing component as zero.
+
+def test_the_engine_can_tell_unmarked_from_zero():
+    """The distinction the evaluator cannot make, made explicitly beside it."""
+    from types import SimpleNamespace
+    from decimal import Decimal
+
+    from app.services.report_engine import (
+        cumulative_coverage, evaluate_cumulative, is_fully_marked,
+    )
+
+    assessments = {"ca": SimpleNamespace(max_score=Decimal(40)),
+                   "ex": SimpleNamespace(max_score=Decimal(100))}
+    cumulatives = {
+        "ca_c": SimpleNamespace(cumul_type="custom_percentage", max_percent=Decimal(40)),
+        "ex_c": SimpleNamespace(cumul_type="custom_percentage", max_percent=Decimal(60)),
+        "total": SimpleNamespace(cumul_type="percentage", max_percent=None),
+    }
+    components = {"ca_c": [("assessment", "ca")], "ex_c": [("assessment", "ex")],
+                  "total": [("cumulative", "ca_c"), ("cumulative", "ex_c")]}
+
+    # exam only: the evaluator returns a real, misleading number.
+    partial = {"ex": Decimal(100)}
+    v, m = evaluate_cumulative("total", cumulatives, components, assessments, partial)
+    assert v / m * 100 == 60, "a 100% exam with no CA computes to 60%"
+    assert cumulative_coverage("total", cumulatives, components, assessments, partial) == (1, 2)
+    assert is_fully_marked("total", cumulatives, components, assessments, partial) is False
+
+    both = {"ex": Decimal(100), "ca": Decimal(40)}
+    assert cumulative_coverage("total", cumulatives, components, assessments, both) == (2, 2)
+    assert is_fully_marked("total", cumulatives, components, assessments, both) is True
+
+    # A genuine zero is marked, and must still count.
+    zeroed = {"ex": Decimal(0), "ca": Decimal(0)}
+    assert is_fully_marked("total", cumulatives, components, assessments, zeroed) is True, (
+        "a pupil who genuinely scored nothing HAS been assessed")
+
+
+def test_a_cumulative_with_no_components_is_not_fully_marked():
+    """Nothing to mark is not the same as everything marked; a total from no
+    components is a number computed from nothing."""
+    from app.services.report_engine import is_fully_marked
+    from types import SimpleNamespace
+
+    cums = {"c": SimpleNamespace(cumul_type="percentage", max_percent=None)}
+    assert is_fully_marked("c", cums, {}, {}, {}) is False
+
+
+@pytest.mark.asyncio
+async def test_result_analysis_does_not_rank_a_partially_marked_pupil(db, org):
+    """This is what would put a child on the Booster List for a mark their teacher
+    has not entered yet — the report reads "failing" where the truth is "unknown"."""
+    from app.services.result_analysis import analyse_term
+
+    w = await _world(db, org, weighted=True, mark_ca=False)
+    res = await analyse_term(db, org.id, w["term"].id, w["full"].id, class_id=w["cls"].id)
+
+    assert res.not_configured is False
+    for pupil in res.pupils:
+        assert pupil.subject_pct == {}, "a half-marked subject must not be scored"
+        assert pupil.average is None, "and must not produce an average to rank on"
+        assert w["subj"].id in pupil.incomplete_subjects
+
+
+@pytest.mark.asyncio
+async def test_result_analysis_ranks_a_fully_marked_pupil(db, org):
+    from app.services.result_analysis import analyse_term
+
+    w = await _world(db, org, weighted=True, mark_ca=True)
+    res = await analyse_term(db, org.id, w["term"].id, w["full"].id, class_id=w["cls"].id)
+
+    scored = [p for p in res.pupils if p.average is not None]
+    assert len(scored) == 2
+    for p in scored:
+        assert p.incomplete_subjects == []
+        # exam 100/100 -> 60, CA 30/40 -> 30  => 90%
+        assert round(float(p.average)) == 90

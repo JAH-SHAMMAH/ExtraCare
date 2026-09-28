@@ -38,6 +38,10 @@ class PupilResult:
     subject_pct: dict[str, Decimal] = field(default_factory=dict)
     average: Decimal | None = None      # mean of the above; None when unmarked
     grade: str | None = None
+    # Subjects the pupil HAS marks in, but not all the components the term's total
+    # needs. Deliberately separate from `subject_pct`: their standing is unknown,
+    # not low, and a report that ranks them would be ranking a gap in the register.
+    incomplete_subjects: list[str] = field(default_factory=list)
 
     @property
     def subjects_counted(self) -> int:
@@ -80,7 +84,7 @@ async def analyse_term(
     )
     from app.models.modules.school import SchoolClass, Student, Subject
     from app.routers.modules.platform import _grade_for, _pick_display_cumulative
-    from app.services.report_engine import evaluate_cumulative
+    from app.services.report_engine import evaluate_cumulative, is_fully_marked
 
     term_name = (await db.execute(select(AcademicTerm.name).where(
         AcademicTerm.id == term_id, AcademicTerm.org_id == org_id))).scalar_one_or_none()
@@ -159,6 +163,15 @@ async def analyse_term(
             if not any(score_map.get((st.id, sid, aid)) is not None for aid in assessments):
                 continue
             scores = {aid: score_map.get((st.id, sid, aid)) for aid in assessments}
+            # A PARTIALLY marked subject is not scored. `evaluate_cumulative` reads
+            # a missing component as zero, so a pupil with an exam mark and no CA
+            # would compute to 60% of their real standing — and this function feeds
+            # the Booster List, which would then name them as failing because of a
+            # mark their teacher has not entered yet. Counted as incomplete instead,
+            # which is what it is.
+            if not is_fully_marked(display.id, cumul_by_id, components, assessments, scores):
+                pupil.incomplete_subjects.append(sid)
+                continue
             val, mx = evaluate_cumulative(display.id, cumul_by_id, components, assessments, scores)
             if mx:
                 pupil.subject_pct[sid] = val / mx * 100

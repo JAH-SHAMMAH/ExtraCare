@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { cn } from "@/lib/utils";
 import { useClasses } from "@/hooks/useSchool";
 import { useTerms, useSubTerms, useBroadsheet, useReportCard, useReportCardsBulk, useCommentGrid, useSaveComments } from "@/hooks/usePlatform";
 import { Loader2, Printer, FileText, Save } from "lucide-react";
@@ -139,7 +140,22 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
           {card.subjects.map((r: any) => (
             <tr key={r.subject_id}>
               <td className="border border-slate-300 px-2 py-1 font-semibold">{r.subject_name}</td>
-              {card.columns.map((c: any) => <td key={c.key} className="border border-slate-300 px-2 py-1 text-center tabular-nums">{num(r.values[c.key])}</td>)}
+              {/* A column the server could not complete comes back null with its
+                  name in incomplete_components. It says "not entered" rather than
+                  showing a dash beside real figures, because a dash in a row of
+                  numbers reads as a zero to a parent — and the underlying total
+                  would have BEEN a deflated number, which is the thing being
+                  prevented. */}
+              {card.columns.map((c: any) => {
+                const missing = (r.incomplete_components || []).includes(c.name);
+                return (
+                  <td key={c.key} className={cn(
+                    "border border-slate-300 px-2 py-1 text-center",
+                    missing ? "text-[9px] leading-tight text-amber-700" : "tabular-nums")}>
+                    {missing ? "not entered" : num(r.values[c.key])}
+                  </td>
+                );
+              })}
               <td className="border border-slate-300 px-2 py-1 text-center font-bold">{r.grade || "–"}</td>
               <td className="border border-slate-300 px-2 py-1 text-center">{r.remark || "–"}</td>
               <td className="border border-slate-300 px-2 py-1 text-center tabular-nums">{num(r.subject_arm_average)}</td>
