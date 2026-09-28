@@ -149,11 +149,25 @@ async def main() -> int:
                 continue
 
             subjects = getattr(card, "subjects", None) or []
+            # Show the fields a subject ROW actually carries. `total` is top-level,
+            # not per-subject, so printing it here read as total=None on every row
+            # and made a fully populated card look blank.
+            scored = sum(1 for s in subjects if getattr(s, "values", None))
             print(f"  RESULT : OPENED")
-            print(f"           subjects on the card : {len(subjects)}")
+            print(f"           subjects on the card : {len(subjects)}"
+                  f"  ({scored} carrying marks)")
+            print(f"           overall              : total={getattr(card, 'total', None)}"
+                  f" average={getattr(card, 'average', None)}"
+                  f" grade={getattr(card, 'grade', None)}"
+                  f" position={getattr(card, 'position', None)}")
             for s in subjects[:3]:
+                vals = list((getattr(s, "values", None) or {}).values())
                 print(f"             - {getattr(s, 'subject_name', '?')}: "
-                      f"total={getattr(s, 'total', None)}")
+                      f"grade={getattr(s, 'grade', None)} "
+                      f"marks={[str(v) for v in vals] or 'NONE'}")
+            if subjects and not scored:
+                print("           WARNING: the card opened but no subject carries a "
+                      "mark — an empty card is not a working one.")
             print()
             checked += 1
             if not wanted and checked >= 3:
