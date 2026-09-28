@@ -714,9 +714,16 @@ class CBTExam(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     description = Column(Text, nullable=True)
     class_id = Column(String(36), ForeignKey("school_classes.id"), nullable=True, index=True)
     subject_id = Column(String(36), ForeignKey("subjects.id"), nullable=True)
-    # Term this sitting belongs to (e.g. "Term 1") — tags fed Grade rows so the
-    # gradebook can scope/publish them. Required before results can feed the gradebook.
-    term = Column(String(50), nullable=True)
+    # Term this sitting belongs to. A foreign key since migration 132 — it was free
+    # text, and the freeze gate resolved it by NAME, so a drifted spelling silently
+    # stopped scores reaching Make Report. ON DELETE SET NULL, not CASCADE: the term
+    # only tags the sitting, and 1,799 attempts hang off this row. An untagged exam
+    # is a state the feed already explains ("Set a term on the exam...").
+    # Still required before results can feed the gradebook.
+    term_id = Column(
+        String(36), ForeignKey("academic_terms.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
     created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
     start_time = Column(DateTime(timezone=True), nullable=True)
     end_time = Column(DateTime(timezone=True), nullable=True)

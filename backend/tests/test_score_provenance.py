@@ -118,11 +118,13 @@ async def _cbt_world(db, org):
         AttemptStatus, CBTAttempt, CBTExam, ExamStatus,
     )
 
+    from tests._terms import a_term
+
     w = await _world(db, org)
     exam = CBTExam(
         id=str(uuid.uuid4()), title="Maths CBT", status=ExamStatus.PUBLISHED,
         total_points=20, class_id=w["cls"].id, subject_id=w["maths"].id,
-        term="Autumn", created_by=w["teacher"].id,
+        term_id=(await a_term(db, org, name="Autumn")).id, created_by=w["teacher"].id,
         results_published_at=datetime.now(_tz.utc), org_id=org.id,
     )
     db.add(exam)

@@ -37,6 +37,8 @@ from app.routers.modules.platform import save_report_entry
 from app.schemas.platform import ReportEntrySave, ScoreItem
 from sqlalchemy import select
 
+from tests._terms import a_term
+
 TERM_NAME = "Term 1"
 
 
@@ -220,7 +222,9 @@ async def test_cbt_sync_skips_a_frozen_class_without_raising(db, org):
 
     cls, stu, subj, a = await _fixture(db, org, stage="published")
     exam = CBTExam(id=str(uuid.uuid4()), title="Quiz", status=ExamStatus.PUBLISHED,
-                   total_points=10, subject_id=subj.id, class_id=cls.id, term=TERM_NAME,
+                   total_points=10, subject_id=subj.id, class_id=cls.id,
+                   # a FK since migration 132; _fixture already made this term
+                   term_id=(await a_term(db, org, name=TERM_NAME)).id,
                    results_published_at=__import__("datetime").datetime.now(
                        __import__("datetime").timezone.utc),
                    created_by=(await _admin(db, org)).id, org_id=org.id)
@@ -240,7 +244,9 @@ async def test_cbt_sync_proceeds_when_the_report_is_not_published(db, org):
 
     cls, stu, subj, a = await _fixture(db, org, stage="approved")
     exam = CBTExam(id=str(uuid.uuid4()), title="Quiz", status=ExamStatus.PUBLISHED,
-                   total_points=10, subject_id=subj.id, class_id=cls.id, term=TERM_NAME,
+                   total_points=10, subject_id=subj.id, class_id=cls.id,
+                   # a FK since migration 132; _fixture already made this term
+                   term_id=(await a_term(db, org, name=TERM_NAME)).id,
                    results_published_at=__import__("datetime").datetime.now(
                        __import__("datetime").timezone.utc),
                    created_by=(await _admin(db, org)).id, org_id=org.id)

@@ -53,7 +53,9 @@ from app.models.modules.school import (
     Grade,
     GradeStatus,
 )
+from app.models.modules.platform import AcademicTerm
 from app.services.import_files import rows_from_upload
+from app.services.report_lock import term_names_for_ids
 from app.schemas.question_bank import BankItemCreate, BankItemUpdate, ComposeFromBank
 from app.schemas.cbt_ops import InterventionCreate, InterventionUpdate, CBTSettingsUpdate
 from app.schemas.school_experience import (
@@ -186,8 +188,9 @@ async def list_exams(
     query = query.order_by(CBTExam.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
     items = (await db.execute(query)).scalars().all()
 
+    term_names = await _exam_term_names(db, current_user.org_id, items)
     return {
-        "items": [_exam_with_live(e, now) for e in items],
+        "items": [_exam_with_live(e, now, term_names) for e in items],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -221,10 +224,36 @@ def _is_live(exam: CBTExam, now: datetime) -> bool:
     return True
 
 
-def _exam_with_live(exam: CBTExam, now: datetime) -> dict:
+def _exam_with_live(exam: CBTExam, now: datetime, term_names: dict | None = None) -> dict:
     payload = ExamResponse.model_validate(exam).model_dump()
     payload["is_live"] = _is_live(exam, now)
+    # The term's NAME is for display only. It is resolved here, from the id, so the
+    # UI never has to hold its own copy of the term vocabulary — that copy is what
+    # drifted out of step with the database in the first place.
+    payload["term_name"] = (term_names or {}).get(exam.term_id)
     return payload
+
+
+async def _resolve_term_or_422(db: AsyncSession, org_id: str, term_id: str | None) -> None:
+    """Refuse a term_id that is not this org's.
+
+    While the column was free text there was nothing to validate — any string was
+    accepted, which is how 'Term 1' got in. An id CAN be wrong in a way that
+    matters (another tenant's term), so it is checked rather than trusted, and the
+    foreign key alone would give a 500 instead of a 422.
+    """
+    if not term_id:
+        return
+    ok = (await db.execute(
+        select(AcademicTerm.id).where(
+            AcademicTerm.id == term_id, AcademicTerm.org_id == org_id)
+    )).scalar_one_or_none()
+    if not ok:
+        raise HTTPException(status_code=422, detail="That academic term does not exist.")
+
+
+async def _exam_term_names(db: AsyncSession, org_id: str, exams) -> dict:
+    return await term_names_for_ids(db, org_id, {e.term_id for e in exams if e.term_id})
 
 
 @router.post("/exams", status_code=201, dependencies=[_can_write])
@@ -234,6 +263,7 @@ async def create_exam(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    await _resolve_term_or_422(db, current_user.org_id, payload.term_id)
     exam = CBTExam(
         **payload.model_dump(),
         created_by=current_user.id,
@@ -247,7 +277,8 @@ async def create_exam(
         resource_label=getattr(exam, "title", None) or exam.id,
         request=request,
     )
-    return ExamResponse.model_validate(exam).model_dump()
+    return _exam_with_live(exam, datetime.now(timezone.utc),
+                           await _exam_term_names(db, current_user.org_id, [exam]))
 
 
 @router.get("/exams/{exam_id}", dependencies=[_sit_or_read])
@@ -258,7 +289,8 @@ async def get_exam(
 ):
     exam = await _get_exam_or_404(db, exam_id, current_user.org_id)
     await _ensure_exam_sittable(db, current_user, exam)
-    return _exam_with_live(exam, datetime.now(timezone.utc))
+    return _exam_with_live(exam, datetime.now(timezone.utc),
+                           await _exam_term_names(db, current_user.org_id, [exam]))
 
 
 @router.patch("/exams/{exam_id}", dependencies=[_can_write])
@@ -271,6 +303,8 @@ async def update_exam(
 ):
     exam = await _get_exam_or_404(db, exam_id, current_user.org_id)
     changes = payload.model_dump(exclude_unset=True)
+    if "term_id" in changes:
+        await _resolve_term_or_422(db, current_user.org_id, changes["term_id"])
     for field, value in changes.items():
         setattr(exam, field, value)
     await db.flush()
@@ -280,7 +314,8 @@ async def update_exam(
         resource_label=getattr(exam, "title", None) or exam.id,
         new_values=changes, request=request,
     )
-    return ExamResponse.model_validate(exam).model_dump()
+    return _exam_with_live(exam, datetime.now(timezone.utc),
+                           await _exam_term_names(db, current_user.org_id, [exam]))
 
 
 @router.delete("/exams/{exam_id}", status_code=204, dependencies=[_can_write])
@@ -1151,7 +1186,7 @@ async def _assessment_status(db: AsyncSession, exam: CBTExam, org_id: str, user:
 
     block = await assessment_block_reason(db, exam, org_id)
     synced = 0
-    if exam.subject_id and exam.term:
+    if exam.subject_id and exam.term_id:
         # Scoped to this exam's class, subject and term. Counting by subject alone
         # would total every class in the school and report a number several times
         # the size of the class the teacher is looking at. Still not exam-exact —
@@ -1162,12 +1197,13 @@ async def _assessment_status(db: AsyncSession, exam: CBTExam, org_id: str, user:
             select(func.count(StudentAssessmentScore.id))
             .select_from(StudentAssessmentScore)
             .join(Assessment, Assessment.id == StudentAssessmentScore.assessment_id)
-            .join(AcademicTerm, AcademicTerm.id == Assessment.term_id)
             .where(
                 StudentAssessmentScore.org_id == org_id,
                 StudentAssessmentScore.subject_id == exam.subject_id,
                 Assessment.name == "CBT Exam Score",
-                AcademicTerm.name == exam.term,
+                # Was a join to AcademicTerm to compare NAMES. Both sides are ids
+                # since migration 132, so the join is gone rather than rewritten.
+                Assessment.term_id == exam.term_id,
             )
         )
         if exam.class_id:
@@ -1191,7 +1227,7 @@ def _feed_block_reason(exam: CBTExam) -> str | None:
         return "Publish results to students before sending them to the gradebook."
     if not exam.subject_id:
         return "Set a subject on the exam before sending results to the gradebook."
-    if not exam.term:
+    if not exam.term_id:
         return "Set a term on the exam before sending results to the gradebook."
     return None
 
@@ -1221,6 +1257,12 @@ async def _feed_gradebook(db: AsyncSession, exam: CBTExam, org_id: str, actor: U
     existing = {g.student_id: g for g in (await db.execute(
         select(Grade).where(Grade.cbt_exam_id == exam.id, Grade.org_id == org_id)
     )).scalars().all()}
+    # `grades.term` is still a NAME — that store is name-keyed and retiring, so this
+    # is a deliberate id->name bridge at the boundary rather than a leak of the old
+    # scheme inwards. Resolved ONCE here, not per pupil: the loop below covers a
+    # whole class. `_feed_block_reason` already refused a term-less exam, so this
+    # resolves; `.get` keeps a deleted term (term_id SET NULL) from raising.
+    term_name = (await term_names_for_ids(db, org_id, {exam.term_id})).get(exam.term_id)
     # Once, not per pupil: this loops over a whole class, and a query inside it
     # would be an N+1. Bands are the school's configured scale; the hardcoded
     # fallback applies only when they have none.
@@ -1237,12 +1279,12 @@ async def _feed_gradebook(db: AsyncSession, exam: CBTExam, org_id: str, actor: U
             g.max_score = 100
             g.grade_letter = letter
             g.subject_id = exam.subject_id
-            g.term = exam.term
+            g.term = term_name
             g.graded_by = actor.id
         else:
             db.add(Grade(
                 student_id=student_id, subject_id=exam.subject_id, cbt_exam_id=exam.id,
-                term=exam.term, score=pct, max_score=100, grade_letter=letter,
+                term=term_name, score=pct, max_score=100, grade_letter=letter,
                 status=GradeStatus.DRAFT, graded_by=actor.id, org_id=org_id,
             ))
         written += 1
@@ -1270,6 +1312,9 @@ async def exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current
         select(CBTSettings).where(CBTSettings.org_id == org_id)
     )).scalar_one_or_none()
     pass_pct = _resolve_pass_pct(exam, settings_row)
+    # Display name for the term, resolved from the id (migration 132). The UI prints
+    # it in prose ("...to the gradebook as draft grades for Autumn").
+    exam_term_name = (await term_names_for_ids(db, org_id, {exam.term_id})).get(exam.term_id)
     rows = _result_rows(attempts, names, ungraded, total_points, pass_pct / 100.0)
     fed_count = (await db.execute(
         select(func.count(Grade.id)).where(Grade.cbt_exam_id == exam.id, Grade.org_id == org_id)
@@ -1295,13 +1340,14 @@ async def exam_results(exam_id: str, db: AsyncSession = Depends(get_db), current
                  "hold_results": bool(exam.hold_results),
                  "results_published_at": exam.results_published_at.isoformat() if exam.results_published_at else None,
                  "published_pass_percentage": exam.published_pass_percentage,
-                 "class_id": exam.class_id, "subject_id": exam.subject_id, "term": exam.term},
+                 "class_id": exam.class_id, "subject_id": exam.subject_id,
+                 "term_id": exam.term_id, "term_name": exam_term_name},
         "attempts": rows,
         "stats": stats,
         "gradebook": {
             "block_reason": _feed_block_reason(exam),
             "fed_count": fed_count,
-            "term": exam.term,
+            "term_name": exam_term_name,
             "subject_id": exam.subject_id,
         },
         # The Make Report feed is a SEPARATE path from the gradebook and fails for
@@ -1477,7 +1523,8 @@ async def feed_gradebook(
         resource_type="Grade", resource_id=exam.id,
         resource_label=f"fed {fed} CBT grade(s) from {exam.title}", request=request,
     )
-    return {"fed": fed, "term": exam.term, "subject_id": exam.subject_id}
+    term_name = (await term_names_for_ids(db, org_id, {exam.term_id})).get(exam.term_id)
+    return {"fed": fed, "term_name": term_name, "subject_id": exam.subject_id}
 
 
 @router.get("/exams/{exam_id}/results/export", dependencies=[_admin_read])

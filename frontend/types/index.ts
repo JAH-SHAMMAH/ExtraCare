@@ -312,7 +312,10 @@ export interface CBTExam {
   description: string | null;
   class_id: string | null;
   subject_id: string | null;
-  term: string | null;
+  // An AcademicTerm id since migration 132. `term_name` is resolved server-side for
+  // display only — the client does not keep its own copy of the term vocabulary.
+  term_id: string | null;
+  term_name: string | null;
   created_by: string;
   start_time: string | null;
   end_time: string | null;

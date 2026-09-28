@@ -91,6 +91,10 @@ async def _term_with_soft_rows(db, org):
     term_id FK with ON DELETE CASCADE, so it is now HARD damage — it is destroyed
     rather than stranded. Kept in this fixture deliberately, so the test below can
     assert that the warning puts each row in the right half.
+
+    The CBT exam moved too, in migration 132, but only halfway: term_id with ON
+    DELETE SET NULL. So a DELETE still leaves it behind (soft), while a RENAME no
+    longer touches it at all — which is what the rename test below now pins.
     """
     t = await _bare_term(db, org)
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="Secondary", org_id=org.id)
@@ -99,7 +103,7 @@ async def _term_with_soft_rows(db, org):
     await db.commit()
     db.add_all([
         CBTExam(id=str(uuid.uuid4()), title="Maths CBT", status=ExamStatus.PUBLISHED,
-                total_points=10, class_id=cls.id, subject_id=subj.id, term=TERM,
+                total_points=10, class_id=cls.id, subject_id=subj.id, term_id=t.id,
                 created_by=(await _admin(db, org)).id, org_id=org.id),
         # Keyed by term_id since migration 131. Note this now makes the
         # approval a real dependent of the term row, which is exactly what
@@ -158,15 +162,23 @@ async def test_the_warning_names_the_rows_that_merely_stop_matching(db, org):
     # 131 moved report workflows from one half to the other.
     deleted, _, orphaned = detail.partition("LEFT ORPHANED")
 
-    assert "1 CBT exams" in orphaned, "name-matched: stranded, not destroyed"
+    assert "1 CBT exams" in orphaned, (
+        "term_id FK with ON DELETE SET NULL since migration 132 — the exam and its "
+        "attempts survive, it is only detached, so it belongs in the orphaned half")
     assert "1 report workflows" in deleted, (
         "term_id FK with ON DELETE CASCADE since migration 131 — a delete DESTROYS "
         "the release, so warning that it is merely 'orphaned' would understate it")
     assert "1 report workflows" not in orphaned
 
-    # And it must explain WHY orphaned rows matter, not just count them.
-    assert "BY NAME" in detail
-    assert "freeze" in detail
+    # And it must explain WHY orphaned rows matter, not just count them — for the
+    # mechanism that actually applies. The old message claimed the CBT sync, the
+    # freeze and the report-card gate "all match a term BY NAME"; migrations 131 and
+    # 132 moved all three onto term_id, so that sentence would now mislead.
+    assert "lose which term they belong to" in detail
+    assert "BY NAME" not in detail, (
+        "the CBT sync, the publish freeze and the report-card gate all key on "
+        "term_id now — telling an admin to look for a spelling problem sends them "
+        "after a cause that cannot exist")
 
 
 @pytest.mark.asyncio
@@ -218,9 +230,14 @@ async def test_creating_a_term_is_recorded(db, org):
 
 
 @pytest.mark.asyncio
-async def test_renaming_a_term_is_recorded_and_names_what_it_stranded(db, org):
-    """A rename looks innocent and strands the soft rows exactly as a delete
-    does — nothing cascades, nothing errors, everything silently stops matching."""
+async def test_renaming_a_term_no_longer_strands_the_rows_that_hold_its_id(db, org):
+    """This test used to assert that a rename stranded the CBT exam, because the exam
+    stored the term's NAME and the rename left it pointing at a name nothing used.
+    That WAS the incident, and migration 132 ended it: the exam holds term_id, so a
+    rename moves the name underneath it and the link survives.
+
+    So the rename is still recorded, but with nothing stranded and at info severity —
+    a warning here would train an admin to ignore warnings."""
     admin = await _admin(db, org)
     t = await _term_with_soft_rows(db, org)
 
@@ -233,8 +250,12 @@ async def test_renaming_a_term_is_recorded_and_names_what_it_stranded(db, org):
     assert "Autumn" in (entry.resource_label or "") and "Michaelmas" in (entry.resource_label or "")
     assert (entry.old_values or {}).get("name") == TERM
     stranded = (entry.new_values or {}).get("stranded") or {}
-    assert stranded.get("CBT exams") == 1
-    assert entry.severity == "warning"
+    assert stranded == {}, f"a rename strands nothing in this fixture now, got {stranded}"
+    assert entry.severity == "info"
+
+    # And the exam still points at the term it was sat in, under its new name.
+    exam = (await db.execute(select(CBTExam))).scalars().first()
+    assert exam.term_id == t.id
 
 
 @pytest.mark.asyncio

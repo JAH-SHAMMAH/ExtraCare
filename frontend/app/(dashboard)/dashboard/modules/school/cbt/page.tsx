@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import DOMPurify from "dompurify";
-import { useCurrentTerm } from "@/hooks/usePlatform";
+import { useCurrentTerm, useTerms } from "@/hooks/usePlatform";
 import {
   useCBTExams,
   useCBTExam,
@@ -72,13 +72,21 @@ function TeacherCBTView() {
   const deleteExam = useDeleteCBTExam();
   const { data: cbtSettings } = useCBTSettings();
   const currentTerm = useCurrentTerm();
+  // The school's real terms. The exam's term is a foreign key (migration 132), so
+  // this list IS the vocabulary — the page no longer carries its own copy, which is
+  // what drifted from the database and emptied every report card.
+  const { data: terms } = useTerms();
+  // `useCurrentTerm` reads the current session row, which stores a term NAME, so the
+  // default is resolved through the list to an id. If it does not resolve, the field
+  // stays empty rather than guessing — an unset term already has a clear message.
+  const currentTermId = (terms || []).find((t: any) => t.name === currentTerm)?.id || "";
 
   const [form, setForm] = useState({
     title: "",
     description: "",
     class_id: "",
     subject_id: "",
-    term: "",
+    term_id: "",
     start_time: "",
     end_time: "",
     duration_minutes: 60,
@@ -89,11 +97,13 @@ function TeacherCBTView() {
     status: "draft" as CBTExamStatus,
   });
   // Default the term from the org's current session (only while still empty).
-  useEffect(() => { if (currentTerm) setForm((f) => (f.term ? f : { ...f, term: currentTerm })); }, [currentTerm]);
+  useEffect(() => {
+    if (currentTermId) setForm((f) => (f.term_id ? f : { ...f, term_id: currentTermId }));
+  }, [currentTermId]);
 
   const resetForm = () => {
     setForm({
-      title: "", description: "", class_id: "", subject_id: "", term: currentTerm,
+      title: "", description: "", class_id: "", subject_id: "", term_id: currentTermId,
       start_time: "", end_time: "",
       duration_minutes: cbtSettings?.default_duration_minutes ?? 60,
       shuffle_questions: cbtSettings?.shuffle_default ?? false,
@@ -112,7 +122,7 @@ function TeacherCBTView() {
       description: form.description || null,
       class_id: form.class_id || null,
       subject_id: form.subject_id || null,
-      term: form.term || null,
+      term_id: form.term_id || null,
       start_time: form.start_time || null,
       end_time: form.end_time || null,
       pass_percentage: form.pass_percentage === "" ? null : Number(form.pass_percentage),
@@ -130,7 +140,7 @@ function TeacherCBTView() {
       description: e.description || "",
       class_id: e.class_id || "",
       subject_id: e.subject_id || "",
-      term: e.term || "",
+      term_id: e.term_id || "",
       start_time: e.start_time ? e.start_time.substring(0, 16) : "",
       end_time: e.end_time ? e.end_time.substring(0, 16) : "",
       duration_minutes: e.duration_minutes,
@@ -214,8 +224,21 @@ function TeacherCBTView() {
             </div>
             <div>
               <label className="label">Term</label>
-              <input value={form.term} onChange={(e) => setForm({ ...form, term: e.target.value })} className="input" placeholder="e.g. Term 1" />
+              {/* A picker, not a text box. This was free text with the placeholder
+                  "e.g. Term 1", and that placeholder is where the drifted values came
+                  from while the school's terms were Autumn/Spring/Summer. */}
+              <select value={form.term_id} onChange={(e) => setForm({ ...form, term_id: e.target.value })} className="input">
+                <option value="">Select a term…</option>
+                {(terms || []).map((t: any) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
               <p className="text-[11px] text-slate-400 mt-1">Needed with a subject before results can be sent to the gradebook.</p>
+              {!(terms || []).length && (
+                <p className="text-[11px] text-amber-600 mt-1">
+                  No academic terms are set up yet — add them under Report Setup first.
+                </p>
+              )}
             </div>
             <div>
               <label className="label">Start Time</label>

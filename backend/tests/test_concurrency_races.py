@@ -28,6 +28,7 @@ from app.database import Base
 from app.models.modules.platform import (
     AcademicSubTerm, AcademicTerm, Assessment, StudentAssessmentScore,
 )
+from tests._terms import a_term
 from app.models.modules.school import (
     AttemptStatus, CBTAnswer, CBTAttempt, CBTExam, CBTQuestion, ExamStatus,
     QuestionType, SchoolClass, Student, Subject,
@@ -128,7 +129,8 @@ async def test_simultaneous_submits_produce_one_graded_attempt(races):
     async with Session() as db:
         exam = CBTExam(id=str(uuid.uuid4()), title="Quiz", status=ExamStatus.PUBLISHED,
                        total_points=2.0, duration_minutes=60, subject_id=ids["subj"],
-                       class_id=ids["cls"], term="Term 1", created_by=ids["admin"],
+                       class_id=ids["cls"], created_by=ids["admin"],
+                       term_id=(await a_term(db, ids["org"], name="Term 1")).id,
                        org_id=ids["org"])
         db.add(exam)
         await db.flush()
@@ -179,7 +181,8 @@ async def test_a_repeated_question_in_one_payload_stores_one_answer(races):
     async with Session() as db:
         exam = CBTExam(id=str(uuid.uuid4()), title="Quiz", status=ExamStatus.PUBLISHED,
                        total_points=2.0, duration_minutes=60, subject_id=ids["subj"],
-                       class_id=ids["cls"], term="Term 1", created_by=ids["admin"],
+                       class_id=ids["cls"], created_by=ids["admin"],
+                       term_id=(await a_term(db, ids["org"], name="Term 1")).id,
                        org_id=ids["org"])
         db.add(exam)
         await db.flush()

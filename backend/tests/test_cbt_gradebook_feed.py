@@ -61,9 +61,16 @@ async def _subject(db, org) -> Subject:
 
 
 async def _exam(db, org, staff, *, hold_results=False, subject_id=None, term=None) -> CBTExam:
+    """`term` is still written as a NAME here for readability; since migration 132
+    the column is a FK, so the named term is created and its id stored. The feed
+    writes that name back into the name-keyed `grades` store, so assertions on
+    Grade.term still read the name the caller passed."""
+    from tests._terms import a_term
+
+    term_id = (await a_term(db, org, name=term)).id if term else None
     exam = CBTExam(id=str(uuid.uuid4()), title="Quiz", created_by=staff.id, org_id=org.id,
                    status=ExamStatus.PUBLISHED, total_points=20,
-                   hold_results=hold_results, subject_id=subject_id, term=term)
+                   hold_results=hold_results, subject_id=subject_id, term_id=term_id)
     db.add(exam)
     await db.commit()
     return exam

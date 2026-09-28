@@ -1602,12 +1602,30 @@ async def _term_delete_impact(db: AsyncSession, org_id: str, term_id: str, name:
             ReportApproval.org_id == org_id, ReportApproval.term_id == term_id)
     )).scalar() or 0
 
-    soft: dict[str, int] = {}
-    if name:
-        from app.models.modules.school import CBTExam, Grade, StudentReport
+    # The soft half has TWO mechanisms now, and they behave differently on a rename,
+    # so they are counted separately rather than lumped together.
+    from app.models.modules.school import CBTExam, Grade, StudentReport
 
+    # (a) UNTAGGED: CBT exams hold term_id with ON DELETE SET NULL since migration
+    # 132. A delete clears the tag; a RENAME does not touch them at all, which was
+    # the point of the migration. Still soft — the exam survives and the feed already
+    # says "Set a term on the exam..." — and deliberately not cascaded, because 1,799
+    # attempts hang off these rows.
+    soft_untagged: dict[str, int] = {}
+    n_cbt = (await db.execute(
+        select(func.count(CBTExam.id)).where(
+            CBTExam.org_id == org_id, CBTExam.term_id == term_id)
+    )).scalar() or 0
+    if n_cbt:
+        soft_untagged["CBT exams"] = n_cbt
+
+    # (b) UNMATCHED: these still store the term as a NAME, so they can only be
+    # counted when one is supplied — and for them a rename strands rows exactly as a
+    # delete does, silently, which is what the rename audit records.
+    soft_by_name: dict[str, int] = {}
+    if name:
         for label, model in (
-            ("CBT exams", CBTExam), ("gradebook rows", Grade),
+            ("gradebook rows", Grade),
             ("student reports", StudentReport),
             ("academic sessions", AcademicSession),
         ):
@@ -1615,13 +1633,16 @@ async def _term_delete_impact(db: AsyncSession, org_id: str, term_id: str, name:
                 select(func.count(model.id)).where(model.org_id == org_id, model.term == name)
             )).scalar() or 0
             if n:
-                soft[label] = n
+                soft_by_name[label] = n
 
+    soft = {**soft_untagged, **soft_by_name}
     return {
         "hard": {"assessments": hard_assessments, "scores": hard_scores,
                  "report comments": hard_comments,
                  "report workflows": hard_workflows},
         "soft": soft,
+        "soft_untagged": soft_untagged,
+        "soft_by_name": soft_by_name,
         "hard_total": (hard_assessments + hard_scores + hard_comments
                        + hard_workflows),
         "soft_total": sum(soft.values()),
@@ -1664,7 +1685,11 @@ async def update_term(term_id: str, payload: TermUpdate, request: Request = None
         setattr(t, f, v)
     await db.flush()
     if renamed:
-        stranded = (await _term_delete_impact(db, current_user.org_id, t.id, was))["soft"]
+        # ONLY the name-matched rows: a rename strands those, and since migration
+        # 132 it no longer touches the CBT exams (they hold a term_id), so counting
+        # them here would report damage the rename did not do.
+        stranded = (await _term_delete_impact(
+            db, current_user.org_id, t.id, was))["soft_by_name"]
         await log_action(
             db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
             resource_type="AcademicTerm", resource_id=t.id,
@@ -1701,19 +1726,29 @@ async def delete_term(term_id: str, confirm: bool = False, request: Request = No
             lines.append("PERMANENTLY DELETED: "
                          + ", ".join(f"{v} {k}" for k, v in hard.items()))
         if impact["soft"]:
-            lines.append("LEFT ORPHANED (kept, but will silently stop matching this "
-                         "term by name): "
+            lines.append("LEFT ORPHANED (kept, but detached from this term): "
                          + ", ".join(f"{v} {k}" for k, v in impact["soft"].items()))
+        # Why the orphaned half matters, per mechanism. The old wording said the CBT
+        # sync, the publish freeze and the report-card gate "all match a term BY
+        # NAME" — true when it was written, and false since migrations 131 and 132
+        # moved all three onto term_id. Saying so now would send an admin looking for
+        # a spelling problem that can no longer exist.
+        why = []
+        if impact["soft_untagged"]:
+            why.append("Untagged rows keep their marks but lose which term they "
+                       "belong to, so the CBT feed will ask for a term again.")
+        if impact["soft_by_name"]:
+            why.append("Rows that still store the term as a NAME (the gradebook, "
+                       "student reports, sessions) silently stop matching: nothing "
+                       "is removed and no error is raised, they just stop being "
+                       "found.")
         raise HTTPException(
             status_code=409,
             detail=(
                 f"Deleting '{t.name}' would affect existing records. "
-                + " ".join(lines)
-                + " Orphaned rows are the dangerous half: nothing is removed, so "
-                  "there is no error, but the CBT score sync, the publish freeze and "
-                  "the parent report-card gate all match a term BY NAME and would "
-                  "stop finding it. Rename the term instead if you are changing what "
-                  "it is called, or re-tag those records first. "
+                + " ".join(lines) + " " + " ".join(why)
+                + " Rename the term instead if you are changing what it is called, "
+                  "or re-tag those records first. "
                   "Re-send with ?confirm=true to delete anyway."
             ),
         )
@@ -2557,30 +2592,23 @@ async def _grid_notices(db: AsyncSession, org: str, cls, subject_id: str,
 
     Read-only: `assessment_block_reason` creates nothing.
 
-    NOT every skip reason can reach here, and that is structural rather than an
-    oversight. Exams are found BY matching the grid's term name, subject and
-    class, so an exam whose term string has drifted ("No academic term named X")
-    matches nothing and cannot be reported on any grid — it is surfaced on the CBT
-    results panel and in the audit log instead, and is admin-only anyway. Likewise
-    an exam with no subject belongs to no subject column. What does reach here is
-    the case that actually loses marks silently: a frozen report, or a sub-term
-    the school never defined.
+    Exams are matched on term_id, subject and class. Until migration 132 the term
+    was matched by NAME, and an exam whose spelling had drifted matched nothing —
+    so the one failure most worth reporting could never appear on any grid. That
+    hole is closed: a foreign key cannot drift, so a drifted exam no longer exists
+    to miss. An exam with no subject still belongs to no subject column, and one
+    whose term was deleted (term_id SET NULL) is reported on the CBT results panel
+    instead, since it belongs to no term's grid by definition.
     """
     from app.models.modules.school import CBTExam
     from app.services.cbt_assessment_sync import assessment_block_reason
-
-    term_name = (await db.execute(
-        select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org)
-    )).scalar_one_or_none()
-    if not term_name:
-        return []
 
     exams = (await db.execute(
         select(CBTExam).where(
             CBTExam.org_id == org,
             CBTExam.class_id == cls.id,
             CBTExam.subject_id == subject_id,
-            CBTExam.term == term_name,
+            CBTExam.term_id == term_id,
             CBTExam.results_published_at.is_not(None),
         )
     )).scalars().all()

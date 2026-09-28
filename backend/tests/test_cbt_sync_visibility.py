@@ -51,6 +51,12 @@ from app.services.cbt_assessment_sync import (
 )
 
 TERM_NAME = "Term 1"
+# What the admin-only setup reason quotes. These tests need SOME setup gap that only
+# an administrator can close. Until migration 132 that was an exam naming a term the
+# school did not have, and the reason quoted TERM_NAME. A term is a foreign key now,
+# so that gap cannot exist; the missing sub-term is the one that remains, and it is
+# what `_school(with_sub_term=False)` provokes.
+SETUP_GAP_QUOTE = "sub-terms"
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -83,10 +89,25 @@ async def _school(db, org, *, with_term=True, with_sub_term=True):
     return cls, subj, term, sub
 
 
-async def _exam(db, org, cls, subj, *, published=True, term=TERM_NAME, subject=True):
+_DEFAULT_TERM = object()   # "whatever the school's term is", vs an explicit None
+
+
+async def _exam(db, org, cls, subj, *, published=True, term=_DEFAULT_TERM, subject=True):
+    """Since migration 132 the exam's term is a foreign key, so there is no longer
+    any such thing as an exam naming a term that does not exist.
+
+    `term` left alone means the org's TERM_NAME term (created if the caller's
+    `_school` did not); `term=None` means deliberately untagged, which is the
+    deleted-term state; a row may also be passed directly.
+    """
+    from tests._terms import a_term
+
+    if term is _DEFAULT_TERM:
+        term = await a_term(db, org, name=TERM_NAME)
     e = CBTExam(
         id=str(uuid.uuid4()), title="Maths CBT", status=ExamStatus.PUBLISHED,
-        total_points=10, class_id=cls.id, org_id=org.id, term=term,
+        total_points=10, class_id=cls.id, org_id=org.id,
+        term_id=term.id if term is not None else None,
         subject_id=subj.id if subject else None,
         results_published_at=datetime.now(timezone.utc) if published else None,
         created_by=(await _user(db, org, "org_admin")).id,
@@ -129,16 +150,20 @@ def test_the_block_is_still_an_ordinary_string():
 # ── 2. the real blocks, classified correctly ──────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_missing_academic_term_is_admin_only(db, org):
-    """The exam is perfect; the school simply has no term by that name. Nothing a
-    teacher can do — and the likeliest cause is a spelling drift they cannot see."""
+async def test_an_exam_with_no_term_is_blocked_with_a_reason_a_teacher_can_act_on(db, org):
+    """This used to assert the admin-only "no academic term named X exists" reason,
+    which fired on a spelling drift. Migration 132 made the term a foreign key, so
+    that scenario cannot occur — and the case that CAN occur (a term was deleted, so
+    term_id went SET NULL) is something the teacher can fix themselves. So the reason
+    must NOT be generalised away from them."""
     cls, subj, _, _ = await _school(db, org, with_term=False)
-    exam = await _exam(db, org, cls, subj)
+    exam = await _exam(db, org, cls, subj, term=None)
 
     block = await assessment_block_reason(db, exam, org.id)
-    assert block is not None and block.admin_only is True
-    assert TERM_NAME in block.reason
-    assert block.message_for(is_admin=False) == ADMIN_FIX_NOTICE
+    assert block is not None
+    assert block.admin_only is False
+    assert block.reason == "Exam has no term assigned"
+    assert block.message_for(is_admin=False) == "Exam has no term assigned"
 
 
 @pytest.mark.asyncio
@@ -206,8 +231,15 @@ async def test_the_status_helper_writes_nothing(db, org):
 @pytest.mark.asyncio
 async def test_the_sync_returns_exactly_what_the_status_helper_reports(db, org):
     """If these could differ, the teacher would be shown a reason the sync did not
-    act on. The sync delegates, so they cannot."""
-    cls, subj, _, _ = await _school(db, org, with_term=False)
+    act on. The sync delegates, so they cannot.
+
+    It used to reach the admin-only case via with_term=False — an exam naming a term
+    the school did not have. Migration 132 made that impossible (the term is a FK),
+    and a term-less exam is now a reason the TEACHER can act on, so it would no
+    longer exercise the admin_only path at all. The missing sub-term is the
+    admin-only setup gap that remains.
+    """
+    cls, subj, _, _ = await _school(db, org, with_sub_term=False)
     exam = await _exam(db, org, cls, subj)
 
     block = await assessment_block_reason(db, exam, org.id)
@@ -224,7 +256,7 @@ async def test_the_sync_returns_exactly_what_the_status_helper_reports(db, org):
 async def test_publishing_into_a_setup_problem_leaves_an_audit_record(db, org):
     """The publisher may be a teacher who can do nothing with the reason, and the
     toast dies on the next click. An administrator must still be able to find it."""
-    cls, subj, _, _ = await _school(db, org, with_term=False)
+    cls, subj, _, _ = await _school(db, org, with_sub_term=False)
     exam = await _exam(db, org, cls, subj, published=False)
     teacher = await _user(db, org, "teacher")
 
@@ -241,18 +273,18 @@ async def test_publishing_into_a_setup_problem_leaves_an_audit_record(db, org):
             select(AuditLog).where(AuditLog.resource_type == "StudentAssessmentScore")
         )).scalars().all()
     ]
-    assert any(TERM_NAME in x and "administrator" in x for x in labels), labels
+    assert any(SETUP_GAP_QUOTE in x and "administrator" in x for x in labels), labels
 
 
 @pytest.mark.asyncio
 async def test_an_admin_publishing_sees_the_precise_reason(db, org):
-    cls, subj, _, _ = await _school(db, org, with_term=False)
+    cls, subj, _, _ = await _school(db, org, with_sub_term=False)
     exam = await _exam(db, org, cls, subj, published=False)
     admin = await _user(db, org, "org_admin")
 
     reason = (await publish_exam_results(
         exam.id, request=None, db=db, current_user=admin))["assessment"]["reason"]
-    assert reason != ADMIN_FIX_NOTICE and TERM_NAME in reason
+    assert reason != ADMIN_FIX_NOTICE and SETUP_GAP_QUOTE in reason
 
 
 # ── 5. the retry path ─────────────────────────────────────────────────────────
@@ -261,7 +293,7 @@ async def test_an_admin_publishing_sees_the_precise_reason(db, org):
 async def test_the_sync_can_be_rerun_without_unpublishing(db, org):
     """The point of the endpoint: fix the setup, re-run, and students never lose
     sight of their results in the process."""
-    cls, subj, _, _ = await _school(db, org, with_term=False)
+    cls, subj, _, _ = await _school(db, org, with_sub_term=False)
     exam = await _exam(db, org, cls, subj)
     stu = Student(id=str(uuid.uuid4()), student_id="S-1", first_name="A", last_name="B",
                   class_id=cls.id, org_id=org.id)
@@ -272,14 +304,14 @@ async def test_the_sync_can_be_rerun_without_unpublishing(db, org):
     await db.commit()
     admin = await _user(db, org, "org_admin")
 
-    # Blocked: the term does not exist yet.
+    # Blocked: the school has no sub-term yet. (Until migration 132 the provoked gap
+    # was a missing TERM; the exam holds a term_id now, so the term always exists.)
     r = await sync_exam_to_assessment(exam.id, request=None, db=db, current_user=admin)
     assert r["synced"] == 0 and r["admin_only"] is True
     assert (await db.execute(select(StudentAssessmentScore))).scalars().first() is None
 
-    # An admin adds the missing term. (The sub-term already exists; there is a
-    # unique index on (org_id, name), so a second "Full-Term" is a real error.)
-    db.add(AcademicTerm(id=str(uuid.uuid4()), name=TERM_NAME, org_id=org.id))
+    # An admin adds the missing sub-term.
+    db.add(AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", org_id=org.id))
     await db.commit()
 
     # ...and the same button now lands the scores, with no unpublish in between.
@@ -317,19 +349,19 @@ async def test_rerunning_the_sync_is_idempotent(db, org):
 async def test_the_results_endpoint_reports_the_assessment_feed(db, org):
     """Previously the response described the gradebook feed only, so a skipped
     assessment sync was invisible on the page that publishes it."""
-    cls, subj, _, _ = await _school(db, org, with_term=False)
+    cls, subj, _, _ = await _school(db, org, with_sub_term=False)
     exam = await _exam(db, org, cls, subj)
     admin = await _user(db, org, "org_admin")
 
     a = (await exam_results(exam.id, db=db, current_user=admin))["assessment"]
     assert a["admin_only"] is True
-    assert TERM_NAME in a["block_reason"]
+    assert SETUP_GAP_QUOTE in a["block_reason"]
     assert a["synced_count"] == 0
 
 
 @pytest.mark.asyncio
 async def test_the_results_endpoint_generalises_for_a_teacher(db, org):
-    cls, subj, _, _ = await _school(db, org, with_term=False)
+    cls, subj, _, _ = await _school(db, org, with_sub_term=False)
     exam = await _exam(db, org, cls, subj)
     teacher = await _user(db, org, "teacher")
 

@@ -187,7 +187,7 @@ export default function CBTResultsPage() {
                           ? <span className="text-amber-700">{blocked}</span>
                           : fedCount > 0
                             ? <>{fedCount} result{fedCount === 1 ? "" : "s"} sent to the gradebook as draft{fedCount === 1 ? "" : "s"}. <Link href="/dashboard/modules/school/result-publish" className="text-brand-600 font-semibold hover:underline">Publish to parents →</Link></>
-                            : <>Send these results to the gradebook as draft grades{gb.term ? <> for {gb.term}</> : null} (best attempt per student, as a percentage), then publish them to parents.</>}
+                            : <>Send these results to the gradebook as draft grades{gb.term_name ? <> for {gb.term_name}</> : null} (best attempt per student, as a percentage), then publish them to parents.</>}
                       </p>
                     </div>
                   </div>

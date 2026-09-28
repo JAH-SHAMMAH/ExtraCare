@@ -119,7 +119,9 @@ class ExamCreate(BaseModel):
     description: Optional[str] = None
     class_id: Optional[str] = None
     subject_id: Optional[str] = None
-    term: Optional[str] = None  # tags fed Grade rows; required before the gradebook feed
+    # An AcademicTerm id since migration 132 (it was a free-text name, which drifted).
+    # Required before the gradebook feed and the Make Report sync will run.
+    term_id: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     duration_minutes: int = 60
@@ -134,7 +136,7 @@ class ExamUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     subject_id: Optional[str] = None
-    term: Optional[str] = None
+    term_id: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     duration_minutes: Optional[int] = None
@@ -151,7 +153,10 @@ class ExamResponse(_OrmBase):
     description: Optional[str]
     class_id: Optional[str]
     subject_id: Optional[str]
-    term: Optional[str]
+    term_id: Optional[str]
+    # Resolved for display only — the UI shows a term name in prose ("...for Autumn"),
+    # and making it look the name up separately is how the two drift apart again.
+    term_name: Optional[str] = None
     created_by: str
     start_time: Optional[datetime]
     end_time: Optional[datetime]
