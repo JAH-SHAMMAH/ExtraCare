@@ -1317,6 +1317,29 @@ async def update_report_workflow(
         elif new_stage == "approved":
             r.approved_by = current_user.id
         elif new_stage == "published":
+            # A term's TOTAL can be built from components that are not all marked
+            # yet, and the evaluator cannot tell an unmarked component from a zero
+            # — so publishing now would put a mark BELOW what the pupil earned on
+            # a card a parent reads. Refused here rather than flagged on the card:
+            # a footnote beside a printed grade is the first thing lost.
+            #
+            # Only applies where it can: a term whose components are all marked,
+            # or which has no cumulative configured, passes untouched. Autumn's
+            # TOTAL is a single assessment that every pupil has, so the classes
+            # already published stay publishable.
+            from app.services.component_coverage import component_coverage
+
+            if r.class_id and r.term_id:
+                sub_term_id = (await db.execute(
+                    select(AcademicSubTerm.id).where(
+                        AcademicSubTerm.org_id == current_user.org_id,
+                        AcademicSubTerm.name.in_(["Full-Term", "Full Term"]))
+                )).scalars().first()
+                if sub_term_id:
+                    coverage = await component_coverage(
+                        db, current_user.org_id, r.term_id, sub_term_id, r.class_id)
+                    if not coverage.ok:
+                        raise HTTPException(status_code=422, detail=coverage.message())
             r.published_by = current_user.id
             r.published_at = datetime.now(timezone.utc)
         await log_action(
