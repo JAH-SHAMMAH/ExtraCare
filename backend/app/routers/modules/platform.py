@@ -88,6 +88,9 @@ from app.schemas.platform import (
     GradeSummaryRow,
     SubjectPerformanceResponse,
     SubjectPerformanceRow,
+    CardSlotComment,
+    DepartmentalAnalysisResponse,
+    DepartmentRow,
 )
 from app.services.ledger import money  # Decimal helper for grading bands
 from app.services.report_engine import (
@@ -1950,7 +1953,8 @@ async def delete_deadline(deadline_id: str, db: AsyncSession = Depends(get_db), 
 
 def _comment_type_response(c: ReportCommentType) -> CommentTypeResponse:
     return CommentTypeResponse(id=c.id, name=c.name, comment_type=c.comment_type,
-                              max_length=c.max_length, is_active=c.is_active)
+                              max_length=c.max_length, is_active=c.is_active,
+                              admin_only=bool(c.admin_only))
 
 
 @router.get("/report-comment-types", response_model=list[CommentTypeResponse], dependencies=[_school_read])
@@ -3308,7 +3312,26 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     comment_rows = (await db.execute(select(StudentReportComment).where(
         StudentReportComment.org_id == org, StudentReportComment.student_id == student_id,
         StudentReportComment.term_id == term_id, StudentReportComment.sub_term_id == sub_term_id))).scalars().all()
-    comments = {c.kind: c.text for c in comment_rows}
+    # Built-ins keyed by kind; custom slots keyed by their OWN id. Keying
+    # everything by `kind` would collapse every custom slot into a single entry,
+    # since they all carry the literal 'custom'.
+    comments = {c.kind: c.text for c in comment_rows if c.comment_type_id is None}
+
+    # Custom slots, in the order the school configured them. A slot with no text
+    # for this pupil is OMITTED rather than rendered empty: a labelled blank box
+    # on a report card invites a parent to read meaning into the gap, and the
+    # school may simply not use that slot for this child.
+    slot_texts = {c.comment_type_id: c.text for c in comment_rows
+                  if c.comment_type_id is not None and (c.text or "").strip()}
+    slot_comments: list[CardSlotComment] = []
+    if slot_texts:
+        for st in (await db.execute(select(ReportCommentType).where(
+                ReportCommentType.org_id == org,
+                ReportCommentType.id.in_(list(slot_texts)),
+                ReportCommentType.is_active == True)  # noqa: E712
+                .order_by(ReportCommentType.created_at))).scalars().all():
+            slot_comments.append(CardSlotComment(
+                comment_type_id=st.id, name=st.name, text=slot_texts[st.id]))
 
     # "Times Punctual" — present days that were NOT flagged late. The check-in
     # pipeline (services/attendance.py::_upsert_daily_record) already resolves each
@@ -3357,6 +3380,7 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         class_teacher_comment=(sr.class_teacher_comment if sr else None),
         head_comment=comments.get("head") or (sr.head_teacher_comment if sr else None),
         pc_comment=comments.get("pc"),
+        slot_comments=slot_comments,
     )
 
 
@@ -3661,16 +3685,45 @@ async def save_subject_enrollments(payload: EnrollmentSave,
 # in their subject, one row per (student, subject, term, sub-term).
 
 
+# The slot names that designate the per-subject remark. Matched in FULL and
+# case-insensitively, never by substring.
+#
+# More than one, because the name in use is "Subject Teacher Comment" and a school
+# may equally call it "Subject Comment". Narrowing to a single guess is what broke
+# test_max_length_is_enforced_when_configured: the accidental binding went, and so
+# did the intended one.
+SUBJECT_COMMENT_SLOT_NAMES = ("subject teacher comment", "subject comment",
+                              "subject teacher's comment")
+
+
 async def _subject_comment_max_length(db: AsyncSession, org_id: str) -> int | None:
     """The configured max length for a subject remark, if the school set one.
 
-    Read from ReportCommentType where a row names the subject slot; None when
-    unconfigured, which the UI treats as unlimited rather than inventing a cap.
+    None when unconfigured — the UI treats that as unlimited rather than inventing
+    a cap, and that is unchanged.
+
+    WHAT WAS WRONG WITH THE OLD VERSION. It searched for the SUBSTRING "subject"
+    anywhere in any slot's name, which is a text search standing in for a
+    relationship. It would bind to "Subject Comment" and equally to "Subjective
+    Assessment"; with two matches it silently took whichever row the database
+    returned first; and it scanned inactive slots as readily as active ones.
+
+    It never fired in practice: no slot has ever been configured, so the
+    "unlimited" behaviour seen to date is this function finding nothing, not a
+    setting anyone chose.
+
+    Now: active slots only, matched on the WHOLE name against a known set. Still
+    names, and a name is editable — the durable fix is a stable `code` on
+    ReportCommentType, which does not exist yet and is a migration rather than a
+    cleanup. Matching in full is the part that can be done without one, and it
+    removes the accidental binding and the nondeterminism without pretending the
+    string is stable.
     """
     rows = (await db.execute(select(ReportCommentType).where(
-        ReportCommentType.org_id == org_id))).scalars().all()
+        ReportCommentType.org_id == org_id,
+        ReportCommentType.is_active == True))).scalars().all()  # noqa: E712
     for r in rows:
-        if "subject" in (r.name or "").lower():
+        if (r.name or "").strip().lower() in SUBJECT_COMMENT_SLOT_NAMES:
             return r.max_length
     return None
 
@@ -4520,4 +4573,80 @@ async def subject_performance(term_id: str, sub_term_id: str, class_id: str | No
         term_name=analysis.term_name, sub_term_name=analysis.sub_term_name,
         class_name=_scoped_class_name(classes, class_id),
         passmark=passmark, threshold_source=source, rows=rows,
+        not_configured=analysis.not_configured)
+
+
+@router.get("/result-analysis/departmental", response_model=DepartmentalAnalysisResponse,
+            dependencies=[Depends(PermissionChecker("school_admin:read"))])
+async def departmental_analysis(term_id: str, sub_term_id: str, class_id: str | None = None,
+                                section_id: str | None = None,
+                                db: AsyncSession = Depends(get_db),
+                                current_user: User = Depends(get_current_active_user)):
+    """Performance grouped by department: Sciences, Social Sciences, and so on.
+
+    Another pivot of `analyse_term`, sharing the figure every other Result
+    Analysis screen reads. Departments come from `subjects.department`, which the
+    analysis core already carries because it loads those rows for their names.
+
+    A subject with NO department lands in an explicit "unassigned" row rather than
+    vanishing: a report whose totals quietly exclude a subject is worse than one
+    that shows the gap. `no_departments` distinguishes "nothing is categorised
+    yet" from "this term was never set up", which look identical as an empty page.
+
+    Partially-marked pupils are excluded from every figure and counted separately,
+    matching Subject Performance — a department mean dragged down by a CA nobody
+    entered would misreport the department, not the pupil.
+    """
+    from app.services.result_analysis import analyse_term, resolve_thresholds
+
+    org = current_user.org_id
+    analysis = await analyse_term(db, org, term_id, sub_term_id,
+                                  class_id=class_id, section_id=section_id)
+    passmark, _honours, source = await resolve_thresholds(db, org, analysis.sub_term_name)
+    classes = {c.id: c.name for c in (await db.execute(select(SchoolClass).where(
+        SchoolClass.org_id == org))).scalars().all()}
+
+    # department -> percentages, the subjects that fed them, and the pupils behind
+    # them. Keyed on the department STRING as stored; there is no department table.
+    pcts: dict[str | None, list] = {}
+    subjects: dict[str | None, set] = {}
+    pupils: dict[str | None, set] = {}
+    incomplete: dict[str | None, int] = {}
+
+    for p in analysis.pupils:
+        for sid, pct in p.subject_pct.items():
+            dept = analysis.subject_departments.get(sid)
+            pcts.setdefault(dept, []).append(pct)
+            subjects.setdefault(dept, set()).add(sid)
+            pupils.setdefault(dept, set()).add(p.student_id)
+        for sid in p.incomplete_subjects:
+            dept = analysis.subject_departments.get(sid)
+            incomplete[dept] = incomplete.get(dept, 0) + 1
+            subjects.setdefault(dept, set()).add(sid)
+
+    rows: list[DepartmentRow] = []
+    for dept in set(pcts) | set(incomplete):
+        vals = pcts.get(dept, [])
+        passed = sum(1 for v in vals if v >= passmark)
+        rows.append(DepartmentRow(
+            department=dept,
+            subjects=sorted(analysis.subject_names.get(s, s) for s in subjects.get(dept, set())),
+            entered=len(vals), pupils=len(pupils.get(dept, set())),
+            average=round_dp(sum(vals) / len(vals), 2) if vals else None,
+            highest=round_dp(max(vals), 2) if vals else None,
+            lowest=round_dp(min(vals), 2) if vals else None,
+            passed=passed, failed=len(vals) - passed,
+            pass_rate=round_dp(Decimal(passed) / Decimal(len(vals)) * 100, 1) if vals else None,
+            incomplete=incomplete.get(dept, 0)))
+
+    # Named departments alphabetically, with the unassigned bucket last — it is a
+    # gap to close, not a peer of the real ones.
+    rows.sort(key=lambda r: (r.department is None, (r.department or "").lower()))
+
+    return DepartmentalAnalysisResponse(
+        term_name=analysis.term_name, sub_term_name=analysis.sub_term_name,
+        class_name=classes.get(class_id) if class_id else None,
+        passmark=passmark, threshold_source=source, rows=rows,
+        no_departments=bool(analysis.subject_departments)
+        and not any(d for d in analysis.subject_departments.values()),
         not_configured=analysis.not_configured)

@@ -226,3 +226,73 @@ export function SubjectsTab({ query, termId, subTermId }: {
     </ReportShell>
   );
 }
+
+export function DepartmentsTab({ query, termId, subTermId }: {
+  query: Query; termId: string; subTermId: string;
+}) {
+  return (
+    <ReportShell query={query} termId={termId} subTermId={subTermId}
+                 title="Departmental Analysis">
+      {(d) => (
+        <>
+          {d.no_departments && (
+            <p className="px-5 py-3 text-sm text-amber-700 border-b border-amber-100 bg-amber-50">
+              No subject has a department yet, so everything falls under “Unassigned”.
+              Set departments on the Subjects page to break this down.
+            </p>
+          )}
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium">Department</th>
+                <th className="px-3 py-2 text-center font-medium">Marks</th>
+                <th className="px-3 py-2 text-center font-medium">Pupils</th>
+                <th className="px-3 py-2 text-center font-medium">Average %</th>
+                <th className="px-3 py-2 text-center font-medium">Highest</th>
+                <th className="px-3 py-2 text-center font-medium">Lowest</th>
+                <th className="px-3 py-2 text-center font-medium">Pass rate</th>
+                <th className="px-3 py-2 text-center font-medium">Incomplete</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {d.rows.map((r: any) => (
+                <tr key={r.department ?? "__unassigned__"} className="hover:bg-slate-50">
+                  <td className="px-4 py-2">
+                    {/* An unassigned row is a gap to close, not a peer of the real
+                        departments — named as such and visibly set apart. */}
+                    <span className={cn("font-medium",
+                                        r.department ? "text-slate-800" : "text-amber-700")}>
+                      {r.department ?? "Unassigned"}
+                    </span>
+                    <span className="block text-[11px] text-slate-400">
+                      {r.subjects.join(", ")}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-center tabular-nums text-slate-500">{r.entered}</td>
+                  <td className="px-3 py-2 text-center tabular-nums text-slate-500">{r.pupils}</td>
+                  <td className="px-3 py-2 text-center tabular-nums">{fmt(r.average)}</td>
+                  <td className="px-3 py-2 text-center tabular-nums">{fmt(r.highest)}</td>
+                  <td className="px-3 py-2 text-center tabular-nums">{fmt(r.lowest)}</td>
+                  <td className="px-3 py-2 text-center tabular-nums">
+                    {r.pass_rate == null ? DASH : `${r.pass_rate}%`}
+                  </td>
+                  <td className={cn("px-3 py-2 text-center tabular-nums",
+                                    r.incomplete ? "text-amber-700" : "text-slate-400")}>
+                    {r.incomplete}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="px-5 py-3 text-[11px] text-slate-400 border-t border-slate-100">
+            Pass mark {fmt(d.passmark)}
+            {d.threshold_source !== "configured" &&
+              ` — ${d.threshold_source}; nobody has set one, so treat these rates as provisional`}
+            . “Incomplete” pupil-subjects have some marks but not every component the total
+            needs, and are counted in no other column here.
+          </p>
+        </>
+      )}
+    </ReportShell>
+  );
+}

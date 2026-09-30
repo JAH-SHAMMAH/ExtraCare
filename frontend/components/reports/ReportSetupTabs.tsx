@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { platformApi } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Trash2, Loader2, Power, Check, X, Sparkles } from "lucide-react";
+import { Plus, Trash2, Loader2, Power, Check, X, Sparkles, ShieldCheck } from "lucide-react";
 
 // ── Terms & Sub-term ─────────────────────────────────────────────────────────
 
@@ -317,17 +317,21 @@ export function CommentTab({ canWrite }: { canWrite: boolean }) {
   const create = useCreateCommentType();
   const update = useUpdateCommentType();
   const del = useDeleteCommentType();
-  const [f, setF] = useState({ name: "", comment_type: "short", max_length: "" });
+  const [f, setF] = useState({ name: "", comment_type: "short", max_length: "", admin_only: false });
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-slate-400">Named comment slots on the report card. Short for a phrase; Long for a paragraph (with an optional character cap).</p>
+      <p className="text-xs text-slate-400">Named comment slots on the report card. Short for a phrase; Long for a paragraph (with an optional character cap). A new slot is writable by the pupil&apos;s PC teacher unless you mark it admin-only.</p>
       {canWrite && (
         <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[180px]"><label className="label">Comment name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className="input" placeholder="e.g. Teacher Comment" /></div>
           <div><label className="label">Type</label><select value={f.comment_type} onChange={(e) => setF({ ...f, comment_type: e.target.value })} className="input"><option value="short">Short</option><option value="long">Long</option></select></div>
           <div><label className="label">Max length</label><input type="number" value={f.max_length} onChange={(e) => setF({ ...f, max_length: e.target.value })} className="input w-24" placeholder="—" /></div>
-          <button onClick={() => f.name.trim() && create.mutate({ name: f.name.trim(), comment_type: f.comment_type, max_length: f.max_length ? Number(f.max_length) : null }, { onSuccess: () => setF({ name: "", comment_type: "short", max_length: "" }) })} disabled={!f.name.trim() || create.isPending} className="btn-primary gap-2"><Plus size={15} /> Add Comment Type</button>
+          <label className="flex items-center gap-2 pb-2 text-xs font-semibold text-slate-600 cursor-pointer whitespace-nowrap">
+            <input type="checkbox" checked={f.admin_only} onChange={(e) => setF({ ...f, admin_only: e.target.checked })} className="rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+            Admin only
+          </label>
+          <button onClick={() => f.name.trim() && create.mutate({ name: f.name.trim(), comment_type: f.comment_type, max_length: f.max_length ? Number(f.max_length) : null, admin_only: f.admin_only }, { onSuccess: () => setF({ name: "", comment_type: "short", max_length: "", admin_only: false }) })} disabled={!f.name.trim() || create.isPending} className="btn-primary gap-2"><Plus size={15} /> Add Comment Type</button>
         </div>
       )}
       {isLoading ? <div className="py-10 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
@@ -338,9 +342,11 @@ export function CommentTab({ canWrite }: { canWrite: boolean }) {
               <div key={c.id} className="flex items-center justify-between px-5 py-3">
                 <div><p className="text-sm font-semibold text-slate-800">{c.name}</p><p className="text-xs text-slate-400 capitalize">{c.comment_type}{c.max_length ? " · max " + c.max_length : ""}</p></div>
                 <div className="flex items-center gap-2">
+                  <span className={cn("badge", c.admin_only ? "bg-violet-50 text-violet-700 border-violet-200" : "bg-sky-50 text-sky-700 border-sky-200")}>{c.admin_only ? "Admin only" : "PC teacher"}</span>
                   <span className={cn("badge", c.is_active ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-400 border-slate-200")}>{c.is_active ? "Active" : "Inactive"}</span>
                   {canWrite ? (
                     <>
+                      <button title={c.admin_only ? "Hand this slot to the PC teacher" : "Make this slot admin-only"} onClick={() => update.mutate({ id: c.id, data: { admin_only: !c.admin_only } })} className="text-slate-400 hover:text-violet-600 p-1"><ShieldCheck size={15} /></button>
                       <button onClick={() => update.mutate({ id: c.id, data: { is_active: !c.is_active } })} className="text-slate-400 hover:text-amber-600 p-1"><Power size={15} /></button>
                       <button onClick={() => { if (confirm("Delete " + c.name + "?")) del.mutate(c.id); }} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={15} /></button>
                     </>

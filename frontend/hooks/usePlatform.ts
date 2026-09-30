@@ -287,6 +287,14 @@ export function useSubjectPerformance(term_id: string, sub_term_id: string, clas
   });
 }
 
+export function useDepartmentalAnalysis(term_id: string, sub_term_id: string, class_id?: string) {
+  return useQuery<any>({
+    queryKey: ["departmental-analysis", term_id, sub_term_id, class_id ?? "all"],
+    queryFn: () => platformApi.resultAnalysis.departmental({ term_id, sub_term_id, class_id }),
+    enabled: !!term_id && !!sub_term_id,
+  });
+}
+
 export function useTermPeriods(sessionId?: string) {
   return useQuery<any[]>({ queryKey: ["term-periods", sessionId ?? "all"], queryFn: () => platformApi.termPeriods.list(sessionId), enabled: !!sessionId });
 }

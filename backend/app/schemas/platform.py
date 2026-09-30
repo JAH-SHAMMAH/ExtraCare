@@ -810,6 +810,11 @@ class CommentTypeCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     comment_type: str = "short"          # short | long
     max_length: Optional[int] = None
+    # A custom slot is PC-teacher-writable by DEFAULT; the admin opts it out at
+    # creation. Carried on all three schemas because a rule the API cannot set
+    # is a rule that does not exist — the column and its gate were live while
+    # nothing could ever turn it on.
+    admin_only: bool = False
 
 
 class CommentTypeUpdate(BaseModel):
@@ -817,6 +822,7 @@ class CommentTypeUpdate(BaseModel):
     comment_type: Optional[str] = None
     max_length: Optional[int] = None
     is_active: Optional[bool] = None
+    admin_only: Optional[bool] = None
 
 
 class CommentTypeResponse(BaseModel):
@@ -825,6 +831,7 @@ class CommentTypeResponse(BaseModel):
     comment_type: str = "short"
     max_length: Optional[int] = None
     is_active: bool = True
+    admin_only: bool = False
 
 
 class DefaultCommentCreate(BaseModel):
@@ -1119,6 +1126,13 @@ class CardColumn(BaseModel):
     max_score: Optional[Decimal] = None
 
 
+class CardSlotComment(BaseModel):
+    """One custom comment slot's text on a pupil's card."""
+    comment_type_id: str
+    name: str
+    text: str
+
+
 class CardSubjectRow(BaseModel):
     subject_id: str
     subject_name: str
@@ -1195,6 +1209,10 @@ class ReportCardResponse(BaseModel):
     class_teacher_comment: Optional[str] = None
     head_comment: Optional[str] = None
     pc_comment: Optional[str] = None
+    # Configured custom slots that HAVE a comment for this pupil. Slots with no
+    # text are absent from the list entirely rather than present-and-empty, so the
+    # card never prints a labelled blank box.
+    slot_comments: list["CardSlotComment"] = Field(default_factory=list)
 
 
 # ── Secondary Report parity S-4d: report-card comments (Head / PC) ───────────
@@ -1544,4 +1562,38 @@ class SubjectPerformanceResponse(BaseModel):
     # threshold nobody set should not look like a settled fact.
     threshold_source: str = "configured"
     rows: list[SubjectPerformanceRow] = Field(default_factory=list)
+    not_configured: bool = False
+
+
+# ── Departmental Analysis ─────────────────────────────────────────────────────
+
+class DepartmentRow(BaseModel):
+    # None is the real "unassigned" bucket, not an error: a subject with no
+    # department is shown as such rather than silently dropped from the totals.
+    department: Optional[str] = None
+    subjects: list[str] = Field(default_factory=list)
+    entered: int = 0                      # marks counted across the department
+    pupils: int = 0                       # distinct pupils with at least one mark
+    average: Optional[Decimal] = None
+    highest: Optional[Decimal] = None
+    lowest: Optional[Decimal] = None
+    passed: int = 0
+    failed: int = 0
+    pass_rate: Optional[Decimal] = None
+    # Pupil-subject pairs with some marks but not every component the total needs.
+    # Counted in no other figure here, for the same reason as Subject Performance.
+    incomplete: int = 0
+
+
+class DepartmentalAnalysisResponse(BaseModel):
+    term_name: Optional[str] = None
+    sub_term_name: Optional[str] = None
+    class_name: Optional[str] = None
+    passmark: Decimal
+    threshold_source: str = "configured"
+    rows: list[DepartmentRow] = Field(default_factory=list)
+    # True when no subject carries a department at all — the report is empty
+    # because nothing has been categorised, which is a different thing from a
+    # term that was never set up.
+    no_departments: bool = False
     not_configured: bool = False

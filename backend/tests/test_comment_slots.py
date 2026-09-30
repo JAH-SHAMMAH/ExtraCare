@@ -23,6 +23,7 @@ import uuid
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
 
 from app.models.modules.platform import (
     AcademicSubTerm, AcademicTerm, ReportCommentType, StudentReportComment,
@@ -223,3 +224,142 @@ async def test_an_inactive_slot_is_refused_with_a_reason(db, org):
         await save_report_comments(_save(w, slot), db=db, current_user=admin)
     assert e.value.status_code == 422
     assert "not active" in str(e.value.detail)
+
+
+# ── the card, and the subject max-length lookup ───────────────────────────────
+
+@pytest.mark.asyncio
+async def test_the_card_omits_a_slot_with_no_text(db, org):
+    """A labelled blank row invites a parent to read meaning into the gap, and
+    "nobody wrote one" is not a comment. Absent, not present-and-empty."""
+    from app.routers.modules.platform import report_card
+
+    w = await _world(db, org)
+    admin = await _user(db, org, "org_admin")
+    filled = await _slot(db, org, "Principal's Remark", admin_only=True)
+    blank = await _slot(db, org, "Bursar's Note", admin_only=True)
+
+    await save_report_comments(_save(w, filled, "Well done this term."),
+                               db=db, current_user=admin)
+    await save_report_comments(_save(w, blank, "   "), db=db, current_user=admin)
+
+    card = await report_card(student_id=w["pupil"].id, term_id=w["term"].id,
+                             sub_term_id=w["sub"].id, db=db, current_user=admin)
+    names = [sc.name for sc in card.slot_comments]
+    assert names == ["Principal's Remark"]
+    assert card.slot_comments[0].text == "Well done this term."
+    assert "Bursar's Note" not in names, "whitespace-only is not a comment"
+
+
+@pytest.mark.asyncio
+async def test_the_card_keeps_the_two_built_in_comments_separate(db, org):
+    """Every custom row carries kind='custom', so a card that keyed comments by
+    `kind` alone would collapse them together and could overwrite head or pc."""
+    from app.routers.modules.platform import report_card
+
+    w = await _world(db, org)
+    admin = await _user(db, org, "org_admin")
+    slot = await _slot(db, org, "Principal's Remark", admin_only=True)
+
+    await save_report_comments(
+        CommentGridSave(term_id=w["term"].id, sub_term_id=w["sub"].id,
+                        class_id=w["cls"].id, kind="head",
+                        items=[CommentItem(student_id=w["pupil"].id, text="head text")]),
+        db=db, current_user=admin)
+    await save_report_comments(_save(w, slot, "slot text"), db=db, current_user=admin)
+
+    card = await report_card(student_id=w["pupil"].id, term_id=w["term"].id,
+                             sub_term_id=w["sub"].id, db=db, current_user=admin)
+    assert card.head_comment == "head text"
+    assert [sc.text for sc in card.slot_comments] == ["slot text"]
+
+
+@pytest.mark.asyncio
+async def test_subject_max_length_matches_the_whole_name_not_a_substring(db, org):
+    """The old lookup searched for "subject" ANYWHERE in a name, so an unrelated
+    slot could supply the cap for subject remarks."""
+    from app.routers.modules.platform import _subject_comment_max_length
+
+    decoy = ReportCommentType(id=str(uuid.uuid4()), name="Subjective Assessment",
+                              comment_type="long", max_length=99, is_active=True,
+                              admin_only=False, org_id=org.id)
+    db.add(decoy)
+    await db.commit()
+    assert await _subject_comment_max_length(db, org.id) is None, (
+        "a name merely containing 'subject' must not supply the cap")
+
+    # "Subject Teacher Comment" is the name actually in use — test_subject_report_
+    # comments relies on it, and narrowing to a single guessed name broke that.
+    real = ReportCommentType(id=str(uuid.uuid4()), name="Subject Teacher Comment",
+                             comment_type="long", max_length=500, is_active=True,
+                             admin_only=False, org_id=org.id)
+    db.add(real)
+    await db.commit()
+    assert await _subject_comment_max_length(db, org.id) == 500
+
+
+@pytest.mark.asyncio
+async def test_subject_max_length_ignores_an_inactive_slot(db, org):
+    from app.routers.modules.platform import _subject_comment_max_length
+
+    db.add(ReportCommentType(id=str(uuid.uuid4()), name="Subject Teacher Comment",
+                             comment_type="long", max_length=500, is_active=False,
+                             admin_only=False, org_id=org.id))
+    await db.commit()
+    assert await _subject_comment_max_length(db, org.id) is None
+
+# ── the flag has to be REACHABLE, not merely enforced ────────────────────────
+#
+# `admin_only` shipped as a column, and `_gate_comment_access` read it, and no
+# request could ever set it: it was absent from CommentTypeCreate, from
+# CommentTypeUpdate and from CommentTypeResponse. So every slot an admin made
+# was PC-teacher-writable, the opt-out was unusable, and the ownership tests
+# above still passed because they construct the model directly and bypass the
+# schema. These two drive the API instead.
+
+
+@pytest.mark.asyncio
+async def test_admin_only_survives_the_create_schema(db, org):
+    """The flag an admin sets at creation must reach the row and come back."""
+    from app.routers.modules.platform import create_comment_type
+    from app.schemas.platform import CommentTypeCreate
+
+    admin = await _user(db, org, "org_admin")
+
+    plain = await create_comment_type(
+        CommentTypeCreate(name="Form Tutor Note", comment_type="short"), db, admin)
+    assert plain.admin_only is False, "a slot is PC-teacher-writable by default"
+
+    locked = await create_comment_type(
+        CommentTypeCreate(name="Principal Endorsement", comment_type="long",
+                          admin_only=True), db, admin)
+    assert locked.admin_only is True, "the response must carry the flag back"
+
+    row = (await db.execute(select(ReportCommentType).where(
+        ReportCommentType.id == locked.id))).scalar_one()
+    assert row.admin_only is True, "and it must be what was persisted"
+
+
+@pytest.mark.asyncio
+async def test_admin_only_can_be_handed_back_and_forth(db, org):
+    """A slot's owner is not frozen at creation — PATCH moves it either way."""
+    from app.routers.modules.platform import create_comment_type, update_comment_type
+    from app.schemas.platform import CommentTypeCreate, CommentTypeUpdate
+
+    admin = await _user(db, org, "org_admin")
+    slot = await create_comment_type(
+        CommentTypeCreate(name="Pastoral Summary", comment_type="long"), db, admin)
+
+    locked = await update_comment_type(
+        slot.id, CommentTypeUpdate(admin_only=True), db, admin)
+    assert locked.admin_only is True
+
+    # Toggling something else must not quietly reset ownership, which is what
+    # exclude_unset is protecting.
+    renamed = await update_comment_type(
+        slot.id, CommentTypeUpdate(is_active=False), db, admin)
+    assert renamed.admin_only is True, "an unrelated PATCH must not clear the flag"
+
+    freed = await update_comment_type(
+        slot.id, CommentTypeUpdate(admin_only=False), db, admin)
+    assert freed.admin_only is False

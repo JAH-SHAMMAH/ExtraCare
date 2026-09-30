@@ -211,15 +211,27 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
         ) : <div />}
       </div>
 
-      {/* Three distinct comments. class_teacher and head come from StudentReport;
-          pc is the newer per-(term, sub-term) store. */}
-      {(card.class_teacher_comment || card.pc_comment || card.head_comment) && (
+      {/* Three fixed comments plus any configured custom slots. class_teacher and
+          head come from StudentReport; pc is the newer per-(term, sub-term) store;
+          slot_comments are the school's own named slots.
+
+          The server omits a slot with no text rather than sending it empty, so a
+          labelled blank row never reaches the card — a parent reads meaning into a
+          blank box beside a heading, and "no comment written" is not a comment. */}
+      {(card.class_teacher_comment || card.pc_comment || card.head_comment
+        || (card.slot_comments?.length ?? 0) > 0) && (
         <table className="w-full text-xs mt-3 border border-slate-300">
           <thead><tr className="bg-slate-100"><th colSpan={2} className="border border-slate-300 px-2 py-1">COMMENTS</th></tr></thead>
           <tbody>
             {card.class_teacher_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 w-40 align-top">{b.class_teacher_title || "Class Teacher"}</td><td className="border border-slate-300 px-2 py-1">{card.class_teacher_comment}</td></tr>}
             {card.pc_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 align-top">PC Teacher&apos;s Comment</td><td className="border border-slate-300 px-2 py-1">{card.pc_comment}</td></tr>}
             {card.head_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 align-top">{b.school_head_title || "Head"}&apos;s Comment</td><td className="border border-slate-300 px-2 py-1">{card.head_comment}</td></tr>}
+            {(card.slot_comments ?? []).map((sc: any) => (
+              <tr key={sc.comment_type_id}>
+                <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 align-top">{sc.name}</td>
+                <td className="border border-slate-300 px-2 py-1">{sc.text}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       )}

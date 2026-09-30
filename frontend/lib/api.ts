@@ -1766,6 +1766,8 @@ export const platformApi = {
       api.get("/platform/result-analysis/grade-summary", { params: p }).then((r) => r.data),
     subjectPerformance: (p: { term_id: string; sub_term_id: string; class_id?: string }) =>
       api.get("/platform/result-analysis/subject-performance", { params: p }).then((r) => r.data),
+    departmental: (p: { term_id: string; sub_term_id: string; class_id?: string }) =>
+      api.get("/platform/result-analysis/departmental", { params: p }).then((r) => r.data),
   },
   broadsheet: (p: { class_id: string; term_id: string; sub_term_id: string }) => api.get("/platform/report-broadsheet", { params: p }).then((r) => r.data),
   reportCard: (p: { student_id: string; term_id: string; sub_term_id: string }) => api.get("/platform/report-card", { params: p }).then((r) => r.data),

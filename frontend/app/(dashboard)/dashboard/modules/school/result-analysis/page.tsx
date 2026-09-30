@@ -4,14 +4,14 @@ import { Fragment, useMemo, useState } from "react";
 import {
   useAnalysisClasses, usePerformanceTracker, useBoosterList, useHonoursRoll,
   useMyTeachingAssignments, useTerms, useSubTerms, useCurrentSession,
-  useOrderOfMerit, useGradeSummary, useSubjectPerformance,
+  useOrderOfMerit, useGradeSummary, useSubjectPerformance, useDepartmentalAnalysis,
 } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
-import { MeritTab, SummaryTab, SubjectsTab } from "@/components/reports/ResultAnalysisAdminTabs";
+import { MeritTab, SummaryTab, SubjectsTab, DepartmentsTab } from "@/components/reports/ResultAnalysisAdminTabs";
 import { cn } from "@/lib/utils";
 import { Download, Loader2, AlertCircle } from "lucide-react";
 
-type Tab = "tracker" | "booster" | "honours" | "merit" | "summary" | "subjects";
+type Tab = "tracker" | "booster" | "honours" | "merit" | "summary" | "subjects" | "departments";
 
 // The three a class teacher sees. An administrator sees these plus the
 // whole-school reports below — one route, two views, resolved by permission.
@@ -24,6 +24,7 @@ const ADMIN_TABS: { key: Tab; label: string }[] = [
   { key: "merit", label: "Order of Merit" },
   { key: "summary", label: "Grade Summary" },
   { key: "subjects", label: "Subject Performance" },
+  { key: "departments", label: "Departmental Analysis" },
 ];
 
 // An unmarked cell is not a zero. Everything that renders a score goes through
@@ -74,6 +75,7 @@ export default function ResultAnalysisPage() {
   // `subjectPerf`, not `subjects`: the latter is the teacher's own subject list
   // for the tracker dropdown, and shadowing it silently broke that dropdown.
   const subjectPerf = useSubjectPerformance(termId, subTermId, classId || undefined);
+  const departments = useDepartmentalAnalysis(termId, subTermId, classId || undefined);
   const visibleTabs = isAdmin ? [...TEACHER_TABS, ...ADMIN_TABS] : TEACHER_TABS;
   // These need a term and sub-term, like Booster and Honours; the tracker does not.
   const needsTerm = tab !== "tracker";
@@ -166,6 +168,7 @@ export default function ResultAnalysisPage() {
       {tab === "merit" && <MeritTab query={merit} termId={termId} subTermId={subTermId} />}
       {tab === "summary" && <SummaryTab query={summary} termId={termId} subTermId={subTermId} />}
       {tab === "subjects" && <SubjectsTab query={subjectPerf} termId={termId} subTermId={subTermId} />}
+      {tab === "departments" && <DepartmentsTab query={departments} termId={termId} subTermId={subTermId} />}
     </div>
   );
 }

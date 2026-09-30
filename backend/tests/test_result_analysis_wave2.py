@@ -254,3 +254,100 @@ async def test_a_term_with_no_setup_says_so_on_all_three(db, org):
         res = await fn(term_id=term.id, sub_term_id=full.id, class_id=cls.id,
                        db=db, current_user=admin)
         assert res.not_configured is True, f"{fn.__name__} must say the term is unset"
+
+
+# ── Departmental Analysis ─────────────────────────────────────────────────────
+
+async def _with_departments(db, org, mapping: dict[str, str | None], marks: dict):
+    """A world whose subjects carry departments. `mapping` is subject -> department
+    (None meaning deliberately unassigned)."""
+    w = await _world(db, org, marks=marks)
+    for name, dept in mapping.items():
+        w["subjects"][name].department = dept
+    await db.commit()
+    return w
+
+
+@pytest.mark.asyncio
+async def test_departmental_groups_subjects_and_averages_them(db, org):
+    from app.routers.modules.platform import departmental_analysis
+
+    w = await _with_departments(
+        db, org,
+        {"Maths": "Mathematics", "Physics": "Sciences", "Chemistry": "Sciences"},
+        marks={"Ada Obi": {"Maths": 80, "Physics": 60, "Chemistry": 40},
+               "Bode Ade": {"Maths": 60, "Physics": 40, "Chemistry": 20}})
+    admin = await _admin(db, org)
+    res = await departmental_analysis(term_id=w["term"].id, sub_term_id=w["full"].id,
+                                      class_id=w["cls"].id, db=db, current_user=admin)
+
+    by_dept = {r.department: r for r in res.rows}
+    assert set(by_dept) == {"Mathematics", "Sciences"}
+    sciences = by_dept["Sciences"]
+    assert sorted(sciences.subjects) == ["Chemistry", "Physics"]
+    assert sciences.entered == 4, "two pupils x two subjects"
+    assert sciences.pupils == 2, "distinct pupils, not marks"
+    assert float(sciences.average) == 40.0    # (60+40+40+20)/4
+    assert float(sciences.highest) == 60.0 and float(sciences.lowest) == 20.0
+    assert res.no_departments is False
+
+
+@pytest.mark.asyncio
+async def test_an_unassigned_subject_gets_its_own_row_and_sorts_last(db, org):
+    """A report whose totals quietly exclude a subject is worse than one that
+    shows the gap."""
+    from app.routers.modules.platform import departmental_analysis
+
+    w = await _with_departments(
+        db, org, {"Maths": "Mathematics", "Physics": None},
+        marks={"Ada Obi": {"Maths": 80, "Physics": 60}})
+    admin = await _admin(db, org)
+    res = await departmental_analysis(term_id=w["term"].id, sub_term_id=w["full"].id,
+                                      class_id=w["cls"].id, db=db, current_user=admin)
+
+    assert [r.department for r in res.rows] == ["Mathematics", None], "unassigned last"
+    unassigned = res.rows[-1]
+    assert unassigned.subjects == ["Physics"]
+    assert unassigned.entered == 1
+    total = sum(r.entered for r in res.rows)
+    assert total == 2, "every mark is counted somewhere"
+
+
+@pytest.mark.asyncio
+async def test_no_departments_is_distinct_from_not_configured(db, org):
+    """Both render an empty page; only one means the term was never set up."""
+    from app.routers.modules.platform import departmental_analysis
+
+    w = await _with_departments(db, org, {"Maths": None},
+                                marks={"Ada Obi": {"Maths": 80}})
+    admin = await _admin(db, org)
+    res = await departmental_analysis(term_id=w["term"].id, sub_term_id=w["full"].id,
+                                      class_id=w["cls"].id, db=db, current_user=admin)
+    assert res.no_departments is True, "nothing is categorised"
+    assert res.not_configured is False, "but the term IS set up"
+    assert res.rows, "and the marks still appear, under the unassigned row"
+
+
+@pytest.mark.asyncio
+async def test_departmental_excludes_a_partially_marked_pupil(db, org):
+    """Same rule as Subject Performance: a department mean dragged down by a CA
+    nobody entered misreports the department, not the pupil."""
+    from app.routers.modules.platform import departmental_analysis
+
+    w = await _world(db, org, weighted=True,
+                     marks={"Ada Obi": {"Maths": 90}, "Bode Ade": {"Maths": 60}})
+    w["subjects"]["Maths"].department = "Mathematics"
+    await db.commit()
+    db.add(StudentAssessmentScore(
+        id=str(uuid.uuid4()), student_id=w["pupils"]["Ada Obi"].id,
+        subject_id=w["subjects"]["Maths"].id, assessment_id=w["ca"].id,
+        score=40, org_id=org.id))
+    await db.commit()
+    admin = await _admin(db, org)
+
+    res = await departmental_analysis(term_id=w["term"].id, sub_term_id=w["full"].id,
+                                      class_id=w["cls"].id, db=db, current_user=admin)
+    row = next(r for r in res.rows if r.department == "Mathematics")
+    assert row.entered == 1, "only the fully-marked pupil counts"
+    assert row.incomplete == 1
+    assert row.failed == 0, "the incomplete pupil is not counted as failing"

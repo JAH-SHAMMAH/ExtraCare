@@ -54,6 +54,11 @@ class TermAnalysis:
     sub_term_name: str | None
     pupils: list[PupilResult] = field(default_factory=list)
     subject_names: dict[str, str] = field(default_factory=dict)
+    # subject_id -> department, carried here because the Subject rows are already
+    # loaded for their names. Departmental Analysis groups on it rather than
+    # re-querying, and a subject with no department maps to None rather than being
+    # dropped — "unassigned" is a real state a report should be able to show.
+    subject_departments: dict[str, str | None] = field(default_factory=dict)
     # True when no display cumulative or no assessments exist for the term, i.e.
     # nothing is computable. Distinguished from "computed, and everyone scored
     # nothing" — the two look identical in a list of zeros and are not the same.
@@ -146,9 +151,11 @@ async def analyse_term(
         score_map[(r.student_id, r.subject_id, r.assessment_id)] = r.score
         subj_ids.add(r.subject_id)
 
-    out.subject_names = {s.id: s.name for s in (await db.execute(select(Subject).where(
+    subject_rows = (await db.execute(select(Subject).where(
         Subject.org_id == org_id,
-        Subject.id.in_(list(subj_ids) or ["_none_"])))).scalars().all()}
+        Subject.id.in_(list(subj_ids) or ["_none_"])))).scalars().all()
+    out.subject_names = {s.id: s.name for s in subject_rows}
+    out.subject_departments = {s.id: s.department for s in subject_rows}
 
     # ── evaluate ─────────────────────────────────────────────────────────────
     for st in students:
