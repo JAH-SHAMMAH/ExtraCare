@@ -1200,6 +1200,11 @@ class ReportCardResponse(BaseModel):
 # ── Secondary Report parity S-4d: report-card comments (Head / PC) ───────────
 
 REPORT_COMMENT_KINDS = {"head", "pc"}
+# The `kind` every CUSTOM slot row carries. A literal, never the slot's name: a
+# name is editable, and a mutable string inside a uniqueness key is precisely what
+# made report_approvals.term and cbt_exams.term drift out from under their gates.
+# The slot itself lives in comment_type_id.
+CUSTOM_COMMENT_KIND = "custom"
 
 
 class SubjectCommentItem(BaseModel):
@@ -1298,6 +1303,8 @@ class CommentGridResponse(BaseModel):
     sub_term_id: str
     kind: str
     rows: list[CommentGridRow] = Field(default_factory=list)
+    comment_type_id: Optional[str] = None
+    slot_name: Optional[str] = None
 
 
 class CommentItem(BaseModel):
@@ -1308,7 +1315,11 @@ class CommentItem(BaseModel):
 class CommentGridSave(BaseModel):
     term_id: str
     sub_term_id: str
-    kind: str
+    kind: str = "head"
+    # A custom slot (report_comment_types). When present it identifies the row and
+    # `kind` is ignored — every custom row carries the literal 'custom', so `kind`
+    # cannot tell two slots apart.
+    comment_type_id: Optional[str] = None
     class_id: Optional[str] = None      # required for teacher (PC / class) scoping
     items: list[CommentItem] = Field(default_factory=list)
 

@@ -62,7 +62,7 @@ from app.schemas.platform import (
     BroadsheetResponse, BroadsheetRow, BroadsheetCell, BroadsheetSubject, BroadsheetBand,
     CardColumn, CardSubjectRow, ReportCardResponse, SessionalTerm,
     AnalysisPupil, AnalysisSubjectMark, ResultAnalysisResponse,
-    REPORT_COMMENT_KINDS, CommentGridRow, CommentGridResponse, CommentItem, CommentGridSave,
+    REPORT_COMMENT_KINDS, CUSTOM_COMMENT_KIND, CommentGridRow, CommentGridResponse, CommentItem, CommentGridSave,
     SubjectCommentGridResponse, SubjectCommentGridRow, SubjectCommentItem, SubjectCommentSave,
     EnrollmentGridResponse, EnrollmentStudentRow, EnrollmentSubject, EnrollmentSave,
     InsightResponse, InsightSubject, InsightGender, InsightClass,
@@ -169,16 +169,48 @@ async def _pc_teacher_id(db: AsyncSession, org_id: str, class_id: str) -> str | 
     return pc or await _class_teacher_id(db, org_id, class_id)
 
 
-async def _gate_comment_access(db: AsyncSession, org_id: str, user: User, class_id: str | None, kind: str):
-    """Report-card comment access: admins pass. Otherwise the School Head comment
-    (kind=head) is admin-only, and the PC Teacher comment (kind=pc) is limited to
-    the class's PC teacher."""
+async def _gate_comment_access(db: AsyncSession, org_id: str, user: User, class_id: str | None,
+                               kind: str, slot=None):
+    """Report-card comment access: admins pass, otherwise one of TWO rules.
+
+    Admin-only, or the class's PC teacher. A custom slot picks one of those two
+    by its own `admin_only` flag rather than introducing a third model — a slot
+    behaves either like `head` or like `pc`, and nothing else.
+
+    `slot` is the ReportCommentType when the caller is addressing a custom slot,
+    and None for the two built-ins, whose behaviour is unchanged: head is
+    admin-only, pc belongs to the class's PC teacher.
+    """
     if _report_admin(user):
         return
-    if kind == "head":
-        raise HTTPException(status_code=403, detail="Only an administrator can enter the school head's comment.")
+    admin_only = (slot.admin_only if slot is not None else kind == "head")
+    if admin_only:
+        label = ("the school head's comment" if slot is None
+                 else f"the {slot.name!r} comment")
+        raise HTTPException(status_code=403,
+                            detail=f"Only an administrator can enter {label}.")
     if not class_id or await _pc_teacher_id(db, org_id, class_id) != user.id:
         raise HTTPException(status_code=403, detail="You are not the PC teacher for this class.")
+
+
+async def _resolve_comment_slot(db: AsyncSession, org_id: str, comment_type_id: str | None):
+    """The ReportCommentType a request addresses, or None for a built-in slot.
+
+    Scoped to the org: a slot id from another tenant is not found rather than
+    trusted, and the 404 says so plainly instead of letting the foreign key fail
+    later as a 500.
+    """
+    if not comment_type_id:
+        return None
+    slot = (await db.execute(select(ReportCommentType).where(
+        ReportCommentType.id == comment_type_id,
+        ReportCommentType.org_id == org_id))).scalar_one_or_none()
+    if slot is None:
+        raise HTTPException(status_code=404, detail="Comment slot not found.")
+    if not slot.is_active:
+        raise HTTPException(status_code=422,
+                            detail=f"The {slot.name!r} comment slot is not active.")
+    return slot
 
 
 async def _gate_subject_comment_access(db: AsyncSession, org_id: str, user: User,
@@ -3372,21 +3404,41 @@ async def report_cards_bulk(class_id: str, term_id: str, sub_term_id: str,
 # ── Secondary Report S-4d: report-card comment grids (Head / PC Teacher) ─────
 
 @router.get("/report-comments", response_model=CommentGridResponse, dependencies=[_reports_write])
-async def report_comment_grid(class_id: str, term_id: str, sub_term_id: str, kind: str,
+async def report_comment_grid(class_id: str, term_id: str, sub_term_id: str,
+                              kind: str = "head", comment_type_id: str | None = None,
                               db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """The pupils of a class with one comment slot's text against each.
+
+    WITHOUT `comment_type_id` this behaves exactly as it always has: `kind` picks
+    one of the two built-in slots. WITH it, the grid is for that custom slot and
+    `kind` is ignored — the row is identified by the slot, and `kind` carries the
+    literal 'custom' purely so the column can stay NOT NULL.
+    """
     org = current_user.org_id
-    if kind not in REPORT_COMMENT_KINDS:
+    slot = await _resolve_comment_slot(db, org, comment_type_id)
+    if slot is None and kind not in REPORT_COMMENT_KINDS:
         raise HTTPException(status_code=422, detail=f"kind must be one of {sorted(REPORT_COMMENT_KINDS)}")
-    await _gate_comment_access(db, org, current_user, class_id, kind)
+    if slot is not None:
+        kind = CUSTOM_COMMENT_KIND
+    await _gate_comment_access(db, org, current_user, class_id, kind, slot)
     students = (await db.execute(
         select(Student).where(Student.org_id == org, Student.class_id == class_id, Student.is_deleted == False)  # noqa: E712
         .order_by(Student.first_name, Student.last_name)
     )).scalars().all()
-    existing = {c.student_id: c.text for c in (await db.execute(select(StudentReportComment).where(
+    # Identified by the SLOT when there is one, by `kind` otherwise. Filtering on
+    # both would match nothing for a custom slot, since every custom row shares
+    # the same literal kind.
+    q = select(StudentReportComment).where(
         StudentReportComment.org_id == org, StudentReportComment.term_id == term_id,
-        StudentReportComment.sub_term_id == sub_term_id, StudentReportComment.kind == kind))).scalars().all()}
+        StudentReportComment.sub_term_id == sub_term_id)
+    q = (q.where(StudentReportComment.comment_type_id == slot.id) if slot is not None
+         else q.where(StudentReportComment.kind == kind,
+                      StudentReportComment.comment_type_id.is_(None)))
+    existing = {c.student_id: c.text for c in (await db.execute(q)).scalars().all()}
     return CommentGridResponse(
         class_id=class_id, term_id=term_id, sub_term_id=sub_term_id, kind=kind,
+        comment_type_id=(slot.id if slot is not None else None),
+        slot_name=(slot.name if slot is not None else None),
         rows=[CommentGridRow(student_id=s.id, student_name=f"{s.first_name} {s.last_name}".strip(),
                              text=existing.get(s.id)) for s in students],
     )
@@ -3395,16 +3447,24 @@ async def report_comment_grid(class_id: str, term_id: str, sub_term_id: str, kin
 @router.post("/report-comments", dependencies=[_reports_write])
 async def save_report_comments(payload: CommentGridSave, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     org = current_user.org_id
-    if payload.kind not in REPORT_COMMENT_KINDS:
+    slot = await _resolve_comment_slot(db, org, payload.comment_type_id)
+    kind = payload.kind
+    if slot is None and kind not in REPORT_COMMENT_KINDS:
         raise HTTPException(status_code=422, detail=f"kind must be one of {sorted(REPORT_COMMENT_KINDS)}")
+    if slot is not None:
+        kind = CUSTOM_COMMENT_KIND
     if not _report_admin(current_user) and not payload.class_id:
         raise HTTPException(status_code=422, detail="class_id is required.")
-    await _gate_comment_access(db, org, current_user, payload.class_id, payload.kind)
+    await _gate_comment_access(db, org, current_user, payload.class_id, kind, slot)
     ids = [i.student_id for i in payload.items]
-    existing = {c.student_id: c for c in (await db.execute(select(StudentReportComment).where(
+    q = select(StudentReportComment).where(
         StudentReportComment.org_id == org, StudentReportComment.term_id == payload.term_id,
-        StudentReportComment.sub_term_id == payload.sub_term_id, StudentReportComment.kind == payload.kind,
-        StudentReportComment.student_id.in_(ids or ["_none_"])))).scalars().all()}
+        StudentReportComment.sub_term_id == payload.sub_term_id,
+        StudentReportComment.student_id.in_(ids or ["_none_"]))
+    q = (q.where(StudentReportComment.comment_type_id == slot.id) if slot is not None
+         else q.where(StudentReportComment.kind == kind,
+                      StudentReportComment.comment_type_id.is_(None)))
+    existing = {c.student_id: c for c in (await db.execute(q)).scalars().all()}
     saved = 0
     for it in payload.items:
         row = existing.get(it.student_id)
@@ -3413,7 +3473,8 @@ async def save_report_comments(payload: CommentGridSave, db: AsyncSession = Depe
             row.recorded_by = current_user.id
         else:
             db.add(StudentReportComment(org_id=org, student_id=it.student_id, term_id=payload.term_id,
-                                        sub_term_id=payload.sub_term_id, kind=payload.kind, text=it.text,
+                                        sub_term_id=payload.sub_term_id, kind=kind, text=it.text,
+                                        comment_type_id=(slot.id if slot is not None else None),
                                         recorded_by=current_user.id))
         saved += 1
     await db.flush()

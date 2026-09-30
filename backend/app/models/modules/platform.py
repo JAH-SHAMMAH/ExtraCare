@@ -15,6 +15,11 @@ from sqlalchemy import (
     Column, String, Text, Date, DateTime, Integer, Numeric, Boolean, JSON, ForeignKey,
     Index, UniqueConstraint,
 )
+# ALIASED deliberately. StudentReportComment has a column literally named `text`,
+# and inside a class body that attribute shadows a module-level `text` import —
+# the predicate below would resolve to the Column object and fail with
+# "'Column' object is not callable".
+from sqlalchemy.sql import text as sql_text
 
 from app.models.base import Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin
 
@@ -246,6 +251,11 @@ class ReportCommentType(Base, UUIDMixin, TimestampMixin, TenantMixin):
     comment_type = Column(String(20), default="short", nullable=False)   # short | long
     max_length = Column(Integer, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    # Who may write this slot. False (the default) means the class's PC teacher,
+    # like the built-in `pc`; True means administrators only, like `head`. There
+    # is deliberately no third option — a slot behaves like one of the two that
+    # already exist.
+    admin_only = Column(Boolean, default=False, nullable=False, server_default="false")
 
     __table_args__ = (
         UniqueConstraint("org_id", "name", name="uq_report_comment_types_org_name"),
@@ -445,12 +455,39 @@ class StudentReportComment(Base, UUIDMixin, TimestampMixin, TenantMixin):
     student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
     term_id = Column(String(36), ForeignKey("academic_terms.id", ondelete="CASCADE"), nullable=False, index=True)
     sub_term_id = Column(String(36), ForeignKey("academic_sub_terms.id", ondelete="CASCADE"), nullable=False, index=True)
-    kind = Column(String(20), nullable=False)   # head | pc
+    kind = Column(String(20), nullable=False)   # head | pc | custom
     text = Column(Text, nullable=True)
+    # The custom slot this row is for, or NULL for the two built-ins. A custom row
+    # carries kind='custom' as a LITERAL, not the slot's name: names are editable,
+    # and a mutable string in a uniqueness key is what made report_approvals.term
+    # and cbt_exams.term drift out from under their own gates.
+    comment_type_id = Column(
+        String(36), ForeignKey("report_comment_types.id", ondelete="CASCADE"),
+        nullable=True, index=True)
     recorded_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
+    # TWO PARTIAL UNIQUE INDEXES, not one constraint (migration 133). Adding
+    # comment_type_id to a single constraint would break the built-ins: Postgres
+    # treats NULLs as distinct, so head and pc — which carry NULL there — would
+    # stop being unique and a pupil could collect two School Head comments.
+    # The predicates are exact complements, so no row is in both index or neither.
+    # BOTH dialects get the predicate. `postgresql_where` alone is silently
+    # ignored on SQLite, which builds a FULL unique index on (org, student, term,
+    # sub_term, kind) instead — and since every custom row shares kind='custom',
+    # the test database then refuses a second slot for the same pupil while
+    # production allows it. The tests caught it; without `sqlite_where` they would
+    # have been failing against a constraint production does not have.
     __table_args__ = (
-        UniqueConstraint("org_id", "student_id", "term_id", "sub_term_id", "kind", name="uq_student_report_comment"),
+        Index("uq_student_report_comment_builtin",
+              "org_id", "student_id", "term_id", "sub_term_id", "kind",
+              unique=True,
+              postgresql_where=sql_text("comment_type_id IS NULL"),
+              sqlite_where=sql_text("comment_type_id IS NULL")),
+        Index("uq_student_report_comment_slot",
+              "org_id", "student_id", "term_id", "sub_term_id", "comment_type_id",
+              unique=True,
+              postgresql_where=sql_text("comment_type_id IS NOT NULL"),
+              sqlite_where=sql_text("comment_type_id IS NOT NULL")),
         Index("ix_student_report_comments_term", "org_id", "term_id", "sub_term_id"),
     )
 
