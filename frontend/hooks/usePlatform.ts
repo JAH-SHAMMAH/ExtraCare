@@ -320,6 +320,17 @@ export function useDepartmentalAnalysis(term_id: string, sub_term_id: string, cl
   });
 }
 
+// Each subject's average per academic SESSION, for one sub-term. Deliberately
+// not keyed on a term: the whole point is to fold each year's terms into one
+// figure and compare the years.
+export function useAcrossSessions(sub_term_id: string, class_id?: string) {
+  return useQuery<any>({
+    queryKey: ["across-sessions", sub_term_id, class_id ?? "all"],
+    queryFn: () => platformApi.resultAnalysis.acrossSessions({ sub_term_id, class_id }),
+    enabled: !!sub_term_id,
+  });
+}
+
 export function useTermPeriods(sessionId?: string) {
   return useQuery<any[]>({ queryKey: ["term-periods", sessionId ?? "all"], queryFn: () => platformApi.termPeriods.list(sessionId), enabled: !!sessionId });
 }

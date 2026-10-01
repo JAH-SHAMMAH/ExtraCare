@@ -91,6 +91,10 @@ from app.schemas.platform import (
     CardSlotComment,
     DepartmentalAnalysisResponse,
     DepartmentRow,
+    SessionAverageCell,
+    SessionAverageColumn,
+    SessionAverageRow,
+    SubjectAveragesAcrossSessionsResponse,
 )
 from app.services.ledger import money  # Decimal helper for grading bands
 from app.services.report_engine import (
@@ -4769,3 +4773,94 @@ async def departmental_analysis(term_id: str, sub_term_id: str, class_id: str | 
         no_departments=bool(analysis.subject_departments)
         and not any(d for d in analysis.subject_departments.values()),
         not_configured=analysis.not_configured)
+
+
+# ── Subjects Averages Across Sessions ────────────────────────────────────────
+#
+# The report migration 134 existed for. Every other Result Analysis screen
+# answers "how did this term go"; this one asks how a subject has moved from one
+# YEAR to the next, which was unanswerable while terms were the only scope —
+# "Autumn" is one shared row, so a cross-year figure would have blended two.
+
+@router.get("/result-analysis/subject-averages-across-sessions",
+            response_model=SubjectAveragesAcrossSessionsResponse,
+            dependencies=[Depends(PermissionChecker("school_admin:read"))])
+async def subject_averages_across_sessions(
+    sub_term_id: str, class_id: str | None = None, section_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Each subject's average per academic session, for one sub-term.
+
+    ONE sub-term across every year, because comparing a Mock against a Full-Term
+    would be comparing different things and calling the difference a trend. Which
+    one is the caller's choice, not a guess made from the name.
+
+    A session's figure folds its TERMS — the unweighted mean of those that
+    produced one, matching the Sessional Score's own convention. A term that is
+    unmarked or unconfigured contributes nothing rather than a zero, and every
+    cell carries `terms_counted` so a figure resting on one term cannot be read
+    as a whole year.
+
+    Assembled from `analyse_term`, so this cannot disagree with Order of Merit
+    about what a subject averaged.
+    """
+    from app.services.result_analysis import analyse_sessions
+
+    org = current_user.org_id
+    if not _report_admin(current_user):
+        # Scoping matches the other admin pivots: a non-admin must name a class
+        # they may see, and the whole-school view stays administrative. Enforced
+        # here rather than by hiding the tab.
+        if not class_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Select a class. The whole-school view is available to "
+                       "administrators only.")
+        await _class_for_reports_or_403(db, org, current_user, class_id)
+
+    analysis = await analyse_sessions(db, org, sub_term_id,
+                                      class_id=class_id, section_id=section_id)
+    classes = {c.id: c.name for c in (await db.execute(select(SchoolClass).where(
+        SchoolClass.org_id == org))).scalars().all()}
+
+    # Column order is chronological (set by the service), and the trend reads
+    # along it.
+    order = [c.session_id for c in analysis.columns]
+
+    rows: list[SessionAverageRow] = []
+    for subj_id, by_session in analysis.cells.items():
+        cells = {sid: SessionAverageCell(
+                     average=round_dp(cell.average, 2) if cell.average is not None else None,
+                     terms_counted=cell.terms_counted, entered=cell.entered)
+                 for sid, cell in by_session.items()}
+        present = [sid for sid in order if sid in by_session
+                   and by_session[sid].average is not None]
+        vals = [by_session[sid].average for sid in present]
+        # A trend needs TWO years. With one, there is no direction to report, and
+        # a 0 or a dash in that column would read as a collapse.
+        trend = (by_session[present[-1]].average - by_session[present[0]].average
+                 if len(present) > 1 else None)
+        rows.append(SessionAverageRow(
+            subject_id=subj_id,
+            subject_name=analysis.subject_names.get(subj_id, subj_id),
+            department=analysis.subject_departments.get(subj_id),
+            cells=cells,
+            overall=round_dp(sum(vals) / Decimal(len(vals)), 2) if vals else None,
+            trend=round_dp(trend, 2) if trend is not None else None,
+            sessions_counted=len(present)))
+
+    rows.sort(key=lambda r: (r.subject_name or "").lower())
+
+    with_figures = [c for c in analysis.columns if not c.not_configured]
+    return SubjectAveragesAcrossSessionsResponse(
+        sub_term_name=analysis.sub_term_name,
+        class_name=classes.get(class_id) if class_id else None,
+        columns=[SessionAverageColumn(
+            session_id=c.session_id, session_name=c.session_name,
+            is_current=c.is_current, terms_counted=c.terms_counted,
+            term_names=c.term_names, not_configured=c.not_configured)
+            for c in analysis.columns],
+        rows=rows,
+        not_configured=not with_figures,
+        single_session=len(with_figures) == 1)

@@ -296,3 +296,144 @@ export function DepartmentsTab({ query, termId, subTermId }: {
     </ReportShell>
   );
 }
+
+/**
+ * Subjects Averages Across Sessions — the report migration 134 existed for.
+ *
+ * It has its OWN shell rather than reusing ReportShell: that one guards on a
+ * term and labels its empty state "Choose a term and sub-term", and this report
+ * deliberately has no term. It spans years and folds each year's terms. Reusing
+ * it would have meant either a misleading prompt or a fake term id.
+ *
+ * The states it must keep apart are the same ones, though, so they are handled
+ * the same way — a refusal is never allowed to render as an empty grid.
+ */
+export function AcrossSessionsTab({ query, subTermId }: {
+  query: Query; subTermId: string;
+}) {
+  if (!subTermId) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 py-16 text-center">
+        <p className="font-semibold text-slate-600">Choose a sub-term</p>
+        <p className="text-sm text-slate-400 mt-1">
+          One sub-term is compared across every academic year, so a Mock is never
+          averaged against a Full-Term.
+        </p>
+      </div>
+    );
+  }
+  if (query.isLoading) {
+    return (
+      <div className="py-16 text-center text-slate-400">
+        <Loader2 className="animate-spin mx-auto mb-2" size={20} /> Loading…
+      </div>
+    );
+  }
+  if (query.isError) {
+    return (
+      <div className="bg-white rounded-xl border border-red-200 py-12 text-center">
+        <p className="font-semibold text-red-700">
+          {query.error?.response?.data?.detail ?? "Averages across sessions could not be loaded."}
+        </p>
+        <p className="text-sm text-slate-500 mt-1">A refusal, not an empty result.</p>
+      </div>
+    );
+  }
+  const d = query.data;
+  if (!d) return null;
+  if (d.not_configured) {
+    return (
+      <div className="bg-white rounded-xl border border-amber-200 py-12 text-center">
+        <p className="font-semibold text-amber-700">
+          No academic year is set up for this sub-term.
+        </p>
+        <p className="text-sm text-slate-500 mt-1">
+          Nothing can be computed for it in any year — different from a year that
+          is set up and unmarked.
+        </p>
+      </div>
+    );
+  }
+
+  const cols = d.columns ?? [];
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+      <div className="px-5 py-3 border-b border-slate-100 text-sm text-slate-500">
+        {d.class_name ? `${d.class_name} · ` : "Whole school · "}
+        {d.sub_term_name} · across {cols.length} academic year{cols.length === 1 ? "" : "s"}
+      </div>
+
+      {/* One year of figures is not a comparison. Said plainly, so a grid with a
+          single populated column reads as "too early" and not as broken. */}
+      {d.single_session && (
+        <p className="px-5 py-3 text-sm text-sky-800 border-b border-sky-100 bg-sky-50">
+          Only one academic year holds results so far, so there is no trend to show
+          yet. The comparison fills in once a second year has been marked.
+        </p>
+      )}
+
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 text-slate-500">
+          <tr>
+            <th className="px-4 py-2 text-left font-medium">Subject</th>
+            <th className="px-3 py-2 text-left font-medium">Department</th>
+            {cols.map((c: any) => (
+              <th key={c.session_id} className="px-3 py-2 text-center font-medium whitespace-nowrap">
+                {c.session_name}
+                {c.is_current && <span className="ml-1 text-emerald-600">•</span>}
+                <span className="block text-[11px] font-normal text-slate-400">
+                  {c.not_configured
+                    ? "not set up"
+                    : `${c.terms_counted} term${c.terms_counted === 1 ? "" : "s"}`}
+                </span>
+              </th>
+            ))}
+            <th className="px-3 py-2 text-center font-medium">Overall</th>
+            <th className="px-3 py-2 text-center font-medium">Trend</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {d.rows.map((r: any) => (
+            <tr key={r.subject_id} className="hover:bg-slate-50">
+              <td className="px-4 py-2 font-medium text-slate-800">{r.subject_name}</td>
+              <td className="px-3 py-2 text-slate-500">
+                {r.department ?? <span className="text-slate-400">Unassigned</span>}
+              </td>
+              {cols.map((c: any) => {
+                const cell = r.cells?.[c.session_id];
+                return (
+                  <td key={c.session_id} className="px-3 py-2 text-center">
+                    {cell && cell.average !== null && cell.average !== undefined ? (
+                      <>
+                        {fmt(cell.average)}
+                        {/* A figure resting on one term of a multi-term year is
+                            flagged: it is a partial year, not the year. */}
+                        {cell.terms_counted === 1 && c.terms_counted > 1 && (
+                          <span className="block text-[11px] text-amber-600">1 term</span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-slate-300" title="Not entered">{DASH}</span>
+                    )}
+                  </td>
+                );
+              })}
+              <td className="px-3 py-2 text-center font-semibold">{fmt(r.overall)}</td>
+              <td className="px-3 py-2 text-center">
+                {r.trend === null || r.trend === undefined ? (
+                  <span className="text-slate-300" title="Needs two marked years">{DASH}</span>
+                ) : (
+                  <span className={cn("font-semibold",
+                    Number(r.trend) > 0 ? "text-emerald-700"
+                      : Number(r.trend) < 0 ? "text-red-700" : "text-slate-500")}>
+                    {Number(r.trend) > 0 ? "+" : ""}{fmt(r.trend)}
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

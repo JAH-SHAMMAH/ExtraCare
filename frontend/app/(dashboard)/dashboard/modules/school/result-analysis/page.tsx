@@ -5,13 +5,15 @@ import {
   useAnalysisClasses, usePerformanceTracker, useBoosterList, useHonoursRoll,
   useMyTeachingAssignments, useTerms, useSubTerms, useCurrentSession,
   useOrderOfMerit, useGradeSummary, useSubjectPerformance, useDepartmentalAnalysis,
+  useAcrossSessions,
 } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
-import { MeritTab, SummaryTab, SubjectsTab, DepartmentsTab } from "@/components/reports/ResultAnalysisAdminTabs";
+import { MeritTab, SummaryTab, SubjectsTab, DepartmentsTab, AcrossSessionsTab } from "@/components/reports/ResultAnalysisAdminTabs";
 import { cn } from "@/lib/utils";
 import { Download, Loader2, AlertCircle } from "lucide-react";
 
-type Tab = "tracker" | "booster" | "honours" | "merit" | "summary" | "subjects" | "departments";
+type Tab = "tracker" | "booster" | "honours" | "merit" | "summary" | "subjects"
+  | "departments" | "across-sessions";
 
 // The three a class teacher sees. An administrator sees these plus the
 // whole-school reports below — one route, two views, resolved by permission.
@@ -25,6 +27,7 @@ const ADMIN_TABS: { key: Tab; label: string }[] = [
   { key: "summary", label: "Grade Summary" },
   { key: "subjects", label: "Subject Performance" },
   { key: "departments", label: "Departmental Analysis" },
+  { key: "across-sessions", label: "Averages Across Sessions" },
 ];
 
 // An unmarked cell is not a zero. Everything that renders a score goes through
@@ -76,9 +79,12 @@ export default function ResultAnalysisPage() {
   // for the tracker dropdown, and shadowing it silently broke that dropdown.
   const subjectPerf = useSubjectPerformance(termId, subTermId, classId || undefined);
   const departments = useDepartmentalAnalysis(termId, subTermId, classId || undefined);
+  // No termId: this report spans YEARS and folds each year's terms itself.
+  const acrossSessions = useAcrossSessions(subTermId, classId || undefined);
   const visibleTabs = isAdmin ? [...TEACHER_TABS, ...ADMIN_TABS] : TEACHER_TABS;
-  // These need a term and sub-term, like Booster and Honours; the tracker does not.
-  const needsTerm = tab !== "tracker";
+  // These need a term and sub-term, like Booster and Honours; the tracker does
+  // not, and Averages Across Sessions needs only the sub-term — it spans terms.
+  const needsTerm = tab !== "tracker" && tab !== "across-sessions";
 
   const onClass = (v: string) => { setClassId(v); setSubjectId(""); };
 
@@ -110,13 +116,18 @@ export default function ResultAnalysisPage() {
           </div>
           {tab !== "tracker" && (
             <>
-              <div>
-                <label className="label">Term *</label>
-                <select value={termId} onChange={(e) => setTermId(e.target.value)} className="input">
-                  <option value="">Select a term…</option>
-                  {termRows.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              </div>
+              {/* Averages Across Sessions has no term: it folds every term of
+                  each year by itself. Showing a required-looking "Term *" that
+                  the report ignores would be a control that does nothing. */}
+              {tab !== "across-sessions" && (
+                <div>
+                  <label className="label">Term *</label>
+                  <select value={termId} onChange={(e) => setTermId(e.target.value)} className="input">
+                    <option value="">Select a term…</option>
+                    {termRows.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="label">Sub-term *</label>
                 <select value={subTermId} onChange={(e) => setSubTermId(e.target.value)} className="input">
@@ -169,6 +180,7 @@ export default function ResultAnalysisPage() {
       {tab === "summary" && <SummaryTab query={summary} termId={termId} subTermId={subTermId} />}
       {tab === "subjects" && <SubjectsTab query={subjectPerf} termId={termId} subTermId={subTermId} />}
       {tab === "departments" && <DepartmentsTab query={departments} termId={termId} subTermId={subTermId} />}
+      {tab === "across-sessions" && <AcrossSessionsTab query={acrossSessions} subTermId={subTermId} />}
     </div>
   );
 }

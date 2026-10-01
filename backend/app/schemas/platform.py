@@ -1591,6 +1591,66 @@ class DepartmentRow(BaseModel):
     incomplete: int = 0
 
 
+# ── Subjects Averages Across Sessions ────────────────────────────────────────
+#
+# The report migration 134 existed for. Terms are shared across sessions, so
+# before assessments carried a session_id there was no way to tell 2025/2026's
+# Autumn from 2026/2027's, and a cross-year figure would silently have been a
+# blend of the two.
+
+class SessionAverageCell(BaseModel):
+    """One subject's standing in one session."""
+    average: Optional[Decimal] = None
+    # Terms of the session that produced a figure for this subject. Carried
+    # because a mean over ONE term is not a year, and the two are
+    # indistinguishable once reduced to a single number on a grid.
+    terms_counted: int = 0
+    entered: int = 0
+
+
+class SessionAverageColumn(BaseModel):
+    session_id: str
+    session_name: Optional[str] = None
+    is_current: bool = False
+    terms_counted: int = 0
+    term_names: list[str] = Field(default_factory=list)
+    # True when nothing in this session was computable for the chosen sub-term.
+    # The column still appears: a year that exists but is not set up is worth
+    # showing, and omitting it would make the grid silently misrepresent which
+    # years the school has.
+    not_configured: bool = True
+
+
+class SessionAverageRow(BaseModel):
+    subject_id: str
+    subject_name: str
+    department: Optional[str] = None
+    # session_id -> cell. Absent keys mean "no figure for that year", which the
+    # client renders as "not entered" rather than as a zero.
+    cells: dict[str, SessionAverageCell] = Field(default_factory=dict)
+    # Mean of the session figures this subject actually has.
+    overall: Optional[Decimal] = None
+    # Latest minus earliest session that BOTH hold a figure. None when fewer than
+    # two do — a single year has no direction, and a dash in a trend column reads
+    # as a fall to zero.
+    trend: Optional[Decimal] = None
+    sessions_counted: int = 0
+
+
+class SubjectAveragesAcrossSessionsResponse(BaseModel):
+    sub_term_name: Optional[str] = None
+    class_name: Optional[str] = None
+    columns: list[SessionAverageColumn] = Field(default_factory=list)
+    rows: list[SessionAverageRow] = Field(default_factory=list)
+    # True when NO session was computable — nothing is set up for this sub-term
+    # anywhere, as opposed to set up and unmarked.
+    not_configured: bool = False
+    # True when only one session holds figures, so no comparison is possible yet.
+    # Said explicitly so the page can explain an un-interesting grid instead of
+    # looking broken.
+    single_session: bool = False
+
+
 class DepartmentalAnalysisResponse(BaseModel):
     term_name: Optional[str] = None
     sub_term_name: Optional[str] = None

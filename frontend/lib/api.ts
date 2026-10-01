@@ -1770,6 +1770,10 @@ export const platformApi = {
       api.get("/platform/result-analysis/subject-performance", { params: p }).then((r) => r.data),
     departmental: (p: { term_id: string; sub_term_id: string; class_id?: string }) =>
       api.get("/platform/result-analysis/departmental", { params: p }).then((r) => r.data),
+    // No term_id: this one spans YEARS, and compares ONE sub-term across them.
+    acrossSessions: (p: { sub_term_id: string; class_id?: string }) =>
+      api.get("/platform/result-analysis/subject-averages-across-sessions",
+              { params: p }).then((r) => r.data),
   },
   broadsheet: (p: { class_id: string; term_id: string; sub_term_id: string }) => api.get("/platform/report-broadsheet", { params: p }).then((r) => r.data),
   reportCard: (p: { student_id: string; term_id: string; sub_term_id: string }) => api.get("/platform/report-card", { params: p }).then((r) => r.data),

@@ -229,3 +229,151 @@ async def resolve_thresholds(
     source = "configured" if (pass_raw is not None and br.min_average_honours is not None) \
         else "partial"
     return Decimal(str(passmark)), Decimal(str(honours)), source
+
+
+# ── across SESSIONS ──────────────────────────────────────────────────────────
+#
+# Everything above answers "how did this (term, sub-term) go". This answers a
+# question that needed migration 134 before it could be asked at all: how has a
+# subject moved from one YEAR to the next. Terms are shared across sessions, so
+# until assessments carried a session_id there was no way to separate 2025/2026's
+# Autumn from 2026/2027's, and any such figure would silently have been a blend.
+
+
+@dataclass
+class SessionSubjectCell:
+    """One subject's standing in one session."""
+    average: Decimal | None = None
+    # How many of the session's terms produced a figure for this subject. Carried
+    # because a mean over ONE term is not a year, and the two are
+    # indistinguishable once reduced to a single number.
+    terms_counted: int = 0
+    entered: int = 0                  # marks that fed it, across those terms
+
+
+@dataclass
+class SessionColumn:
+    session_id: str
+    session_name: str | None
+    is_current: bool = False
+    # Terms of this session that were computable for the chosen sub-term. 0 means
+    # the year is not set up for it, which is a different statement from "set up
+    # and everyone scored nothing".
+    terms_counted: int = 0
+    term_names: list[str] = field(default_factory=list)
+    not_configured: bool = True
+
+
+@dataclass
+class SessionsAnalysis:
+    sub_term_name: str | None = None
+    columns: list[SessionColumn] = field(default_factory=list)
+    # subject_id -> session_id -> cell
+    cells: dict[str, dict[str, SessionSubjectCell]] = field(default_factory=dict)
+    subject_names: dict[str, str] = field(default_factory=dict)
+    subject_departments: dict[str, str | None] = field(default_factory=dict)
+
+
+async def analyse_sessions(
+    db: AsyncSession,
+    org_id: str,
+    sub_term_id: str,
+    *,
+    session_ids: list[str] | None = None,
+    class_id: str | None = None,
+    section_id: str | None = None,
+) -> SessionsAnalysis:
+    """Every subject's average in each session, for one sub-term.
+
+    The sub-term is a PARAMETER, deliberately. Sniffing for a term named
+    "Full-Term" would be the hardcoded-vs-configured mistake this codebase keeps
+    removing, and `Mock` exists precisely so a school can compare mocks across
+    years instead. Comparing like with like is the caller's statement to make.
+
+    A session's figure is the unweighted mean of its TERMS' figures — the same
+    convention `sessional_average` uses for a pupil's Sessional Score, so the two
+    cannot disagree about what averaging a year means. A term that is unmarked or
+    not configured contributes NOTHING rather than a zero: a year dragged down by
+    a term nobody has taught yet would misreport the subject.
+
+    Built on `analyse_term`, once per computable (session, term). Pairs with no
+    cumulative of their own are skipped BEFORE the call — the same guard
+    `performance_tracker` uses — because the cost here is sessions x terms full
+    passes over every pupil, and most pairs are empty in a normal year.
+    """
+    from app.models.modules.platform import (
+        AcademicSession, AcademicSubTerm, AcademicTerm, Cumulative,
+    )
+
+    sub_name = (await db.execute(select(AcademicSubTerm.name).where(
+        AcademicSubTerm.id == sub_term_id,
+        AcademicSubTerm.org_id == org_id))).scalar_one_or_none()
+    out = SessionsAnalysis(sub_term_name=sub_name)
+
+    q = select(AcademicSession).where(AcademicSession.org_id == org_id)
+    if session_ids:
+        q = q.where(AcademicSession.id.in_(session_ids))
+    sessions = (await db.execute(q)).scalars().all()
+    # Chronological, so the columns read left-to-right as the years ran and a
+    # trend has an unambiguous direction. `name` is the tie-break because
+    # start_date is optional — a session created for next year legitimately has
+    # no dates yet.
+    sessions = sorted(sessions, key=lambda s: (s.start_date is None,
+                                               s.start_date, s.name or ""))
+
+    terms = (await db.execute(select(AcademicTerm).where(
+        AcademicTerm.org_id == org_id).order_by(
+        AcademicTerm.position, AcademicTerm.name))).scalars().all()
+
+    # (session, term) pairs that own a cumulative for THIS sub-term.
+    configured = {
+        (c.session_id, c.term_id)
+        for c in (await db.execute(select(Cumulative).where(
+            Cumulative.org_id == org_id,
+            Cumulative.sub_term_id == sub_term_id))).scalars().all()
+    }
+
+    for s in sessions:
+        col = SessionColumn(session_id=s.id, session_name=s.name,
+                            is_current=bool(s.is_current))
+        # subject_id -> list of per-term averages, and the marks behind them
+        per_subject: dict[str, list[Decimal]] = {}
+        per_subject_entered: dict[str, int] = {}
+
+        for t in terms:
+            if (s.id, t.id) not in configured:
+                continue
+            a = await analyse_term(db, org_id, t.id, sub_term_id,
+                                   class_id=class_id, section_id=section_id,
+                                   session_id=s.id)
+            if a.not_configured:
+                continue
+            out.subject_names.update(a.subject_names)
+            out.subject_departments.update(a.subject_departments)
+
+            # This term's average per subject, over the pupils who have a usable
+            # mark in it. Partially-marked pupils are already excluded upstream.
+            term_vals: dict[str, list[Decimal]] = {}
+            for p in a.pupils:
+                for subj_id, pct in p.subject_pct.items():
+                    term_vals.setdefault(subj_id, []).append(pct)
+            if not term_vals:
+                continue            # configured, taught, but nothing entered yet
+            col.terms_counted += 1
+            col.term_names.append(t.name or "")
+            for subj_id, vals in term_vals.items():
+                per_subject.setdefault(subj_id, []).append(
+                    sum(vals) / Decimal(len(vals)))
+                per_subject_entered[subj_id] = (
+                    per_subject_entered.get(subj_id, 0) + len(vals))
+
+        col.not_configured = col.terms_counted == 0
+        out.columns.append(col)
+
+        for subj_id, term_avgs in per_subject.items():
+            out.cells.setdefault(subj_id, {})[s.id] = SessionSubjectCell(
+                average=sum(term_avgs) / Decimal(len(term_avgs)),
+                terms_counted=len(term_avgs),
+                entered=per_subject_entered.get(subj_id, 0))
+
+    return out
