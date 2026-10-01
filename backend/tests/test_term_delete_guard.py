@@ -39,6 +39,7 @@ from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.user import User, UserStatus
 from app.routers.modules.platform import create_term, delete_term, update_term
 from app.schemas.platform import TermCreate, TermUpdate
+from tests.conftest import ensure_session
 
 TERM = "Autumn"
 
@@ -71,8 +72,9 @@ async def _term_with_hard_rows(db, org):
     db.add_all([sub, cls, subj])
     await db.commit()
 
+    _sess = await ensure_session(db, org)
     a = Assessment(id=str(uuid.uuid4()), name="CBT Exam Score", max_score=100,
-                   term_id=t.id, sub_term_id=sub.id, org_id=org.id)
+                   session_id=_sess.id, term_id=t.id, sub_term_id=sub.id, org_id=org.id)
     stu = Student(id=str(uuid.uuid4()), student_id="S-1", first_name="A", last_name="B",
                   class_id=cls.id, org_id=org.id)
     db.add_all([a, stu])

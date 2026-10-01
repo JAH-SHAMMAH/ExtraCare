@@ -25,6 +25,7 @@ from app.models.modules.school import SchoolClass, Student, Subject
 from app.models.role import Role
 from app.models.user import User, UserStatus
 from app.routers.modules.platform import honour_roll, remedial_list
+from tests.conftest import ensure_session
 
 pytestmark = pytest.mark.asyncio
 
@@ -68,13 +69,15 @@ async def _world(db, org, *, passmark=40, honours=80, mid_passmark=35):
         db.add(GradingBand(id=str(uuid.uuid4()), scale_id=sc.id, grade=g,
                            min_score=Decimal(lo), max_score=Decimal(hi),
                            position=i, org_id=org.id))
+    _sess = await ensure_session(db, org)
     asmt = Assessment(id=str(uuid.uuid4()), name="CBT Exam Score", code="CBT",
-                      max_score=Decimal(100), term_id=term.id, sub_term_id=full.id,
+                      max_score=Decimal(100), session_id=_sess.id, term_id=term.id, sub_term_id=full.id,
                       group_id=grp.id, decimal_places=0, position=0, org_id=org.id)
     db.add(asmt)
     await db.commit()
     for sub_term in (full, half):
-        cum = Cumulative(id=str(uuid.uuid4()), name="TOTAL", term_id=term.id,
+        _sess = await ensure_session(db, org)
+        cum = Cumulative(id=str(uuid.uuid4()), name="TOTAL", session_id=_sess.id, term_id=term.id,
                          sub_term_id=sub_term.id, cumul_type="percentage",
                          decimal_places=2, position=0, org_id=org.id)
         db.add(cum)

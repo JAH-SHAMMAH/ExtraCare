@@ -80,7 +80,7 @@ async def _world(db, org):
     db.add(GradingBand(id=str(uuid.uuid4()), scale_id=sc.id, grade="C", remark="Good",
                        min_score=Decimal(0), max_score=Decimal(100), org_id=org.id))
     asmt = Assessment(id=str(uuid.uuid4()), name="CBT Exam Score", code="CBT",
-                      max_score=Decimal("100"), term_id=term.id, sub_term_id=full.id,
+                      max_score=Decimal("100"), session_id=sess.id, term_id=term.id, sub_term_id=full.id,
                       group_id=grp.id, decimal_places=0, position=0, org_id=org.id)
     # The Timetable is what assigns the teacher — the primary source
     # `_teacher_assignments` reads, and how all 120 live pairs are covered.

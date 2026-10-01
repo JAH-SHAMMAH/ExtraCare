@@ -14,12 +14,16 @@ from app.routers.modules.platform import (
     bootstrap_assessments, bootstrap_cumulatives, list_assessments, save_report_entry, report_insight,
 )
 from app.schemas.platform import ReportEntrySave, ScoreItem
+from tests.conftest import ensure_session
 
 
 pytestmark = pytest.mark.asyncio
 
 
 async def _admin(db, org) -> User:
+    # Report setup is session-scoped: creating an assessment or cumulative
+    # needs a year to file it under (migration 134). Idempotent.
+    await ensure_session(db, org)
     u = User(id=str(uuid.uuid4()), email=f"a-{uuid.uuid4().hex[:6]}@x.com", full_name="Officer",
              status=UserStatus.ACTIVE, org_id=org.id)
     _r = Role(id=str(uuid.uuid4()), name="admin", slug="super_user", permissions=["*"], org_id=org.id, is_system=False)

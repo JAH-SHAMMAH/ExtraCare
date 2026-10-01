@@ -17,6 +17,7 @@ from app.routers.modules.platform import (
 from app.schemas.platform import (
     AssessmentGroupCreate, AssessmentCreate, AssessmentUpdate,
 )
+from tests.conftest import ensure_session
 
 
 pytestmark = pytest.mark.asyncio
@@ -32,6 +33,9 @@ async def _admin(db, org) -> User:
 
 
 async def _terms(db, org):
+    # Report setup is session-scoped: creating an assessment or cumulative
+    # needs a year to file it under (migration 134). Idempotent.
+    await ensure_session(db, org)
     autumn = AcademicTerm(id=str(uuid.uuid4()), name="Autumn", position=1, org_id=org.id)
     spring = AcademicTerm(id=str(uuid.uuid4()), name="Spring", position=2, org_id=org.id)
     half = AcademicSubTerm(id=str(uuid.uuid4()), name="Half-Term", position=1, org_id=org.id)

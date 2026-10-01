@@ -20,6 +20,7 @@ from app.routers.modules.platform import (
     report_broadsheet, report_card, report_comment_grid, save_report_comments,
 )
 from app.schemas.platform import ReportEntrySave, ScoreItem, CommentGridSave, CommentItem
+from tests.conftest import ensure_session
 
 
 pytestmark = pytest.mark.asyncio
@@ -41,6 +42,9 @@ ADMIN = ["*"]
 
 
 async def _fixture(db, org):
+    # Report setup is session-scoped: creating an assessment or cumulative
+    # needs a year to file it under (migration 134). Idempotent.
+    await ensure_session(db, org)
     admin = await _user(db, org, "admin", ADMIN)
     ct = await _user(db, org, "classteacher", TEACHER)      # the class/form teacher
     st = await _user(db, org, "subjectteacher", TEACHER)    # teaches Maths in the class (Timetable)

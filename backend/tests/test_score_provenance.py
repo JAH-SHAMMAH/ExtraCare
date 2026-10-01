@@ -26,6 +26,7 @@ from app.models.user import User, UserStatus
 from app.routers.modules.platform import save_report_entry
 from app.schemas.platform import ReportEntrySave, ScoreItem
 from tests._enrolment import enrol
+from tests.conftest import ensure_session
 
 pytestmark = pytest.mark.asyncio
 
@@ -56,8 +57,9 @@ async def _world(db, org):
     grp = AssessmentGroup(id=str(uuid.uuid4()), name="CBT", position=0, org_id=org.id)
     db.add_all([term, full, cls, maths, pupil, grp])
     await db.commit()
+    _sess = await ensure_session(db, org)
     asmt = Assessment(id=str(uuid.uuid4()), name="CBT Exam Score", code="CBT",
-                      max_score=Decimal("100"), term_id=term.id, sub_term_id=full.id,
+                      max_score=Decimal("100"), session_id=_sess.id, term_id=term.id, sub_term_id=full.id,
                       group_id=grp.id, decimal_places=0, position=0, org_id=org.id)
     db.add(asmt)
     await db.commit()

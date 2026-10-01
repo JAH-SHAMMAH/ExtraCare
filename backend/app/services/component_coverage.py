@@ -77,6 +77,7 @@ class CoverageReport:
 
 async def component_coverage(
     db: AsyncSession, org_id: str, term_id: str, sub_term_id: str, class_id: str,
+    session_id: str | None = None,
 ) -> CoverageReport:
     """Every (pupil, subject) in `class_id` missing a required component mark.
 
@@ -85,28 +86,24 @@ async def component_coverage(
     is not fixed by entering one component. Reporting them would bury the real
     gaps under every subject a class does not take.
     """
-    from app.models.modules.platform import (
-        Assessment, Cumulative, CumulativeComponent, StudentAssessmentScore,
-    )
+    from app.models.modules.platform import StudentAssessmentScore
     from app.models.modules.school import Student, Subject
     from app.routers.modules.platform import _pick_display_cumulative
+    from app.services.session_scope import load_term_setup, resolve_session_id
 
     out = CoverageReport()
 
-    assessments = {a.id: a for a in (await db.execute(select(Assessment).where(
-        Assessment.org_id == org_id, Assessment.term_id == term_id))).scalars().all()}
-    cumulatives = (await db.execute(select(Cumulative).where(
-        Cumulative.org_id == org_id, Cumulative.term_id == term_id))).scalars().all()
+    if session_id is None:                      # see analyse_term
+        session_id = await resolve_session_id(db, org_id)
+    setup = await load_term_setup(db, org_id, session_id, term_id)
+    assessments = setup.assessments
+    cumulatives = setup.cumulatives
     display = _pick_display_cumulative(cumulatives, sub_term_id)
     if not display or not assessments:
         out.not_configured = True
         return out
 
-    comps: dict[str, list[tuple[str, str]]] = {}
-    for cr in (await db.execute(select(CumulativeComponent).where(
-            CumulativeComponent.org_id == org_id)
-            .order_by(CumulativeComponent.position))).scalars().all():
-        comps.setdefault(cr.cumulative_id, []).append((cr.ref_type, cr.ref_id))
+    comps = setup.components
 
     # Walk the tree: a TOTAL made of cumulatives depends on THEIR assessments.
     required: list[str] = []

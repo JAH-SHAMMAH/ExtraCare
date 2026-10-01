@@ -25,6 +25,7 @@ from app.routers.modules.platform import (
     report_card, save_subject_comments, subject_comment_grid,
 )
 from app.schemas.platform import SubjectCommentItem, SubjectCommentSave
+from tests.conftest import ensure_session
 
 pytestmark = pytest.mark.asyncio
 
@@ -65,8 +66,9 @@ async def _world(db, org):
     grp = AssessmentGroup(id=str(uuid.uuid4()), name="CBT", position=0, org_id=org.id)
     db.add_all([term, full, cls, other, maths, eng, a, b, outsider, grp])
     await db.commit()
+    _sess = await ensure_session(db, org)
     asmt = Assessment(id=str(uuid.uuid4()), name="CBT Exam Score", code="CBT",
-                      max_score=Decimal("100"), term_id=term.id, sub_term_id=full.id,
+                      max_score=Decimal("100"), session_id=_sess.id, term_id=term.id, sub_term_id=full.id,
                       group_id=grp.id, decimal_places=0, position=0, org_id=org.id)
     db.add(asmt)
     await db.commit()
@@ -227,7 +229,8 @@ async def _gradeable(db, org, w):
     for g, lo, hi in [("C", 70, 79), ("F", 0, 39)]:
         db.add(GradingBand(id=str(uuid.uuid4()), scale_id=sc.id, grade=g, remark=g,
                            min_score=Decimal(lo), max_score=Decimal(hi), org_id=org.id))
-    cum = Cumulative(id=str(uuid.uuid4()), name="TOTAL", term_id=w["term"].id,
+    _sess = await ensure_session(db, org)
+    cum = Cumulative(id=str(uuid.uuid4()), name="TOTAL", session_id=_sess.id, term_id=w["term"].id,
                      sub_term_id=w["full"].id, cumul_type="percentage",
                      decimal_places=2, position=0, org_id=org.id)
     db.add(cum)

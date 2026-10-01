@@ -38,6 +38,7 @@ from app.schemas.platform import ReportEntrySave, ScoreItem
 from sqlalchemy import select
 
 from tests._terms import a_term
+from tests.conftest import ensure_session
 
 TERM_NAME = "Term 1"
 
@@ -54,7 +55,8 @@ async def _fixture(db, org, *, stage: str | None = None):
 
     stu = Student(id=str(uuid.uuid4()), student_id="S-1", first_name="A", last_name="B",
                   class_id=cls.id, org_id=org.id)
-    a = Assessment(id=str(uuid.uuid4()), name="EXAM", max_score=100, term_id=term.id,
+    _sess = await ensure_session(db, org)
+    a = Assessment(id=str(uuid.uuid4()), name="EXAM", max_score=100, session_id=_sess.id, term_id=term.id,
                    sub_term_id=sub.id, org_id=org.id)
     db.add_all([stu, a])
     if stage:
@@ -153,7 +155,8 @@ async def test_a_different_term_is_not_frozen(db, org):
     db.add(t2)
     await db.commit()
     sub_id = (await db.execute(select(AcademicSubTerm.id))).scalars().first()
-    a2 = Assessment(id=str(uuid.uuid4()), name="EXAM", max_score=100, term_id=t2.id,
+    _sess = await ensure_session(db, org)
+    a2 = Assessment(id=str(uuid.uuid4()), name="EXAM", max_score=100, session_id=_sess.id, term_id=t2.id,
                     sub_term_id=sub_id, org_id=org.id)
     db.add(a2)
     await db.commit()

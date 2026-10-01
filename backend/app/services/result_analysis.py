@@ -73,6 +73,7 @@ async def analyse_term(
     *,
     class_id: str | None = None,
     section_id: str | None = None,
+    session_id: str | None = None,
 ) -> TermAnalysis:
     """Every pupil's per-subject percentage and average for a (term, sub-term).
 
@@ -84,12 +85,13 @@ async def analyse_term(
     rank them — and that is the caller's decision to make, not this function's.
     """
     from app.models.modules.platform import (
-        AcademicSubTerm, AcademicTerm, Assessment, Cumulative, CumulativeComponent,
-        GradingBand, GradingScale, StudentAssessmentScore,
+        AcademicSubTerm, AcademicTerm, GradingBand, GradingScale,
+        StudentAssessmentScore,
     )
     from app.models.modules.school import SchoolClass, Student, Subject
     from app.routers.modules.platform import _grade_for, _pick_display_cumulative
     from app.services.report_engine import evaluate_cumulative, is_fully_marked
+    from app.services.session_scope import load_term_setup, resolve_session_id
 
     term_name = (await db.execute(select(AcademicTerm.name).where(
         AcademicTerm.id == term_id, AcademicTerm.org_id == org_id))).scalar_one_or_none()
@@ -99,10 +101,17 @@ async def analyse_term(
     out = TermAnalysis(term_name=term_name, sub_term_name=sub_name)
 
     # ── config, loaded once ───────────────────────────────────────────────────
-    assessments = {a.id: a for a in (await db.execute(select(Assessment).where(
-        Assessment.org_id == org_id, Assessment.term_id == term_id))).scalars().all()}
-    cumulatives = (await db.execute(select(Cumulative).where(
-        Cumulative.org_id == org_id, Cumulative.term_id == term_id))).scalars().all()
+    # Session-scoped (migration 134). `session_id` of None means no year could be
+    # resolved, and `load_term_setup` returns empty for that rather than reading
+    # every year at once — which lands on `not_configured` below.
+    # An omitted session means "the current one", never "every year at once":
+    # a caller that forgets should get this year's answer, not an empty one that
+    # reads as "nothing is configured".
+    if session_id is None:
+        session_id = await resolve_session_id(db, org_id)
+    setup = await load_term_setup(db, org_id, session_id, term_id)
+    assessments = setup.assessments
+    cumulatives = setup.cumulatives
     display = _pick_display_cumulative(cumulatives, sub_term_id)
     if not display or not assessments:
         # Nothing to compute from. Said explicitly, because a report rendering
@@ -111,12 +120,8 @@ async def analyse_term(
         out.not_configured = True
         return out
 
-    cumul_by_id = {c.id: c for c in cumulatives}
-    components: dict[str, list] = {}
-    for cr in (await db.execute(select(CumulativeComponent).where(
-            CumulativeComponent.org_id == org_id)
-            .order_by(CumulativeComponent.position))).scalars().all():
-        components.setdefault(cr.cumulative_id, []).append((cr.ref_type, cr.ref_id))
+    cumul_by_id = setup.cumul_by_id
+    components = setup.components
 
     scale = (await db.execute(select(GradingScale).where(
         GradingScale.org_id == org_id, GradingScale.scale_type == "numeric",

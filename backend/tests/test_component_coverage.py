@@ -31,6 +31,7 @@ from app.models.user import User, UserStatus
 from app.routers.modules.academics import update_report_workflow
 from app.schemas.academics import ReportApprovalUpdate
 from app.services.component_coverage import component_coverage
+from tests.conftest import ensure_session
 
 
 async def _admin(db, org) -> User:
@@ -61,22 +62,24 @@ async def _world(db, org, *, weighted: bool, mark_ca: bool):
     db.add_all(pupils)
     await db.commit()
 
+    _sess = await ensure_session(db, org)
     exam = Assessment(id=str(uuid.uuid4()), name="CBT Exam Score", max_score=100,
-                      term_id=term.id, sub_term_id=full.id, org_id=org.id)
+                      session_id=_sess.id, term_id=term.id, sub_term_id=full.id, org_id=org.id)
     db.add(exam)
     await db.commit()
 
     if weighted:
+        _sess = await ensure_session(db, org)
         ca = Assessment(id=str(uuid.uuid4()), name="Continuous Assessment", max_score=40,
-                        term_id=term.id, sub_term_id=full.id, org_id=org.id)
+                        session_id=_sess.id, term_id=term.id, sub_term_id=full.id, org_id=org.id)
         db.add(ca)
         await db.commit()
         ca_c = Cumulative(id=str(uuid.uuid4()), name="CA", cumul_type="custom_percentage",
-                          max_percent=40, term_id=term.id, sub_term_id=full.id, org_id=org.id)
+                          max_percent=40, session_id=_sess.id, term_id=term.id, sub_term_id=full.id, org_id=org.id)
         ex_c = Cumulative(id=str(uuid.uuid4()), name="Exam", cumul_type="custom_percentage",
-                          max_percent=60, term_id=term.id, sub_term_id=full.id, org_id=org.id)
+                          max_percent=60, session_id=_sess.id, term_id=term.id, sub_term_id=full.id, org_id=org.id)
         total = Cumulative(id=str(uuid.uuid4()), name="TOTAL", cumul_type="percentage",
-                           term_id=term.id, sub_term_id=full.id, position=2, org_id=org.id)
+                           session_id=_sess.id, term_id=term.id, sub_term_id=full.id, position=2, org_id=org.id)
         db.add_all([ca_c, ex_c, total])
         await db.commit()
         db.add_all([
@@ -92,7 +95,7 @@ async def _world(db, org, *, weighted: bool, mark_ca: bool):
     else:
         ca = None
         total = Cumulative(id=str(uuid.uuid4()), name="TOTAL", cumul_type="percentage",
-                           term_id=term.id, sub_term_id=full.id, org_id=org.id)
+                           session_id=_sess.id, term_id=term.id, sub_term_id=full.id, org_id=org.id)
         db.add(total)
         await db.commit()
         db.add(CumulativeComponent(id=str(uuid.uuid4()), cumulative_id=total.id,

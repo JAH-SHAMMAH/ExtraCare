@@ -49,6 +49,7 @@ from app.services.cbt_assessment_sync import (
     ADMIN_FIX_NOTICE, SyncBlock, assessment_block_reason,
     sync_cbt_to_assessment_score,
 )
+from tests.conftest import ensure_session
 
 TERM_NAME = "Term 1"
 # What the admin-only setup reason quotes. These tests need SOME setup gap that only
@@ -74,6 +75,9 @@ async def _user(db, org, preset: str) -> User:
 
 
 async def _school(db, org, *, with_term=True, with_sub_term=True):
+    # Report setup is session-scoped: creating an assessment or cumulative
+    # needs a year to file it under (migration 134). Idempotent.
+    await ensure_session(db, org)
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="Secondary", org_id=org.id)
     subj = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
     rows = [cls, subj]
@@ -303,6 +307,12 @@ async def test_the_sync_can_be_rerun_without_unpublishing(db, org):
                       status=AttemptStatus.GRADED, score=8, max_score=10, org_id=org.id))
     await db.commit()
     admin = await _user(db, org, "org_admin")
+    # The sync does not BLOCK on enrolment — it reports the discrepancy in
+    # `reason`. This test asserts `reason is None` to mean "nothing else went
+    # wrong", so the pupil is enrolled to keep that assertion about the sync
+    # rather than about a missing register entry.
+    from tests._enrolment import enrol
+    await enrol(db, org, [stu], [subj])
 
     # Blocked: the school has no sub-term yet. (Until migration 132 the provoked gap
     # was a missing TERM; the exam holds a term_id now, so the term always exists.)

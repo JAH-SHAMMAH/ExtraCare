@@ -25,6 +25,7 @@ from app.models.modules.school import SchoolClass, Student, Subject, Timetable
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.user import User, UserStatus
 from app.routers.modules.platform import performance_tracker
+from tests.conftest import ensure_session
 
 
 async def _user(db, org, preset: str) -> User:
@@ -63,10 +64,11 @@ async def _world(db, org, *, marked=True):
     await db.commit()
 
     # Autumn FULL-TERM is configured: an assessment inside a TOTAL cumulative.
+    _sess = await ensure_session(db, org)
     a = Assessment(id=str(uuid.uuid4()), name="CBT Exam Score", max_score=100,
-                   term_id=autumn.id, sub_term_id=full.id, org_id=org.id)
+                   session_id=_sess.id, term_id=autumn.id, sub_term_id=full.id, org_id=org.id)
     c = Cumulative(id=str(uuid.uuid4()), name="TOTAL", cumul_type="percentage",
-                   term_id=autumn.id, sub_term_id=full.id, org_id=org.id)
+                   session_id=_sess.id, term_id=autumn.id, sub_term_id=full.id, org_id=org.id)
     db.add_all([a, c])
     await db.commit()
     db.add(CumulativeComponent(id=str(uuid.uuid4()), cumulative_id=c.id,
@@ -245,10 +247,11 @@ async def test_configuring_a_half_term_cumulative_fills_the_column_with_no_code_
     assert before.rows[0].cells[half_key].score is None
 
     # Configure Half-Term exactly as Full-Term is configured, and mark the pupil.
+    _sess = await ensure_session(db, org)
     ha = Assessment(id=str(uuid.uuid4()), name="CA 1", max_score=100,
-                    term_id=w["autumn"].id, sub_term_id=w["half"].id, org_id=org.id)
+                    session_id=_sess.id, term_id=w["autumn"].id, sub_term_id=w["half"].id, org_id=org.id)
     hc = Cumulative(id=str(uuid.uuid4()), name="TOTAL", cumul_type="percentage",
-                    term_id=w["autumn"].id, sub_term_id=w["half"].id, org_id=org.id)
+                    session_id=_sess.id, term_id=w["autumn"].id, sub_term_id=w["half"].id, org_id=org.id)
     db.add_all([ha, hc])
     await db.commit()
     db.add(CumulativeComponent(id=str(uuid.uuid4()), cumulative_id=hc.id,

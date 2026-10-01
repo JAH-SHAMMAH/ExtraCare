@@ -921,6 +921,11 @@ class AssessmentCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     code: Optional[str] = None
     max_score: Decimal = Decimal("100")
+    # Which academic year this belongs to. Optional in the REQUEST and resolved
+    # to the current session server-side, so existing callers keep working; the
+    # column itself is NOT NULL. Absent from AssessmentUpdate on purpose —
+    # moving an assessment between years would drag its marks with it.
+    session_id: Optional[str] = None
     term_id: str
     sub_term_id: str
     year_group: Optional[str] = None      # None = All Levels
@@ -977,6 +982,7 @@ class CumulComponentOut(BaseModel):
 class CumulativeCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     code: Optional[str] = None
+    session_id: Optional[str] = None      # see AssessmentCreate.session_id
     term_id: str
     sub_term_id: str
     year_group: Optional[str] = None

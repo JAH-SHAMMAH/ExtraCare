@@ -113,6 +113,31 @@ export function useTermState(fallback = ""): [string, (v: string) => void] {
   useEffect(() => { if (!touched.current && current) setTermRaw(current); }, [current]);
   return [term, (v: string) => { touched.current = true; setTermRaw(v); }];
 }
+
+// The academic session (YEAR) a report screen is looking at — distinct from the
+// term. Terms are shared across sessions: "Autumn" is one configured term reused
+// every year, so a report needs both to identify what it is showing.
+//
+// Report setup became session-scoped in migration 134. Every report endpoint
+// takes an optional `session_id` and defaults to the current session, so leaving
+// this alone behaves exactly as before; setting it is how last year's results
+// stay reachable after the school rolls over, which is the entire point of
+// keeping the year on the row.
+export function useSessionId(): string {
+  const { data } = useCurrentSession();
+  return data?.session?.id ?? "";
+}
+
+// Seeded from the current session, and a value the user picks always wins —
+// the same "touched wins" rule as useTermState, for the same reason: a late-
+// arriving default must not yank the screen back off the year being read.
+export function useSessionState(): [string, (v: string) => void] {
+  const current = useSessionId();
+  const [sid, setSidRaw] = useState("");
+  const touched = useRef(false);
+  useEffect(() => { if (!touched.current && current) setSidRaw(current); }, [current]);
+  return [sid, (v: string) => { touched.current = true; setSidRaw(v); }];
+}
 export function useHouses() { return useQuery<SchoolHouse[]>({ queryKey: ["houses"], queryFn: () => platformApi.houses.list() }); }
 export function useBands() { return useQuery<GradingBand[]>({ queryKey: ["bands"], queryFn: () => platformApi.bands.list() }); }
 export const useCreateSession = m((d) => platformApi.sessions.create(d), ["sessions", "current-session"], "Session saved.");
@@ -337,16 +362,16 @@ export const useDeleteSubjectExclusion = m((id: string) => platformApi.subjectEx
 export function useAssessmentGroups() { return useQuery<any[]>({ queryKey: ["assessment-groups"], queryFn: () => platformApi.assessmentGroups.list() }); }
 export const useCreateAssessmentGroup = m((d) => platformApi.assessmentGroups.create(d), ["assessment-groups"], "Group added.");
 export const useDeleteAssessmentGroup = m((id: string) => platformApi.assessmentGroups.remove(id), ["assessment-groups"], "Removed.");
-export function useAssessments(termId?: string) { return useQuery<any[]>({ queryKey: ["assessments", termId], queryFn: () => platformApi.assessments.list(termId) }); }
+export function useAssessments(termId?: string, sessionId?: string) { return useQuery<any[]>({ queryKey: ["assessments", termId, sessionId], queryFn: () => platformApi.assessments.list(termId, sessionId) }); }
 export const useCreateAssessment = m((d) => platformApi.assessments.create(d), ["assessments"], "Assessment added.");
 export const useDeleteAssessment = m((id: string) => platformApi.assessments.remove(id), ["assessments"], "Removed.");
-export const useBootstrapAssessments = m(() => platformApi.assessments.bootstrap(), ["assessments"], "Seeded Fairview assessment set.");
+export const useBootstrapAssessments = m((sessionId?: string) => platformApi.assessments.bootstrap(sessionId), ["assessments"], "Seeded Fairview assessment set.");
 
 // ── S-3: Cumulative engine ───────────────────────────────────────────────────
-export function useCumulatives(termId?: string) { return useQuery<any[]>({ queryKey: ["cumulatives", termId], queryFn: () => platformApi.cumulatives.list(termId) }); }
+export function useCumulatives(termId?: string, sessionId?: string) { return useQuery<any[]>({ queryKey: ["cumulatives", termId, sessionId], queryFn: () => platformApi.cumulatives.list(termId, sessionId) }); }
 export const useCreateCumulative = m((d) => platformApi.cumulatives.create(d), ["cumulatives"], "Cumulative added.");
 export const useDeleteCumulative = m((id: string) => platformApi.cumulatives.remove(id), ["cumulatives"], "Removed.");
-export const useBootstrapCumulatives = m(() => platformApi.cumulatives.bootstrap(), ["cumulatives"], "Seeded cumulative columns.");
+export const useBootstrapCumulatives = m((sessionId?: string) => platformApi.cumulatives.bootstrap(sessionId), ["cumulatives"], "Seeded cumulative columns.");
 
 // ── S-4a: Report Entry (assessment scores) ───────────────────────────────────
 export function useReportEntryGrid(p: { class_id: string; subject_id: string; term_id: string; sub_term_id?: string }) {

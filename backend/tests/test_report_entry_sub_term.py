@@ -25,6 +25,7 @@ from app.models.modules.school import SchoolClass, Student, Subject
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.user import User, UserStatus
 from app.routers.modules.platform import report_entry_grid
+from tests.conftest import ensure_session
 
 TERM = "Term 1"
 
@@ -57,10 +58,11 @@ async def _fixture(db, org):
     db.add_all([cls, subj, term, half, full])
     await db.commit()
 
+    _sess = await ensure_session(db, org)
     a_half = Assessment(id=str(uuid.uuid4()), name="EXAM", max_score=100,
-                        term_id=term.id, sub_term_id=half.id, org_id=org.id)
+                        session_id=_sess.id, term_id=term.id, sub_term_id=half.id, org_id=org.id)
     a_full = Assessment(id=str(uuid.uuid4()), name="EXAM", max_score=100,
-                        term_id=term.id, sub_term_id=full.id, org_id=org.id)
+                        session_id=_sess.id, term_id=term.id, sub_term_id=full.id, org_id=org.id)
     stu = Student(id=str(uuid.uuid4()), student_id="S-1", first_name="A", last_name="B",
                   class_id=cls.id, org_id=org.id)
     db.add_all([a_half, a_full, stu])
@@ -139,8 +141,9 @@ async def test_sub_term_filtering_still_respects_year_group_scoping(db, org):
     """The two filters compose: sub-term narrowing must not bypass the existing
     level rule, or a teacher would be shown another level's assessment."""
     cls, subj, term, half, full, _, a_full = await _fixture(db, org)
+    _sess = await ensure_session(db, org)
     db.add(Assessment(id=str(uuid.uuid4()), name="PRIMARY ONLY", max_score=100,
-                      term_id=term.id, sub_term_id=full.id, year_group="Primary",
+                      session_id=_sess.id, term_id=term.id, sub_term_id=full.id, year_group="Primary",
                       org_id=org.id))
     await db.commit()
     admin = await _admin(db, org)

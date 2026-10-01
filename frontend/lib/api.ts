@@ -1728,20 +1728,22 @@ export const platformApi = {
     update: (id: string, d: object) => api.patch(`/platform/assessment-groups/${id}`, d).then((r) => r.data),
     remove: (id: string) => api.delete(`/platform/assessment-groups/${id}`),
   },
+  // session_id scopes report setup to an academic YEAR (migration 134). Omitted
+  // means the current session, so an old caller behaves as it always did.
   assessments: {
-    list: (term_id?: string) => api.get("/platform/assessments", { params: term_id ? { term_id } : {} }).then((r) => r.data),
+    list: (term_id?: string, session_id?: string) => api.get("/platform/assessments", { params: { ...(term_id ? { term_id } : {}), ...(session_id ? { session_id } : {}) } }).then((r) => r.data),
     create: (d: object) => api.post("/platform/assessments", d).then((r) => r.data),
     update: (id: string, d: object) => api.patch(`/platform/assessments/${id}`, d).then((r) => r.data),
     remove: (id: string) => api.delete(`/platform/assessments/${id}`),
-    bootstrap: () => api.post("/platform/assessments/bootstrap").then((r) => r.data),
+    bootstrap: (session_id?: string) => api.post("/platform/assessments/bootstrap", null, { params: session_id ? { session_id } : {} }).then((r) => r.data),
   },
   cumulatives: {
-    list: (term_id?: string) => api.get("/platform/cumulatives", { params: term_id ? { term_id } : {} }).then((r) => r.data),
+    list: (term_id?: string, session_id?: string) => api.get("/platform/cumulatives", { params: { ...(term_id ? { term_id } : {}), ...(session_id ? { session_id } : {}) } }).then((r) => r.data),
     create: (d: object) => api.post("/platform/cumulatives", d).then((r) => r.data),
     update: (id: string, d: object) => api.patch(`/platform/cumulatives/${id}`, d).then((r) => r.data),
     replaceComponents: (id: string, comps: object[]) => api.put(`/platform/cumulatives/${id}/components`, comps).then((r) => r.data),
     remove: (id: string) => api.delete(`/platform/cumulatives/${id}`),
-    bootstrap: () => api.post("/platform/cumulatives/bootstrap").then((r) => r.data),
+    bootstrap: (session_id?: string) => api.post("/platform/cumulatives/bootstrap", null, { params: session_id ? { session_id } : {} }).then((r) => r.data),
   },
   reportEntry: {
     grid: (p: { class_id: string; subject_id: string; term_id: string; sub_term_id?: string }) => api.get("/platform/report-entry", { params: p }).then((r) => r.data),

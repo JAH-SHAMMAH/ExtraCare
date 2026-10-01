@@ -36,6 +36,7 @@ from app.schemas.academics import (
     ReportApprovalCreate, ReportApprovalUpdate,
     RecognitionCreate, RecognitionUpdate,
 )
+from tests.conftest import ensure_session
 
 
 pytestmark = pytest.mark.asyncio
@@ -333,13 +334,14 @@ async def test_grade_analysis_multi_class_same_subject(db, org, teacher):
     db.add(group)
 
     # Create assessments
+    _sess = await ensure_session(db, org)
     assessment_a = Assessment(
         id=str(uuid.uuid4()), name="Quiz 1A", group_id=group.id,
-        term_id=term.id, sub_term_id=sub_term.id, max_score=20.0, org_id=org.id
+        session_id=_sess.id, term_id=term.id, sub_term_id=sub_term.id, max_score=20.0, org_id=org.id
     )
     assessment_b = Assessment(
         id=str(uuid.uuid4()), name="Quiz 1B", group_id=group.id,
-        term_id=term.id, sub_term_id=sub_term.id, max_score=20.0, org_id=org.id
+        session_id=_sess.id, term_id=term.id, sub_term_id=sub_term.id, max_score=20.0, org_id=org.id
     )
     db.add(assessment_a)
     db.add(assessment_b)

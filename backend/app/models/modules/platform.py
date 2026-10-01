@@ -367,6 +367,17 @@ class Assessment(Base, UUIDMixin, TimestampMixin, TenantMixin):
     name = Column(String(80), nullable=False)
     code = Column(String(40), nullable=True)
     max_score = Column(Numeric(6, 2), nullable=False, default=100)
+    # WHICH YEAR this component belongs to (migration 134). Terms are org-wide and
+    # shared across sessions — Autumn is the same row every year — so without this
+    # the marks for 2026/2027 Autumn would land on the SAME assessment rows as
+    # 2025/2026 Autumn and nothing afterwards could separate the two years.
+    #
+    # RESTRICT, emphatically not CASCADE: `term_id` below cascades, and
+    # student_assessment_scores.assessment_id cascades in turn, so a cascading
+    # session FK would put a whole year of marks one DELETE away — 5,399 of them
+    # at the time this was written. Deleting a session has to be refused, not
+    # absorbed silently.
+    session_id = Column(String(36), ForeignKey("academic_sessions.id", ondelete="RESTRICT"), nullable=False, index=True)
     term_id = Column(String(36), ForeignKey("academic_terms.id", ondelete="CASCADE"), nullable=False, index=True)
     sub_term_id = Column(String(36), ForeignKey("academic_sub_terms.id", ondelete="CASCADE"), nullable=False, index=True)
     year_group = Column(String(60), nullable=True)          # NULL = All Levels
@@ -376,6 +387,7 @@ class Assessment(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     __table_args__ = (
         Index("ix_assessments_org_term", "org_id", "term_id"),
+        Index("ix_assessments_org_session_term", "org_id", "session_id", "term_id"),
     )
 
 
@@ -390,6 +402,11 @@ class Cumulative(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     name = Column(String(120), nullable=False)
     code = Column(String(40), nullable=True)
+    # Session-scoped for the same reason as Assessment.session_id, and it must be
+    # BOTH: an empty `cumulatives` set is what made every subject grade F once, so
+    # a new session inheriting last year's assessments while finding no cumulative
+    # of its own would reproduce that failure exactly.
+    session_id = Column(String(36), ForeignKey("academic_sessions.id", ondelete="RESTRICT"), nullable=False, index=True)
     term_id = Column(String(36), ForeignKey("academic_terms.id", ondelete="CASCADE"), nullable=False, index=True)
     sub_term_id = Column(String(36), ForeignKey("academic_sub_terms.id", ondelete="CASCADE"), nullable=False, index=True)
     year_group = Column(String(60), nullable=True)                 # NULL = All Levels
@@ -400,6 +417,7 @@ class Cumulative(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     __table_args__ = (
         Index("ix_cumulatives_org_term", "org_id", "term_id"),
+        Index("ix_cumulatives_org_session_term", "org_id", "session_id", "term_id"),
     )
 
 

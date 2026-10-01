@@ -4,7 +4,9 @@ import { useState } from "react";
 import {
   useTerms, useSubTerms, useAssessments,
   useCumulatives, useCreateCumulative, useDeleteCumulative, useBootstrapCumulatives,
+  useSessionState,
 } from "@/hooks/usePlatform";
+import { SessionPicker } from "./ReportAssessmentTabs";
 import { cn } from "@/lib/utils";
 import { Plus, Trash2, Loader2, Sparkles, Layers } from "lucide-react";
 
@@ -41,8 +43,12 @@ function CumulativeSetup({ canWrite }: { canWrite: boolean }) {
   const { data: terms = [] } = useTerms();
   const { data: subs = [] } = useSubTerms();
   const [termId, setTermId] = useState("");
-  const { data: rows = [], isLoading } = useCumulatives(termId || undefined);
-  const { data: assessments = [] } = useAssessments(termId || undefined);
+  const [sessionId, setSessionId] = useSessionState();
+  const { data: rows = [], isLoading } = useCumulatives(termId || undefined, sessionId || undefined);
+  // Components can only reference assessments from the SAME year, so the picker
+  // below must be filtered by it too — otherwise the builder would offer last
+  // year's components for this year's column.
+  const { data: assessments = [] } = useAssessments(termId || undefined, sessionId || undefined);
   const create = useCreateCumulative();
   const del = useDeleteCumulative();
   const boot = useBootstrapCumulatives();
@@ -58,7 +64,8 @@ function CumulativeSetup({ canWrite }: { canWrite: boolean }) {
   const submit = () => {
     if (!termId || !f.name.trim() || !f.sub_term_id) return;
     create.mutate({
-      name: f.name.trim(), term_id: termId, sub_term_id: f.sub_term_id, cumul_type: f.cumul_type,
+      name: f.name.trim(), session_id: sessionId || null,
+      term_id: termId, sub_term_id: f.sub_term_id, cumul_type: f.cumul_type,
       max_percent: f.cumul_type === "custom_percentage" && f.max_percent ? Number(f.max_percent) : null,
       components: f.components,
     }, { onSuccess: () => setF({ ...empty }) });
@@ -67,6 +74,7 @@ function CumulativeSetup({ canWrite }: { canWrite: boolean }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
+        <SessionPicker value={sessionId} onChange={setSessionId} />
         <div><label className="label">Term</label>
           <select value={termId} onChange={(e) => setTermId(e.target.value)} className="input w-auto">
             <option value="">Select a term…</option>

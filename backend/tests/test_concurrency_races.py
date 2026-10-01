@@ -36,6 +36,7 @@ from app.models.modules.school import (
 from app.models.organization import Organization, IndustryType
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.user import User, UserStatus
+from tests.conftest import ensure_session
 
 
 class _SlowSession(AsyncSession):
@@ -91,7 +92,8 @@ async def races(tmp_path):
         au = User(id=str(uuid.uuid4()), email=f"a-{uuid.uuid4().hex[:6]}@example.com",
                   full_name="Ad", status=UserStatus.ACTIVE, org_id=org.id)
         au.roles = [arole]
-        a = Assessment(id=str(uuid.uuid4()), name="EXAM", max_score=100, term_id=term.id,
+        _sess = await ensure_session(db, org)
+        a = Assessment(id=str(uuid.uuid4()), name="EXAM", max_score=100, session_id=_sess.id, term_id=term.id,
                        sub_term_id=sub.id, org_id=org.id)
         db.add_all([srole, su, stu, arole, au, a])
         await db.commit()

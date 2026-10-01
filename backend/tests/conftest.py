@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import os
 
+from sqlalchemy import select
+
 # The historical suite exercises the retained multi-tenant engine
 # (registration, onboarding, plan caps, industry isolation). The production
 # default is single-school mode; force multi-tenant for these legacy tests.
@@ -27,7 +29,7 @@ os.environ.setdefault("SINGLE_SCHOOL_MODE", "false")
 os.environ.setdefault("RATE_LIMITS_ENABLED", "false")
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 import pytest_asyncio
@@ -86,6 +88,48 @@ async def org(db) -> Organization:
     db.add(o)
     await db.commit()
     return o
+
+
+async def ensure_session(db, org):
+    """The org's current academic session, created if it has none. Idempotent.
+
+    Report setup is session-scoped (migration 134): `assessments.session_id` and
+    `cumulatives.session_id` are NOT NULL, and the read paths resolve "which
+    year" through `academic_sessions.is_current`. A test that builds report setup
+    therefore needs a session row — not as ceremony, but because the tables it is
+    exercising genuinely have one.
+
+    A function rather than a fixture so a world-builder can call it without every
+    caller in the chain having to accept and forward the fixture.
+    """
+    from app.models.modules.platform import AcademicSession
+
+    existing = (await db.execute(
+        select(AcademicSession).where(
+            AcademicSession.org_id == org.id,
+            AcademicSession.is_current == True,  # noqa: E712
+        )
+    )).scalars().first()
+    if existing:
+        return existing
+
+    s = AcademicSession(id=str(uuid.uuid4()), name="2025/2026", term="Autumn",
+                        start_date=date(2025, 9, 15), end_date=date(2026, 7, 10),
+                        is_current=True, org_id=org.id)
+    db.add(s)
+    await db.commit()
+    return s
+
+
+@pytest_asyncio.fixture
+async def session(db, org):
+    """`ensure_session` as a fixture, for a test that wants the row up front.
+
+    Note SQLite does not enforce foreign keys here (no `PRAGMA foreign_keys=ON`),
+    so a made-up session id would pass locally and fail in Postgres. Tests point
+    at a session that is really there rather than a plausible string.
+    """
+    return await ensure_session(db, org)
 
 
 @pytest_asyncio.fixture

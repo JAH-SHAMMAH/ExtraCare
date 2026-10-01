@@ -29,6 +29,7 @@ from app.models.user import User, UserStatus
 from app.routers.modules.platform import (
     grade_summary, order_of_merit, subject_performance,
 )
+from tests.conftest import ensure_session
 
 
 async def _admin(db, org) -> User:
@@ -82,12 +83,13 @@ async def _world(db, org, *, marks: dict[str, dict[str, int]], weighted: bool = 
         db.add(p)
     await db.commit()
 
+    _sess = await ensure_session(db, org)
     exam = Assessment(id=str(uuid.uuid4()), name="Exam", max_score=100,
-                      term_id=term.id, sub_term_id=full.id, org_id=org.id)
+                      session_id=_sess.id, term_id=term.id, sub_term_id=full.id, org_id=org.id)
     db.add(exam)
     await db.commit()
     total = Cumulative(id=str(uuid.uuid4()), name="TOTAL", cumul_type="percentage",
-                       term_id=term.id, sub_term_id=full.id, org_id=org.id)
+                       session_id=_sess.id, term_id=term.id, sub_term_id=full.id, org_id=org.id)
     db.add(total)
     await db.commit()
     db.add(CumulativeComponent(id=str(uuid.uuid4()), cumulative_id=total.id,
@@ -95,8 +97,9 @@ async def _world(db, org, *, marks: dict[str, dict[str, int]], weighted: bool = 
                                org_id=org.id))
     ca = None
     if weighted:
+        _sess = await ensure_session(db, org)
         ca = Assessment(id=str(uuid.uuid4()), name="CA", max_score=40,
-                        term_id=term.id, sub_term_id=full.id, org_id=org.id)
+                        session_id=_sess.id, term_id=term.id, sub_term_id=full.id, org_id=org.id)
         db.add(ca)
         await db.commit()
         db.add(CumulativeComponent(id=str(uuid.uuid4()), cumulative_id=total.id,

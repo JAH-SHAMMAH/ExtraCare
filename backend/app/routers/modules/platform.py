@@ -96,6 +96,9 @@ from app.services.ledger import money  # Decimal helper for grading bands
 from app.services.report_engine import (
     evaluate_cumulative, is_fully_marked, round_dp, sessional_average,
 )
+from app.services.session_scope import (
+    load_session_setup, load_term_setup, session_or_current,
+)
 from app.services.report_lock import (
     find_published_block, locked_message, term_names_for_ids,
 )
@@ -298,6 +301,30 @@ async def delete_session(session_id: str, db: AsyncSession = Depends(get_db), cu
     s = (await db.execute(select(AcademicSession).where(AcademicSession.id == session_id, AcademicSession.org_id == current_user.org_id))).scalar_one_or_none()
     if not s:
         raise HTTPException(status_code=404, detail="Session not found.")
+
+    # A session owns a YEAR of report setup, and `assessments.term_id` cascades
+    # to marks. The FK is ON DELETE RESTRICT so the database would refuse this
+    # anyway — but as an opaque 500 naming a constraint. Counted and refused
+    # here instead, because "delete the year" deserves a sentence, not a
+    # stack trace. Deliberately not offered as a force flag: nothing in this
+    # product needs to erase an academic year in one request.
+    n_asmt = (await db.execute(select(func.count()).select_from(Assessment).where(
+        Assessment.org_id == current_user.org_id, Assessment.session_id == s.id))).scalar() or 0
+    n_cumul = (await db.execute(select(func.count()).select_from(Cumulative).where(
+        Cumulative.org_id == current_user.org_id, Cumulative.session_id == s.id))).scalar() or 0
+    if n_asmt or n_cumul:
+        n_marks = (await db.execute(
+            select(func.count()).select_from(StudentAssessmentScore).join(
+                Assessment, Assessment.id == StudentAssessmentScore.assessment_id
+            ).where(Assessment.session_id == s.id,
+                    StudentAssessmentScore.org_id == current_user.org_id))).scalar() or 0
+        raise HTTPException(
+            status_code=409,
+            detail=(f"{s.name or 'This session'} holds {n_asmt} assessment(s), "
+                    f"{n_cumul} result column(s) and {n_marks} recorded mark(s). "
+                    f"Deleting it would remove that year's results. Remove its "
+                    f"report setup first if this is really intended."))
+
     await db.delete(s)
 
 
@@ -2219,8 +2246,11 @@ async def _validate_assessment_fks(db, org_id, term_id, sub_term_id, group_id):
 
 
 @router.get("/assessments", response_model=list[AssessmentResponse], dependencies=[_school_read])
-async def list_assessments(term_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    q = select(Assessment).where(Assessment.org_id == current_user.org_id)
+async def list_assessments(term_id: str | None = None, session_id: str | None = None,
+                           db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    sess_id = await session_or_current(db, current_user.org_id, session_id)
+    q = select(Assessment).where(Assessment.org_id == current_user.org_id,
+                                 Assessment.session_id == sess_id)
     if term_id:
         q = q.where(Assessment.term_id == term_id)
     rows = (await db.execute(q.order_by(Assessment.position, Assessment.name))).scalars().all()
@@ -2231,7 +2261,9 @@ async def list_assessments(term_id: str | None = None, db: AsyncSession = Depend
 @router.post("/assessments", response_model=AssessmentResponse, status_code=201, dependencies=[_write])
 async def create_assessment(payload: AssessmentCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     await _validate_assessment_fks(db, current_user.org_id, payload.term_id, payload.sub_term_id, payload.group_id)
-    a = Assessment(org_id=current_user.org_id, **payload.model_dump())
+    data = payload.model_dump()
+    sess_id = await _session_for_write(db, current_user.org_id, data.pop("session_id", None))
+    a = Assessment(org_id=current_user.org_id, session_id=sess_id, **data)
     db.add(a)
     await db.flush()
     terms, subs, groups = await _assessment_name_maps(db, current_user.org_id)
@@ -2260,6 +2292,40 @@ async def delete_assessment(assessment_id: str, db: AsyncSession = Depends(get_d
     await db.delete(a)
 
 
+async def _session_for_write(db: AsyncSession, org_id: str,
+                             session_id: str | None) -> str:
+    """The session a new assessment or cumulative belongs to.
+
+    `session_id` is NOT NULL, so unlike the read paths this cannot shrug and
+    return None: a row has to state its year. Refuses with a 422 naming the fix
+    rather than letting the INSERT fail on a constraint nobody can read.
+    """
+    sess_id = await session_or_current(db, org_id, session_id)
+    if not sess_id:
+        raise HTTPException(
+            status_code=422,
+            detail="No academic session is set, so this cannot be filed under a "
+                   "year. Mark a session as current under School Setup first.")
+    return sess_id
+
+
+async def _session_for_items(db: AsyncSession, org_id: str,
+                             assessment_ids: set[str]) -> str | None:
+    """The session the assessments in a save batch belong to.
+
+    Read off the ROWS, not off the request. A batch spanning two sessions is a
+    stale tab or a scripted call, and returns None so the caller's whitelist
+    comes back empty and refuses the lot — rather than picking one year and
+    silently accepting half the marks against it.
+    """
+    if not assessment_ids:
+        return None
+    sids = set((await db.execute(select(Assessment.session_id).where(
+        Assessment.org_id == org_id, Assessment.id.in_(list(assessment_ids)),
+    ))).scalars().all())
+    return next(iter(sids)) if len(sids) == 1 else None
+
+
 # Fairview's curated component set per term: CBT+THEORY (20 each) at Half-Term,
 # PRJ+PBT (10) + EXAM (60) at Full-Term. This is the "HALF TERM TOTAL 40" card.
 _BOOTSTRAP_HALF = [("CBT", "CBT", 20), ("THEORY", "THY", 20)]
@@ -2267,7 +2333,7 @@ _BOOTSTRAP_FULL = [("PRJ", "PRJ", 10), ("PBT", "PBT", 10), ("EXAM", "EXM", 60)]
 
 
 @router.post("/assessments/bootstrap", response_model=list[AssessmentResponse], dependencies=[_write])
-async def bootstrap_assessments(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def bootstrap_assessments(session_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Idempotently seed the curated Fairview assessment set for every term:
     CBT+Theory at the Half-Term sub-term, PRJ+PBT+EXAM at the Full-Term. Requires
     terms + sub-terms to exist (Terms & Sub-term bootstrap first)."""
@@ -2279,20 +2345,26 @@ async def bootstrap_assessments(db: AsyncSession = Depends(get_db), current_user
     if not terms or not half or not full:
         raise HTTPException(status_code=422, detail="Seed Terms & Sub-term (Half-Term + Full-Term) first.")
 
-    existing = (await db.execute(select(Assessment).where(Assessment.org_id == org))).scalars().all()
+    sess_id = await _session_for_write(db, org, session_id)
+    # Keyed on the SESSION as well as the term. Without it the dedupe would see
+    # last year's set, report "already have", and seed a new session with nothing
+    # — a year that looks configured and computes no grade at all.
+    existing = (await db.execute(select(Assessment).where(
+        Assessment.org_id == org, Assessment.session_id == sess_id))).scalars().all()
     have = {(e.term_id, e.sub_term_id, (e.name or "").lower()) for e in existing}
 
     for t in terms:
         for pos, (name, code, mx) in enumerate(_BOOTSTRAP_HALF):
             if (t.id, half.id, name.lower()) not in have:
-                db.add(Assessment(org_id=org, name=name, code=code, max_score=mx, term_id=t.id,
+                db.add(Assessment(org_id=org, session_id=sess_id, name=name, code=code, max_score=mx, term_id=t.id,
                                   sub_term_id=half.id, decimal_places=0, position=pos))
         for pos, (name, code, mx) in enumerate(_BOOTSTRAP_FULL):
             if (t.id, full.id, name.lower()) not in have:
-                db.add(Assessment(org_id=org, name=name, code=code, max_score=mx, term_id=t.id,
+                db.add(Assessment(org_id=org, session_id=sess_id, name=name, code=code, max_score=mx, term_id=t.id,
                                   sub_term_id=full.id, decimal_places=0, position=pos))
     await db.flush()
-    rows = (await db.execute(select(Assessment).where(Assessment.org_id == org).order_by(Assessment.position, Assessment.name))).scalars().all()
+    rows = (await db.execute(select(Assessment).where(
+        Assessment.org_id == org, Assessment.session_id == sess_id).order_by(Assessment.position, Assessment.name))).scalars().all()
     tmap, smap, gmap = await _assessment_name_maps(db, org)
     return [_assessment_response(a, tmap, smap, gmap) for a in rows]
 
@@ -2300,6 +2372,14 @@ async def bootstrap_assessments(db: AsyncSession = Depends(get_db), current_user
 # ── Secondary Report S-3: Cumulative curated engine ──────────────────────────
 
 async def _cumul_label_maps(db: AsyncSession, org_id: str):
+    """id -> name maps for labelling a cumulative's components.
+
+    Deliberately NOT session-scoped. These are pure lookups, and a component can
+    only reference an assessment or cumulative from its own (session, term) set,
+    so entries from other years are never read. Scoping them would add a
+    parameter to four callers and change nothing. Left org-wide knowingly, not
+    by omission.
+    """
     terms = {t.id: t.name for t in (await db.execute(select(AcademicTerm).where(AcademicTerm.org_id == org_id))).scalars().all()}
     subs = {s.id: s.name for s in (await db.execute(select(AcademicSubTerm).where(AcademicSubTerm.org_id == org_id))).scalars().all()}
     a_names = {a.id: a.name for a in (await db.execute(select(Assessment).where(Assessment.org_id == org_id))).scalars().all()}
@@ -2333,8 +2413,11 @@ async def _validate_component(db, org_id, comp: CumulComponentIn):
 
 
 @router.get("/cumulatives", response_model=list[CumulativeResponse], dependencies=[_school_read])
-async def list_cumulatives(term_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    q = select(Cumulative).where(Cumulative.org_id == current_user.org_id)
+async def list_cumulatives(term_id: str | None = None, session_id: str | None = None,
+                           db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    sess_id = await session_or_current(db, current_user.org_id, session_id)
+    q = select(Cumulative).where(Cumulative.org_id == current_user.org_id,
+                                 Cumulative.session_id == sess_id)
     if term_id:
         q = q.where(Cumulative.term_id == term_id)
     rows = (await db.execute(q.order_by(Cumulative.position, Cumulative.name))).scalars().all()
@@ -2351,7 +2434,8 @@ async def create_cumulative(payload: CumulativeCreate, db: AsyncSession = Depend
     for comp in payload.components:
         await _validate_component(db, org, comp)
     data = payload.model_dump(exclude={"components"})
-    c = Cumulative(org_id=org, **data)
+    sess_id = await _session_for_write(db, org, data.pop("session_id", None))
+    c = Cumulative(org_id=org, session_id=sess_id, **data)
     db.add(c)
     await db.flush()
     for i, comp in enumerate(payload.components):
@@ -2404,17 +2488,21 @@ async def delete_cumulative(cumulative_id: str, db: AsyncSession = Depends(get_d
 
 
 @router.post("/cumulatives/bootstrap", response_model=list[CumulativeResponse], dependencies=[_write])
-async def bootstrap_cumulatives(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def bootstrap_cumulatives(session_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Seed Fairview's curated cumulative columns per term over the S-2 assessments:
     HALF TERM TOTAL(CBT+Theory), %(CBT+Theory), CA 1 = custom% max 20 of HALF TERM
     TOTAL, and TOTAL(CA 1 + PRJ + PBT + EXAM). Needs the assessment set seeded first."""
     org = current_user.org_id
+    sess_id = await _session_for_write(db, org, session_id)
     terms = (await db.execute(select(AcademicTerm).where(AcademicTerm.org_id == org))).scalars().all()
-    assessments = (await db.execute(select(Assessment).where(Assessment.org_id == org))).scalars().all()
+    assessments = (await db.execute(select(Assessment).where(
+        Assessment.org_id == org, Assessment.session_id == sess_id))).scalars().all()
     if not terms or not assessments:
         raise HTTPException(status_code=422, detail="Seed Terms and the Assessment set first.")
 
-    existing = (await db.execute(select(Cumulative).where(Cumulative.org_id == org))).scalars().all()
+    # Session-keyed for the same reason as the assessment bootstrap above.
+    existing = (await db.execute(select(Cumulative).where(
+        Cumulative.org_id == org, Cumulative.session_id == sess_id))).scalars().all()
     have = {(e.term_id, (e.name or "").lower()) for e in existing}
 
     def asmt(term_id, name):
@@ -2423,8 +2511,9 @@ async def bootstrap_cumulatives(db: AsyncSession = Depends(get_db), current_user
     async def make(term_id, sub_term_id, name, cumul_type, comps, max_percent=None):
         if (term_id, name.lower()) in have:
             return next(c for c in (await db.execute(select(Cumulative).where(
-                Cumulative.org_id == org, Cumulative.term_id == term_id, func.lower(Cumulative.name) == name.lower()))).scalars().all())
-        c = Cumulative(org_id=org, name=name, term_id=term_id, sub_term_id=sub_term_id,
+                Cumulative.org_id == org, Cumulative.session_id == sess_id,
+                Cumulative.term_id == term_id, func.lower(Cumulative.name) == name.lower()))).scalars().all())
+        c = Cumulative(org_id=org, session_id=sess_id, name=name, term_id=term_id, sub_term_id=sub_term_id,
                        cumul_type=cumul_type, max_percent=max_percent, decimal_places=0)
         db.add(c)
         await db.flush()
@@ -2448,14 +2537,16 @@ async def bootstrap_cumulatives(db: AsyncSession = Depends(get_db), current_user
         await make(t.id, full_sub, "TOTAL", "score",
                    [("cumulative", ca1.id), ("assessment", prj.id), ("assessment", pbt.id), ("assessment", exam.id)])
 
-    rows = (await db.execute(select(Cumulative).where(Cumulative.org_id == org).order_by(Cumulative.position, Cumulative.name))).scalars().all()
+    rows = (await db.execute(select(Cumulative).where(
+        Cumulative.org_id == org, Cumulative.session_id == sess_id).order_by(Cumulative.position, Cumulative.name))).scalars().all()
     tmap, smap, amap, cmap = await _cumul_label_maps(db, org)
     return [await _cumulative_response(db, org, c, tmap, smap, amap, cmap) for c in rows]
 
 
 # ── Secondary Report S-4a: Report Entry (assessment scores) ──────────────────
 
-async def _entry_assessments(db, org_id, term_id, level, sub_term_id: str | None = None):
+async def _entry_assessments(db, org_id, term_id, level, sub_term_id: str | None = None,
+                             session_id: str | None = None):
     """Assessments for a term that apply to a class level (year_group NULL = all).
 
     `sub_term_id` narrows to one sub-term. Optional, and omitting it keeps the
@@ -2469,6 +2560,8 @@ async def _entry_assessments(db, org_id, term_id, level, sub_term_id: str | None
     put both in front of the teacher at once with no way to choose.
     """
     q = select(Assessment).where(Assessment.org_id == org_id, Assessment.term_id == term_id)
+    if session_id:
+        q = q.where(Assessment.session_id == session_id)
     if sub_term_id:
         q = q.where(Assessment.sub_term_id == sub_term_id)
     rows = (await db.execute(q.order_by(Assessment.position, Assessment.name))).scalars().all()
@@ -2493,7 +2586,7 @@ async def my_teaching_assignments(db: AsyncSession = Depends(get_db), current_us
 
 @router.get("/report-entry", response_model=ReportEntryGrid, dependencies=[_school_read])
 async def report_entry_grid(class_id: str, subject_id: str, term_id: str,
-                            sub_term_id: str | None = None,
+                            sub_term_id: str | None = None, session_id: str | None = None,
                             db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     org = current_user.org_id
     cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
@@ -2533,7 +2626,8 @@ async def report_entry_grid(class_id: str, subject_id: str, term_id: str,
     if (class_id, subject_id) not in await _teacher_assignments(db, org, current_user.id):
         raise HTTPException(status_code=403, detail="You do not teach this subject in this class.")
     subs = {s.id: s.name for s in (await db.execute(select(AcademicSubTerm).where(AcademicSubTerm.org_id == org))).scalars().all()}
-    assessments = await _entry_assessments(db, org, term_id, getattr(cls, "level", None), sub_term_id)
+    assessments = await _entry_assessments(db, org, term_id, getattr(cls, "level", None), sub_term_id,
+                                           session_id=await session_or_current(db, org, session_id))
     students = (await db.execute(
         select(Student).where(
             Student.org_id == org, Student.class_id == class_id, Student.is_deleted == False)  # noqa: E712
@@ -2791,7 +2885,14 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
             raise HTTPException(status_code=422,
                                 detail=not_enrolled_message(subj_name, len(unenrolled)))
 
-    valid_assessments = set((await db.execute(select(Assessment.id).where(Assessment.org_id == org))).scalars().all())
+    # Scoped to the session the marks belong to, so a stale tab cannot post a
+    # mark against LAST year's assessment row and have it accepted as this
+    # year's. Resolved from the assessments in the payload rather than a query
+    # param: the rows themselves state their year, and trusting the request to
+    # say it would make the check circular.
+    sess_id = await _session_for_items(db, org, {i.assessment_id for i in payload.items})
+    valid_assessments = set((await db.execute(select(Assessment.id).where(
+        Assessment.org_id == org, Assessment.session_id == sess_id))).scalars().all()) if sess_id else set()
     keys = {(i.student_id, i.assessment_id) for i in payload.items}
     existing = {(r.student_id, r.assessment_id): r for r in (await db.execute(select(StudentAssessmentScore).where(
         StudentAssessmentScore.org_id == org, StudentAssessmentScore.subject_id == payload.subject_id))).scalars().all()
@@ -2920,6 +3021,7 @@ async def _class_for_reports_or_403(db: AsyncSession, org: str, user: User,
 
 @router.get("/report-broadsheet", response_model=BroadsheetResponse, dependencies=[Depends(PermissionChecker("school:reports:write"))])
 async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
+                            session_id: str | None = None,
                             db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     org = current_user.org_id
     cls = await _class_for_reports_or_403(db, org, current_user, class_id)
@@ -2933,16 +3035,11 @@ async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
     )).scalars().all()
     s_ids = [s.id for s in students]
 
-    # Config for the term: assessments, cumulatives (+ components), grade scale.
-    assessments = {a.id: a for a in (await db.execute(select(Assessment).where(
-        Assessment.org_id == org, Assessment.term_id == term_id))).scalars().all()}
-    cumulatives = (await db.execute(select(Cumulative).where(Cumulative.org_id == org, Cumulative.term_id == term_id))).scalars().all()
-    cumul_by_id = {c.id: c for c in cumulatives}
-    comp_rows = (await db.execute(select(CumulativeComponent).where(CumulativeComponent.org_id == org)
-                                  .order_by(CumulativeComponent.position))).scalars().all()
-    components: dict[str, list] = {}
-    for cr in comp_rows:
-        components.setdefault(cr.cumulative_id, []).append((cr.ref_type, cr.ref_id))
+    # Config for the (session, term): assessments, cumulatives (+ components).
+    sess_id = await session_or_current(db, org, session_id)
+    setup = await load_term_setup(db, org, sess_id, term_id)
+    assessments, cumulatives = setup.assessments, setup.cumulatives
+    cumul_by_id, components = setup.cumul_by_id, setup.components
 
     scale = (await db.execute(select(GradingScale).where(
         GradingScale.org_id == org, GradingScale.scale_type == "numeric", GradingScale.purpose == "grade")
@@ -3012,6 +3109,7 @@ async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
 
 @router.get("/report-card", response_model=ReportCardResponse, dependencies=[Depends(PermissionChecker("school:reports:read"))])
 async def report_card(student_id: str, term_id: str, sub_term_id: str,
+                      session_id: str | None = None,
                       db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     org = current_user.org_id
     student = (await db.execute(select(Student).where(Student.id == student_id, Student.org_id == org))).scalar_one_or_none()
@@ -3089,14 +3187,12 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
     branding = _branding_response((await db.execute(select(ReportBranding).where(ReportBranding.org_id == org))).scalar_one_or_none())
 
-    # Config: assessments + cumulatives for the term; the columns for this sub-term.
-    assessments = {a.id: a for a in (await db.execute(select(Assessment).where(Assessment.org_id == org, Assessment.term_id == term_id))).scalars().all()}
-    cumulatives = (await db.execute(select(Cumulative).where(Cumulative.org_id == org, Cumulative.term_id == term_id))).scalars().all()
-    cumul_by_id = {c.id: c for c in cumulatives}
-    comp_rows = (await db.execute(select(CumulativeComponent).where(CumulativeComponent.org_id == org).order_by(CumulativeComponent.position))).scalars().all()
-    components: dict[str, list] = {}
-    for cr in comp_rows:
-        components.setdefault(cr.cumulative_id, []).append((cr.ref_type, cr.ref_id))
+    # Config: assessments + cumulatives for the (session, term); the columns for
+    # this sub-term.
+    sess_id = await session_or_current(db, org, session_id)
+    setup = await load_term_setup(db, org, sess_id, term_id)
+    assessments, cumulatives = setup.assessments, setup.cumulatives
+    cumul_by_id, components = setup.cumul_by_id, setup.components
 
     scale = (await db.execute(select(GradingScale).where(
         GradingScale.org_id == org, GradingScale.scale_type == "numeric", GradingScale.purpose == "grade")
@@ -3255,10 +3351,19 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     sessional_terms: list[SessionalTerm] = []
     subject_term_pcts: dict[str, list] = {}
     if len(all_terms) > 1:
-        all_asmts = {a.id: a for a in (await db.execute(select(Assessment).where(
-            Assessment.org_id == org))).scalars().all()}
-        all_cumuls = (await db.execute(select(Cumulative).where(Cumulative.org_id == org))).scalars().all()
-        all_cumul_by_id = {c.id: c for c in all_cumuls}
+        # Every term of THIS session. Deliberately not term-scoped — that is the
+        # point of a sessional figure — but emphatically session-scoped: left
+        # org-wide it would average last year's Autumn into this year's score,
+        # and the number would look plausible while being a blend of two years.
+        #
+        # Its OWN components map (`all_comps`), not the viewed term's: the loop
+        # below resolves each term's cumulative tree, and the term-scoped map
+        # holds nothing for the other terms.
+        session_setup = await load_session_setup(db, org, sess_id)
+        all_asmts = session_setup.assessments
+        all_cumuls = session_setup.cumulatives
+        all_cumul_by_id = session_setup.cumul_by_id
+        all_comps = session_setup.components
         my_scores: dict[tuple, object] = {}
         if all_asmts:
             for r in (await db.execute(select(StudentAssessmentScore).where(
@@ -3276,7 +3381,7 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
                     scores = {aid: my_scores.get((sid, aid)) for aid in t_asmts}
                     if all(v is None for v in scores.values()):
                         continue
-                    v, mx = evaluate_cumulative(t_display.id, all_cumul_by_id, components, t_asmts, scores)
+                    v, mx = evaluate_cumulative(t_display.id, all_cumul_by_id, all_comps, t_asmts, scores)
                     if mx:
                         pct_t = v / mx * 100
                         t_pcts.append(pct_t)
@@ -3387,6 +3492,7 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
 @router.get("/report-cards-bulk", response_model=list[ReportCardResponse],
             dependencies=[Depends(PermissionChecker("school:reports:read"))])
 async def report_cards_bulk(class_id: str, term_id: str, sub_term_id: str,
+                            session_id: str | None = None,
                             db: AsyncSession = Depends(get_db),
                             current_user: User = Depends(get_current_active_user)):
     """Every pupil's report card for one class, for Result Bulk Print.
@@ -3858,6 +3964,7 @@ def _mean(vals):
 
 @router.get("/report-insight", response_model=InsightResponse, dependencies=[Depends(PermissionChecker("school_admin:read"))])
 async def report_insight(term_id: str, sub_term_id: str,
+                         session_id: str | None = None,
                          db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """School-wide performance for a (term, sub-term): per-subject average, the same
     split by gender, and per-class average — computed through the cumulative
@@ -3866,13 +3973,10 @@ async def report_insight(term_id: str, sub_term_id: str,
     term_name = (await db.execute(select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org))).scalar_one_or_none()
     sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
 
-    assessments = {a.id: a for a in (await db.execute(select(Assessment).where(Assessment.org_id == org, Assessment.term_id == term_id))).scalars().all()}
-    cumulatives = (await db.execute(select(Cumulative).where(Cumulative.org_id == org, Cumulative.term_id == term_id))).scalars().all()
-    cumul_by_id = {c.id: c for c in cumulatives}
-    comp_rows = (await db.execute(select(CumulativeComponent).where(CumulativeComponent.org_id == org).order_by(CumulativeComponent.position))).scalars().all()
-    components: dict[str, list] = {}
-    for cr in comp_rows:
-        components.setdefault(cr.cumulative_id, []).append((cr.ref_type, cr.ref_id))
+    sess_id = await session_or_current(db, org, session_id)
+    setup = await load_term_setup(db, org, sess_id, term_id)
+    assessments, cumulatives = setup.assessments, setup.cumulatives
+    cumul_by_id, components = setup.cumul_by_id, setup.components
     display = _pick_display_cumulative(cumulatives, sub_term_id)
 
     empty = InsightResponse(term_name=term_name, sub_term_name=sub_name)
@@ -3958,6 +4062,7 @@ def _analysis_pupil(p, subject_names, *, below=None, position=None) -> AnalysisP
 @router.get("/result-analysis/remedial", response_model=ResultAnalysisResponse,
             dependencies=[Depends(AnyPermissionChecker("school_admin:read", "school:reports:read"))])
 async def remedial_list(term_id: str, sub_term_id: str, class_id: str | None = None,
+                        session_id: str | None = None,
                         db: AsyncSession = Depends(get_db),
                         current_user: User = Depends(get_current_active_user)):
     """Pupils whose average falls below the pass mark, and in which subjects.
@@ -3983,7 +4088,8 @@ async def remedial_list(term_id: str, sub_term_id: str, class_id: str | None = N
                 detail="Select a class. The whole-school view is available to "
                        "administrators only.")
         await _class_for_reports_or_403(db, org, current_user, class_id)
-    analysis = await analyse_term(db, org, term_id, sub_term_id, class_id=class_id)
+    analysis = await analyse_term(db, org, term_id, sub_term_id, class_id=class_id,
+                                  session_id=await session_or_current(db, org, session_id))
     passmark, _honours, source = await resolve_thresholds(db, org, analysis.sub_term_name)
 
     cls_name = None
@@ -4013,6 +4119,7 @@ async def remedial_list(term_id: str, sub_term_id: str, class_id: str | None = N
 @router.get("/result-analysis/honour-roll", response_model=ResultAnalysisResponse,
             dependencies=[Depends(AnyPermissionChecker("school_admin:read", "school:reports:read"))])
 async def honour_roll(term_id: str, sub_term_id: str, class_id: str | None = None,
+                      session_id: str | None = None,
                       db: AsyncSession = Depends(get_db),
                       current_user: User = Depends(get_current_active_user)):
     """Pupils at or above the honours average, best first.
@@ -4035,7 +4142,8 @@ async def honour_roll(term_id: str, sub_term_id: str, class_id: str | None = Non
                 detail="Select a class. The whole-school view is available to "
                        "administrators only.")
         await _class_for_reports_or_403(db, org, current_user, class_id)
-    analysis = await analyse_term(db, org, term_id, sub_term_id, class_id=class_id)
+    analysis = await analyse_term(db, org, term_id, sub_term_id, class_id=class_id,
+                                  session_id=await session_or_current(db, org, session_id))
     _passmark, honours, source = await resolve_thresholds(db, org, analysis.sub_term_name)
 
     cls_name = None
@@ -4064,6 +4172,7 @@ _UPLOAD_SKIP_COLS = {"student", "name", "student name", "admission_no", "admissi
 
 @router.post("/report-upload", response_model=ScoreUploadResult, dependencies=[_report_admin_write])
 async def report_upload(term_id: str, file: UploadFile = File(...),
+                        session_id: str | None = None,
                         db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Bulk-import scores from a CSV / Excel / Word / PDF grid. Columns
     (case-insensitive): student (name) or admission_no, subject, then one column per
@@ -4071,6 +4180,7 @@ async def report_upload(term_id: str, file: UploadFile = File(...),
     assessments by name; unknown students/subjects/assessments are reported, not fatal."""
     from decimal import Decimal, InvalidOperation
     org = current_user.org_id
+    sess_id = await session_or_current(db, org, session_id)
     content = await file.read()
     try:
         parsed = rows_from_upload(file.filename or "", content)
@@ -4082,7 +4192,8 @@ async def report_upload(term_id: str, file: UploadFile = File(...),
     by_name = {f"{s.first_name} {s.last_name}".strip().lower(): s for s in students}
     subjects_by_name = {s.name.strip().lower(): s for s in (await db.execute(select(Subject).where(Subject.org_id == org))).scalars().all()}
     assessments_by_name = {a.name.strip().lower(): a for a in (await db.execute(
-        select(Assessment).where(Assessment.org_id == org, Assessment.term_id == term_id))).scalars().all()}
+        select(Assessment).where(Assessment.org_id == org, Assessment.session_id == sess_id,
+                                 Assessment.term_id == term_id))).scalars().all()}
 
     # Preload existing scores for this term's assessments to upsert in place.
     a_ids = [a.id for a in assessments_by_name.values()]
@@ -4194,7 +4305,7 @@ def _ordered_terms(terms: list) -> list:
             response_model=PerformanceTrackerResponse,
             dependencies=[Depends(AnyPermissionChecker("school_admin:read", "school:reports:read"))])
 async def performance_tracker(
-    class_id: str, subject_id: str,
+    class_id: str, subject_id: str, session_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -4222,6 +4333,7 @@ async def performance_tracker(
     from app.services.result_analysis import analyse_term
 
     org = current_user.org_id
+    sess_id = await session_or_current(db, org, session_id)
     cls = await _class_for_reports_or_403(db, org, current_user, class_id)
 
     subject = (await db.execute(select(Subject).where(
@@ -4252,12 +4364,13 @@ async def performance_tracker(
     configured_pairs = {
         (c.term_id, c.sub_term_id)
         for c in (await db.execute(select(Cumulative).where(
-            Cumulative.org_id == org))).scalars().all()
+            Cumulative.org_id == org, Cumulative.session_id == sess_id))).scalars().all()
         if c.sub_term_id
     }
+    # The heading names the session being VIEWED, which is not necessarily the
+    # current one now that the grid can be pointed at an earlier year.
     session_name = (await db.execute(select(AcademicSession.name).where(
-        AcademicSession.org_id == org, AcademicSession.is_current == True  # noqa: E712
-    ))).scalars().first()
+        AcademicSession.id == sess_id, AcademicSession.org_id == org))).scalars().first()
 
     columns: list[TrackerColumn] = []
     cells: dict[str, dict[str, Decimal]] = {}      # column key -> student_id -> pct
@@ -4269,7 +4382,8 @@ async def performance_tracker(
     # It is one named assessment rather than a (term, sub-term) cumulative, so it
     # is read directly. At Fairview it sits under Summer and has no marks yet.
     promo = (await db.execute(select(Assessment).where(
-        Assessment.org_id == org, Assessment.name == _PROMOTIONAL_ASSESSMENT))).scalars().first()
+        Assessment.org_id == org, Assessment.session_id == sess_id,
+        Assessment.name == _PROMOTIONAL_ASSESSMENT))).scalars().first()
     columns.append(TrackerColumn(
         key="promotional", label="Promotional Exam Score", group=None,
         term_id=getattr(promo, "term_id", None), available=promo is not None))
@@ -4304,7 +4418,8 @@ async def performance_tracker(
                     sub_term_id=sub.id, sub_term_name=sub.name, label=sub.name,
                     group=term.name, available=False))
                 continue
-            analysis = await analyse_term(db, org, term.id, sub.id, class_id=class_id)
+            analysis = await analyse_term(db, org, term.id, sub.id, class_id=class_id,
+                                          session_id=sess_id)
             columns.append(TrackerColumn(
                 key=key, term_id=term.id, term_name=term.name,
                 sub_term_id=sub.id, sub_term_name=sub.name, label=sub.name,
@@ -4401,7 +4516,7 @@ def _scoped_class_name(classes: dict, class_id: str | None) -> str | None:
 @router.get("/result-analysis/order-of-merit", response_model=OrderOfMeritResponse,
             dependencies=[Depends(PermissionChecker("school_admin:read"))])
 async def order_of_merit(term_id: str, sub_term_id: str, class_id: str | None = None,
-                         section_id: str | None = None,
+                         section_id: str | None = None, session_id: str | None = None,
                          db: AsyncSession = Depends(get_db),
                          current_user: User = Depends(get_current_active_user)):
     """Pupils ranked by average, best first.
@@ -4419,7 +4534,8 @@ async def order_of_merit(term_id: str, sub_term_id: str, class_id: str | None = 
 
     org = current_user.org_id
     analysis = await analyse_term(db, org, term_id, sub_term_id,
-                                  class_id=class_id, section_id=section_id)
+                                  class_id=class_id, section_id=section_id,
+                                  session_id=await session_or_current(db, org, session_id))
     classes = {c.id: c.name for c in (await db.execute(select(SchoolClass).where(
         SchoolClass.org_id == org))).scalars().all()}
 
@@ -4455,7 +4571,7 @@ async def order_of_merit(term_id: str, sub_term_id: str, class_id: str | None = 
 @router.get("/result-analysis/grade-summary", response_model=GradeSummaryResponse,
             dependencies=[Depends(PermissionChecker("school_admin:read"))])
 async def grade_summary(term_id: str, sub_term_id: str, class_id: str | None = None,
-                        section_id: str | None = None,
+                        section_id: str | None = None, session_id: str | None = None,
                         db: AsyncSession = Depends(get_db),
                         current_user: User = Depends(get_current_active_user)):
     """How many marks fell in each band, per subject and overall.
@@ -4471,7 +4587,8 @@ async def grade_summary(term_id: str, sub_term_id: str, class_id: str | None = N
 
     org = current_user.org_id
     analysis = await analyse_term(db, org, term_id, sub_term_id,
-                                  class_id=class_id, section_id=section_id)
+                                  class_id=class_id, section_id=section_id,
+                                  session_id=await session_or_current(db, org, session_id))
     classes = {c.id: c.name for c in (await db.execute(select(SchoolClass).where(
         SchoolClass.org_id == org))).scalars().all()}
 
@@ -4522,7 +4639,7 @@ async def grade_summary(term_id: str, sub_term_id: str, class_id: str | None = N
 @router.get("/result-analysis/subject-performance", response_model=SubjectPerformanceResponse,
             dependencies=[Depends(PermissionChecker("school_admin:read"))])
 async def subject_performance(term_id: str, sub_term_id: str, class_id: str | None = None,
-                              section_id: str | None = None,
+                              section_id: str | None = None, session_id: str | None = None,
                               db: AsyncSession = Depends(get_db),
                               current_user: User = Depends(get_current_active_user)):
     """Per subject: how many sat it, the mean, the range, and the pass rate.
@@ -4541,7 +4658,8 @@ async def subject_performance(term_id: str, sub_term_id: str, class_id: str | No
 
     org = current_user.org_id
     analysis = await analyse_term(db, org, term_id, sub_term_id,
-                                  class_id=class_id, section_id=section_id)
+                                  class_id=class_id, section_id=section_id,
+                                  session_id=await session_or_current(db, org, session_id))
     passmark, _honours, source = await resolve_thresholds(db, org, analysis.sub_term_name)
     classes = {c.id: c.name for c in (await db.execute(select(SchoolClass).where(
         SchoolClass.org_id == org))).scalars().all()}
@@ -4579,7 +4697,7 @@ async def subject_performance(term_id: str, sub_term_id: str, class_id: str | No
 @router.get("/result-analysis/departmental", response_model=DepartmentalAnalysisResponse,
             dependencies=[Depends(PermissionChecker("school_admin:read"))])
 async def departmental_analysis(term_id: str, sub_term_id: str, class_id: str | None = None,
-                                section_id: str | None = None,
+                                section_id: str | None = None, session_id: str | None = None,
                                 db: AsyncSession = Depends(get_db),
                                 current_user: User = Depends(get_current_active_user)):
     """Performance grouped by department: Sciences, Social Sciences, and so on.
@@ -4601,7 +4719,8 @@ async def departmental_analysis(term_id: str, sub_term_id: str, class_id: str | 
 
     org = current_user.org_id
     analysis = await analyse_term(db, org, term_id, sub_term_id,
-                                  class_id=class_id, section_id=section_id)
+                                  class_id=class_id, section_id=section_id,
+                                  session_id=await session_or_current(db, org, session_id))
     passmark, _honours, source = await resolve_thresholds(db, org, analysis.sub_term_name)
     classes = {c.id: c.name for c in (await db.execute(select(SchoolClass).where(
         SchoolClass.org_id == org))).scalars().all()}

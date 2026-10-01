@@ -5,9 +5,34 @@ import {
   useTerms, useSubTerms,
   useAssessmentGroups, useCreateAssessmentGroup, useDeleteAssessmentGroup,
   useAssessments, useCreateAssessment, useDeleteAssessment, useBootstrapAssessments,
+  useSessions, useSessionId, useSessionState,
 } from "@/hooks/usePlatform";
 import { useYearGroups } from "@/hooks/useSchool";
 import { Plus, Trash2, Loader2, Sparkles } from "lucide-react";
+
+// ── the academic-year selector ───────────────────────────────────────────────
+//
+// Report setup is scoped to a SESSION as well as a term (migration 134), because
+// terms are shared across years: "Autumn" is one configured row reused every
+// year. Without this control an admin could only ever see the current year's
+// setup, and last year's — which its marks still reference — would be
+// invisible and un-auditable.
+export function SessionPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { data: sessions = [] } = useSessions();
+  const current = useSessionId();
+  if (sessions.length < 2 && !value) return null;   // nothing to choose between
+  return (
+    <div>
+      <label className="label">Academic year</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="input w-auto">
+        {(sessions as Array<{ id: string; name: string }>).map((s) => (
+          <option key={s.id} value={s.id}>{s.name}{s.id === current ? " (current)" : ""}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 
 // ── Assessment Group ─────────────────────────────────────────────────────────
 
@@ -50,7 +75,8 @@ export function AssessmentTab({ canWrite }: { canWrite: boolean }) {
   const { data: years = [] } = useYearGroups();
   const { data: groups = [] } = useAssessmentGroups();
   const [termId, setTermId] = useState("");
-  const { data: rows = [], isLoading } = useAssessments(termId || undefined);
+  const [sessionId, setSessionId] = useSessionState();
+  const { data: rows = [], isLoading } = useAssessments(termId || undefined, sessionId || undefined);
   const create = useCreateAssessment();
   const del = useDeleteAssessment();
   const boot = useBootstrapAssessments();
@@ -64,6 +90,7 @@ export function AssessmentTab({ canWrite }: { canWrite: boolean }) {
       name: f.name.trim(), code: f.code || null, term_id: f.term_id, sub_term_id: f.sub_term_id,
       year_group: f.year_group || null, max_score: f.max_score ? Number(f.max_score) : 100,
       decimal_places: Number(f.decimal_places || 0), group_id: f.group_id || null,
+      session_id: sessionId || null,
     }, { onSuccess: () => setF({ ...empty, term_id: f.term_id, sub_term_id: f.sub_term_id }) });
   };
 
@@ -71,6 +98,7 @@ export function AssessmentTab({ canWrite }: { canWrite: boolean }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-end gap-3">
+          <SessionPicker value={sessionId} onChange={setSessionId} />
           <div><label className="label">Filter by term</label>
             <select value={termId} onChange={(e) => setTermId(e.target.value)} className="input w-auto">
               <option value="">All terms</option>

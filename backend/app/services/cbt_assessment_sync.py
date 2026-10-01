@@ -192,10 +192,20 @@ async def get_or_create_cbt_assessment(
 
     Returns Assessment ID or None if term/sub_term don't exist.
     """
-    # Check: does assessment already exist for this term?
+    # Which YEAR this sync belongs to. Without it the lookup below would hand
+    # next year's CBT run LAST year's assessment row and merge two sessions of
+    # marks into one — and once each year had its own row, `scalar_one_or_none`
+    # would start raising MultipleResultsFound, but only after the first bleed.
+    from app.services.session_scope import resolve_session_id
+    session_id = await resolve_session_id(db, org_id)
+    if not session_id:
+        return None
+
+    # Check: does assessment already exist for this session + term?
     existing = (await db.execute(
         select(Assessment).where(
             Assessment.org_id == org_id,
+            Assessment.session_id == session_id,
             Assessment.term_id == term_id,
             Assessment.sub_term_id == sub_term_id,
             Assessment.name == "CBT Exam Score",
@@ -243,6 +253,7 @@ async def get_or_create_cbt_assessment(
         name="CBT Exam Score",
         code="CBT",
         max_score=100,
+        session_id=session_id,
         term_id=term_id,
         sub_term_id=sub_term_id,
         year_group=None,  # All levels

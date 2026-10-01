@@ -22,6 +22,7 @@ from app.models.modules.school import SchoolClass, Student, Subject, Timetable
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.user import User, UserStatus
 from app.routers.modules.academics import list_grade_analysis
+from tests.conftest import ensure_session
 
 
 async def _teacher(db, org) -> User:
@@ -50,9 +51,10 @@ async def _fixture(db, org, teacher):
 
     stu = Student(id=str(uuid.uuid4()), student_id="S-1", first_name="Musa",
                   last_name="Yusuf", class_id=cls.id, org_id=org.id)
-    a_half = Assessment(id=str(uuid.uuid4()), name="EXAM", max_score=100, term_id=term.id,
+    _sess = await ensure_session(db, org)
+    a_half = Assessment(id=str(uuid.uuid4()), name="EXAM", max_score=100, session_id=_sess.id, term_id=term.id,
                         sub_term_id=half.id, group_id=group.id, org_id=org.id)
-    a_full = Assessment(id=str(uuid.uuid4()), name="EXAM", max_score=100, term_id=term.id,
+    a_full = Assessment(id=str(uuid.uuid4()), name="EXAM", max_score=100, session_id=_sess.id, term_id=term.id,
                         sub_term_id=full.id, group_id=group.id, org_id=org.id)
     db.add_all([stu, a_half, a_full])
     await db.commit()

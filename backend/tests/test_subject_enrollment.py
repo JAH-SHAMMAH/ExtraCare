@@ -72,8 +72,12 @@ async def _world(db, org, *, session_name=YEAR, is_current=True):
     grp = AssessmentGroup(id=str(uuid.uuid4()), name="CBT", position=0, org_id=org.id)
     db.add_all([sess, term, full, cls, maths, eng, a, b, grp])
     await db.commit()
+    # This world builds its OWN session above (these tests turn is_current off on
+    # purpose), so it must NOT call ensure_session — that would add a second,
+    # current session and quietly defeat
+    # test_raises_rather_than_guessing_between_two_sessions.
     asmt = Assessment(id=str(uuid.uuid4()), name="CBT Exam Score", code="CBT",
-                      max_score=Decimal("100"), term_id=term.id, sub_term_id=full.id,
+                      max_score=Decimal("100"), session_id=sess.id, term_id=term.id, sub_term_id=full.id,
                       group_id=grp.id, decimal_places=0, position=0, org_id=org.id)
     db.add(asmt)
     await db.commit()
