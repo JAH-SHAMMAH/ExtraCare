@@ -70,7 +70,19 @@ export function BulkPrintTab() {
 
 function Card({ card, num }: { card: any; num: (v: any) => any }) {
   const b = card.branding || {};
-  const attPct = card.attendance_total ? Math.round((card.attendance_present / card.attendance_total) * 100) : null;
+  // Both operands checked, not just the denominator. `null / 60` is 0 in JS, so
+  // a missing `present` beside a real `total` would have printed "0%" — an
+  // unmarked figure rendering as a real one, which is the mistake this file
+  // avoids everywhere else. The service never returns one without the other,
+  // but a card should not depend on that to avoid asserting a child was absent
+  // all term.
+  const attPct = (card.attendance_total && card.attendance_present != null)
+    ? Math.round((card.attendance_present / card.attendance_total) * 100)
+    : null;
+  // Where the attendance figures came from. Staff-only and print:hidden — the
+  // printed card is the parent's document and carries the figure, not its
+  // provenance; "typed by a teacher" is an internal fact.
+  const attSource = card.attendance_source as string | undefined;
   // The Sessional Score appears only once more than one term has marks. A mean
   // of a single term is that term's own average, and printing it under a
   // different name would be the same number claiming to be a session's work.
@@ -123,6 +135,25 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
           </tr>
         </tbody>
       </table>
+
+      {/* Provenance, on screen only. A figure that was typed should not be
+          mistaken for one that was counted — the same reason `threshold_source`
+          is surfaced on the Result Analysis reports. */}
+      {attSource && attSource !== "none" && (
+        <p className="print:hidden text-[11px] text-slate-400 -mt-2 mb-2">
+          {attSource === "register" ? (
+            <>Attendance counted from the daily register
+              {card.attendance_required_days
+                ? ` (${card.attendance_register_days} of ${card.attendance_required_days} days marked)`
+                : ""}.</>
+          ) : (
+            <>Attendance entered by hand in Report Setup
+              {card.attendance_required_days
+                ? ` — the register holds ${card.attendance_register_days} of ${card.attendance_required_days} days, so it is not used yet`
+                : " — no attendance denominator is configured for this term"}.</>
+          )}
+        </p>
+      )}
 
       <table className="w-full text-xs mt-3 border border-slate-300">
         <thead>

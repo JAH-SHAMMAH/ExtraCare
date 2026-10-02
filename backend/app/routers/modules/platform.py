@@ -39,7 +39,6 @@ from app.models.modules.platform import (
 )
 from app.models.modules.school import (
     SchoolClass, Subject, Student, StudentReport, Timetable, TeacherSection,
-    AttendanceRecord, AttendanceStatus,
 )
 from app.schemas.platform import (
     SessionCreate, SessionUpdate, SessionResponse, CurrentSessionResponse,
@@ -100,6 +99,7 @@ from app.services.ledger import money  # Decimal helper for grading bands
 from app.services.report_engine import (
     evaluate_cumulative, is_fully_marked, round_dp, sessional_average,
 )
+from app.services.attendance_summary import term_attendance
 from app.services.session_scope import (
     load_session_setup, load_term_setup, session_or_current,
 )
@@ -3453,31 +3453,25 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
             slot_comments.append(CardSlotComment(
                 comment_type_id=st.id, name=st.name, text=slot_texts[st.id]))
 
-    # "Times Punctual" — present days that were NOT flagged late. The check-in
-    # pipeline (services/attendance.py::_upsert_daily_record) already resolves each
-    # arrival against the org's late_after_time and stamps AttendanceRecord.status
-    # LATE or PRESENT, so counting that status reuses the pipeline's own decision
-    # instead of re-applying the cutoff to raw events — one source of truth.
-    # Scoped to the term's session window when AcademicSession carries dates for
-    # this term; otherwise counted across the pupil's whole roll-call history.
-    # Stays None while no roll-call data exists, so the card shows a dash rather
-    # than a misleading 0.
-    punctual = None
-    att_q = select(func.count(AttendanceRecord.id)).where(
-        AttendanceRecord.org_id == org,
-        AttendanceRecord.student_id == student_id,
-        AttendanceRecord.status == AttendanceStatus.PRESENT,
-    )
-    if term_name:
-        sess = (await db.execute(select(AcademicSession).where(
-            AcademicSession.org_id == org, AcademicSession.term == term_name))).scalars().first()
-        if sess and sess.start_date and sess.end_date:
-            att_q = att_q.where(AttendanceRecord.date >= sess.start_date,
-                                AttendanceRecord.date <= sess.end_date)
-    has_any = (await db.execute(select(func.count(AttendanceRecord.id)).where(
-        AttendanceRecord.org_id == org, AttendanceRecord.student_id == student_id))).scalar() or 0
-    if has_any:
-        punctual = (await db.execute(att_q)).scalar() or 0
+    # ── attendance: counted from the register, or the authored figure ────────
+    #
+    # All three figures now come from ONE place (services/attendance_summary),
+    # which also says WHICH source it used. Previously `present`/`total` were
+    # whatever a teacher typed while `punctual` beside them was counted from the
+    # daily register — two sources on one card, free to contradict each other.
+    #
+    # The register only wins when it is COMPLETE for the term, so one marked day
+    # cannot flip a pupil from 50/60 to 1/1 on a parent-facing card.
+    #
+    # This also replaces the old window rule, which matched
+    # `AcademicSession.term == term_name`: production holds that column as
+    # 'Autumn', so on a Spring or Summer card it found nothing, applied no
+    # window, and counted the pupil's ENTIRE roll-call history as if it were the
+    # term's. The window now comes from `term_periods`, the table that exists
+    # for it.
+    attendance = await term_attendance(
+        db, org, student_id,
+        session_id=sess_id, term_id=term_id, sub_term_id=sub_term_id)
 
     title = " ".join(x for x in [(term_name or "").upper(), (sub_name or "").upper(), "REPORT"] if x).strip()
     return ReportCardResponse(
@@ -3491,8 +3485,12 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         class_average=(round_dp(sum(peer_averages) / len(peer_averages), 2) if peer_averages else None),
         sessional_score=sessional_score, sessional_terms=sessional_terms,
         sessional_terms_counted=sessional_counted,
-        attendance_present=(sr.attendance_present if sr else None), attendance_total=(sr.attendance_total if sr else None),
-        attendance_punctual=punctual,
+        attendance_present=attendance.present, attendance_total=attendance.total,
+        attendance_punctual=attendance.punctual,
+        attendance_absent=attendance.absent,
+        attendance_source=attendance.source,
+        attendance_register_days=attendance.register_days,
+        attendance_required_days=attendance.required_days,
         # The authored comments live on StudentReport (180 rows populated), while the
         # newer StudentReportComment store is per-(term, sub-term) and currently
         # empty — reading only the latter left every card blank. Prefer the newer

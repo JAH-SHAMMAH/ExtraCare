@@ -1200,15 +1200,32 @@ class ReportCardResponse(BaseModel):
     # How many of `sessional_terms` actually carried marks. A card should say so
     # rather than presenting a one-term mean as a full session's score.
     sessional_terms_counted: int = 0
-    # attendance (from the existing StudentReport, if authored)
+    # ── attendance ───────────────────────────────────────────────────────────
+    # All of these come from services/attendance_summary, which counts the daily
+    # register when it is COMPLETE for the term and otherwise returns the figure
+    # a teacher authored. They used to come from two different places —
+    # present/total typed, punctual counted — which could contradict each other
+    # on one card.
     attendance_present: Optional[int] = None
     attendance_total: Optional[int] = None
-    # "Times Punctual": present-and-not-late days, counted from AttendanceRecord.
-    # The check-in pipeline already resolves lateness against the org's
-    # late_after_time when it ingests an AttendanceEvent (services/attendance.py),
-    # so this reads that decision rather than re-deriving it from raw punches —
-    # one source of truth. None when no roll-call data exists yet.
+    attendance_absent: Optional[int] = None
+    # "Times Punctual": present-and-not-late days. The check-in pipeline already
+    # resolves lateness against the org's late_after_time when it ingests an
+    # AttendanceEvent (services/attendance.py), so this reads that decision
+    # rather than re-deriving it from raw punches. None when the figure is
+    # authored — punctuality has no authored equivalent, and inferring it from
+    # `present` would assert that nobody was ever late.
     attendance_punctual: Optional[int] = None
+    # WHICH source produced the three figures above: "register" (counted),
+    # "authored" (typed), or "none" (neither — the card shows a dash, not a 0).
+    # Surfaced for the same reason as `threshold_source`: a figure that looks
+    # counted but was typed is the kind of thing that should be visible.
+    attendance_source: str = "none"
+    # How much of the term's register is actually kept, against the denominator
+    # configured in term_periods. A figure resting on 12 of 60 days is not the
+    # term, and the two are indistinguishable once reduced to one number.
+    attendance_register_days: int = 0
+    attendance_required_days: Optional[int] = None
     # Three genuinely distinct comments. class_teacher/head come from the older
     # StudentReport row (which is where the authored text actually lives); pc is
     # the newer per-(term, sub-term) StudentReportComment store.

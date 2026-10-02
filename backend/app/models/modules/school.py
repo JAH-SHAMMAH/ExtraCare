@@ -196,6 +196,18 @@ class AttendanceRecord(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     student = relationship("Student", back_populates="attendance_records")
 
+    __table_args__ = (
+        # One status per pupil per day (migration 136). The table carried only a
+        # PK on `id` before, so a double-submitted register or two teachers
+        # marking the same class would silently create a second row — and every
+        # count built on this table would then be wrong by however many
+        # duplicates existed. That matters more now the report card DERIVES its
+        # attendance from these rows: a duplicate does not look like an error,
+        # it looks like an extra school day.
+        UniqueConstraint("org_id", "student_id", "date",
+                         name="uq_attendance_record_student_day"),
+    )
+
 
 class AttendanceSettings(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """Per-org attendance configuration (Attendance Setup). One row per org.
