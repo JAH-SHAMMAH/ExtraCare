@@ -228,6 +228,19 @@ async def test_report_card_position_uses_published_average(db, org, teacher, sch
 
 async def test_report_meta_upsert_and_surface(db, org, teacher, school_class, student):
     staff = await _preset_user(db, org, "teacher")  # school:write covers school:reports:write
+    # Since migration 135 a report is filed under a real term and session —
+    # `student_reports.term_id` and `.session_id` are NOT NULL, so authoring
+    # against an arbitrary term STRING is refused. The world has to contain the
+    # term it writes against, which it previously did not need to.
+    import uuid as _uuid
+
+    from app.models.modules.platform import AcademicTerm
+    from tests.conftest import ensure_session
+
+    db.add(AcademicTerm(id=str(_uuid.uuid4()), name="Term 1", position=1, org_id=org.id))
+    await db.commit()
+    await ensure_session(db, org)
+
     await upsert_report_meta(
         student.id,
         ReportMetaUpdate(class_teacher_comment="Great term.", head_teacher_comment="Keep it up.",

@@ -324,12 +324,25 @@ class StudentReport(Base, UUIDMixin, TimestampMixin, TenantMixin):
     The cognitive marks table, subject totals, average and class position are all
     computed live from ``Grade`` rows at read time; only the human-authored fields
     live here — the class-teacher / head-teacher comments, the attendance summary,
-    and the next-term-begins date. One row per (student, term)."""
+    and the next-term-begins date. One row per (student, session, term).
+
+    `academic_year` was dropped in 135: it was NULL on every row, and a free-text
+    year beside `session_id` is two sources for the same fact on one row."""
     __tablename__ = "student_reports"
 
     student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
-    term = Column(String(50), nullable=False)
-    academic_year = Column(String(20), nullable=True)   # session name snapshot at authoring time
+    # Migration 135: the term as an ID, not a name. It used to be a String, and
+    # `report_card` found this row by comparing that string to the term being
+    # rendered — so renaming a term in Report Setup silently matched nothing and
+    # every card lost its comments and attendance, with no error. Fourth table
+    # with that defect, after report_approvals (131), cbt_exams (132) and the
+    # report setup (134).
+    term_id = Column(String(36), ForeignKey("academic_terms.id", ondelete="CASCADE"), nullable=False, index=True)
+    # And the SESSION, because terms are org-wide and shared across years. Keyed
+    # on term alone, a pupil could hold exactly one report per term FOREVER:
+    # 2026/2027 Autumn would collide with 2025/2026 Autumn. RESTRICT, as in 134 —
+    # a session must not be deletable out from under a year of authored comments.
+    session_id = Column(String(36), ForeignKey("academic_sessions.id", ondelete="RESTRICT"), nullable=False, index=True)
     class_teacher_comment = Column(Text, nullable=True)
     head_teacher_comment = Column(Text, nullable=True)
     attendance_present = Column(Integer, nullable=True)  # days present
@@ -338,8 +351,9 @@ class StudentReport(Base, UUIDMixin, TimestampMixin, TenantMixin):
     created_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("student_id", "term", "org_id", name="uq_student_report_student_term"),
-        Index("ix_student_reports_org_term", "org_id", "term"),
+        UniqueConstraint("org_id", "student_id", "session_id", "term_id",
+                         name="uq_student_report_student_session_term"),
+        Index("ix_student_reports_org_session_term", "org_id", "session_id", "term_id"),
     )
 
 

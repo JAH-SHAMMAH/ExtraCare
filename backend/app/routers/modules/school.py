@@ -1232,6 +1232,29 @@ async def _current_year(db, org_id):
     )).scalar_one_or_none()
 
 
+async def _report_scope(db, org_id, term_name: str | None):
+    """(term_id, session_id) for a term NAME, or (None, None).
+
+    The API still speaks term NAMES — migration 135 changed the storage, not the
+    surface, exactly as 131 and 132 did, so no caller or screen has to change.
+    The difference is where the name is resolved: against `academic_terms`
+    itself, once, instead of by comparing two tables' copies of a string. A name
+    that does not resolve now returns None and is refused by the caller, rather
+    than matching no rows and silently producing a card with no comments.
+    """
+    from app.models.modules.platform import AcademicTerm
+    from app.services.session_scope import resolve_session_id
+
+    if not term_name:
+        return None, None
+    term_id = (await db.execute(select(AcademicTerm.id).where(
+        AcademicTerm.name == term_name, AcademicTerm.org_id == org_id,
+    ))).scalars().first()
+    if not term_id:
+        return None, None
+    return term_id, await resolve_session_id(db, org_id)
+
+
 @router.get("/students/{student_id}/report-card", dependencies=[_reports_read])
 async def get_report_card(
     student_id: str,
@@ -1344,14 +1367,24 @@ async def get_report_card(
     )
 
     meta = None
-    if term:
+    meta_term_id, meta_session_id = await _report_scope(db, current_user.org_id, term)
+    if meta_term_id and meta_session_id:
         meta = (await db.execute(
             select(StudentReport).where(
-                StudentReport.student_id == student_id, StudentReport.term == term,
+                StudentReport.student_id == student_id,
+                StudentReport.term_id == meta_term_id,
+                StudentReport.session_id == meta_session_id,
                 StudentReport.org_id == current_user.org_id,
             )
         )).scalar_one_or_none()
-    academic_year = (meta.academic_year if meta and meta.academic_year else await _current_year(db, current_user.org_id))
+    # `academic_year` was dropped in 135 — one source for the year, not two. The
+    # displayed year comes from the session the report belongs to, falling back to
+    # the org's current session when no report row exists yet.
+    academic_year = await _current_year(db, current_user.org_id)
+    if meta:
+        academic_year = (await db.execute(select(AcademicSession.name).where(
+            AcademicSession.id == meta.session_id,
+        ))).scalars().first() or academic_year
     absent = None
     if meta and meta.attendance_total is not None and meta.attendance_present is not None:
         absent = meta.attendance_total - meta.attendance_present
@@ -1417,7 +1450,7 @@ async def upsert_report_meta(
 ):
     """Author the human parts of a report (School Reports R1): class-teacher +
     head-teacher comments, attendance summary, next-term date. Staff-only
-    (school:reports:write). Upserts one row per (student, term)."""
+    (school:reports:write). Upserts one row per (student, session, term)."""
     student = (await db.execute(
         select(Student).where(
             Student.id == student_id, Student.org_id == current_user.org_id, Student.is_deleted == False,  # noqa: E712
@@ -1425,22 +1458,38 @@ async def upsert_report_meta(
     )).scalar_one_or_none()
     if not student:
         raise HTTPException(status_code=404, detail="student not found in your organisation.")
+    # Writing needs a CONCRETE term and session: both columns are NOT NULL since
+    # 135, so an unresolvable term name is refused here instead of failing on a
+    # constraint nobody can read.
+    term_id, session_id = await _report_scope(db, current_user.org_id, term)
+    if not term_id:
+        raise HTTPException(
+            status_code=422,
+            detail=f"'{term}' is not a term in your organisation. Check Report "
+                   f"Setup → Terms & Sub-term.")
+    if not session_id:
+        raise HTTPException(
+            status_code=422,
+            detail="No academic session is set, so this report cannot be filed "
+                   "under a year. Mark a session as current under School Setup.")
     meta = (await db.execute(
         select(StudentReport).where(
-            StudentReport.student_id == student_id, StudentReport.term == term,
+            StudentReport.student_id == student_id,
+            StudentReport.term_id == term_id,
+            StudentReport.session_id == session_id,
             StudentReport.org_id == current_user.org_id,
         )
     )).scalar_one_or_none()
     created = meta is None
     if created:
-        meta = StudentReport(student_id=student_id, term=term, org_id=current_user.org_id, created_by=current_user.id)
+        meta = StudentReport(student_id=student_id, term_id=term_id,
+                             session_id=session_id, org_id=current_user.org_id,
+                             created_by=current_user.id)
         db.add(meta)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(meta, field, value)
     if meta.attendance_present is not None and meta.attendance_total is not None and meta.attendance_present > meta.attendance_total:
         raise HTTPException(status_code=422, detail="attendance_present cannot exceed attendance_total.")
-    if not meta.academic_year:
-        meta.academic_year = await _current_year(db, current_user.org_id)
     await db.flush()
     await log_action(
         db, AuditAction.RECORD_CREATED if created else AuditAction.RECORD_UPDATED, current_user.org_id,
@@ -1448,8 +1497,13 @@ async def upsert_report_meta(
         resource_label=f"report meta for student {student_id} ({term})",
         metadata={"student_id": student_id, "term": term}, request=request,
     )
+    # The RESPONSE shape is unchanged — callers still get `term` and
+    # `academic_year` as names. Only the storage moved to ids (135), so the names
+    # come from the term the caller named and the session the row was filed under.
+    session_name = (await db.execute(select(AcademicSession.name).where(
+        AcademicSession.id == meta.session_id))).scalars().first()
     return {
-        "student_id": student_id, "term": meta.term, "academic_year": meta.academic_year,
+        "student_id": student_id, "term": term, "academic_year": session_name,
         "class_teacher_comment": meta.class_teacher_comment, "head_teacher_comment": meta.head_teacher_comment,
         "attendance_present": meta.attendance_present, "attendance_total": meta.attendance_total,
         "next_term_begins": meta.next_term_begins.isoformat() if meta.next_term_begins else None,
@@ -1464,11 +1518,12 @@ async def _report_domains(db, org_id, cls, student_id, term):
     flat list (grouped client-side by domain_type + parent); empty when the class is
     unassigned or its section defines no domains.
 
-    `term` is a term NAME, because its only caller is the LEGACY report card, which
-    is name-based throughout (StudentReport.term, _class_position). The ratings
-    store is keyed by term_id since migration 130, so the name is resolved to an id
-    here — one bridge at one point, rather than rippling term_id through the whole
-    legacy path for the sake of this one block. An unresolvable name yields no
+    `term` is a term NAME, because its only caller is the LEGACY report card, whose
+    API surface is name-based (`_class_position` still is; StudentReport stopped
+    being, in 135). The ratings store is keyed by term_id since migration 130, so
+    the name is resolved to an id here — one bridge at one point, rather than
+    rippling term_id through the whole legacy path for this one block. An
+    unresolvable name yields no
     ratings rather than an error: a legacy card asking for a term that is not
     configured should show an empty domain block, not fail to render.
     """

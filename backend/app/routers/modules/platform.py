@@ -1702,11 +1702,21 @@ async def _term_delete_impact(db: AsyncSession, org_id: str, term_id: str, name:
     # (b) UNMATCHED: these still store the term as a NAME, so they can only be
     # counted when one is supplied — and for them a rename strands rows exactly as a
     # delete does, silently, which is what the rename audit records.
+    # (b2) HARD, since migration 135: student reports hold term_id with ON DELETE
+    # CASCADE, so a confirmed delete DESTROYS them — it no longer merely strands
+    # them by name. They carry the class-teacher and head-teacher comments and the
+    # attendance summary, which are the only authored content on a card, so
+    # leaving them in the soft bucket would understate the loss by a whole
+    # category. Counted by ID now, so a term with no name supplied still counts.
+    hard_reports = (await db.execute(
+        select(func.count(StudentReport.id)).where(
+            StudentReport.org_id == org_id, StudentReport.term_id == term_id)
+    )).scalar() or 0
+
     soft_by_name: dict[str, int] = {}
     if name:
         for label, model in (
             ("gradebook rows", Grade),
-            ("student reports", StudentReport),
             ("academic sessions", AcademicSession),
         ):
             n = (await db.execute(
@@ -1718,6 +1728,7 @@ async def _term_delete_impact(db: AsyncSession, org_id: str, term_id: str, name:
     soft = {**soft_untagged, **soft_by_name}
     return {
         "hard": {"assessments": hard_assessments, "scores": hard_scores,
+                 "student reports (authored comments)": hard_reports,
                  "report comments": hard_comments,
                  "report workflows": hard_workflows},
         "soft": soft,
@@ -3405,18 +3416,18 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
             if len(pcts) > 1:
                 row.sessional = round_dp(sum(pcts) / len(pcts), 2)
 
-    # StudentReport is unique on (student_id, term, org_id). Filtering by student
-    # alone returned an ARBITRARY term's row, so attendance and comments could come
-    # from the wrong term as soon as a second term was authored. Match the term
-    # actually being rendered; fall back to the student's only row when the term
-    # name cannot be resolved, so single-term schools keep working.
+    # StudentReport is keyed on (org, student, session, term) since migration 135.
+    # It used to be matched by term NAME, which meant a renamed term silently
+    # matched nothing and the card lost its comments and attendance with no error.
+    # Both ids are held on the row now, so this is an exact lookup — and because
+    # the session is part of it, next year's Autumn report cannot be served on
+    # this year's card.
     sr_q = select(StudentReport).where(
-        StudentReport.org_id == org, StudentReport.student_id == student_id)
-    sr = None
-    if term_name:
-        sr = (await db.execute(sr_q.where(StudentReport.term == term_name))).scalars().first()
-    if sr is None and not term_name:
-        sr = (await db.execute(sr_q)).scalars().first()
+        StudentReport.org_id == org, StudentReport.student_id == student_id,
+        StudentReport.term_id == term_id)
+    if sess_id:
+        sr_q = sr_q.where(StudentReport.session_id == sess_id)
+    sr = (await db.execute(sr_q)).scalars().first()
 
     comment_rows = (await db.execute(select(StudentReportComment).where(
         StudentReportComment.org_id == org, StudentReportComment.student_id == student_id,
