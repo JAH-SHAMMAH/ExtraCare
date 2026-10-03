@@ -173,10 +173,25 @@ class Subject(Base, UUIDMixin, TimestampMixin, TenantMixin):
     teacher_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
     # Free-text teacher label — the Subjects UI captures a name, not a linked user.
     teacher_name = Column(String(120), nullable=True)
+    # Which school section this subject belongs to (migration 137). Educare keeps
+    # THREE separate catalogues — Early Years, Primary, Secondary — and four
+    # titles appear in more than one: Mathematics in all three, Geography, Music
+    # and Humanities in two. Flat, this table could not hold the same title
+    # twice, so one `Mathematics` row ended up carrying Secondary marks AND
+    # Primary enrolments for two different Educare subjects.
+    #
+    # RESTRICT: deleting a section must not silently take a whole catalogue, and
+    # with it the marks hanging off those subjects.
+    section_id = Column(String(36), ForeignKey("school_sections.id", ondelete="RESTRICT"), nullable=True, index=True)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
     __table_args__ = (
         Index("ix_subjects_teacher_org", "teacher_id", "org_id"),
+        Index("ix_subjects_org_section", "org_id", "section_id"),
+        # NEW, not relaxed — `subjects` never had a uniqueness rule on its name,
+        # which is how two identical subjects could sit side by side unnoticed.
+        UniqueConstraint("org_id", "section_id", "name",
+                         name="uq_subjects_org_section_name"),
     )
 
 
