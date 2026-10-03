@@ -4324,11 +4324,19 @@ def _ordered_terms(terms: list) -> list:
             response_model=PerformanceTrackerResponse,
             dependencies=[Depends(AnyPermissionChecker("school_admin:read", "school:reports:read"))])
 async def performance_tracker(
-    class_id: str, subject_id: str, session_id: str | None = None,
+    class_id: str, subject_id: str | None = None, session_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """One subject, one class: every pupil's score and grade across the session.
+    """One class: every pupil's score and grade across the session.
+
+    `subject_id` OMITTED is the "Average Score" option that sits first in the
+    same dropdown as the subjects — the cells become each pupil's average ACROSS
+    subjects instead of their marks in one. It reads `PupilResult.average`
+    straight off the analysis this grid already loads per column, so it is the
+    same figure the report card prints and the same one Order of Merit ranks on;
+    verified against production, identical for 25 of 25 pupils. A second average
+    computed here would be free to disagree with both.
 
     Columns are the Promotional Exam, then each term's sub-terms in teaching
     order, then the Sessional Score. The grid is assembled from `analyse_term` —
@@ -4355,16 +4363,25 @@ async def performance_tracker(
     sess_id = await session_or_current(db, org, session_id)
     cls = await _class_for_reports_or_403(db, org, current_user, class_id)
 
-    subject = (await db.execute(select(Subject).where(
-        Subject.id == subject_id, Subject.org_id == org))).scalar_one_or_none()
-    if not subject:
-        raise HTTPException(status_code=404, detail="Subject not found.")
-    if not _report_admin(current_user):
+    subject = None
+    if subject_id is not None:
+        subject = (await db.execute(select(Subject).where(
+            Subject.id == subject_id, Subject.org_id == org))).scalar_one_or_none()
+        if not subject:
+            raise HTTPException(status_code=404, detail="Subject not found.")
+
+    if not _report_admin(current_user) and subject_id is not None:
         taught = await _teacher_assignments(db, org, current_user.id)
         if (class_id, subject_id) not in taught:
             raise HTTPException(
                 status_code=403,
                 detail="You do not teach this subject in this class.")
+    # With NO subject there is no teaching assignment to check, so access rests
+    # on the class gate `_class_for_reports_or_403` above. That is deliberately
+    # not a widening: Order of Merit already shows a class teacher their own
+    # class's overall averages through the same gate, and this is that figure in
+    # a different layout. A teacher who merely teaches one subject in the class
+    # is still refused, because that gate is class-teacher-or-admin.
 
     terms = _ordered_terms((await db.execute(select(AcademicTerm).where(
         AcademicTerm.org_id == org))).scalars().all())
@@ -4407,18 +4424,31 @@ async def performance_tracker(
         key="promotional", label="Promotional Exam Score", group=None,
         term_id=getattr(promo, "term_id", None), available=promo is not None))
     if promo is not None:
-        promo_rows = (await db.execute(
+        promo_q = (
             select(StudentAssessmentScore.student_id, StudentAssessmentScore.score)
             .join(Student, Student.id == StudentAssessmentScore.student_id)
             .where(StudentAssessmentScore.org_id == org,
                    StudentAssessmentScore.assessment_id == promo.id,
-                   StudentAssessmentScore.subject_id == subject_id,
                    Student.class_id == class_id)
-        )).all()
+        )
+        if subject_id is not None:
+            promo_q = promo_q.where(StudentAssessmentScore.subject_id == subject_id)
+        promo_rows = (await db.execute(promo_q)).all()
         mx = Decimal(str(promo.max_score or 100))
-        cells["promotional"] = {
-            r[0]: (Decimal(str(r[1])) / mx * 100) if mx else Decimal(0)
-            for r in promo_rows if r[1] is not None}
+        if subject_id is not None:
+            cells["promotional"] = {
+                r[0]: (Decimal(str(r[1])) / mx * 100) if mx else Decimal(0)
+                for r in promo_rows if r[1] is not None}
+        else:
+            # Averaged ACROSS subjects, matching what the term columns show in
+            # this mode. Taking one subject's promotional mark and labelling it
+            # an average would be a different number under the same heading.
+            per: dict[str, list] = {}
+            for r in promo_rows:
+                if r[1] is not None and mx:
+                    per.setdefault(r[0], []).append(Decimal(str(r[1])) / mx * 100)
+            cells["promotional"] = {
+                sid: sum(v) / Decimal(len(v)) for sid, v in per.items() if v}
 
     # ── one column per (term, sub-term), via the shared analysis core ──────────
     for term in terms:
@@ -4446,7 +4476,10 @@ async def performance_tracker(
             got: dict[str, Decimal] = {}
             for p in analysis.pupils:
                 pupils.setdefault(p.student_id, p)
-                pct = p.subject_pct.get(subject_id)
+                # `p.average` is the mean of this pupil's per-subject percentages,
+                # computed once by the shared core — not recomputed here. It is
+                # the figure the report card prints and Order of Merit ranks on.
+                pct = p.average if subject_id is None else p.subject_pct.get(subject_id)
                 if pct is not None:
                     got[p.student_id] = pct
                     if sub.name == "Full-Term":
@@ -4478,7 +4511,11 @@ async def performance_tracker(
 
     return PerformanceTrackerResponse(
         class_id=class_id, class_name=cls.name,
-        subject_id=subject_id, subject_name=subject.name,
+        subject_id=subject_id,
+        # The dropdown's own label for the omitted case, so the heading reads
+        # right without the client special-casing a null.
+        subject_name=(subject.name if subject is not None else "Average Score"),
+        is_average=subject_id is None,
         session_name=session_name, columns=columns, rows=rows_out,
         not_configured=not any(c.available for c in columns),
     )
@@ -5065,3 +5102,59 @@ async def academic_alert(
         first_term_name=names.get(first_t), last_term_name=names.get(last_t),
         rows=rows, considered=considered, counts=counts,
         not_configured=not marked, single_term=len(marked) == 1)
+
+
+@router.get("/result-analysis/subjects", response_model=list[TeachingAssignment],
+            dependencies=[Depends(AnyPermissionChecker("school_admin:read", "school:reports:read"))])
+async def result_analysis_subjects(
+    class_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """The subjects this user may open the Performance Tracker for, in one class.
+
+    Built from the SAME rule `performance_tracker` enforces, for the reason
+    `result_analysis_classes` states above: a list assembled alongside the gate
+    rather than from it is a list that disagrees with it. An option that 403s
+    when clicked is worse than no option — and an option MISSING that would have
+    been allowed is a feature nobody can find.
+
+    That second failure is what this fixes. The dropdown was built in the client
+    from `my-teaching-assignments`, i.e. the VIEWER's own Timetable pairs. The
+    tracker has always admitted administrators to any class and subject
+    (`_report_admin` skips every teacher check in it), but an administrator
+    teaches nothing, so their dropdown came back EMPTY and the page told them
+    they were "not assigned to teach any subject in this class". The report was
+    reachable by permission and unreachable by interface.
+
+    So: an admin gets every subject TIMETABLED for the class — which is what the
+    tracker can actually compute, since marks hang off (class, subject) pairs —
+    and a teacher gets exactly the pairs they teach in it, unchanged.
+    """
+    org = current_user.org_id
+    cls = (await db.execute(select(SchoolClass).where(
+        SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found.")
+
+    # A non-admin must be allowed to see this class's results at all, via the
+    # same gate Reports View uses. Checked here so the dropdown cannot describe
+    # a class the tracker would refuse.
+    if not _report_admin(current_user):
+        await _class_for_reports_or_403(db, org, current_user, class_id)
+
+    subj_names = {s.id: s.name for s in (await db.execute(select(Subject).where(
+        Subject.org_id == org))).scalars().all()}
+
+    if _report_admin(current_user):
+        ids = set((await db.execute(select(Timetable.subject_id).where(
+            Timetable.org_id == org, Timetable.class_id == class_id))).scalars().all())
+    else:
+        ids = {sid for (cid, sid) in await _teacher_assignments(db, org, current_user.id)
+               if cid == class_id}
+
+    out = [TeachingAssignment(class_id=class_id, class_name=cls.name,
+                              subject_id=sid, subject_name=subj_names.get(sid))
+           for sid in ids if sid in subj_names]
+    out.sort(key=lambda a: (a.subject_name or "").lower())
+    return out

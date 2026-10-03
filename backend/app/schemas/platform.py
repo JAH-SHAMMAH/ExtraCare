@@ -1491,8 +1491,12 @@ class TrackerRow(BaseModel):
 class PerformanceTrackerResponse(BaseModel):
     class_id: str
     class_name: Optional[str] = None
-    subject_id: str
+    # None for the "Average Score" option, which sits first in the same dropdown
+    # as the subjects: the cells then carry each pupil's average ACROSS subjects
+    # rather than their marks in one.
+    subject_id: Optional[str] = None
     subject_name: Optional[str] = None
+    is_average: bool = False
     session_name: Optional[str] = None
     columns: list[TrackerColumn] = Field(default_factory=list)
     rows: list[TrackerRow] = Field(default_factory=list)

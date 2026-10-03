@@ -266,11 +266,16 @@ export const useDeleteSubTerm = m((id: string) => platformApi.subTerms.remove(id
 export function useAnalysisClasses() {
   return useQuery<any[]>({ queryKey: ["analysis-classes"], queryFn: () => platformApi.resultAnalysis.myClasses() });
 }
-export function usePerformanceTracker(class_id: string, subject_id: string) {
+// `subject_id` undefined is the "Average Score" option: the cells become each
+// pupil's average ACROSS subjects. The sentinel lives in the page (so that an
+// empty string keeps meaning "nothing selected yet"); by the time it reaches
+// here it is simply absent.
+export function usePerformanceTracker(class_id: string, subject_id?: string) {
   return useQuery<any>({
-    queryKey: ["performance-tracker", class_id, subject_id],
-    queryFn: () => platformApi.resultAnalysis.tracker({ class_id, subject_id }),
-    enabled: !!class_id && !!subject_id,
+    queryKey: ["performance-tracker", class_id, subject_id ?? "__average__"],
+    queryFn: () => platformApi.resultAnalysis.tracker(
+      subject_id ? { class_id, subject_id } : { class_id }),
+    enabled: !!class_id,
   });
 }
 export function useBoosterList(term_id: string, sub_term_id: string, class_id: string) {
@@ -352,6 +357,19 @@ export function useAcademicAlert(sub_term_id: string, class_id?: string,
       sub_term_id, class_id, drop_threshold,
     }),
     enabled: !!sub_term_id,
+  });
+}
+
+// The tracker's subject options for one class, from the server's own rule.
+// Replaces filtering useMyTeachingAssignments() in the client: that returned the
+// VIEWER's pairs, so an administrator — who teaches nothing but may open any
+// class — got an empty list and "you are not assigned to teach any subject in
+// this class", on a report their permissions already allowed.
+export function useAnalysisSubjects(classId?: string) {
+  return useQuery<Array<{ subject_id: string; subject_name: string }>>({
+    queryKey: ["analysis-subjects", classId ?? ""],
+    queryFn: () => platformApi.resultAnalysis.subjectsFor(classId as string),
+    enabled: !!classId,
   });
 }
 

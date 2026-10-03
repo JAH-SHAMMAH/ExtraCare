@@ -3,9 +3,9 @@
 import { Fragment, useMemo, useState } from "react";
 import {
   useAnalysisClasses, usePerformanceTracker, useBoosterList, useHonoursRoll,
-  useMyTeachingAssignments, useTerms, useSubTerms, useCurrentSession,
+  useTerms, useSubTerms, useCurrentSession,
   useOrderOfMerit, useGradeSummary, useSubjectPerformance, useDepartmentalAnalysis,
-  useAcrossSessions, useAcrossTerms, useAcademicAlert,
+  useAcrossSessions, useAcrossTerms, useAcademicAlert, useAnalysisSubjects,
 } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { MeritTab, SummaryTab, SubjectsTab, DepartmentsTab, AcrossSessionsTab, AcrossTermsTab, AlertTab } from "@/components/reports/ResultAnalysisAdminTabs";
@@ -34,6 +34,12 @@ const ADMIN_TABS: { key: Tab; label: string }[] = [
 
 // An unmarked cell is not a zero. Everything that renders a score goes through
 // this, including the export, so a blank can never become a 0 on the way out.
+// "Average Score" is the first option in the SAME dropdown as the subjects
+// (confirmed against Educare), not a separate control. A sentinel rather than ""
+// so that an empty value keeps meaning "nothing selected yet" — the two states
+// are different, and the page's own empty prompt depends on telling them apart.
+const AVERAGE = "__average__";
+
 const DASH = "—";
 const fmt = (v: unknown) => (v === null || v === undefined || v === "" ? DASH : String(v));
 
@@ -42,7 +48,6 @@ export default function ResultAnalysisPage() {
   const [tab, setTab] = useState<Tab>("tracker");
 
   const { data: classes, isLoading: clsLoading, isError: clsError } = useAnalysisClasses();
-  const { data: assignments } = useMyTeachingAssignments();
   const { data: terms } = useTerms();
   const { data: subTerms } = useSubTerms();
   const { data: session } = useCurrentSession();
@@ -51,17 +56,22 @@ export default function ResultAnalysisPage() {
   const [classId, setClassId] = useState("");
   const [subjectId, setSubjectId] = useState("");
 
-  // Only the subjects this teacher teaches IN THE SELECTED CLASS — the same
-  // Timetable assignments Make Report gates mark entry on. The server checks this
-  // too; a filtered dropdown is a convenience, not the control.
+  // The subjects this user may open the tracker for in the selected class, from
+  // the SERVER's own rule (/result-analysis/subjects) rather than filtered out of
+  // the viewer's own teaching assignments in the client.
+  //
+  // That filtering was a real defect, not just a style point: the tracker admits
+  // an administrator to any class and subject, but an administrator teaches
+  // nothing, so the list came back empty and the page told them they were "not
+  // assigned to teach any subject in this class" — a report reachable by
+  // permission and unreachable by interface. Deriving the list from the gate is
+  // the same rule /result-analysis/my-classes already follows for classes.
+  const { data: subjectOptions } = useAnalysisSubjects(classId || undefined);
   const subjects = useMemo(() => {
-    const rows = (assignments ?? []) as Array<{ class_id: string; subject_id: string; subject_name: string }>;
+    const rows = (subjectOptions ?? []) as Array<{ subject_id: string; subject_name: string }>;
     const seen = new Set<string>();
-    return rows
-      .filter((a) => a.class_id === classId)
-      .filter((a) => (seen.has(a.subject_id) ? false : (seen.add(a.subject_id), true)))
-      .sort((a, b) => (a.subject_name || "").localeCompare(b.subject_name || ""));
-  }, [assignments, classId]);
+    return rows.filter((a) => (seen.has(a.subject_id) ? false : (seen.add(a.subject_id), true)));
+  }, [subjectOptions]);
 
   // Booster and Honours are per CLASS and need a term + sub-term; the tracker
   // spans the whole session and does not.
@@ -70,7 +80,8 @@ export default function ResultAnalysisPage() {
   const [termId, setTermId] = useState("");
   const [subTermId, setSubTermId] = useState("");
 
-  const tracker = usePerformanceTracker(classId, subjectId);
+  const tracker = usePerformanceTracker(
+    classId, subjectId === AVERAGE ? undefined : subjectId || undefined);
   const booster = useBoosterList(termId, subTermId, classId);
   const honours = useHonoursRoll(termId, subTermId, classId);
   // Whole-school when no class is chosen — these are an administrator's reports,
@@ -92,7 +103,7 @@ export default function ResultAnalysisPage() {
   // not, and Averages Across Sessions needs only the sub-term — it spans terms.
   const needsTerm = !["tracker", "across-sessions", "across-terms", "alert"].includes(tab);
 
-  const onClass = (v: string) => { setClassId(v); setSubjectId(""); };
+  const onClass = (v: string) => { setClassId(v); setSubjectId(v ? AVERAGE : ""); };
 
   return (
     <div className="space-y-6">
@@ -172,6 +183,7 @@ export default function ResultAnalysisPage() {
 
       {tab === "tracker" && (
         <TrackerTab classId={classId} subjectId={subjectId} setSubjectId={setSubjectId}
+                    averageValue={AVERAGE}
                     subjects={subjects} query={tracker} />
       )}
       {tab === "booster" && (
@@ -196,8 +208,9 @@ export default function ResultAnalysisPage() {
 
 // ── Performance Tracker ───────────────────────────────────────────────────────
 
-function TrackerTab({ classId, subjectId, setSubjectId, subjects, query }: {
+function TrackerTab({ classId, subjectId, setSubjectId, subjects, query, averageValue }: {
   classId: string; subjectId: string; setSubjectId: (v: string) => void;
+  averageValue: string;
   subjects: Array<{ subject_id: string; subject_name: string }>;
   query: { data: any; isLoading: boolean; isError: boolean; error?: any };
 }) {
@@ -236,6 +249,8 @@ function TrackerTab({ classId, subjectId, setSubjectId, subjects, query }: {
           <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}
                   className="input" disabled={!classId}>
             <option value="">{classId ? "Select a subject…" : "Select a class first"}</option>
+            {/* First, above the real subjects — the whole-class view. */}
+            {classId && <option value={averageValue}>Average Score</option>}
             {subjects.map((s) => (
               <option key={s.subject_id} value={s.subject_id}>{s.subject_name}</option>
             ))}
