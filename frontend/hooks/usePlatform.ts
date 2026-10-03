@@ -331,6 +331,30 @@ export function useAcrossSessions(sub_term_id: string, class_id?: string) {
   });
 }
 
+// Each subject's average per TERM within one session — the sibling of
+// useAcrossSessions, one level down.
+export function useAcrossTerms(sub_term_id: string, class_id?: string) {
+  return useQuery<any>({
+    queryKey: ["across-terms", sub_term_id, class_id ?? "all"],
+    queryFn: () => platformApi.resultAnalysis.acrossTerms({ sub_term_id, class_id }),
+    enabled: !!sub_term_id,
+  });
+}
+
+// Pupils needing attention, with the reason for each. `drop_threshold` is part
+// of the key: it is a real parameter, and a stale cache across two thresholds
+// would show one threshold's rows under another's heading.
+export function useAcademicAlert(sub_term_id: string, class_id?: string,
+                                 drop_threshold?: number) {
+  return useQuery<any>({
+    queryKey: ["academic-alert", sub_term_id, class_id ?? "all", drop_threshold ?? 5],
+    queryFn: () => platformApi.resultAnalysis.academicAlert({
+      sub_term_id, class_id, drop_threshold,
+    }),
+    enabled: !!sub_term_id,
+  });
+}
+
 export function useTermPeriods(sessionId?: string) {
   return useQuery<any[]>({ queryKey: ["term-periods", sessionId ?? "all"], queryFn: () => platformApi.termPeriods.list(sessionId), enabled: !!sessionId });
 }

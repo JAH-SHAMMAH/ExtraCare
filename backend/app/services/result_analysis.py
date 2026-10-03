@@ -377,3 +377,114 @@ async def analyse_sessions(
                 entered=per_subject_entered.get(subj_id, 0))
 
     return out
+
+
+# ── across TERMS within one session ──────────────────────────────────────────
+#
+# `analyse_sessions` above compares YEARS; this compares the terms inside one.
+# Both Averages Across Terms and Academic Alert are pivots of the SAME load —
+# one `analyse_term` per configured (term, sub-term) — because computing it twice
+# would let a subject's term average disagree with the pupil movement reported
+# beside it.
+
+
+@dataclass
+class TermColumn:
+    term_id: str
+    term_name: str | None
+    # False when this (term, sub-term) owns no cumulative, i.e. nothing is
+    # computable for it. The column is still SHOWN — the layout is the school's
+    # reporting shape, not a reflection of what happens to be marked — but its
+    # cells read as not-entered rather than 0. Same convention as TrackerColumn.
+    configured: bool = False
+    pupils_marked: int = 0
+
+
+@dataclass
+class SessionTermsAnalysis:
+    sub_term_name: str | None = None
+    columns: list[TermColumn] = field(default_factory=list)
+    # term_id -> the full TermAnalysis for it, for callers to pivot
+    per_term: dict[str, "TermAnalysis"] = field(default_factory=dict)
+    subject_names: dict[str, str] = field(default_factory=dict)
+    subject_departments: dict[str, str | None] = field(default_factory=dict)
+
+    @property
+    def marked_term_ids(self) -> list[str]:
+        """Columns that actually produced figures, in column order. A term that
+        is configured but unmarked is NOT here — it contributes nothing to a
+        trend, and counting it as a zero is the mistake that graded a school F."""
+        return [c.term_id for c in self.columns
+                if c.configured and c.pupils_marked > 0]
+
+
+async def analyse_session_terms(
+    db: AsyncSession,
+    org_id: str,
+    sub_term_id: str,
+    *,
+    session_id: str | None = None,
+    class_id: str | None = None,
+    section_id: str | None = None,
+    term_order: tuple[str, ...] = ("Autumn", "Spring", "Summer"),
+) -> SessionTermsAnalysis:
+    """Every term of one session analysed for one sub-term.
+
+    The sub-term is a PARAMETER for the same reason it is on
+    `analyse_sessions`: a Mock and a Full-Term are different things, and
+    averaging them together would call the difference a trend.
+
+    Unconfigured (term, sub-term) pairs are skipped BEFORE `analyse_term` is
+    called — the same guard `performance_tracker` uses — because the cost is one
+    full pass over every pupil per term, and most pairs are empty in a normal
+    year.
+    """
+    from app.models.modules.platform import (
+        AcademicSubTerm, AcademicTerm, Cumulative,
+    )
+    from app.services.session_scope import resolve_session_id
+
+    if session_id is None:
+        session_id = await resolve_session_id(db, org_id)
+
+    sub_name = (await db.execute(select(AcademicSubTerm.name).where(
+        AcademicSubTerm.id == sub_term_id,
+        AcademicSubTerm.org_id == org_id))).scalar_one_or_none()
+    out = SessionTermsAnalysis(sub_term_name=sub_name)
+    if not session_id:
+        return out
+
+    terms = (await db.execute(select(AcademicTerm).where(
+        AcademicTerm.org_id == org_id))).scalars().all()
+    # Names first, then position, then anything unrecognised appended — the same
+    # rule `_ordered_terms` applies in the router, because `position` is 0 for
+    # all three in production and cannot supply the order on its own.
+    rank = {n: i for i, n in enumerate(term_order)}
+    terms = sorted(terms, key=lambda t: (rank.get(t.name, len(rank)),
+                                         t.position or 0, t.name or ""))
+
+    configured = {
+        c.term_id for c in (await db.execute(select(Cumulative).where(
+            Cumulative.org_id == org_id,
+            Cumulative.session_id == session_id,
+            Cumulative.sub_term_id == sub_term_id))).scalars().all()
+    }
+
+    for t in terms:
+        col = TermColumn(term_id=t.id, term_name=t.name,
+                         configured=t.id in configured)
+        if col.configured:
+            a = await analyse_term(db, org_id, t.id, sub_term_id,
+                                   class_id=class_id, section_id=section_id,
+                                   session_id=session_id)
+            if not a.not_configured:
+                out.per_term[t.id] = a
+                out.subject_names.update(a.subject_names)
+                out.subject_departments.update(a.subject_departments)
+                col.pupils_marked = sum(
+                    1 for p in a.pupils if p.average is not None)
+            else:
+                col.configured = False
+        out.columns.append(col)
+
+    return out

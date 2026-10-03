@@ -5,15 +5,15 @@ import {
   useAnalysisClasses, usePerformanceTracker, useBoosterList, useHonoursRoll,
   useMyTeachingAssignments, useTerms, useSubTerms, useCurrentSession,
   useOrderOfMerit, useGradeSummary, useSubjectPerformance, useDepartmentalAnalysis,
-  useAcrossSessions,
+  useAcrossSessions, useAcrossTerms, useAcademicAlert,
 } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
-import { MeritTab, SummaryTab, SubjectsTab, DepartmentsTab, AcrossSessionsTab } from "@/components/reports/ResultAnalysisAdminTabs";
+import { MeritTab, SummaryTab, SubjectsTab, DepartmentsTab, AcrossSessionsTab, AcrossTermsTab, AlertTab } from "@/components/reports/ResultAnalysisAdminTabs";
 import { cn } from "@/lib/utils";
 import { Download, Loader2, AlertCircle } from "lucide-react";
 
 type Tab = "tracker" | "booster" | "honours" | "merit" | "summary" | "subjects"
-  | "departments" | "across-sessions";
+  | "departments" | "across-terms" | "across-sessions" | "alert";
 
 // The three a class teacher sees. An administrator sees these plus the
 // whole-school reports below — one route, two views, resolved by permission.
@@ -27,7 +27,9 @@ const ADMIN_TABS: { key: Tab; label: string }[] = [
   { key: "summary", label: "Grade Summary" },
   { key: "subjects", label: "Subject Performance" },
   { key: "departments", label: "Departmental Analysis" },
+  { key: "across-terms", label: "Averages Across Terms" },
   { key: "across-sessions", label: "Averages Across Sessions" },
+  { key: "alert", label: "Academic Alert" },
 ];
 
 // An unmarked cell is not a zero. Everything that renders a score goes through
@@ -81,10 +83,14 @@ export default function ResultAnalysisPage() {
   const departments = useDepartmentalAnalysis(termId, subTermId, classId || undefined);
   // No termId: this report spans YEARS and folds each year's terms itself.
   const acrossSessions = useAcrossSessions(subTermId, classId || undefined);
+  // Nor do these: they span the TERMS inside one session.
+  const acrossTerms = useAcrossTerms(subTermId, classId || undefined);
+  const [dropThreshold, setDropThreshold] = useState(5);
+  const alert = useAcademicAlert(subTermId, classId || undefined, dropThreshold);
   const visibleTabs = isAdmin ? [...TEACHER_TABS, ...ADMIN_TABS] : TEACHER_TABS;
   // These need a term and sub-term, like Booster and Honours; the tracker does
   // not, and Averages Across Sessions needs only the sub-term — it spans terms.
-  const needsTerm = tab !== "tracker" && tab !== "across-sessions";
+  const needsTerm = !["tracker", "across-sessions", "across-terms", "alert"].includes(tab);
 
   const onClass = (v: string) => { setClassId(v); setSubjectId(""); };
 
@@ -119,7 +125,7 @@ export default function ResultAnalysisPage() {
               {/* Averages Across Sessions has no term: it folds every term of
                   each year by itself. Showing a required-looking "Term *" that
                   the report ignores would be a control that does nothing. */}
-              {tab !== "across-sessions" && (
+              {!["across-sessions", "across-terms", "alert"].includes(tab) && (
                 <div>
                   <label className="label">Term *</label>
                   <select value={termId} onChange={(e) => setTermId(e.target.value)} className="input">
@@ -180,7 +186,10 @@ export default function ResultAnalysisPage() {
       {tab === "summary" && <SummaryTab query={summary} termId={termId} subTermId={subTermId} />}
       {tab === "subjects" && <SubjectsTab query={subjectPerf} termId={termId} subTermId={subTermId} />}
       {tab === "departments" && <DepartmentsTab query={departments} termId={termId} subTermId={subTermId} />}
+      {tab === "across-terms" && <AcrossTermsTab query={acrossTerms} subTermId={subTermId} />}
       {tab === "across-sessions" && <AcrossSessionsTab query={acrossSessions} subTermId={subTermId} />}
+      {tab === "alert" && <AlertTab query={alert} subTermId={subTermId}
+                                    threshold={dropThreshold} setThreshold={setDropThreshold} />}
     </div>
   );
 }

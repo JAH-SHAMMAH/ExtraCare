@@ -1668,6 +1668,109 @@ class SubjectAveragesAcrossSessionsResponse(BaseModel):
     single_session: bool = False
 
 
+# ── Multi-term Result Analysis: Averages Across Terms + Academic Alert ───────
+#
+# Both are PIVOTS of ONE load (result_analysis.analyse_session_terms), for the
+# same reason the wave-2 reports share `analyse_term`: computed separately, a
+# subject's term average could disagree with the pupil movement printed beside
+# it.
+
+class TermColumnOut(BaseModel):
+    term_id: str
+    term_name: Optional[str] = None
+    # False when this (term, sub-term) owns no cumulative. The column is still
+    # SHOWN — the layout is the school's reporting shape, not a reflection of
+    # what happens to be marked — but its cells read as not-entered, never 0.
+    configured: bool = False
+    pupils_marked: int = 0
+
+
+class TermAverageCell(BaseModel):
+    average: Optional[Decimal] = None
+    entered: int = 0          # marks that fed it
+
+
+class TermAverageRow(BaseModel):
+    subject_id: str
+    subject_name: str
+    department: Optional[str] = None
+    # term_id -> cell. A missing key means no figure for that term, which the
+    # client renders as "not entered" rather than as a zero.
+    cells: dict[str, TermAverageCell] = Field(default_factory=dict)
+    overall: Optional[Decimal] = None
+    # Last marked term minus first. None when fewer than two are marked — one
+    # term has no direction, and a dash in a trend column reads as a fall to zero.
+    trend: Optional[Decimal] = None
+    terms_counted: int = 0
+
+
+class AveragesAcrossTermsResponse(BaseModel):
+    sub_term_name: Optional[str] = None
+    class_name: Optional[str] = None
+    columns: list[TermColumnOut] = Field(default_factory=list)
+    rows: list[TermAverageRow] = Field(default_factory=list)
+    # True when NO term was computable for this sub-term — different from
+    # configured-and-unmarked.
+    not_configured: bool = False
+    # True when only one term holds figures, so there is no comparison yet. Said
+    # explicitly so the page can explain a one-column grid instead of looking
+    # broken.
+    single_term: bool = False
+
+
+class AlertReason(str):
+    """Documentation only — the wire carries plain strings.
+
+    fell_below_pass  was at/above the passmark, now below it
+    steep_drop       fell by at least `drop_threshold` points
+    incomplete       has marks, but not every component the term's total needs
+    """
+
+
+class AcademicAlertRow(BaseModel):
+    student_id: str
+    student_name: str
+    admission_no: Optional[str] = None
+    class_name: Optional[str] = None
+    # Every reason that applies, not just the first. A pupil who fell below the
+    # passmark AND dropped steeply is two different conversations.
+    reasons: list[str] = Field(default_factory=list)
+    first_term_name: Optional[str] = None
+    last_term_name: Optional[str] = None
+    first_average: Optional[Decimal] = None
+    last_average: Optional[Decimal] = None
+    change: Optional[Decimal] = None
+    # Subjects where this pupil has some marks but not all the components the
+    # total needs. Their standing in those is unknown, not low.
+    incomplete_subjects: list[str] = Field(default_factory=list)
+
+
+class AcademicAlertResponse(BaseModel):
+    sub_term_name: Optional[str] = None
+    class_name: Optional[str] = None
+    passmark: Decimal
+    threshold_source: str = "configured"
+    # The fall, in points, that counts as steep. A PARAMETER, not a constant:
+    # against Fairview's marks the worst fall in the school is 7.6 points, so a
+    # conventional 10-point rule would flag nobody permanently and the report
+    # would look broken rather than empty.
+    drop_threshold: Decimal
+    first_term_name: Optional[str] = None
+    last_term_name: Optional[str] = None
+    rows: list[AcademicAlertRow] = Field(default_factory=list)
+    # Pupils with an average in BOTH compared terms — the denominator the counts
+    # below are out of, so "0 flagged of 180 considered" is expressible.
+    considered: int = 0
+    # reason -> how many pupils carry it. Reported per reason so an empty
+    # section explains itself: no steep drops is a different fact from nothing
+    # being configured.
+    counts: dict[str, int] = Field(default_factory=dict)
+    not_configured: bool = False
+    # True when fewer than two terms hold figures, so no movement can be
+    # computed at all. `incomplete` rows are still reported in that case.
+    single_term: bool = False
+
+
 class DepartmentalAnalysisResponse(BaseModel):
     term_name: Optional[str] = None
     sub_term_name: Optional[str] = None

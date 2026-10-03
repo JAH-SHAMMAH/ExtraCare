@@ -1774,6 +1774,13 @@ export const platformApi = {
     acrossSessions: (p: { sub_term_id: string; class_id?: string }) =>
       api.get("/platform/result-analysis/subject-averages-across-sessions",
               { params: p }).then((r) => r.data),
+    // Also no term_id: these span the TERMS inside one session.
+    acrossTerms: (p: { sub_term_id: string; class_id?: string }) =>
+      api.get("/platform/result-analysis/averages-across-terms",
+              { params: p }).then((r) => r.data),
+    academicAlert: (p: { sub_term_id: string; class_id?: string; drop_threshold?: number }) =>
+      api.get("/platform/result-analysis/academic-alert",
+              { params: p }).then((r) => r.data),
   },
   broadsheet: (p: { class_id: string; term_id: string; sub_term_id: string }) => api.get("/platform/report-broadsheet", { params: p }).then((r) => r.data),
   reportCard: (p: { student_id: string; term_id: string; sub_term_id: string }) => api.get("/platform/report-card", { params: p }).then((r) => r.data),

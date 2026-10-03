@@ -94,6 +94,12 @@ from app.schemas.platform import (
     SessionAverageColumn,
     SessionAverageRow,
     SubjectAveragesAcrossSessionsResponse,
+    AcademicAlertResponse,
+    AcademicAlertRow,
+    AveragesAcrossTermsResponse,
+    TermAverageCell,
+    TermAverageRow,
+    TermColumnOut,
 )
 from app.services.ledger import money  # Decimal helper for grading bands
 from app.services.report_engine import (
@@ -4873,3 +4879,189 @@ async def subject_averages_across_sessions(
         rows=rows,
         not_configured=not with_figures,
         single_session=len(with_figures) == 1)
+
+
+# ── Multi-term Result Analysis ───────────────────────────────────────────────
+#
+# Averages Across Terms and Academic Alert are two pivots of ONE load
+# (`analyse_session_terms`), which runs `analyse_term` once per configured
+# (term, sub-term) of the session. Computed separately, a subject's term average
+# could disagree with the pupil movement printed beside it.
+
+@router.get("/result-analysis/averages-across-terms",
+            response_model=AveragesAcrossTermsResponse,
+            dependencies=[Depends(PermissionChecker("school_admin:read"))])
+async def averages_across_terms(
+    sub_term_id: str, class_id: str | None = None, section_id: str | None = None,
+    session_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Each subject's average per TERM, within one session.
+
+    The sibling of Averages Across Sessions, one level down: that compares
+    years, this compares the terms inside one. ONE sub-term across all of them,
+    because a Mock and a Full-Term are different things and averaging them would
+    call the difference a trend.
+
+    A term that is configured but unmarked contributes NOTHING — not a zero. The
+    trend is the last MARKED term minus the first, and None when fewer than two
+    are marked, because one term has no direction.
+    """
+    from app.services.result_analysis import analyse_session_terms
+
+    org = current_user.org_id
+    analysis = await analyse_session_terms(
+        db, org, sub_term_id, class_id=class_id, section_id=section_id,
+        session_id=await session_or_current(db, org, session_id),
+        term_order=_TERM_ORDER)
+    classes = {c.id: c.name for c in (await db.execute(select(SchoolClass).where(
+        SchoolClass.org_id == org))).scalars().all()}
+
+    marked = analysis.marked_term_ids
+
+    # subject -> term -> the percentages pupils scored in it
+    vals: dict[str, dict[str, list]] = {}
+    for tid, a in analysis.per_term.items():
+        for p in a.pupils:
+            for subj_id, pct in p.subject_pct.items():
+                vals.setdefault(subj_id, {}).setdefault(tid, []).append(pct)
+
+    rows: list[TermAverageRow] = []
+    for subj_id, by_term in vals.items():
+        cells = {tid: TermAverageCell(
+                     average=round_dp(sum(v) / Decimal(len(v)), 2),
+                     entered=len(v))
+                 for tid, v in by_term.items() if v}
+        present = [t for t in marked if t in cells]
+        figures = [cells[t].average for t in present]
+        trend = (cells[present[-1]].average - cells[present[0]].average
+                 if len(present) > 1 else None)
+        rows.append(TermAverageRow(
+            subject_id=subj_id,
+            subject_name=analysis.subject_names.get(subj_id, subj_id),
+            department=analysis.subject_departments.get(subj_id),
+            cells=cells,
+            overall=round_dp(sum(figures) / Decimal(len(figures)), 2) if figures else None,
+            trend=round_dp(trend, 2) if trend is not None else None,
+            terms_counted=len(present)))
+
+    rows.sort(key=lambda r: (r.subject_name or "").lower())
+
+    return AveragesAcrossTermsResponse(
+        sub_term_name=analysis.sub_term_name,
+        class_name=classes.get(class_id) if class_id else None,
+        columns=[TermColumnOut(term_id=c.term_id, term_name=c.term_name,
+                               configured=c.configured,
+                               pupils_marked=c.pupils_marked)
+                 for c in analysis.columns],
+        rows=rows,
+        not_configured=not marked,
+        single_term=len(marked) == 1)
+
+
+@router.get("/result-analysis/academic-alert",
+            response_model=AcademicAlertResponse,
+            dependencies=[Depends(PermissionChecker("school_admin:read"))])
+async def academic_alert(
+    sub_term_id: str, class_id: str | None = None, section_id: str | None = None,
+    session_id: str | None = None, drop_threshold: Decimal = Decimal("5.0"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Pupils who need attention, and the reason for each.
+
+    THREE REASONS, reported separately rather than merged into one verdict:
+
+      fell_below_pass  was at/above the passmark in the first marked term and
+                       below it in the last. The one that matters most, and the
+                       one a drop-size rule can miss entirely.
+      steep_drop       fell by at least `drop_threshold` points.
+      incomplete       has marks in a subject but not every component the term's
+                       total needs. Their standing there is UNKNOWN, not low, so
+                       this is a register gap to close rather than a result.
+
+    `drop_threshold` IS A PARAMETER, not a constant. Against Fairview's marks
+    the steepest fall in the whole school is 7.6 points and nobody sits below
+    the passmark, so a conventional 10-point rule would flag nobody —
+    permanently — and the page would look broken rather than empty.
+    `considered` and `counts` are returned for the same reason: "0 flagged of
+    180 considered at a threshold of 5" is a result; an empty list alone is not.
+
+    A pupil carries EVERY reason that applies. Falling below the passmark and
+    dropping steeply are two different conversations about the same child.
+    """
+    from app.services.result_analysis import analyse_session_terms, resolve_thresholds
+
+    org = current_user.org_id
+    analysis = await analyse_session_terms(
+        db, org, sub_term_id, class_id=class_id, section_id=section_id,
+        session_id=await session_or_current(db, org, session_id),
+        term_order=_TERM_ORDER)
+    passmark, _honours, source = await resolve_thresholds(
+        db, org, analysis.sub_term_name)
+    classes = {c.id: c.name for c in (await db.execute(select(SchoolClass).where(
+        SchoolClass.org_id == org))).scalars().all()}
+
+    marked = analysis.marked_term_ids
+    names = {c.term_id: c.term_name for c in analysis.columns}
+    first_t = marked[0] if marked else None
+    last_t = marked[-1] if len(marked) > 1 else None
+
+    # student_id -> that pupil's standing in each term
+    pupils: dict[str, dict] = {}
+    for tid, a in analysis.per_term.items():
+        for p in a.pupils:
+            e = pupils.setdefault(p.student_id, {
+                "name": p.student_name, "adm": p.admission_no,
+                "class_name": p.class_name, "avg": {}, "incomplete": set()})
+            if p.average is not None:
+                e["avg"][tid] = p.average
+            for s_id in p.incomplete_subjects:
+                e["incomplete"].add(a.subject_names.get(s_id, s_id))
+
+    rows: list[AcademicAlertRow] = []
+    counts = {"fell_below_pass": 0, "steep_drop": 0, "incomplete": 0}
+    considered = 0
+
+    for pid, e in pupils.items():
+        a0 = e["avg"].get(first_t) if first_t else None
+        a1 = e["avg"].get(last_t) if last_t else None
+        both = a0 is not None and a1 is not None
+        if both:
+            considered += 1
+
+        reasons: list[str] = []
+        change = (a1 - a0) if both else None
+        if both:
+            if a0 >= passmark and a1 < passmark:
+                reasons.append("fell_below_pass")
+            if change <= -drop_threshold:
+                reasons.append("steep_drop")
+        if e["incomplete"]:
+            reasons.append("incomplete")
+        if not reasons:
+            continue
+        for r in reasons:
+            counts[r] = counts.get(r, 0) + 1
+        rows.append(AcademicAlertRow(
+            student_id=pid, student_name=e["name"], admission_no=e["adm"],
+            class_name=e["class_name"], reasons=reasons,
+            first_term_name=names.get(first_t), last_term_name=names.get(last_t),
+            first_average=round_dp(a0, 2) if a0 is not None else None,
+            last_average=round_dp(a1, 2) if a1 is not None else None,
+            change=round_dp(change, 2) if change is not None else None,
+            incomplete_subjects=sorted(e["incomplete"])))
+
+    # Worst fall first; pupils flagged only for an incomplete register last,
+    # since theirs is a gap to fill rather than a result to act on.
+    rows.sort(key=lambda r: (r.change is None,
+                             r.change if r.change is not None else 0))
+
+    return AcademicAlertResponse(
+        sub_term_name=analysis.sub_term_name,
+        class_name=classes.get(class_id) if class_id else None,
+        passmark=passmark, threshold_source=source, drop_threshold=drop_threshold,
+        first_term_name=names.get(first_t), last_term_name=names.get(last_t),
+        rows=rows, considered=considered, counts=counts,
+        not_configured=not marked, single_term=len(marked) == 1)
