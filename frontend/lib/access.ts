@@ -41,6 +41,19 @@ export interface RouteAccess {
   // page the API would actually let the user use (e.g. a cashier collecting a
   // store pickup: page reachable by `store:sell` OR `payments:write`).
   anyOf?: string[];
+  // Optional: a SELF-SERVICE page, open to any authenticated user. Its data is
+  // ownership-scoped server-side from the caller's identity, so there is no
+  // module permission to hold — exactly like the `/dashboard/my-*` pages, which
+  // get this by being absent from the table altogether.
+  //
+  // An entry is needed here only when a BROADER prefix would otherwise capture
+  // the route and make it stricter: `/dashboard/hrm/leave` cannot simply be
+  // deleted, because `/dashboard/hrm` → `hr:write` would then win by
+  // longest-prefix and lock out more people, not fewer.
+  //
+  // `permission` is still required, and is what a future reviewer should read as
+  // "the scope this page would have carried"; it is NOT enforced.
+  anyAuthenticated?: boolean;
 }
 
 export const ROUTE_ACCESS: RouteAccess[] = [
@@ -54,10 +67,21 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/hrm/my-info", permission: "hr:read" },
   { prefix: "/dashboard/hrm/leave/admin", permission: "hr:write" },
   // Leave completion: Configure + Assign are admin (hr:write); Entitlements is
-  // self-service (inherits hr:read from /leave below). Longest-prefix wins.
+  // self-service (inherits the open rule from /leave below, and the API 403s on
+  // another staff member's balances). Longest-prefix wins.
   { prefix: "/dashboard/hrm/leave/configure", permission: "hr:write" },
   { prefix: "/dashboard/hrm/leave/assign", permission: "hr:write" },
-  { prefix: "/dashboard/hrm/leave", permission: "hr:read" },
+  // MY LEAVE — applying for your own leave is not an HR-admin act, so it is open
+  // to any authenticated user. It was `hr:read`, which `cashier` and `facilities`
+  // do not hold: two staff roles that plainly do take leave were unable to open
+  // the page, while the API had always served them (POST, `?mine=true` and
+  // reading one's own row carry no permission check at all).
+  //
+  // The whole-staff view stays exactly as it is — /leave/admin above is
+  // `hr:write`, and the server gates the same data on `hr:write` OR
+  // `users:write` (commit 54e3ef9). Opening this prefix cannot widen that: the
+  // longer prefix wins.
+  { prefix: "/dashboard/hrm/leave", permission: "hr:read", anyAuthenticated: true },
   // Phase 4: Recruitment + Disciplinary — confidential HR admin (hr:write).
   { prefix: "/dashboard/hrm/recruitment", permission: "hr:write" },
   // Self-service: a staff member's OWN disciplinary record (longest-prefix wins,
@@ -411,17 +435,22 @@ function matchRoute(pathname: string): RouteAccess | null {
 
 export function permissionForPath(pathname: string): string | null {
   const best = matchRoute(pathname);
-  return best ? best.permission : null;
+  // A self-service route requires nothing, so it must report nothing. RouteGuard
+  // reads this as `required` and skips the check when it is null — returning the
+  // nominal permission here would block the page it is meant to open.
+  if (!best || best.anyAuthenticated) return null;
+  return best.permission;
 }
 
 /** True if `hasPermission` satisfies the access rule for `pathname`. An unmapped
- *  route is open to any authenticated user. Honours `anyOf` (OR semantics). */
+ *  route — or one marked `anyAuthenticated` — is open to any authenticated user.
+ *  Honours `anyOf` (OR semantics). */
 export function canAccessPath(
   pathname: string,
   hasPermission: (permission: string) => boolean,
 ): boolean {
   const best = matchRoute(pathname);
-  if (!best) return true;
+  if (!best || best.anyAuthenticated) return true;
   if (best.anyOf && best.anyOf.length) {
     return hasPermission(best.permission) || best.anyOf.some(hasPermission);
   }
