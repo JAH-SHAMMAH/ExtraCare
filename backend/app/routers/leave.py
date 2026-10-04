@@ -13,9 +13,21 @@ Authorisation
 -------------
 * Any authenticated user can **create** their own request and **read** their
   own rows.
-* Listing without ``mine=true`` and admin actions (approve/reject, analytics)
-  require the existing ``users:read``/``users:write`` scopes so HR roles
-  already provisioned with /users admin get this for free.
+* Reading **other people's** leave (``mine=false``, another user's row, or the
+  org-wide analytics) requires ``hr:write`` OR ``users:write``.
+
+  This used to be ``users:read``, which 27 role presets hold — including
+  ``teacher``, ``staff``, ``librarian``, ``instructor`` and ``viewer``. Leave
+  rows carry leave type, dates and the stated reason, so sick leave for every
+  member of staff was readable org-wide by most of the school. The frontend had
+  always gated the admin page on ``hr:write``
+  (``access.ts`` → ``/dashboard/hrm/leave/admin``); only the server gate was
+  left behind, so the UI hid a door that was not actually locked.
+
+  ``users:write`` is kept alongside ``hr:write`` so that the people who may
+  **decide** on leave (``_require_admin_write``) can always read what they are
+  deciding on — narrowing the read gate alone would have left ``it_support``
+  (``users:write``, no ``hr:write``) able to approve a row it could not open.
 
 Rules
 -----
@@ -36,7 +48,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import get_current_active_user
-from app.core.permissions import PermissionChecker
+from app.core.permissions import AnyPermissionChecker, PermissionChecker
 from app.models.user import User
 from app.models.role import Role, user_roles
 from app.models.leave import LeaveApplication, LeaveType, LeaveStatus
@@ -49,7 +61,11 @@ from app.schemas.leave import (
 logger = logging.getLogger("extracare.leave")
 router = APIRouter(prefix="/leave", tags=["Leave"])
 
-_can_admin_read = Depends(PermissionChecker("users:read"))
+# Reading OTHER staff's leave. See the module docstring: deliberately not
+# `users:read`, which almost every staff preset carries.
+ADMIN_READ_SCOPES = ("hr:write", "users:write")
+
+_can_admin_read = Depends(AnyPermissionChecker(*ADMIN_READ_SCOPES))
 _can_admin_write = Depends(PermissionChecker("users:write"))
 
 
@@ -137,8 +153,8 @@ async def list_applications(
     """List leave applications.
 
     * ``mine=true`` scopes to the caller — available to any authenticated user.
-    * ``mine=false`` returns the full org list — requires ``users:read``.
-      Unauthorized callers get 403.
+    * ``mine=false`` returns the full org list — requires ``hr:write`` or
+      ``users:write``. Unauthorized callers get 403.
     """
     if not mine:
         # Soft-gate instead of a decorator dependency so self-service users
@@ -187,10 +203,16 @@ def _has_scope(perms: set[str], scope: str) -> bool:
 
 
 async def _require_admin_read(db: AsyncSession, user: User) -> None:
-    """Inline the permission check so /applications?mine=true stays open."""
+    """Inline the permission check so /applications?mine=true stays open.
+
+    Guards every read of SOMEONE ELSE'S leave. See the module docstring for why
+    this is `hr:write`/`users:write` and not `users:read`.
+    """
     perms = await _permissions_for(db, user)
-    if not _has_scope(perms, "users:read"):
-        raise HTTPException(status_code=403, detail="users:read required to list all applications")
+    if not any(_has_scope(perms, s) for s in ADMIN_READ_SCOPES):
+        raise HTTPException(
+            status_code=403,
+            detail="hr:write or users:write required to read other staff's leave")
 
 
 async def _require_admin_write(db: AsyncSession, user: User) -> None:
@@ -274,11 +296,19 @@ async def leave_analytics(
 ):
     """Counts for the HR dashboard.
 
+    The route carries `dependencies=[_can_admin_read]`, but the check is ALSO
+    made here in the body. A `dependencies=` gate is skipped when the handler is
+    called directly, which is how this module is tested — so a dependency-only
+    gate would have been covered by a test that passed for the wrong reason.
+    This aggregates every member of staff's leave, so it is gated like the other
+    two read-someone-else's-leave surfaces rather than differently.
+
     * by_status — full lifecycle totals (includes zero buckets so the chart
       renders stable labels).
     * by_month — last 12 calendar months of application creation, chronological.
     * by_type  — distribution across leave types (zero buckets included).
     """
+    await _require_admin_read(db, current_user)
     org_id = current_user.org_id
 
     total = int((await db.execute(
