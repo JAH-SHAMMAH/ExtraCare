@@ -24,6 +24,13 @@ __pycache__/
 *.sqlite
 *.sqlite3
 *.pre-phase2-backup
+# Database dumps. A dump carries EVERY user row and password hash, so it must
+# never be committable from anywhere in the tree -- the `backups/` rules below
+# only cover those two directories.
+*.dump
+*.dump.*
+*.sql.gz
+*.pgdump
 backend/extracare.db*
 backups/
 backend/backups/
