@@ -121,7 +121,7 @@ year** — unassigned in all six. That is correct, not a gap.
 ### What the data says against those lists
 
 Read-only dry run against production, 4 October 2026
-(`scripts/dry_per_year_subjects.py`, untracked):
+(`scripts/dry_per_year_subjects.py`):
 
 - All **48** listed names resolve to our Secondary catalogue; **12 of 12**
   Secondary classes place into a year.
@@ -139,6 +139,40 @@ none** — Years 7–9 do not take them in any form.
 > and none is planned until the Years 7–9 data is reconciled or explicitly
 > accepted as seed noise. A gate armed today would block mark entry for six
 > real classes.
+
+### The reconciliation decision — step 1 only
+
+A second read-only diagnostic (`scripts/dry_reconcile_junior.py`) settled what
+could safely be done. Two findings decided it:
+
+- **All six junior classes have a PUBLISHED Autumn report; Spring is
+  unpublished.** Re-pointing marks would therefore change a card a parent has
+  already seen, and would do so for Autumn but not Spring — leaving the two
+  terms describing different subjects for the same pupil.
+- **The 60 timetable rows are 36 pairs plus 24 exact duplicates.** Year 7's two
+  classes hold one row per pair (12); Years 8 and 9's four classes hold two
+  identical rows each (4 × 6 = 24 pairs → 48 rows). 12 + 48 = 60. The duplicates
+  are same class, subject, day *and* time — `timetables` has no unique
+  constraint on that combination, which is how they got in.
+
+**Decision (2026-10-04):**
+
+| Step | Action | Status |
+|---|---|---|
+| 1 | Remove the 24 duplicate timetable rows, keeping the older `id` | **approved** |
+| 2 | Re-point Biology/Chemistry/Physics → the LS subjects | **deferred** |
+| 3 | Delete Economics/Geography/Government rows | **deferred** |
+
+Steps 2 and 3 are deferred **because Autumn is published**: a partial re-point
+would leave the Autumn and Spring cards inconsistent with each other. The LS
+subjects hold no rows, so step 2 would not collide — it is deferred on the
+published-report grounds alone, not on any technical obstacle.
+
+Step 1 is independent of the curriculum question entirely: no mark, enrolment or
+report reads `timetables`, so its blast radius is the timetable grid. It runs
+dry-run by default behind an explicit apply flag, writes a manifest of the 24
+deleted ids that is verified **by content** before the first change, and
+restores through `--remove`.
 
 ## What `subject_groups` does and does not hold
 
