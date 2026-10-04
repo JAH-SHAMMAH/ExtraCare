@@ -22,6 +22,7 @@ from app.routers.modules.cbt import (
     import_bank, add_questions_from_bank,
 )
 from app.schemas.question_bank import BankItemCreate, BankItemUpdate, ComposeFromBank
+from tests.conftest import ensure_section
 
 pytestmark = pytest.mark.asyncio
 
@@ -39,7 +40,8 @@ async def _preset_user(db, org, slug) -> User:
 
 
 async def _subject(db, org, name="Mathematics", code="MTH") -> Subject:
-    s = Subject(id=str(uuid.uuid4()), name=name, code=code, org_id=org.id)
+    _sec = await ensure_section(db, org)
+    s = Subject(id=str(uuid.uuid4()), name=name, code=code, section_id=_sec.id, org_id=org.id)
     db.add(s)
     await db.commit()
     return s

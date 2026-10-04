@@ -10,6 +10,7 @@ from app.core.school_identity import (
     resolve_taught_subject_ids,
 )
 from app.models.modules.school import Subject
+from tests.conftest import ensure_section
 
 
 async def test_student_resolves_via_shared_email(db, student_user, student):
@@ -23,7 +24,8 @@ async def test_teacher_resolves_taught_classes(db, teacher, school_class):
 
 
 async def test_teacher_resolves_taught_subjects(db, org, teacher):
-    subj = Subject(name="Mathematics", teacher_id=teacher.id, org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(name="Mathematics", teacher_id=teacher.id, section_id=_sec.id, org_id=org.id)
     db.add(subj)
     await db.commit()
     assert await resolve_taught_subject_ids(db, teacher) == [subj.id]

@@ -17,6 +17,7 @@ from app.routers.modules.platform import (
 )
 from app.schemas.platform import ReportEntrySave, ScoreItem, CommentGridSave, CommentItem
 from tests.conftest import ensure_session
+from tests.conftest import ensure_section
 
 
 pytestmark = pytest.mark.asyncio
@@ -42,7 +43,8 @@ async def test_comment_grid_and_card_wiring(db, org):
     half = AcademicSubTerm(id=str(uuid.uuid4()), name="Half-Term", position=1, org_id=org.id)
     full = AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", position=2, org_id=org.id)
     cls = SchoolClass(id=str(uuid.uuid4()), name="Year 10", level="YEAR 10", org_id=org.id)
-    maths = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    maths = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     s1 = Student(id=str(uuid.uuid4()), student_id="FS/1", first_name="Ada", last_name="Obi", class_id=cls.id, org_id=org.id)
     db.add_all([autumn, half, full, cls, maths, s1])
     await db.commit()

@@ -15,6 +15,7 @@ from app.routers.modules.school import (
     get_teacher_subjects, set_teacher_subjects, export_teachers,
 )
 from app.schemas.teacher import TeacherCreate, TeacherSubjectsUpdate, AssignSectionRequest
+from tests.conftest import ensure_section
 
 
 pytestmark = pytest.mark.asyncio
@@ -37,7 +38,8 @@ async def _section(db, org, name) -> SchoolSection:
 
 
 async def _subject(db, org, name) -> Subject:
-    s = Subject(id=str(uuid.uuid4()), name=name, org_id=org.id)
+    _sec = await ensure_section(db, org)
+    s = Subject(id=str(uuid.uuid4()), name=name, section_id=_sec.id, org_id=org.id)
     db.add(s)
     await db.commit()
     return s

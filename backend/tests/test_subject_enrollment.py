@@ -37,6 +37,7 @@ from app.schemas.platform import (
 from app.services.subject_enrollment import (
     AcademicYearUnresolved, plan_backfill, resolve_academic_year,
 )
+from tests.conftest import ensure_section
 
 pytestmark = pytest.mark.asyncio
 
@@ -63,8 +64,9 @@ async def _world(db, org, *, session_name=YEAR, is_current=True):
     full = AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", position=1, org_id=org.id)
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="JSS1",
                       teacher_id=admin.id, org_id=org.id)
-    maths = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
-    eng = Subject(id=str(uuid.uuid4()), name="English", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    maths = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
+    eng = Subject(id=str(uuid.uuid4()), name="English", section_id=_sec.id, org_id=org.id)
     a = Student(id=str(uuid.uuid4()), student_id="FSN-0001", first_name="Ada",
                 last_name="Obi", class_id=cls.id, org_id=org.id)
     b = Student(id=str(uuid.uuid4()), student_id="FSN-0002", first_name="Bola",

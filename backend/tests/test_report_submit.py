@@ -38,6 +38,7 @@ from app.routers.modules.academics import (
 from app.schemas.academics import (
     REPORT_PUBLISHABLE_STAGES, ReportSubmitRequest,
 )
+from tests.conftest import ensure_section
 
 # The term NAME. Approvals are keyed by term_id since migration 131, so the
 # helpers resolve it to a real AcademicTerm. Renamed off "Term 1": that literal is
@@ -144,8 +145,9 @@ async def test_a_subject_teacher_who_is_not_the_class_teacher_is_refused(db, org
     class_teacher = await _user(db, org, "teacher")
     subject_teacher = await _user(db, org, "teacher")
     cls = await _class(db, org, class_teacher)
+    _sec = await ensure_section(db, org)
     subj = Subject(id=str(uuid.uuid4()), name="Mathematics",
-                   teacher_id=subject_teacher.id, org_id=org.id)
+                   teacher_id=subject_teacher.id, section_id=_sec.id, org_id=org.id)
     db.add(subj)
     await db.commit()
 
@@ -183,7 +185,8 @@ async def test_the_grid_says_so_too_when_no_class_teacher_is_assigned(db, org):
 
     teacher = await _user(db, org, "teacher")
     cls = await _class(db, org, teacher=None)
-    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", teacher_id=teacher.id, org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", teacher_id=teacher.id, section_id=_sec.id, org_id=org.id)
     db.add(subj)
     await db.commit()
     term = await _term(db, org)
@@ -336,7 +339,8 @@ async def _term(db, org, name=TERM):
 async def test_the_grid_offers_submit_to_the_class_teacher(db, org):
     teacher = await _user(db, org, "teacher")
     cls = await _class(db, org, teacher)
-    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", teacher_id=teacher.id, org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", teacher_id=teacher.id, section_id=_sec.id, org_id=org.id)
     db.add(subj)
     await db.commit()
     term = await _term(db, org)
@@ -353,8 +357,9 @@ async def test_the_grid_explains_itself_to_a_subject_teacher_instead_of_going_qu
     class_teacher = await _user(db, org, "teacher")
     subject_teacher = await _user(db, org, "teacher")
     cls = await _class(db, org, class_teacher)
+    _sec = await ensure_section(db, org)
     subj = Subject(id=str(uuid.uuid4()), name="Mathematics",
-                   teacher_id=subject_teacher.id, org_id=org.id)
+                   teacher_id=subject_teacher.id, section_id=_sec.id, org_id=org.id)
     db.add(subj)
     await db.commit()
     term = await _term(db, org)
@@ -368,7 +373,8 @@ async def test_the_grid_explains_itself_to_a_subject_teacher_instead_of_going_qu
 async def test_the_grid_reports_a_report_already_handed_in(db, org):
     teacher = await _user(db, org, "teacher")
     cls = await _class(db, org, teacher)
-    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", teacher_id=teacher.id, org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", teacher_id=teacher.id, section_id=_sec.id, org_id=org.id)
     db.add(subj)
     await db.commit()
     term = await _term(db, org)
@@ -391,7 +397,8 @@ async def test_what_the_grid_offers_matches_what_the_endpoint_allows(db, org):
     subject_teacher = await _user(db, org, "teacher")
     admin = await _user(db, org, "org_admin")
     cls = await _class(db, org, class_teacher)
-    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     db.add(subj)
     await db.commit()
     term = await _term(db, org)

@@ -26,6 +26,7 @@ from app.models.role import Role
 from app.models.user import User, UserStatus
 from app.routers.modules.platform import honour_roll, remedial_list
 from tests.conftest import ensure_session
+from tests.conftest import ensure_section
 
 pytestmark = pytest.mark.asyncio
 
@@ -50,8 +51,9 @@ async def _world(db, org, *, passmark=40, honours=80, mid_passmark=35):
     full = AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", position=2, org_id=org.id)
     half = AcademicSubTerm(id=str(uuid.uuid4()), name="Half-Term", position=1, org_id=org.id)
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="JSS1", org_id=org.id)
-    maths = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
-    eng = Subject(id=str(uuid.uuid4()), name="English", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    maths = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
+    eng = Subject(id=str(uuid.uuid4()), name="English", section_id=_sec.id, org_id=org.id)
     grp = AssessmentGroup(id=str(uuid.uuid4()), name="CBT", position=0, org_id=org.id)
     sc = GradingScale(id=str(uuid.uuid4()), name="Nigerian Secondary (A*-F)",
                       scale_type="numeric", purpose="grade", show_in_table=True,

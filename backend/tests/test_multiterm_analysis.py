@@ -39,6 +39,7 @@ from app.models.modules.school import SchoolClass, Student, Subject
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.user import User, UserStatus
 from app.routers.modules.platform import academic_alert, averages_across_terms
+from tests.conftest import ensure_section
 
 pytestmark = pytest.mark.asyncio
 
@@ -69,10 +70,11 @@ async def _world(db, org, *, passmark=40):
     w.summer = AcademicTerm(id=str(uuid.uuid4()), name="Summer", position=3, org_id=org.id)
     w.full = AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", position=1, org_id=org.id)
     w.cls = SchoolClass(id=str(uuid.uuid4()), name="Year 10", level="YEAR 10", org_id=org.id)
+    _sec = await ensure_section(db, org)
     w.maths = Subject(id=str(uuid.uuid4()), name="Mathematics", department="Mathematics",
-                      org_id=org.id)
+                      section_id=_sec.id, org_id=org.id)
     w.eng = Subject(id=str(uuid.uuid4()), name="English", department="Languages",
-                    org_id=org.id)
+                    section_id=_sec.id, org_id=org.id)
     db.add_all([w.sess, w.autumn, w.spring, w.summer, w.full, w.cls, w.maths, w.eng])
     db.add(ReportBranding(id=str(uuid.uuid4()), full_term_passmark=Decimal(passmark),
                           min_average_honours=Decimal(80), org_id=org.id))

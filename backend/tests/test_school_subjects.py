@@ -25,6 +25,7 @@ from app.routers.modules.school import (
     list_subjects, get_subject, create_subject, update_subject, delete_subject,
 )
 from app.schemas.subject import SubjectCreate, SubjectUpdate
+from tests.conftest import ensure_section
 
 
 pytestmark = pytest.mark.asyncio
@@ -45,6 +46,10 @@ async def _preset_user(db, org, slug) -> User:
 # ── Create persists the full UI field set ───────────────────────────────────────
 
 async def test_create_persists_ui_fields(db, org, teacher):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     resp = await create_subject(
         SubjectCreate(name="Mathematics", code="MTH101", department="Sciences",
                       credit_hours=3, teacher_name="Mr Ade"),
@@ -59,6 +64,10 @@ async def test_create_persists_ui_fields(db, org, teacher):
 
 
 async def test_create_defaults(db, org, teacher):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     resp = await create_subject(SubjectCreate(name="Civics"), request=None, db=db, current_user=teacher)
     assert resp["code"] == "" and resp["credit_hours"] == 1 and resp["is_active"] is True
 
@@ -66,6 +75,10 @@ async def test_create_defaults(db, org, teacher):
 # ── List + search ────────────────────────────────────────────────────────────────
 
 async def test_list_and_search(db, org, teacher):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     await create_subject(SubjectCreate(name="Biology", code="BIO", department="Sciences"), request=None, db=db, current_user=teacher)
     await create_subject(SubjectCreate(name="History", code="HIS", department="Arts"), request=None, db=db, current_user=teacher)
     allres = await list_subjects(page=1, page_size=100, search=None, db=db, current_user=teacher)
@@ -79,6 +92,10 @@ async def test_list_and_search(db, org, teacher):
 # ── Update persists ──────────────────────────────────────────────────────────────
 
 async def test_update_persists(db, org, teacher):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     s = await create_subject(SubjectCreate(name="Physics", department="Sciences"), request=None, db=db, current_user=teacher)
     resp = await update_subject(s["id"], SubjectUpdate(department="Applied Sciences", is_active=False, credit_hours=4),
                                 request=None, db=db, current_user=teacher)
@@ -88,6 +105,10 @@ async def test_update_persists(db, org, teacher):
 
 
 async def test_get_404(db, org, teacher):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     with pytest.raises(HTTPException) as exc:
         await get_subject(str(uuid.uuid4()), db=db, current_user=teacher)
     assert exc.value.status_code == 404
@@ -96,6 +117,10 @@ async def test_get_404(db, org, teacher):
 # ── Delete + guard ───────────────────────────────────────────────────────────────
 
 async def test_delete_unused(db, org, teacher):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     s = await create_subject(SubjectCreate(name="Temp"), request=None, db=db, current_user=teacher)
     await delete_subject(s["id"], request=None, db=db, current_user=teacher)
     gone = (await db.execute(select(Subject).where(Subject.id == s["id"]))).scalar_one_or_none()
@@ -103,6 +128,10 @@ async def test_delete_unused(db, org, teacher):
 
 
 async def test_delete_blocked_when_graded(db, org, teacher, student):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     s = await create_subject(SubjectCreate(name="Chemistry"), request=None, db=db, current_user=teacher)
     db.add(Grade(id=str(uuid.uuid4()), student_id=student.id, subject_id=s["id"],
                  score=80, max_score=100, term="Term 1", org_id=org.id))
@@ -115,6 +144,10 @@ async def test_delete_blocked_when_graded(db, org, teacher, student):
 # ── RBAC ────────────────────────────────────────────────────────────────────────
 
 async def test_subjects_rbac(db, org):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     # Subject CRUD is admin taxonomy; a teacher teaches subjects and reads them.
     manager = await _preset_user(db, org, "manager")
     assert manager.has_permission("school:read") and manager.has_permission("school:write")

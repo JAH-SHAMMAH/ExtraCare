@@ -26,6 +26,7 @@ from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.user import User, UserStatus
 from app.routers.modules.platform import report_entry_grid
 from tests.conftest import ensure_session
+from tests.conftest import ensure_section
 
 TERM = "Term 1"
 
@@ -51,7 +52,8 @@ async def _fixture(db, org):
     """A class and subject, plus the SAME assessment name in two sub-terms —
     the collision the sub-term selector exists to resolve."""
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="Secondary", org_id=org.id)
-    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     term = AcademicTerm(id=str(uuid.uuid4()), name=TERM, org_id=org.id)
     half = AcademicSubTerm(id=str(uuid.uuid4()), name="Half-Term", org_id=org.id)
     full = AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", org_id=org.id)

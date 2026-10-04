@@ -37,6 +37,7 @@ from app.schemas.academics import (
     RecognitionCreate, RecognitionUpdate,
 )
 from tests.conftest import ensure_session
+from tests.conftest import ensure_section
 
 
 pytestmark = pytest.mark.asyncio
@@ -55,7 +56,8 @@ async def _preset_user(db, org, slug: str) -> User:
 
 
 async def _subject(db, org, name="Mathematics") -> Subject:
-    s = Subject(id=str(uuid.uuid4()), name=name, org_id=org.id)
+    _sec = await ensure_section(db, org)
+    s = Subject(id=str(uuid.uuid4()), name=name, section_id=_sec.id, org_id=org.id)
     db.add(s)
     await db.commit()
     return s
@@ -286,7 +288,8 @@ async def test_grade_analysis_multi_class_same_subject(db, org, teacher):
     db.add(class_b)
 
     # Create a subject
-    subject = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subject = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     db.add(subject)
 
     # Create students: one in each class

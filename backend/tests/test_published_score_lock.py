@@ -39,6 +39,7 @@ from sqlalchemy import select
 
 from tests._terms import a_term
 from tests.conftest import ensure_session
+from tests.conftest import ensure_section
 
 TERM_NAME = "Term 1"
 
@@ -47,7 +48,8 @@ async def _fixture(db, org, *, stage: str | None = None):
     """A class, a pupil, a subject, an assessment in Term 1 — plus an optional
     ReportApproval at `stage`."""
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="Secondary", org_id=org.id)
-    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     term = AcademicTerm(id=str(uuid.uuid4()), name=TERM_NAME, org_id=org.id)
     sub = AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", org_id=org.id)
     db.add_all([cls, subj, term, sub])

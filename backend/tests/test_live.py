@@ -22,6 +22,7 @@ from app.routers.live import (
 )
 from app.schemas.live import LiveSessionCreate
 from app.models.live import LiveAttendance, LiveRecording
+from tests.conftest import ensure_section
 
 
 pytestmark = pytest.mark.asyncio
@@ -411,9 +412,10 @@ async def test_analytics_aggregates_attendance(db, teacher, second_user):
 @pytest_asyncio.fixture
 async def subject(db, org, teacher):
     from app.models.modules.school import Subject
+    _sec = await ensure_section(db, org)
     s = Subject(
         id=str(uuid.uuid4()), name="Mathematics", code="MATH",
-        teacher_id=teacher.id, org_id=org.id,
+        teacher_id=teacher.id, section_id=_sec.id, org_id=org.id,
     )
     db.add(s)
     await db.commit()

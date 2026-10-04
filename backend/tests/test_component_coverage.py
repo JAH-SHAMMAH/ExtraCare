@@ -32,6 +32,7 @@ from app.routers.modules.academics import update_report_workflow
 from app.schemas.academics import ReportApprovalUpdate
 from app.services.component_coverage import component_coverage
 from tests.conftest import ensure_session
+from tests.conftest import ensure_section
 
 
 async def _admin(db, org) -> User:
@@ -50,7 +51,8 @@ async def _world(db, org, *, weighted: bool, mark_ca: bool):
     """A class, two pupils, one subject, and a term whose TOTAL is either
     CA(40)+Exam(60) (`weighted`) or the single assessment Autumn uses."""
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="Secondary", org_id=org.id)
-    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     term = AcademicTerm(id=str(uuid.uuid4()), name="Spring" if weighted else "Autumn",
                         position=1, org_id=org.id)
     full = AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", position=2, org_id=org.id)

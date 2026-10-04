@@ -15,6 +15,7 @@ from app.routers.modules.platform import (
 )
 from app.schemas.platform import ReportEntrySave, ScoreItem
 from tests.conftest import ensure_session
+from tests.conftest import ensure_section
 
 
 pytestmark = pytest.mark.asyncio
@@ -40,7 +41,8 @@ async def test_report_insight(db, org):
     half = AcademicSubTerm(id=str(uuid.uuid4()), name="Half-Term", position=1, org_id=org.id)
     full = AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", position=2, org_id=org.id)
     c10 = SchoolClass(id=str(uuid.uuid4()), name="Year 10", level="YEAR 10", org_id=org.id)
-    maths = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    maths = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     boy = Student(id=str(uuid.uuid4()), student_id="B1", first_name="Ben", last_name="M", gender="Male", class_id=c10.id, org_id=org.id)
     girl = Student(id=str(uuid.uuid4()), student_id="G1", first_name="Amy", last_name="F", gender="Female", class_id=c10.id, org_id=org.id)
     db.add_all([autumn, half, full, c10, maths, boy, girl])

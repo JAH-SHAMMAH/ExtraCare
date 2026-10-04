@@ -19,6 +19,7 @@ from app.schemas.timetable import (
     PeriodGroupCreate, PeriodGenerateRequest,
     CurriculumCreate, CurriculumUpdate, TimetableJobCreate,
 )
+from tests.conftest import ensure_section
 
 
 pytestmark = pytest.mark.asyncio
@@ -42,7 +43,8 @@ async def _class(db, org, name="Year 10A") -> SchoolClass:
 
 
 async def _subject(db, org, name="Maths") -> Subject:
-    s = Subject(id=str(uuid.uuid4()), name=name, org_id=org.id)
+    _sec = await ensure_section(db, org)
+    s = Subject(id=str(uuid.uuid4()), name=name, section_id=_sec.id, org_id=org.id)
     db.add(s)
     await db.commit()
     return s

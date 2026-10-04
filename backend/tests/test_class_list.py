@@ -23,6 +23,7 @@ from app.models.modules.school import SchoolClass, Student, Subject, Timetable
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.user import User, UserStatus
 from app.routers.modules.academics import class_list
+from tests.conftest import ensure_section
 
 
 async def _user(db, org, preset="teacher") -> User:
@@ -40,7 +41,8 @@ async def _user(db, org, preset="teacher") -> User:
 async def _school(db, org, n_students=3):
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="JSS1", org_id=org.id)
     other = SchoolClass(id=str(uuid.uuid4()), name="JSS1 B", level="JSS1", org_id=org.id)
-    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     db.add_all([cls, other, subj])
     await db.commit()
     for i in range(n_students):

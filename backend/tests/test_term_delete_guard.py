@@ -40,6 +40,7 @@ from app.models.user import User, UserStatus
 from app.routers.modules.platform import create_term, delete_term, update_term
 from app.schemas.platform import TermCreate, TermUpdate
 from tests.conftest import ensure_session
+from tests.conftest import ensure_section
 
 TERM = "Autumn"
 
@@ -68,7 +69,8 @@ async def _term_with_hard_rows(db, org):
     t = await _bare_term(db, org)
     sub = AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", org_id=org.id)
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="Secondary", org_id=org.id)
-    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     db.add_all([sub, cls, subj])
     await db.commit()
 
@@ -100,7 +102,8 @@ async def _term_with_soft_rows(db, org):
     """
     t = await _bare_term(db, org)
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="Secondary", org_id=org.id)
-    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     db.add_all([cls, subj])
     await db.commit()
     db.add_all([

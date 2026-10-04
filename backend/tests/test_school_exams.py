@@ -31,6 +31,7 @@ from app.schemas.exam import ExamCreate, ExamUpdate, ExamResultRow
 from app.schemas.subject import SubjectCreate
 from app.models.modules.academics import ReportApproval
 from app.schemas.grade import GradePublish, ReportMetaUpdate
+from tests.conftest import ensure_section
 
 
 pytestmark = pytest.mark.asyncio
@@ -78,6 +79,10 @@ def test_grade_letter_boundaries():
 # ── Create / list ─────────────────────────────────────────────────────────────────
 
 async def test_create_maps_and_defaults(db, org, teacher, school_class):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await _subject(db, teacher)
     resp = await create_exam(
         ExamCreate(name="First Term Exam", exam_type="final", subject_id=subj["id"],
@@ -94,12 +99,20 @@ async def test_create_maps_and_defaults(db, org, teacher, school_class):
 
 
 async def test_create_rejects_bad_type(db, org, teacher):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     with pytest.raises(HTTPException) as exc:
         await create_exam(ExamCreate(name="X", exam_type="oral"), request=None, db=db, current_user=teacher)
     assert exc.value.status_code == 422
 
 
 async def test_list_shape_and_filter(db, org, teacher, school_class):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await _subject(db, teacher)
     await create_exam(ExamCreate(name="Mid", subject_id=subj["id"], class_id=school_class.id, status="scheduled"),
                       request=None, db=db, current_user=teacher)
@@ -116,6 +129,10 @@ async def test_list_shape_and_filter(db, org, teacher, school_class):
 # ── Results: roster, upsert, grade computation, report-card ───────────────────────
 
 async def test_results_roster_and_upsert(db, org, teacher, school_class, student):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     other = await _extra_student(db, org, school_class, "Ada", "Obi")
     subj = await _subject(db, teacher)
     exam = await create_exam(ExamCreate(name="CA1", subject_id=subj["id"], class_id=school_class.id, term="Term 1", total_marks=100),
@@ -147,6 +164,10 @@ async def test_results_roster_and_upsert(db, org, teacher, school_class, student
 
 
 async def test_results_require_subject(db, org, teacher, school_class, student):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     exam = await create_exam(ExamCreate(name="NoSubj", class_id=school_class.id), request=None, db=db, current_user=teacher)
     with pytest.raises(HTTPException) as exc:
         await submit_exam_results(exam["id"], [ExamResultRow(student_id=student.id, score=50)],
@@ -155,6 +176,10 @@ async def test_results_require_subject(db, org, teacher, school_class, student):
 
 
 async def test_exam_grades_reach_report_card(db, org, teacher, school_class, student):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await _subject(db, teacher)
     exam = await create_exam(ExamCreate(name="Term Exam", subject_id=subj["id"], class_id=school_class.id, term="Term 1"),
                              request=None, db=db, current_user=teacher)
@@ -169,6 +194,10 @@ async def test_exam_grades_reach_report_card(db, org, teacher, school_class, stu
 
 
 async def test_update_status_and_404(db, org, teacher, school_class):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await _subject(db, teacher)
     exam = await create_exam(ExamCreate(name="Upd", subject_id=subj["id"], class_id=school_class.id),
                              request=None, db=db, current_user=teacher)
@@ -183,6 +212,10 @@ async def test_update_status_and_404(db, org, teacher, school_class):
 # ── School Reports R1: CA/exam split, position, report meta ───────────────────────
 
 async def test_report_card_ca_exam_split(db, org, teacher, school_class, student):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await _subject(db, teacher)
     ca = await create_exam(ExamCreate(name="CA", subject_id=subj["id"], class_id=school_class.id,
                                       term="Term 1", exam_type="midterm"), request=None, db=db, current_user=teacher)
@@ -203,6 +236,10 @@ async def test_report_card_ca_exam_split(db, org, teacher, school_class, student
 
 
 async def test_report_card_position_uses_published_average(db, org, teacher, school_class, student):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     top = await _extra_student(db, org, school_class, "Top", "Scorer")
     subj = await _subject(db, teacher)
     exam = await create_exam(ExamCreate(name="Exam", subject_id=subj["id"], class_id=school_class.id, term="Term 1"),
@@ -227,6 +264,10 @@ async def test_report_card_position_uses_published_average(db, org, teacher, sch
 
 
 async def test_report_meta_upsert_and_surface(db, org, teacher, school_class, student):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     staff = await _preset_user(db, org, "teacher")  # school:write covers school:reports:write
     # Since migration 135 a report is filed under a real term and session —
     # `student_reports.term_id` and `.session_id` are NOT NULL, so authoring

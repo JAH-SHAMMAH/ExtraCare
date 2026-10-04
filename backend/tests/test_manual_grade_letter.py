@@ -29,6 +29,7 @@ from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.user import User, UserStatus
 from app.routers.modules.school import submit_grades
 from app.services.grading import grade_letter
+from tests.conftest import ensure_section
 
 
 async def _teacher(db, org) -> User:
@@ -45,7 +46,8 @@ async def _teacher(db, org) -> User:
 
 async def _fixture(db, org):
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="Secondary", org_id=org.id)
-    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     db.add_all([cls, subj])
     await db.commit()
     stu = Student(id=str(uuid.uuid4()), student_id="S-1", first_name="Musa", last_name="Yusuf",
@@ -121,7 +123,8 @@ async def test_several_marks_in_one_call_each_get_their_own_letter(db, org):
     would stamp every row with the first mark's grade."""
     teacher = await _teacher(db, org)
     stu, subj = await _fixture(db, org)
-    other = Subject(id=str(uuid.uuid4()), name="English", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    other = Subject(id=str(uuid.uuid4()), name="English", section_id=_sec.id, org_id=org.id)
     db.add(other)
     await db.commit()
 

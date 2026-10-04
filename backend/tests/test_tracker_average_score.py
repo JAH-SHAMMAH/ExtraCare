@@ -28,6 +28,7 @@ from app.models.modules.school import SchoolClass, Student, Subject, Timetable
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.user import User, UserStatus
 from app.routers.modules.platform import performance_tracker
+from tests.conftest import ensure_section
 
 pytestmark = pytest.mark.asyncio
 
@@ -61,8 +62,9 @@ async def _world(db, org):
     w.full = AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", position=1, org_id=org.id)
     w.cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="JSS1",
                         teacher_id=w.class_teacher.id, org_id=org.id)
-    w.maths = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
-    w.eng = Subject(id=str(uuid.uuid4()), name="English Language", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    w.maths = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
+    w.eng = Subject(id=str(uuid.uuid4()), name="English Language", section_id=_sec.id, org_id=org.id)
     db.add_all([w.sess, w.autumn, w.full, w.cls, w.maths, w.eng])
     await db.commit()
 

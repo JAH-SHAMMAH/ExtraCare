@@ -13,6 +13,7 @@ from app.routers.modules.platform import (
     create_subject_exclusion, list_subject_exclusions, delete_subject_exclusion,
 )
 from app.schemas.platform import LevelSettingUpsert, SubjectExclusionCreate
+from tests.conftest import ensure_section
 
 
 pytestmark = pytest.mark.asyncio
@@ -28,7 +29,8 @@ async def _admin(db, org) -> User:
 
 
 async def _subject(db, org, name="Mathematics") -> Subject:
-    s = Subject(id=str(uuid.uuid4()), name=name, org_id=org.id)
+    _sec = await ensure_section(db, org)
+    s = Subject(id=str(uuid.uuid4()), name=name, section_id=_sec.id, org_id=org.id)
     db.add(s)
     await db.commit()
     return s

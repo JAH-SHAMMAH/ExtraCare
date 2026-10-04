@@ -38,6 +38,7 @@ from app.models.modules.school import SchoolClass, Student, Subject
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.user import User, UserStatus
 from app.routers.modules.platform import subject_averages_across_sessions
+from tests.conftest import ensure_section
 
 pytestmark = pytest.mark.asyncio
 
@@ -67,10 +68,11 @@ async def _base(db, org):
     w.full = AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", position=1, org_id=org.id)
     w.mock = AcademicSubTerm(id=str(uuid.uuid4()), name="Mock", position=2, org_id=org.id)
     w.cls = SchoolClass(id=str(uuid.uuid4()), name="Year 10", level="YEAR 10", org_id=org.id)
+    _sec = await ensure_section(db, org)
     w.maths = Subject(id=str(uuid.uuid4()), name="Mathematics", department="Sciences",
-                      org_id=org.id)
+                      section_id=_sec.id, org_id=org.id)
     w.eng = Subject(id=str(uuid.uuid4()), name="English", department="Languages",
-                    org_id=org.id)
+                    section_id=_sec.id, org_id=org.id)
     db.add_all([w.autumn, w.spring, w.full, w.mock, w.cls, w.maths, w.eng])
     await db.commit()
     w.a = Student(id=str(uuid.uuid4()), student_id="FSN-0001", first_name="Ada",

@@ -25,6 +25,7 @@ from app.routers.modules.cbt import (
     publish_exam_results, unpublish_exam_results, feed_gradebook, exam_results,
 )
 from app.routers.modules.school import get_report_card
+from tests.conftest import ensure_section
 
 pytestmark = pytest.mark.asyncio
 
@@ -54,7 +55,8 @@ async def _linked_student(db, org, class_id=None):
 
 
 async def _subject(db, org) -> Subject:
-    s = Subject(id=str(uuid.uuid4()), name=f"Maths-{uuid.uuid4().hex[:4]}", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    s = Subject(id=str(uuid.uuid4()), name=f"Maths-{uuid.uuid4().hex[:4]}", section_id=_sec.id, org_id=org.id)
     db.add(s)
     await db.commit()
     return s

@@ -13,6 +13,14 @@ from pydantic import BaseModel, Field
 
 class SubjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    # Which school a subject belongs to (migration 137/138). Educare's own form
+    # opens with a "Select School of Subject" picker, and the column is NOT NULL:
+    # Mathematics in Early Years, Primary and Secondary are three different
+    # subjects, so a subject cannot be created without saying which it is.
+    # Optional on the WIRE so the server can fall back to the class's section
+    # where one is implied, and refused with a 422 when it cannot be resolved —
+    # better than failing on a constraint nobody can read.
+    section_id: Optional[str] = None
     code: Optional[str] = Field(default=None, max_length=20)
     department: Optional[str] = Field(default=None, max_length=100)
     credit_hours: Optional[int] = Field(default=1, ge=0)

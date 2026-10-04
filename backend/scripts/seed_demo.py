@@ -58,6 +58,33 @@ from app.models.role import Role, PERMISSION_PRESETS
 from app.models.user import User, UserStatus
 
 
+async def _section_id(db, org_id: str, prefer: str) -> str:
+    """The section a seeded subject belongs to.
+
+    `subjects.section_id` is NOT NULL since migration 138 — Educare keeps three
+    catalogues and the same title appears in more than one, so a subject cannot
+    be created without saying which school it is in. Prefers `prefer` by name,
+    falls back to the only section when a school has one, and refuses rather
+    than inventing a section nobody configured.
+    """
+    from sqlalchemy import select
+
+    from app.models.modules.platform import SchoolSection
+
+    rows = (await db.execute(select(SchoolSection).where(
+        SchoolSection.org_id == org_id))).scalars().all()
+    for r in rows:
+        if (r.name or "").lower() == prefer.lower():
+            return r.id
+    if len(rows) == 1:
+        return rows[0].id
+    raise SystemExit(
+        f"Cannot seed subjects: no school section named {prefer!r} "
+        f"(found: {sorted(r.name for r in rows) or 'none'}). Create it under "
+        f"School Setup first — a subject must belong to one section.")
+
+
+
 DEMO_PASSWORD = "DemoPass123!"
 
 
@@ -1187,6 +1214,8 @@ async def _seed_school_classroom(db, org: Organization, admin: User, roles_by_sl
             code="MATH10",
             description="Grade 10 Mathematics — algebra, geometry, introductory calculus.",
             teacher_id=teacher.id,
+            # NOT NULL since migration 138 — a subject belongs to one school.
+            section_id=await _section_id(db, org.id, "Secondary"),
             org_id=org.id,
         )
         db.add(maths)
@@ -1332,6 +1361,7 @@ async def _seed_school_classroom(db, org: Organization, admin: User, roles_by_sl
                 code=DUAL_ROLE_SUBJECT["code"],
                 description=DUAL_ROLE_SUBJECT["description"],
                 teacher_id=dual_role_user.id,
+                section_id=await _section_id(db, org.id, "Secondary"),
                 org_id=org.id,
             )
             db.add(english)

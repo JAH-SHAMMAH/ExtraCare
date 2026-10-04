@@ -37,6 +37,7 @@ from app.models.organization import Organization, IndustryType
 from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.user import User, UserStatus
 from tests.conftest import ensure_session
+from tests.conftest import ensure_section
 
 
 class _SlowSession(AsyncSession):
@@ -71,7 +72,8 @@ async def races(tmp_path):
         db.add(org)
         await db.commit()
         cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="Secondary", org_id=org.id)
-        subj = Subject(id=str(uuid.uuid4()), name="Maths", org_id=org.id)
+        _sec = await ensure_section(db, org)
+        subj = Subject(id=str(uuid.uuid4()), name="Maths", section_id=_sec.id, org_id=org.id)
         term = AcademicTerm(id=str(uuid.uuid4()), name="Term 1", org_id=org.id)
         sub = AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", org_id=org.id)
         db.add_all([cls, subj, term, sub])

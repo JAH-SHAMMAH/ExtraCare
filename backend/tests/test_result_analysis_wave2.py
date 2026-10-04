@@ -30,6 +30,7 @@ from app.routers.modules.platform import (
     grade_summary, order_of_merit, subject_performance,
 )
 from tests.conftest import ensure_session
+from tests.conftest import ensure_section
 
 
 async def _admin(db, org) -> User:
@@ -71,7 +72,8 @@ async def _world(db, org, *, marks: dict[str, dict[str, int]], weighted: bool = 
     subject_names = sorted({s for m in marks.values() for s in m})
     subjects = {}
     for name in subject_names:
-        s = Subject(id=str(uuid.uuid4()), name=name, org_id=org.id)
+        _sec = await ensure_section(db, org)
+        s = Subject(id=str(uuid.uuid4()), name=name, section_id=_sec.id, org_id=org.id)
         subjects[name] = s
         db.add(s)
     pupils = {}

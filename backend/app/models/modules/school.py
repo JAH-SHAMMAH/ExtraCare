@@ -182,7 +182,12 @@ class Subject(Base, UUIDMixin, TimestampMixin, TenantMixin):
     #
     # RESTRICT: deleting a section must not silently take a whole catalogue, and
     # with it the marks hanging off those subjects.
-    section_id = Column(String(36), ForeignKey("school_sections.id", ondelete="RESTRICT"), nullable=True, index=True)
+    # NOT NULL since migration 138. It matters more than usual here: the unique
+    # constraint below does NOT bite while this is NULL, because Postgres treats
+    # NULLs as distinct in a unique index — so the rule stopping a second
+    # "Mathematics" in one section only enforces once every row carries a
+    # section.
+    section_id = Column(String(36), ForeignKey("school_sections.id", ondelete="RESTRICT"), nullable=False, index=True)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
     __table_args__ = (

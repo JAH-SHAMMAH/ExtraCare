@@ -23,6 +23,7 @@ from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.user import User, UserStatus
 from app.routers.modules.academics import list_grade_analysis
 from tests.conftest import ensure_session
+from tests.conftest import ensure_section
 
 
 async def _teacher(db, org) -> User:
@@ -41,7 +42,8 @@ async def _fixture(db, org, teacher):
     """One term, two sub-terms, the SAME assessment group in both — the collision
     that made a sub-term filter necessary."""
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="JSS1", org_id=org.id)
-    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     term = AcademicTerm(id=str(uuid.uuid4()), name="Autumn", org_id=org.id)
     half = AcademicSubTerm(id=str(uuid.uuid4()), name="Half-Term", org_id=org.id)
     full = AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", org_id=org.id)

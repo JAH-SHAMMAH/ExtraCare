@@ -30,13 +30,15 @@ from app.schemas.school_experience import (
     ExamCreate, QuestionCreate, BehaviourCreate, TuckshopProductCreate,
     TuckshopPurchaseCreate, AssignmentCreate, SubmissionCreate, SubmissionGrade,
 )
+from tests.conftest import ensure_section
 
 pytestmark = pytest.mark.asyncio
 
 
 async def _make_subject(db, org, teacher):
     import uuid as _uuid
-    s = Subject(id=str(_uuid.uuid4()), name="Mathematics", org_id=org.id, teacher_id=teacher.id)
+    _sec = await ensure_section(db, org)
+    s = Subject(id=str(_uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id, teacher_id=teacher.id)
     db.add(s)
     await db.flush()
     return s

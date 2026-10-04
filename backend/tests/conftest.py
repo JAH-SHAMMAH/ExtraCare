@@ -121,6 +121,37 @@ async def ensure_session(db, org):
     return s
 
 
+async def ensure_section(db, org, name: str = "Secondary"):
+    """The org's school section, created if absent. Idempotent.
+
+    `subjects.section_id` is NOT NULL since migration 138: Educare keeps three
+    catalogues and four titles appear in more than one, so "Mathematics" alone
+    does not identify a subject. A test that builds a Subject therefore has to
+    say which school it is in — not ceremony, but the shape the real table has.
+
+    A function rather than a fixture so a world-builder can call it without
+    every caller in the chain forwarding it.
+    """
+    from app.models.modules.platform import SchoolSection
+
+    existing = (await db.execute(select(SchoolSection).where(
+        SchoolSection.org_id == org.id, SchoolSection.name == name,
+    ))).scalars().first()
+    if existing:
+        return existing
+    sec = SchoolSection(id=str(uuid.uuid4()), name=name, curriculum="nigerian",
+                        org_id=org.id)
+    db.add(sec)
+    await db.commit()
+    return sec
+
+
+@pytest_asyncio.fixture
+async def section(db, org):
+    """`ensure_section` as a fixture, for a test that wants the row up front."""
+    return await ensure_section(db, org)
+
+
 @pytest_asyncio.fixture
 async def session(db, org):
     """`ensure_session` as a fixture, for a test that wants the row up front.

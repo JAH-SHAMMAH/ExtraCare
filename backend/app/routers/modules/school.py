@@ -720,11 +720,57 @@ async def create_subject(
 ):
     org_id = current_user.org_id
     await _validate_teacher(db, org_id, data.teacher_id)
+
+    # A subject belongs to ONE school section. Educare keeps three catalogues and
+    # four titles appear in more than one of them, so "Mathematics" alone does
+    # not identify a subject. Refused here, by name, rather than failing on a
+    # NOT NULL constraint the caller cannot interpret.
+    section_id = data.section_id
+    if not section_id:
+        sections = (await db.execute(select(SchoolSection).where(
+            SchoolSection.org_id == org_id))).scalars().all()
+        if len(sections) == 1:
+            # A school with one section has only one answer; asking would be
+            # ceremony.
+            section_id = sections[0].id
+        elif not sections:
+            # Distinct from the ambiguous case below. Listing the choices when
+            # there are none produced "Choose which school this subject belongs
+            # to ()" — an empty bracket and no way forward.
+            raise HTTPException(
+                status_code=422,
+                detail="This organisation has no school sections, so a subject "
+                       "cannot be filed under one. Create a section (Early "
+                       "Years, Primary, Secondary …) under School Setup first.")
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail="Choose which school this subject belongs to ("
+                       + ", ".join(sorted(x.name for x in sections))
+                       + "). The same title can exist in more than one.")
+    else:
+        ok = (await db.execute(select(SchoolSection.id).where(
+            SchoolSection.id == section_id,
+            SchoolSection.org_id == org_id))).scalars().first()
+        if not ok:
+            raise HTTPException(
+                status_code=422,
+                detail="section_id: not a school section in your organisation.")
+
+    dupe = (await db.execute(select(Subject.id).where(
+        Subject.org_id == org_id, Subject.section_id == section_id,
+        func.lower(Subject.name) == data.name.lower()))).scalars().first()
+    if dupe:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{data.name!r} already exists in that school.")
+
     s = Subject(
         name=data.name, code=data.code, department=data.department,
         credit_hours=data.credit_hours if data.credit_hours is not None else 1,
         is_active=data.is_active if data.is_active is not None else True,
-        teacher_id=data.teacher_id or None, teacher_name=data.teacher_name, org_id=org_id,
+        teacher_id=data.teacher_id or None, teacher_name=data.teacher_name,
+        section_id=section_id, org_id=org_id,
     )
     db.add(s)
     await db.flush()

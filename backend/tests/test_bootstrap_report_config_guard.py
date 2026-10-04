@@ -29,6 +29,7 @@ from app.models.modules.platform import GradingBand, GradingScale
 from app.models.role import Role
 from app.models.user import User, UserStatus
 from app.routers.modules.platform import bootstrap_report_config
+from tests.conftest import ensure_section
 
 pytestmark = pytest.mark.asyncio
 
@@ -118,7 +119,8 @@ async def test_no_collateral_when_it_refuses(db, org):
 
     admin = await _admin(db, org)
     await _fairview_scale(db, org)
-    db.add(Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id))
+    _sec = await ensure_section(db, org)
+    db.add(Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id))
     await db.commit()
 
     with pytest.raises(HTTPException):

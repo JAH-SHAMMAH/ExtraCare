@@ -34,6 +34,7 @@ from app.schemas.lesson_planner import (
     ScheduleCreate, ScheduleUpdate,
 )
 from app.schemas.subject import SubjectCreate
+from tests.conftest import ensure_section
 
 
 async def _user_with_role(db, org, slug) -> User:
@@ -80,6 +81,10 @@ async def _plan(db, user, class_id, subject_id, on: str, title="Lesson", **extra
 # ── Categories ────────────────────────────────────────────────────────────────
 
 async def test_category_crud_link_and_delete_detaches(db, org, school_class):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     admin = await _admin(db, org)
     subj = await _subject(db, admin)
 
@@ -103,6 +108,10 @@ async def test_category_crud_link_and_delete_detaches(db, org, school_class):
 
 
 async def test_category_duplicate_name_conflicts(db, org):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     admin = await _admin(db, org)
     await create_lesson_category(CategoryCreate(name="Theory"), db=db, current_user=admin)
     with pytest.raises(HTTPException) as ei:
@@ -113,6 +122,10 @@ async def test_category_duplicate_name_conflicts(db, org):
 # ── Settings ──────────────────────────────────────────────────────────────────
 
 async def test_settings_default_then_update(db, org):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     admin = await _admin(db, org)
     s = await get_planner_settings(db=db, current_user=admin)
     assert s["require_approval"] is False and s["default_duration_minutes"] == 45 and s["allow_backdated"] is True
@@ -128,6 +141,10 @@ async def test_settings_default_then_update(db, org):
 # ── Supervisors ───────────────────────────────────────────────────────────────
 
 async def test_supervisor_add_list_remove_and_foreign_refused(db, org, teacher):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     admin = await _admin(db, org)
     row = await add_lesson_supervisor(SupervisorCreate(supervisor_id=teacher.id), db=db, current_user=admin)
     assert row["supervisor_id"] == teacher.id and row["section_id"] is None
@@ -145,6 +162,10 @@ async def test_supervisor_add_list_remove_and_foreign_refused(db, org, teacher):
 # ── Clone ─────────────────────────────────────────────────────────────────────
 
 async def test_clone_preserves_offset_and_skips_existing(db, org, school_class):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     admin = await _admin(db, org)
     subj = await _subject(db, admin)
     # Two source plans: Mon 12th (offset 0) + Wed 14th (offset +2).
@@ -171,6 +192,10 @@ async def test_clone_preserves_offset_and_skips_existing(db, org, school_class):
 # ── Settings enforcement (opt-in; defaults keep current behaviour) ─────────────────
 
 async def test_require_approval_forces_draft_and_gates_teacher_publish(db, org, school_class, teacher):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     admin = await _admin(db, org)
     subj = await _subject(db, admin)
     await update_planner_settings(PlannerSettingsUpdate(require_approval=True), db=db, current_user=admin)
@@ -188,6 +213,10 @@ async def test_require_approval_forces_draft_and_gates_teacher_publish(db, org, 
 
 
 async def test_allow_backdated_false_rejects_past_for_teacher_only(db, org, school_class, teacher):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     admin = await _admin(db, org)
     subj = await _subject(db, admin)
     await update_planner_settings(PlannerSettingsUpdate(allow_backdated=False), db=db, current_user=admin)
@@ -201,6 +230,10 @@ async def test_allow_backdated_false_rejects_past_for_teacher_only(db, org, scho
 
 
 async def test_default_duration_from_settings(db, org, school_class):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     admin = await _admin(db, org)
     subj = await _subject(db, admin)
     await update_planner_settings(PlannerSettingsUpdate(default_duration_minutes=60), db=db, current_user=admin)
@@ -211,6 +244,10 @@ async def test_default_duration_from_settings(db, org, school_class):
 # ── Reminder schedules ────────────────────────────────────────────────────────────
 
 async def test_schedule_crud_and_weekly_requires_days(db, org):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     admin = await _admin(db, org)
     # Weekly with no days is rejected.
     with pytest.raises(HTTPException) as ei:
@@ -230,6 +267,10 @@ async def test_schedule_crud_and_weekly_requires_days(db, org):
 
 
 async def test_send_now_targets_teaching_staff_not_students(db, org):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     admin = await _admin(db, org)              # sender (excluded from recipients)
     teacher = await _user_with_role(db, org, "teacher")
     student = await _user_with_role(db, org, "student")
@@ -243,6 +284,10 @@ async def test_send_now_targets_teaching_staff_not_students(db, org):
 
 
 async def test_all_staff_audience_includes_students(db, org):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     admin = await _admin(db, org)
     teacher = await _user_with_role(db, org, "teacher")
     student = await _user_with_role(db, org, "student")
@@ -253,6 +298,10 @@ async def test_all_staff_audience_includes_students(db, org):
 
 
 async def test_run_due_fires_only_due_and_is_idempotent(db, org):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     admin = await _admin(db, org)
     await _user_with_role(db, org, "teacher")
     today = datetime.now().weekday()
@@ -275,6 +324,10 @@ async def test_run_due_fires_only_due_and_is_idempotent(db, org):
 # ── Educare settings fields + "Edit Lesson Plan" lock ─────────────────────────
 
 async def test_planner_settings_educare_fields(db, org):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     admin = await _admin(db, org)
     s = await get_planner_settings(db=db, current_user=admin)
     # New Educare fields present with sensible defaults.
@@ -292,6 +345,10 @@ async def test_planner_settings_educare_fields(db, org):
 
 
 async def test_edit_lesson_plan_locks_published(db, org, school_class):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     admin = await _admin(db, org)
     subj = await _subject(db, admin)
     plan = await _plan(db, admin, school_class.id, subj["id"], "2026-02-10")

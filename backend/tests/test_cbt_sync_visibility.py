@@ -50,6 +50,7 @@ from app.services.cbt_assessment_sync import (
     sync_cbt_to_assessment_score,
 )
 from tests.conftest import ensure_session
+from tests.conftest import ensure_section
 
 TERM_NAME = "Term 1"
 # What the admin-only setup reason quotes. These tests need SOME setup gap that only
@@ -79,7 +80,8 @@ async def _school(db, org, *, with_term=True, with_sub_term=True):
     # needs a year to file it under (migration 134). Idempotent.
     await ensure_session(db, org)
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="Secondary", org_id=org.id)
-    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     rows = [cls, subj]
     term = sub = None
     if with_term:

@@ -36,6 +36,33 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models.modules.school import Subject
 
+
+async def _section_id(db, org_id: str, prefer: str) -> str:
+    """The section a seeded subject belongs to.
+
+    `subjects.section_id` is NOT NULL since migration 138 — Educare keeps three
+    catalogues and the same title appears in more than one, so a subject cannot
+    be created without saying which school it is in. Prefers `prefer` by name,
+    falls back to the only section when a school has one, and refuses rather
+    than inventing a section nobody configured.
+    """
+    from sqlalchemy import select
+
+    from app.models.modules.platform import SchoolSection
+
+    rows = (await db.execute(select(SchoolSection).where(
+        SchoolSection.org_id == org_id))).scalars().all()
+    for r in rows:
+        if (r.name or "").lower() == prefer.lower():
+            return r.id
+    if len(rows) == 1:
+        return rows[0].id
+    raise SystemExit(
+        f"Cannot seed subjects: no school section named {prefer!r} "
+        f"(found: {sorted(r.name for r in rows) or 'none'}). Create it under "
+        f"School Setup first — a subject must belong to one section.")
+
+
 FAIRVIEW_ORG_ID = "0a6ee83d-7e2a-4089-914c-7c0ecafd4027"
 
 # 10 subjects from seed_fairview_school.py: universal across all Secondary levels
@@ -106,11 +133,13 @@ async def main() -> int:
         print("Writing to database...")
         print()
 
+        section_id = await _section_id(db, FAIRVIEW_ORG_ID, "Secondary")
         for name, description in plan:
             subject = Subject(
                 org_id=FAIRVIEW_ORG_ID,
                 name=name,
                 description=description,
+                section_id=section_id,
             )
             db.add(subject)
 

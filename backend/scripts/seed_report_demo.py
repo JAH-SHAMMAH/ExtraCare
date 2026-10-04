@@ -65,6 +65,33 @@ from app.routers.modules.platform import (                            # noqa: E4
     bootstrap_assessments, bootstrap_cumulatives, list_assessments,
 )
 
+
+async def _section_id(db, org_id: str, prefer: str) -> str:
+    """The section a seeded subject belongs to.
+
+    `subjects.section_id` is NOT NULL since migration 138 — Educare keeps three
+    catalogues and the same title appears in more than one, so a subject cannot
+    be created without saying which school it is in. Prefers `prefer` by name,
+    falls back to the only section when a school has one, and refuses rather
+    than inventing a section nobody configured.
+    """
+    from sqlalchemy import select
+
+    from app.models.modules.platform import SchoolSection
+
+    rows = (await db.execute(select(SchoolSection).where(
+        SchoolSection.org_id == org_id))).scalars().all()
+    for r in rows:
+        if (r.name or "").lower() == prefer.lower():
+            return r.id
+    if len(rows) == 1:
+        return rows[0].id
+    raise SystemExit(
+        f"Cannot seed subjects: no school section named {prefer!r} "
+        f"(found: {sorted(r.name for r in rows) or 'none'}). Create it under "
+        f"School Setup first — a subject must belong to one section.")
+
+
 NINE_BAND = [("A*", 95, 100), ("A", 90, 94), ("B+", 85, 89), ("B", 80, 84),
              ("C", 70, 79), ("D", 60, 69), ("E", 50, 59), ("P", 40, 49), ("F", 0, 39)]
 DEMO_STUDENTS = [("One", "SEED-001"), ("Two", "SEED-002"), ("Three", "SEED-003")]
@@ -160,7 +187,8 @@ async def _ensure_demo_data(db, org_id, class_teacher_id):
     cls.teacher_id = class_teacher_id
     subj = (await db.execute(select(Subject).where(Subject.org_id == org_id, Subject.name == DEMO_SUBJECT_NAME))).scalars().first()
     if not subj:
-        subj = Subject(id=str(uuid.uuid4()), name=DEMO_SUBJECT_NAME, org_id=org_id)
+        subj = Subject(id=str(uuid.uuid4()), name=DEMO_SUBJECT_NAME, org_id=org_id,
+                       section_id=await _section_id(db, org_id, "Secondary"))
         db.add(subj)
     await db.flush()
     students = []

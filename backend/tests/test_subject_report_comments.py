@@ -26,6 +26,7 @@ from app.routers.modules.platform import (
 )
 from app.schemas.platform import SubjectCommentItem, SubjectCommentSave
 from tests.conftest import ensure_session
+from tests.conftest import ensure_section
 
 pytestmark = pytest.mark.asyncio
 
@@ -55,8 +56,9 @@ async def _world(db, org):
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="JSS1",
                       teacher_id=pc.id, org_id=org.id)
     other = SchoolClass(id=str(uuid.uuid4()), name="JSS1 B", level="JSS1", org_id=org.id)
-    maths = Subject(id=str(uuid.uuid4()), name="Mathematics", teacher_id=maths_t.id, org_id=org.id)
-    eng = Subject(id=str(uuid.uuid4()), name="English", teacher_id=eng_t.id, org_id=org.id)
+    _sec = await ensure_section(db, org)
+    maths = Subject(id=str(uuid.uuid4()), name="Mathematics", teacher_id=maths_t.id, section_id=_sec.id, org_id=org.id)
+    eng = Subject(id=str(uuid.uuid4()), name="English", teacher_id=eng_t.id, section_id=_sec.id, org_id=org.id)
     a = Student(id=str(uuid.uuid4()), student_id="FSN-0001", first_name="Ada",
                 last_name="Obi", class_id=cls.id, org_id=org.id)
     b = Student(id=str(uuid.uuid4()), student_id="FSN-0002", first_name="Bola",

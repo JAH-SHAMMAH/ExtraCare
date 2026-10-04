@@ -44,6 +44,7 @@ from app.models.modules.school import Grade, GradeStatus, Student, SchoolClass, 
 from app.models.modules.academics import ReportApproval
 from app.routers.modules.school import get_report_card
 from app.services.report_approval_backfill import BACKFILL_NOTE, apply_backfill, plan_backfill
+from tests.conftest import ensure_section
 
 pytestmark = [
     pytest.mark.asyncio,
@@ -83,7 +84,8 @@ async def _student_with_grade(db, org, cls, *, term="Term 1", status=GradeStatus
                 class_id=cls.id if cls else None, org_id=org.id)
     db.add(s)
     if subject_id is None:
-        subj = Subject(id=str(uuid.uuid4()), name=f"Subj-{uuid.uuid4().hex[:4]}", org_id=org.id)
+        _sec = await ensure_section(db, org)
+        subj = Subject(id=str(uuid.uuid4()), name=f"Subj-{uuid.uuid4().hex[:4]}", section_id=_sec.id, org_id=org.id)
         db.add(subj)
         subject_id = subj.id
     db.add(Grade(id=str(uuid.uuid4()), student_id=s.id, subject_id=subject_id, score=80,

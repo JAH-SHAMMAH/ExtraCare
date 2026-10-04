@@ -41,6 +41,7 @@ from app.services.result_analysis import analyse_term
 from app.services.session_scope import (
     load_term_setup, resolve_session_id, session_or_current,
 )
+from tests.conftest import ensure_section
 
 
 async def _admin(db, org) -> User:
@@ -98,7 +99,8 @@ async def _two_years(db, org):
     term = AcademicTerm(id=str(uuid.uuid4()), name="Autumn", position=1, org_id=org.id)
     sub = AcademicSubTerm(id=str(uuid.uuid4()), name="Full-Term", position=1, org_id=org.id)
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="JSS1", org_id=org.id)
-    subject = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subject = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     db.add_all([term, sub, cls, subject])
     await db.commit()
     pupil = Student(id=str(uuid.uuid4()), student_id="FSN-0001", first_name="Ada",

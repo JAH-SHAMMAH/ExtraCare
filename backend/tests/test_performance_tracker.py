@@ -26,6 +26,7 @@ from app.models.role import Role, SCHOOL_PERMISSION_PRESETS
 from app.models.user import User, UserStatus
 from app.routers.modules.platform import performance_tracker
 from tests.conftest import ensure_session
+from tests.conftest import ensure_section
 
 
 async def _user(db, org, preset: str) -> User:
@@ -45,7 +46,8 @@ async def _world(db, org, *, marked=True):
     teacher = await _user(db, org, "teacher")
     cls = SchoolClass(id=str(uuid.uuid4()), name="JSS1 A", level="Secondary",
                       teacher_id=teacher.id, org_id=org.id)
-    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    subj = Subject(id=str(uuid.uuid4()), name="Mathematics", section_id=_sec.id, org_id=org.id)
     autumn = AcademicTerm(id=str(uuid.uuid4()), name="Autumn", position=1, org_id=org.id)
     spring = AcademicTerm(id=str(uuid.uuid4()), name="Spring", position=2, org_id=org.id)
     half = AcademicSubTerm(id=str(uuid.uuid4()), name="Half-Term", position=1, org_id=org.id)
@@ -114,7 +116,8 @@ async def test_a_class_teacher_cannot_open_a_subject_they_do_not_teach(db, org):
     """Class-teacher access is not subject access. The tracker is per subject, and
     the subject set is the one Make Report gates mark entry on."""
     w = await _world(db, org)
-    other = Subject(id=str(uuid.uuid4()), name="French", org_id=org.id)
+    _sec = await ensure_section(db, org)
+    other = Subject(id=str(uuid.uuid4()), name="French", section_id=_sec.id, org_id=org.id)
     db.add(other)
     await db.commit()
 

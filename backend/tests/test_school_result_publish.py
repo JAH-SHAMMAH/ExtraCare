@@ -30,6 +30,7 @@ from app.routers.modules.school import (
 )
 from app.schemas.grade import GradePublish
 from app.schemas.subject import SubjectCreate
+from tests.conftest import ensure_section
 
 pytestmark = pytest.mark.asyncio
 
@@ -79,6 +80,10 @@ async def _two_grades(db, org, teacher, student):
 
 
 async def test_report_card_staff_sees_drafts(db, org, teacher, school_class, student):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     await _two_grades(db, org, teacher, student)
     staff = await _preset_user(db, org, "teacher")  # holds school:students:read
     card = await get_report_card(student.id, term="Term 1", db=db, current_user=staff)
@@ -86,6 +91,10 @@ async def test_report_card_staff_sees_drafts(db, org, teacher, school_class, stu
 
 
 async def test_report_card_owner_sees_published_only(db, org, teacher, school_class, student):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     await _two_grades(db, org, teacher, student)
     await _approval(db, org, school_class.id, stage="published")  # term released to parents
     parent = await _preset_user(db, org, "parent")  # no school:students:read
@@ -99,6 +108,10 @@ async def test_report_card_owner_sees_published_only(db, org, teacher, school_cl
 
 
 async def test_publish_flips_status_and_counts(db, org, teacher, school_class, student):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await create_subject(SubjectCreate(name="English"), request=None, db=db, current_user=teacher)
     g = Grade(id=str(uuid.uuid4()), student_id=student.id, subject_id=subj["id"], score=75,
               max_score=100, term="Term 1", status=GradeStatus.DRAFT, org_id=org.id)
@@ -128,6 +141,10 @@ async def test_publish_flips_status_and_counts(db, org, teacher, school_class, s
 
 
 async def test_publish_refuses_broad_scope(db, org, teacher):
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     with pytest.raises(HTTPException) as exc:
         await publish_grades(GradePublish(term="Term 1", status="published"),
                              request=None, db=db, current_user=teacher)
@@ -139,6 +156,10 @@ async def test_publish_refuses_broad_scope(db, org, teacher):
 async def test_publish_without_approval_is_refused(db, org, teacher, school_class, student):
     """No workflow row for the class + term → no release, however ready the
     grades themselves are."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await create_subject(SubjectCreate(name="Civics"), request=None, db=db, current_user=teacher)
     g = Grade(id=str(uuid.uuid4()), student_id=student.id, subject_id=subj["id"], score=70,
               max_score=100, term="Term 1", status=GradeStatus.DRAFT, org_id=org.id)
@@ -157,6 +178,10 @@ async def test_publish_without_approval_is_refused(db, org, teacher, school_clas
 async def test_publish_refused_while_workflow_below_approved(db, org, teacher, school_class, student):
     """A report still in review is not a licence to publish — every stage below
     `approved` is refused."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await create_subject(SubjectCreate(name="Music"), request=None, db=db, current_user=teacher)
     db.add(Grade(id=str(uuid.uuid4()), student_id=student.id, subject_id=subj["id"], score=70,
                  max_score=100, term="Term 1", status=GradeStatus.DRAFT, org_id=org.id))
@@ -174,6 +199,10 @@ async def test_publish_refused_while_workflow_below_approved(db, org, teacher, s
 
 async def test_publish_allowed_when_already_published(db, org, teacher, school_class, student):
     """Re-publishing after a retraction doesn't demand a stage round-trip."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await create_subject(SubjectCreate(name="Art"), request=None, db=db, current_user=teacher)
     db.add(Grade(id=str(uuid.uuid4()), student_id=student.id, subject_id=subj["id"], score=70,
                  max_score=100, term="Term 1", status=GradeStatus.DRAFT, org_id=org.id))
@@ -192,6 +221,10 @@ async def test_publish_advances_the_workflow_to_published(db, org, teacher, scho
     """Releasing the results IS the act `published` records: a successful publish
     carries an approved workflow the last step itself, so there is no state where
     grades are out but the card stays dark."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await create_subject(SubjectCreate(name="Drama"), request=None, db=db, current_user=teacher)
     db.add(Grade(id=str(uuid.uuid4()), student_id=student.id, subject_id=subj["id"], score=70,
                  max_score=100, term="Term 1", status=GradeStatus.DRAFT, org_id=org.id))
@@ -212,6 +245,10 @@ async def test_publish_advances_the_workflow_to_published(db, org, teacher, scho
 async def test_auto_advance_makes_the_card_visible_in_one_step(db, org, teacher, school_class, student):
     """The dead zone the auto-advance closes: approve, publish, and the parent can
     see it — no separate trip to the Report Workflow page."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     await _two_grades(db, org, teacher, student)   # one draft + one published
     parent = await _preset_user(db, org, "parent")
     db.add(ParentGuardian(id=str(uuid.uuid4()), user_id=parent.id, student_id=student.id, org_id=org.id))
@@ -229,6 +266,10 @@ async def test_auto_advance_makes_the_card_visible_in_one_step(db, org, teacher,
 async def test_auto_advance_does_not_fire_on_an_empty_scope(db, org, teacher, school_class):
     """You cannot release nothing: a publish that matches no grades leaves the
     workflow where it was."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     approval = await _approval(db, org, school_class.id, stage="approved")
     res = await publish_grades(GradePublish(term="Term 1", class_id=school_class.id, status="published"),
                                request=None, db=db, current_user=teacher)
@@ -240,6 +281,10 @@ async def test_auto_advance_does_not_fire_on_an_empty_scope(db, org, teacher, sc
 async def test_retraction_leaves_the_workflow_stage_alone(db, org, teacher, school_class, student):
     """Auto-advance is a publish-only move. Pulling grades back doesn't rewind the
     workflow — that stays a deliberate act on the workflow page."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await create_subject(SubjectCreate(name="Latin II"), request=None, db=db, current_user=teacher)
     db.add(Grade(id=str(uuid.uuid4()), student_id=student.id, subject_id=subj["id"], score=70,
                  max_score=100, term="Term 1", status=GradeStatus.PUBLISHED, org_id=org.id))
@@ -256,6 +301,10 @@ async def test_retraction_leaves_the_workflow_stage_alone(db, org, teacher, scho
 async def test_retraction_to_draft_needs_no_approval(db, org, teacher, school_class, student):
     """Pulling results back is unrestricted — a wrong result must never sit in
     front of parents waiting on a workflow stage."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await create_subject(SubjectCreate(name="Biology"), request=None, db=db, current_user=teacher)
     g = Grade(id=str(uuid.uuid4()), student_id=student.id, subject_id=subj["id"], score=75,
               max_score=100, term="Term 1", status=GradeStatus.PUBLISHED, org_id=org.id)
@@ -273,6 +322,10 @@ async def test_retraction_to_draft_needs_no_approval(db, org, teacher, school_cl
 async def test_publish_via_exam_resolves_the_class(db, org, teacher, school_class, student):
     """Scope given as an exam: the class comes off the exam, and that class's
     approval is what gets checked."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await create_subject(SubjectCreate(name="Chemistry"), request=None, db=db, current_user=teacher)
     exam = Exam(id=str(uuid.uuid4()), name="Mid-term", subject_id=subj["id"],
                 class_id=school_class.id, term="Term 1", org_id=org.id)
@@ -295,6 +348,10 @@ async def test_publish_via_exam_resolves_the_class(db, org, teacher, school_clas
 async def test_publish_fails_closed_when_class_cannot_be_resolved(db, org, teacher, student):
     """An exam with no class names nothing to check — refused, rather than
     published on the strength of an approval nobody gave."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await create_subject(SubjectCreate(name="Geography"), request=None, db=db, current_user=teacher)
     exam = Exam(id=str(uuid.uuid4()), name="Standalone", subject_id=subj["id"],
                 class_id=None, term="Term 1", org_id=org.id)
@@ -313,6 +370,10 @@ async def test_publish_fails_closed_when_class_cannot_be_resolved(db, org, teach
 async def test_owner_card_hidden_until_workflow_published(db, org, teacher, school_class, student):
     """Published grades alone don't reach a parent: the class's workflow has to
     say `published` too. Staff are unaffected."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     await _two_grades(db, org, teacher, student)
     parent = await _preset_user(db, org, "parent")
     db.add(ParentGuardian(id=str(uuid.uuid4()), user_id=parent.id, student_id=student.id, org_id=org.id))
@@ -335,6 +396,10 @@ async def test_owner_card_hidden_until_workflow_published(db, org, teacher, scho
 
 async def test_owner_card_gate_is_per_term(db, org, teacher, school_class, student):
     """Releasing Term 1 does not release Term 2."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     subj = await create_subject(SubjectCreate(name="History"), request=None, db=db, current_user=teacher)
     for term in ("Term 1", "Term 2"):
         db.add(Grade(id=str(uuid.uuid4()), student_id=student.id, subject_id=subj["id"], score=80,
@@ -354,6 +419,10 @@ async def test_owner_card_gate_is_per_term(db, org, teacher, school_class, stude
 
 async def test_owner_card_fails_closed_for_unclassed_student(db, org, teacher, student_user):
     """No class → no workflow row can vouch for the results → nothing shown."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     loose = Student(id=str(uuid.uuid4()), student_id="S-LOOSE", first_name="No", last_name="Class",
                     email=student_user.email, user_id=student_user.id, class_id=None, org_id=org.id)
     db.add(loose)
@@ -376,6 +445,10 @@ async def test_duplicate_workflow_rows_are_refused(db, org, school_class):
     """uq_report_approval_class_term. Duplicates would make "the stage" ambiguous:
     the gates read one row, and a stale second could keep releasing a card the
     first one retracted."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     from sqlalchemy.exc import IntegrityError
 
     await _approval(db, org, school_class.id, term="Term 1", stage="approved")
@@ -390,6 +463,10 @@ async def test_duplicate_workflow_rows_are_refused(db, org, school_class):
 
 async def test_same_class_may_hold_one_row_per_term(db, org, school_class):
     """The constraint is per term, not per class."""
+    # A subject must belong to a school section (migration 138):
+    # Educare keeps three catalogues and the same title appears in
+    # more than one, so "Mathematics" alone does not identify one.
+    await ensure_section(db, org)
     await _approval(db, org, school_class.id, term="Term 1")
     await _approval(db, org, school_class.id, term="Term 2")
     rows = (await db.execute(select(ReportApproval))).scalars().all()
