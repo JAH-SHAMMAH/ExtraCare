@@ -54,10 +54,91 @@ Also from Assign to Classes, 4 October 2026:
 - **`JAMB / WAEC Practice` is taken by Year 12 only.**
 - Year 12 also **drops** subjects its neighbouring senior years keep.
 
-**These per-year lists are not recorded anywhere in the system yet**, and this
-document deliberately does not reproduce them: the screenshots they came from
-were in places only partly scrolled, so the lists are *probably* complete rather
-than certainly so. Recording them is planned work with its own verification step.
+**These per-year lists are not recorded anywhere in the system**, and nothing
+enforces them. They are set out below so the structure is written down even
+though no table holds it.
+
+### The six lists — CONFIRMED
+
+**Source: Educare → Assign to Classes, the "Subjects in Level" column read
+top-to-bottom for each of Years 7–12, 4 October 2026.**
+
+Names below are **our** spellings. Ours transcribe Educare's own misspellings
+faithfully, so three differ from how they are usually written:
+`REHAERSAL` (Rehearsal), `Skill Aquisition` (Skill Acquisition), and
+`Fashion Design And Garment Making` (shown abbreviated in places as
+"Fashion Design").
+
+**Shared by all six years — 11 subjects:** Agricultural science, C. R. S.,
+Civic education, Digital Technology, English studies, French, I. R. S.,
+Intervention Class, Mathematics, REHAERSAL, Reading Time.
+
+**Years 7–9 — the junior list (27 subjects).** Years 8 and 9 are *identical*;
+Year 7 adds three.
+
+> English studies, Mathematics, **L S Biology, LS Chemistry, LS Physics**,
+> Basic Technology, Business studies, Agricultural science, Digital Technology,
+> Social studies, Civic education, Music, Cultural and creative arts,
+> Home economics, Hausa, Igbo, Yoruba, C. R. S., French, PHE, I. R. S.,
+> Security Education, IXL Math Prep, History, Reading Time, REHAERSAL,
+> Intervention Class
+>
+> **Year 7 also (30):** Fashion Design And Garment Making, Livestock Farming,
+> Social And Citizenship Studies
+
+**Years 10–12 — the senior list (26 subjects shared).**
+
+> English studies, Mathematics, Agricultural science, Digital Technology,
+> Civic education, C. R. S., French, I. R. S., **Biology, Chemistry, Physics**,
+> Economics, Marketing, Government, Geography, Accounting, Further mathematics,
+> Technical drawing, Catering and Craft practice, Visual Arts,
+> Literature in English, Commerce, Reading Time, REHAERSAL, Intervention Class,
+> Skill Aquisition
+>
+> **Year 10 also (30):** Sociology, Fashion Design And Garment Making,
+> Livestock Farming, Citizenship And Heritage Studies
+> **Year 11 also (27):** IXL Math Prep
+> **Year 12 also (28):** IXL Math Prep, JAMB / WAEC Practice
+
+| Year | Subjects | Unique to that year |
+|---|---|---|
+| 7 | 30 | Social And Citizenship Studies |
+| 8 | 27 | — |
+| 9 | 27 | — |
+| 10 | 30 | Sociology, Citizenship And Heritage Studies |
+| 11 | 27 | — |
+| 12 | 28 | JAMB / WAEC Practice |
+
+Two things that are easy to get backwards:
+
+- **History, PHE and Security Education are Years 7–9 only.** They leave at the
+  Year 9 → 10 boundary, not at 11 → 12.
+- **Year 12 drops nothing.** It is exactly Year 11 plus `JAMB / WAEC Practice`.
+
+`Computer Hardware And GSM Repairs` is in the catalogue but **assigned to no
+year** — unassigned in all six. That is correct, not a gap.
+
+### What the data says against those lists
+
+Read-only dry run against production, 4 October 2026
+(`scripts/dry_per_year_subjects.py`, untracked):
+
+- All **48** listed names resolve to our Secondary catalogue; **12 of 12**
+  Secondary classes place into a year.
+- **Years 10, 11 and 12 are clean** — nothing outside their lists.
+- **Years 7, 8 and 9 (six classes) carry six subjects Educare does not assign
+  to them:** Biology, Chemistry, Physics, Economics, Geography, Government.
+  That is **1,619 marks, 540 enrolments and 60 timetable rows** outside the
+  lists.
+
+The science trio has an obvious junior counterpart (`L S Biology` /
+`LS Chemistry` / `LS Physics`). **Economics, Geography and Government have
+none** — Years 7–9 do not take them in any form.
+
+> **ENFORCEMENT IS ON HOLD.** No gate reads these lists, no table holds them,
+> and none is planned until the Years 7–9 data is reconciled or explicitly
+> accepted as seed noise. A gate armed today would block mark entry for six
+> real classes.
 
 ## What `subject_groups` does and does not hold
 
