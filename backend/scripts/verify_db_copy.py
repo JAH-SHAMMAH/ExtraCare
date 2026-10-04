@@ -184,7 +184,14 @@ async def _preflight(src: str) -> None:
 async def _counts(c: asyncpg.Connection) -> dict[str, int]:
     """Row counts for every public table in ONE round trip.
 
-    154 tables at ~940 ms each would be minutes; a single UNION ALL is one.
+    275 tables at ~940 ms each would be over four minutes; a single UNION ALL is
+    one round trip. The table list is read from `pg_tables` at runtime, so the
+    count is never hard-coded.
+
+    (275 = the 274 tables the ORM defines, plus `alembic_version`, which alembic
+    creates and no model declares. An earlier comment here said 154 — that was a
+    partial ORM count taken after importing only 3 of the 40 model modules, and
+    was never a figure about the database.)
     """
     tables = [r["tablename"] for r in await c.fetch(
         "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")]
