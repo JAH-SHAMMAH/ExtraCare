@@ -15,22 +15,41 @@ TWO KINDS OF GROUP, and the difference matters.
    splits — it keeps two parallel sets, and which one a year group takes is the
    fact being recorded here.
 
-   ⚠️ THE YEAR BOUNDARY IS UNVERIFIED AGAINST EDUCARE. The school states Year 10
-   onward for the standalone sciences, and that is what these rows say. Educare's
-   subject-group column shows only THAT the group exists, never which years take
-   it — so this is the school's statement, not something read off the system. If
-   the real boundary is Year 9 or Year 11, it is one row per subject set to move.
+   ✅ ALL SIX YEARS ARE VERIFIED AGAINST EDUCARE.
+   Source: Educare → Assign to Classes, pages for Years 7–12, checked
+   4 October 2026. Years 7, 8 and 9 take `L S Biology / LS Chemistry /
+   LS Physics`; Years 10, 11 and 12 take the standalone `Biology / Chemistry /
+   Physics`. This was previously the school's verbal statement rather than a
+   reading of the system — it has now been read off Educare directly, year by
+   year, and the rows as loaded were correct.
 
-   One row per year rather than a year_from/year_to range, deliberately: there is
-   no migration to write now and none to undo if the boundary moves, and a range
-   silently assumes the set is contiguous. Being cheap to be WRONG with is the
-   point while the boundary is a statement rather than a reading.
+   Note WHERE it was verified: the subject-group COLUMN on the subject list shows
+   only that a group exists, never which years take it. Assign to Classes is the
+   page that carries the per-year assignment, which is why the boundary could not
+   be confirmed from the earlier screenshots.
+
+   One row per year rather than a year_from/year_to range, deliberately: a range
+   silently assumes the set is contiguous. It happens to be contiguous (7–9 and
+   10–12), but the per-year shape is also what the fuller per-year subject lists
+   need, so it stays.
 
 2. THE OTHER SEVEN GROUPS, year_group = NULL. Basic Science, Pre-Vocational
    Studies, National Value Education, Cultural, Nigerian Language, Religion and
    Trade Subject are visible in Educare's own column as permanent
    categorisations, with nothing indicating a year range. NO YEAR RANGE IS
    INVENTED for them — NULL means "not year-scoped", not "unknown".
+
+WHAT THE Assign-to-Classes PAGES ALSO SHOWED, and what these rows do NOT record.
+Educare assigns a DIFFERENT FULL SUBJECT LIST TO EVERY SECONDARY YEAR — not one
+list per level, and not one junior plus one senior list. There is a large shared
+core, but each of the six years adds or drops subjects relative to its
+neighbours, and `JAMB / WAEC Practice` is taken by YEAR 12 ONLY. Year 12 also
+drops several subjects the other senior years keep (History, PHE, Security
+Education, Sociology and the trade subjects).
+
+`subject_groups` captures only the science progression and the seven permanent
+categorisations. It does NOT capture a year's full subject list, and was never
+meant to. Recording those lists is a separate, planned piece of work.
 
 NOTHING CONSUMES THIS YET. The timetable router has CRUD for subject_groups, but
 no report, enrolment path or mark-entry gate reads it. These rows RECORD the
@@ -155,9 +174,9 @@ async def main() -> None:
         plan.append((name, None, names, False))
 
     print("\n[2] THE SCIENCE PROGRESSION — one row per year")
-    print("    (UNVERIFIED against Educare: the school states Year 10 onward for")
-    print("     the standalone sciences; Educare's column shows only that the")
-    print("     group exists, never which years take it)")
+    print("    (VERIFIED against Educare for all six years. Source: Assign to")
+    print("     Classes, pages for Years 7-12, checked 4 October 2026. Years 7-9")
+    print("     take the LS sciences; Years 10-12 take the standalone ones.)")
     for name, year, names, _ in plan:
         if year:
             print(f"      {name:12} {year:9} {', '.join(names)}")
