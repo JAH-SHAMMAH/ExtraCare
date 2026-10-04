@@ -1,11 +1,35 @@
 """READ-ONLY audit of the two competing sources of a teacher's sections.
 
-Answers two questions about gap 2, and writes nothing.
+Answers three questions, and writes nothing.
 
   1. How many rows does `teacher_sections` actually hold?
   2. Which teachers' access would CHANGE if the report gates derived sections
      the way `/auth/me` already does (from `SchoolClass.teacher_id`) instead of
      from the `teacher_sections` table?
+  3. Did any role lose leave read-all unintentionally when that gate moved off
+     `users:read` (commit 54e3ef9)?
+
+RUN ON PRODUCTION 2026-10-04 -- RESULT: GAP 2 IS CLOSED, NO CHANGE NEEDED.
+    teacher_sections            15 rows
+    classes                     31, all sectioned
+    class teachers              15, ALL already hold a matching row
+    would change                0
+    would lose access           0
+    alembic_version             138
+
+So the two sources agree today, and the gate was left exactly as it is. THE
+INVARIANT THIS DEPENDS ON, and the one thing that would reopen the gap:
+
+    a class teacher assigned to a class WITHOUT a matching `teacher_sections`
+    row is locked out of that class's report card, broadsheet and Result
+    Analysis, and sees an EMPTY dropdown rather than an error.
+
+Nothing enforces that pairing. `SchoolClass.teacher_id` is set from class
+admin; `teacher_sections` is written only by the Teachers module's
+Assign-To-School flow. Assign a class teacher without also assigning their
+school and the two drift apart silently -- the sidebar keeps offering the
+report section, because `/auth/me` derives it from the class, while the gate
+refuses. Re-run this script after any bulk class-teacher change.
 
 BACKGROUND. `_class_for_reports_or_403` and `report_card` ask whether the
 class's `section_id` appears in the caller's `teacher_sections` rows. But
@@ -28,6 +52,7 @@ The DSN comes from argv or the environment, never from this file.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 
@@ -139,7 +164,60 @@ async def main() -> None:
         for r in extra:
             print(f"      {(r['full_name'] or r['email'])[:30]:32} {r['section']}")
 
-        print("\n[5] SCHEMA VERSION (no migration is involved in this work)")
+        print("\n[5] CUSTOM ROLES THAT LOST LEAVE READ-ALL (commit 54e3ef9)")
+        print("    Reading another member of staff's leave moved from `users:read`")
+        print("    to `hr:write` OR `users:write`. The 45 shipped presets were")
+        print("    enumerated before that landed, but a role created through the UI")
+        print("    could hold `users:read` and neither of the new two -- those are")
+        print("    the only roles that lost access unintentionally.")
+        role_rows = await conn.fetch("""
+            SELECT r.id, r.name, r.slug, r.is_system, r.permissions,
+                   (SELECT count(*) FROM user_roles ur WHERE ur.role_id = r.id) AS holders
+              FROM roles r ORDER BY r.is_system, r.name""")
+
+        def satisfies(perms: set[str], scope: str) -> bool:
+            """Mirror leave.py::_has_scope exactly -- '*' and 'ns:*' only."""
+            if "*" in perms or scope in perms:
+                return True
+            return f"{scope.split(':', 1)[0]}:*" in perms
+
+        affected, kept = [], 0
+        for r in role_rows:
+            raw = r["permissions"]
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except (TypeError, ValueError):
+                    raw = []
+            perms = set(raw or [])
+            if not satisfies(perms, "users:read"):
+                continue          # never had read-all; nothing to lose
+            if satisfies(perms, "hr:write") or satisfies(perms, "users:write"):
+                kept += 1         # still allowed under the new gate
+                continue
+            affected.append((r, perms))
+
+        print(f"\n    roles examined: {len(role_rows)}")
+        print(f"    had read-all and KEEP it:  {kept}")
+        print(f"    had read-all and LOST it:  {len(affected)}")
+        if not affected:
+            print("    -> nobody lost access unintentionally.")
+        else:
+            print(f"\n      {'role':28} {'slug':22} {'system?':8} holders")
+            for r, perms in affected:
+                flag = "preset" if r["is_system"] else "CUSTOM"
+                print(f"      {r['name'][:27]:28} {(r['slug'] or '')[:21]:22} "
+                      f"{flag:8} {r['holders']}")
+            custom = [r for r, _ in affected if not r["is_system"]]
+            live = [r for r, _ in affected if r["holders"]]
+            print(f"\n    CUSTOM among them: {len(custom)}")
+            print(f"    WITH AT LEAST ONE HOLDER (i.e. a real person affected): {len(live)}")
+            if live:
+                print("    -> to restore one, grant it `hr:write` (HR administrator)")
+                print("       or `users:write` (user administrator). Do NOT put")
+                print("       `users:read` back as the gate: 17 presets hold it.")
+
+        print("\n[6] SCHEMA VERSION (no migration is involved in this work)")
         print(f"    alembic_version: "
               f"{await conn.fetchval('SELECT version_num FROM alembic_version')}")
         print("=" * 72)

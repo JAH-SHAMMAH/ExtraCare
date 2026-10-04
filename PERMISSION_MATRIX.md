@@ -70,8 +70,9 @@ Consequences that drive the grid below:
 - **Staff vs Teacher**: identical *read* across school features (both ride
   `school:read`); they diverge on *write* (only Tch has `school:write`).
 - **`hr:write` features (Staff Assessment, Talent Pool)** are Admin/Mgr only —
-  Tch holds `hr:read` (self-service My-HRM/My-Leave marker) which does NOT
-  satisfy `hr:write` (no hierarchy on 2-part scopes).
+  Tch holds `hr:read` (self-service My-HRM marker) which does NOT satisfy
+  `hr:write` (no hierarchy on 2-part scopes). **My Leave no longer rides
+  `hr:read`** — see "Leave — HR privacy" below.
 
 ### Batch 4 — Pastoral, Boarding & Health (shipped + tested)
 
@@ -193,3 +194,63 @@ A few per-user actions are intentionally broader so end users can use the app.
 - † **`/biometric/ingest` on `settings:write` is a known pre-launch RELEASE
   BLOCKER** — it needs per-device token auth before real hardware connects
   (general admin session is too wide a door). Tracked in BUILD_PROGRESS.md.
+
+## Leave — HR privacy, and the two gates that are not the same gate
+
+Verified against the deployed site 2026-10-04 (director and teacher views, plus
+My Leave on both).
+
+| Surface | Scope | Adm | Mgr | Tch | Std | Par |
+|---|---|---|---|---|---|---|
+| **My Leave** — apply, `?mine=true`, read own row, own entitlements | any authenticated member | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Leave Admin — the whole-staff list, one other person's row, org analytics | `hr:write` **OR** `users:write` | ✓ | ✓ | ✗ | ✗ | ✗ |
+| Approve / reject | `users:write` | ✓ | ✓ | ✗ | ✗ | ✗ |
+| Configure / Assign | `hr:write` | ✓ | ✓ | ✗ | ✗ | ✗ |
+
+- **Reading another member of staff's leave was `users:read` until commit
+  `54e3ef9`.** 27 of the 45 role presets hold `users:read` — `teacher`, `staff`,
+  `librarian`, `instructor`, `viewer` and 12 others — and leave rows carry the
+  leave type, the dates and the stated reason. Sick leave for every member of
+  staff was readable org-wide by most of the school. 11 roles keep read-all,
+  17 lost it (the fix), 17 never had it.
+- **Why `users:write` is kept alongside `hr:write`:** approve/reject is gated on
+  `users:write`, so narrowing the read gate to `hr:write` alone would have left
+  `it_support` able to approve a row it could not open. With `users:write` in the
+  read gate the "can approve but cannot read" set is empty *by construction*,
+  not by enumeration.
+- **Three surfaces, one gate.** `?mine=false` was the logged finding, but
+  `GET /applications/{id}` leaks the same data one row at a time and
+  `GET /analytics` aggregates everyone. The last was gated **only** by
+  `dependencies=[...]`, which a direct handler call skips — its test asserted a
+  teacher *could* call it, documenting the hole rather than failing on it. The
+  check now also runs in the handler body.
+- **My Leave is open to any authenticated member** (`access.ts`
+  `anyAuthenticated`). It was `hr:read`, which `cashier` and `facilities` do not
+  hold: two staff roles that plainly do take leave could not open their own page,
+  while the API had always served them. It could not simply be *removed* from the
+  route table — `/dashboard/hrm` → `hr:write` would then win by longest prefix
+  and lock out more people, not fewer. Covered by
+  `frontend/tests/access.myLeave.test.ts`.
+
+## Report section-scoping — closed, with one standing invariant
+
+Audited against production 2026-10-04: `teacher_sections` **15 rows**, all **31**
+classes sectioned, all **15** class teachers already hold a matching row, **0**
+teachers' access would change, **0** would lose access. **No change was made.**
+
+The gate (`_class_for_reports_or_403`, `report_card`) asks whether the class's
+`section_id` appears in the caller's `teacher_sections` rows. `/auth/me` — which
+decides whether the sidebar offers the report section at all — derives the same
+fact from `SchoolClass.teacher_id` instead, and says so in a comment. Today the
+two agree, which is why this is closed rather than fixed.
+
+> **THE INVARIANT:** a class teacher assigned to a class **without** a matching
+> `teacher_sections` row is locked out of that class's report card, broadsheet and
+> Result Analysis — and sees an **empty dropdown**, not an error, so it reads as
+> a broken feature rather than a refusal.
+
+Nothing enforces the pairing. `SchoolClass.teacher_id` is set from class admin;
+`teacher_sections` is written only by the Teachers module's Assign-To-School
+flow. Re-run `backend/scripts/audit_teacher_sections.py` after any bulk
+class-teacher change; it reports exactly who would be affected, and also lists
+any custom role that lost leave read-all.
