@@ -173,6 +173,73 @@ ephemeral in `production`/`staging` **and** `CLOUDINARY_URL` is not set.
 - **Docker Compose:** mount a named volume at the container's `UPLOAD_DIR`
   (e.g. `uploads:/app/uploads` with `UPLOAD_DIR=/app/uploads`) so it persists
   across `up -d --build`.
+
+### Verifying it actually works — DO THIS BEFORE THE FIRST REAL PHOTO
+
+Setting the variable is not proof. `save_upload()` chooses its backend **at the
+moment of upload** and writes the resulting URL into the database row, so a
+misconfiguration is invisible until a redeploy destroys the files and leaves the
+rows pointing at nothing. **Adding `CLOUDINARY_URL` later does not rescue
+anything** — it changes new uploads only.
+
+**Step 1 — set it and redeploy.**
+
+```
+CLOUDINARY_URL=cloudinary://<api_key>:<api_secret>@<cloud_name>
+```
+
+Cloudinary dashboard → Account Details → "API environment variable". Copy it
+verbatim; the scheme is `cloudinary://`, not `https://`.
+
+**Step 2 — read the boot log.** The ephemeral warning must be GONE:
+
+```
+UPLOAD_DIR=... resolves to ..., which looks EPHEMERAL
+```
+
+Still there → the variable did not reach the service. Stop and fix that first.
+
+**Step 3 — upload a throwaway image.** Use `/upload/document`: unlike
+`/upload/avatar` it writes **no database row**, so there is nothing to clean up
+afterwards and no one's profile photo is overwritten.
+
+```powershell
+$body = @{ email = "<admin email>"; password = "<password>" } | ConvertTo-Json
+$tok  = (Invoke-RestMethod -Method Post -UseBasicParsing `
+          -Uri "https://fairview-portal.onrender.com/api/v1/auth/login" `
+          -ContentType "application/json" -Body $body).access_token
+
+$res = Invoke-RestMethod -Method Post -UseBasicParsing `
+         -Uri "https://fairview-portal.onrender.com/api/v1/upload/document" `
+         -Headers @{ Authorization = "Bearer $tok" } `
+         -Form @{ file = Get-Item .	hrowaway.png }
+$res.url
+```
+
+**Step 4 — read the URL. This is the whole test.**
+
+| Returned URL | Meaning |
+|---|---|
+| `https://res.cloudinary.com/...` | Cloudinary is live. Continue. |
+| `/uploads/<org>/documents/...` | **Still on local disk.** The variable is not being read. Do not upload anything real. |
+
+**Step 5 — confirm it serves**, then **redeploy** (an empty commit, or Render →
+Manual Deploy), then **fetch the same URL again**:
+
+```powershell
+curl.exe -s -o NUL -w "%{http_code}`n" $res.url     # before redeploy -> 200
+# ... redeploy ...
+curl.exe -s -o NUL -w "%{http_code}`n" $res.url     # after  redeploy -> 200
+```
+
+**200 after the redeploy is the proof.** On local disk the same URL returns 404
+once the container is replaced — that contrast is the point of the exercise.
+
+**Step 6 — clean up.** Delete the test asset in the Cloudinary dashboard (Media
+Library → `extracare/<org_id>/documents/`). No database row was created.
+
+> Uploads are foldered `extracare/<org_id>/<kind>/` with a random `public_id`, so
+> no original filename or PII appears in a public URL.
 - **Already-lost files** (wiped by earlier ephemeral redeploys) cannot be
   recovered — re-upload them once the disk is attached.
 
