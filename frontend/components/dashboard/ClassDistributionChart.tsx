@@ -9,6 +9,9 @@ import { useClasses } from "@/hooks/useSchool";
 import { useDelayedFlag } from "@/hooks/useDelayedFlag";
 import { Skeleton } from "@/components/loading/Skeleton";
 import { cn } from "@/lib/utils";
+import {
+  allSessionsRows, currentSessionOf, currentSessionRows,
+} from "@/lib/classDistribution";
 import type { SchoolClass } from "@/types";
 
 /**
@@ -17,11 +20,22 @@ import type { SchoolClass } from "@/types";
  * straight from GET /school/classes (each row carries student_count + academic_year),
  * so this is a real, live chart — no separate analytics endpoint.
  *
- * Current view : one bar per class in the latest academic year (X = class name),
+ * Current view : one bar per class in the current academic year (X = class name),
  *                each class given its own hue so a level stays visually trackable
  *                even as the roster grows or ordering shifts.
- * All sessions : one bar per academic year (X = session, Y = total students) — a
- *                time series, so a single accent rather than the per-class palette.
+ * All sessions : NOT a time series yet, and says so. See `allSessionsData`.
+ *
+ * ~~~ TWO FAULTS FIXED HERE ~~~
+ * 1. Labels were built as `${c.name} ${c.section}`, where `section` is the ARM.
+ *    Fairview's Year classes are already NAMED "Year 1 A", so 24 of 31 printed
+ *    their arm twice ("YEAR 1 A A"), and the uppercasing tickFormatter made it
+ *    shout. Both are gone: `classLabel` is the shared rule, and the name prints
+ *    as stored.
+ * 2. A class with a NULL `academic_year` was excluded from the current session
+ *    entirely, because the filter was an equality against the resolved session.
+ *    Fairview's Playgroup is that class. It holds 0 pupils today so the total
+ *    was still right, but enrol one child and they would have vanished from
+ *    both the chart and the headline count with no empty state to explain it.
  */
 
 // Curated 12+ hue palette — distinct-but-cohesive, cycled per class in the current view.
@@ -45,41 +59,14 @@ export function ClassDistributionChart() {
     [data],
   );
 
-  // Sessions newest-first so [0] is the "current" one; chronological for the all view.
-  const sessions = useMemo(
-    () => Array.from(new Set(classes.map((c) => c.academic_year).filter(Boolean))).sort().reverse(),
-    [classes],
-  );
-  const currentSession = sessions[0] ?? null;
-
+  // All three derivations live in lib/classDistribution.ts so they can be
+  // tested without standing up recharts. See that file for the NULL
+  // academic_year fault and why "All sessions" is not a time series.
+  const currentSession = useMemo(() => currentSessionOf(classes), [classes]);
   const currentData = useMemo(
-    () =>
-      classes
-        .filter((c) => c.academic_year === currentSession)
-        .map((c) => ({
-          label: c.section ? `${c.name} ${c.section}` : c.name,
-          students: c.student_count,
-          capacity: c.capacity,
-        }))
-        .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true })),
-    [classes, currentSession],
-  );
-
+    () => currentSessionRows(classes, currentSession), [classes, currentSession]);
   const allSessionsData = useMemo(
-    () =>
-      sessions
-        .slice()
-        .reverse() // chronological (oldest → newest) across the X-axis
-        .map((s) => {
-          const rows = classes.filter((c) => c.academic_year === s);
-          return {
-            label: s,
-            students: rows.reduce((sum, c) => sum + (c.student_count || 0), 0),
-            classes: rows.length,
-          };
-        }),
-    [classes, sessions],
-  );
+    () => allSessionsRows(classes, currentSession), [classes, currentSession]);
 
   const chartData = view === "current" ? currentData : allSessionsData;
   const totalStudents = useMemo(
@@ -105,7 +92,7 @@ export function ClassDistributionChart() {
                 ? currentSession
                   ? `${totalStudents.toLocaleString()} students · ${currentSession} session`
                   : "Current session"
-                : `${sessions.length} session${sessions.length === 1 ? "" : "s"} on record`}
+                : "Per-session history not recorded yet — showing the current session"}
             </p>
           </div>
         </div>
@@ -132,6 +119,19 @@ export function ClassDistributionChart() {
         </div>
       </div>
 
+      {/* The All-sessions view draws a bar with a session name on it, which
+          invites being read as history. Say plainly that it is not, rather than
+          relying on the subtitle alone. */}
+      {view === "all" && !showSkeleton && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2">
+          <p className="text-[11px] leading-relaxed text-amber-900">
+            <span className="font-semibold">Showing the current session.</span>{" "}
+            Student numbers per class are only recorded for the roster as it is
+            now, so past sessions cannot be charted yet.
+          </p>
+        </div>
+      )}
+
       {/* Body */}
       {showSkeleton ? (
         <div className="flex items-end gap-3 h-[300px] px-2">
@@ -150,7 +150,6 @@ export function ClassDistributionChart() {
                 <XAxis
                   dataKey="label"
                   tick={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
-                  tickFormatter={(v: string) => String(v).toUpperCase()}
                   interval={0}
                   angle={-35}
                   textAnchor="end"
