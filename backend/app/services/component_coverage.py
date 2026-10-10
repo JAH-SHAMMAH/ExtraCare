@@ -87,7 +87,7 @@ async def component_coverage(
     gaps under every subject a class does not take.
     """
     from app.models.modules.platform import StudentAssessmentScore
-    from app.models.modules.school import Student, Subject
+    from app.models.modules.school import SchoolClass, Student, Subject
     from app.routers.modules.platform import _pick_display_cumulative
     from app.services.session_scope import load_term_setup, resolve_session_id
 
@@ -95,7 +95,13 @@ async def component_coverage(
 
     if session_id is None:                      # see analyse_term
         session_id = await resolve_session_id(db, org_id)
-    setup = await load_term_setup(db, org_id, session_id, term_id)
+    # Scoped to this class's year group: a coverage report must ask for exactly
+    # the components the class's own card requires. Left unscoped it would chase
+    # another level's columns and report every pupil as missing a mark for a
+    # component their report never had.
+    level = (await db.execute(select(SchoolClass.level).where(
+        SchoolClass.id == class_id, SchoolClass.org_id == org_id))).scalars().first()
+    setup = await load_term_setup(db, org_id, session_id, term_id, level=level)
     assessments = setup.assessments
     cumulatives = setup.cumulatives
     display = _pick_display_cumulative(cumulatives, sub_term_id)

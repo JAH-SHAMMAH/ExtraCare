@@ -30,8 +30,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+class _AnyLevel:
+    """Sentinel type for `ANY_LEVEL`, so it has a readable repr in a traceback."""
+
+    def __repr__(self) -> str:                      # pragma: no cover - debug aid
+        return "<ANY_LEVEL>"
+
+
+#: "This caller has no year group to scope by — give me every level's columns."
+#:
+#: A THIRD STATE, distinct from `level=None`, and the distinction is load-bearing:
+#:   ANY_LEVEL  -> no year-group filter at all. The whole-school readers
+#:                 (`report_insight`, and `analyse_term` with neither a class nor
+#:                 a section) genuinely cannot know a level, and must keep seeing
+#:                 everything rather than silently narrowing to the shared columns.
+#:   None       -> a level WAS resolved and the class hasn't got one. Only the
+#:                 all-levels columns apply; showing every level's would mix
+#:                 Junior's C.E into a card that cannot say it is Junior.
+#: Collapsing the two would make one of those two cases wrong, and neither failure
+#: raises — both just put the wrong columns on a report card.
+ANY_LEVEL = _AnyLevel()
 
 
 # ── which session ────────────────────────────────────────────────────────────
@@ -105,7 +127,7 @@ class TermSetup:
 
 
 async def load_session_setup(db: AsyncSession, org_id: str,
-                             session_id: str | None) -> TermSetup:
+                             session_id: str | None, *, level=ANY_LEVEL) -> TermSetup:
     """Every term's setup for one session — no term filter.
 
     For the card's Sessional Score, which averages a pupil's terms into a yearly
@@ -120,22 +142,69 @@ async def load_session_setup(db: AsyncSession, org_id: str,
     missing number on a report card. The breadth it needs is "this session",
     which is a thing worth naming rather than inheriting by accident.
     """
-    return await _load(db, org_id, session_id, term_id=None)
+    return await _load(db, org_id, session_id, term_id=None, level=level)
 
 
 async def load_term_setup(db: AsyncSession, org_id: str, session_id: str | None,
-                          term_id: str) -> TermSetup:
+                          term_id: str, *, level=ANY_LEVEL) -> TermSetup:
     """Assessments, cumulatives and their components for one (session, term).
 
     `session_id` of None means no session could be resolved, which cannot select
     any row now that the column is NOT NULL — so it returns empty rather than
     quietly falling back to every year at once.
+
+    `level` is the pupil's year group, as `school_classes.level` holds it — see
+    `ANY_LEVEL` for why its absence is a different thing from `None`.
     """
-    return await _load(db, org_id, session_id, term_id=term_id)
+    return await _load(db, org_id, session_id, term_id=term_id, level=level)
+
+
+def _year_group_clause(column, level):
+    """The year-group filter, or None for "do not filter".
+
+    `year_group IS NULL` means "all levels" and must stay visible everywhere:
+    production's 9 configured columns are ALL unscoped, so a strict
+    `year_group = level` would remove every column from every card in the school.
+    Measured twice before this shipped — against the head-138 dump and against
+    the live database.
+
+    MATCHED CASE-INSENSITIVELY, AND TRIMMED. `school_classes.level` holds
+    'Year 7' on all 31 production classes while the documented and seeded form of
+    `year_group` is 'YEAR 7'. A case-sensitive comparison matches NEITHER
+    direction, and the symptom — a blank card — looks like a filtering bug rather
+    than a collation one.
+    """
+    if level is ANY_LEVEL:
+        return None
+    lvl = (level or "").strip().casefold()
+    if not lvl:
+        # A level was resolved and the class has none: only all-levels columns.
+        return column.is_(None)
+    return or_(column.is_(None), func.lower(func.trim(column)) == lvl)
+
+
+def level_matches(year_group: str | None, level) -> bool:
+    """`_year_group_clause`, in Python, for a caller that already holds the rows.
+
+    EXISTS SO THE TWO CANNOT DIVERGE. `_entry_assessments` — the Report Entry
+    grid — filtered in Python with a bare `a.year_group == level`, which is
+    case-SENSITIVE. Set a column's year group to the seeded 'YEAR 7' and the card
+    (SQL, case-folded) would print it while the entry grid (Python, exact) would
+    drop it: a teacher unable to enter a mark for a column her pupils' reports
+    show. Harmless only while every year group is NULL, which is where production
+    happens to be, so it would have surfaced on the day the feature was first
+    used rather than the day it was written.
+    """
+    yg = (year_group or "").strip()
+    if not yg:
+        return True                 # NULL / blank = all levels
+    if level is ANY_LEVEL:
+        return True
+    return yg.casefold() == (level or "").strip().casefold()
 
 
 async def _load(db: AsyncSession, org_id: str, session_id: str | None,
-                term_id: str | None) -> TermSetup:
+                term_id: str | None, *, level=ANY_LEVEL) -> TermSetup:
     """The shared read. `term_id` of None means every term of the session."""
     from app.models.modules.platform import Assessment, Cumulative, CumulativeComponent
 
@@ -147,6 +216,14 @@ async def _load(db: AsyncSession, org_id: str, session_id: str | None,
     if term_id is not None:
         a_where.append(Assessment.term_id == term_id)
         c_where.append(Cumulative.term_id == term_id)
+
+    # Year-group scoping is ADDITIONAL to the session and term filters above,
+    # never a replacement for either: mixing two years of marks is the failure
+    # migration 134 exists to prevent, and it does not raise.
+    a_level = _year_group_clause(Assessment.year_group, level)
+    if a_level is not None:
+        a_where.append(a_level)
+        c_where.append(_year_group_clause(Cumulative.year_group, level))
 
     assessments = {a.id: a for a in (await db.execute(
         select(Assessment).where(*a_where))).scalars().all()}

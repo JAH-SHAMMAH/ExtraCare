@@ -91,7 +91,9 @@ async def analyse_term(
     from app.models.modules.school import SchoolClass, Student, Subject
     from app.routers.modules.platform import _grade_for, _pick_display_cumulative
     from app.services.report_engine import evaluate_cumulative, is_fully_marked
-    from app.services.session_scope import load_term_setup, resolve_session_id
+    from app.services.session_scope import (
+        ANY_LEVEL, load_term_setup, resolve_session_id,
+    )
 
     term_name = (await db.execute(select(AcademicTerm.name).where(
         AcademicTerm.id == term_id, AcademicTerm.org_id == org_id))).scalar_one_or_none()
@@ -109,7 +111,17 @@ async def analyse_term(
     # reads as "nothing is configured".
     if session_id is None:
         session_id = await resolve_session_id(db, org_id)
-    setup = await load_term_setup(db, org_id, session_id, term_id)
+    # Year-group scoping, but ONLY for a single class. A section spans several
+    # year groups -- Primary is Year 1 to Year 6 -- so there is no one level to
+    # scope a section-wide or school-wide analysis to, and narrowing it to the
+    # shared columns would drop per-level columns from the figures. That is the
+    # ANY_LEVEL case, and it is the default.
+    level = ANY_LEVEL
+    if class_id:
+        level = (await db.execute(select(SchoolClass.level).where(
+            SchoolClass.id == class_id,
+            SchoolClass.org_id == org_id))).scalars().first()
+    setup = await load_term_setup(db, org_id, session_id, term_id, level=level)
     assessments = setup.assessments
     cumulatives = setup.cumulatives
     display = _pick_display_cumulative(cumulatives, sub_term_id)

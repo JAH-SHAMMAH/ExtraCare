@@ -107,7 +107,8 @@ from app.services.report_engine import (
 )
 from app.services.attendance_summary import term_attendance
 from app.services.session_scope import (
-    load_session_setup, load_term_setup, session_or_current,
+    ANY_LEVEL, level_matches, load_session_setup, load_term_setup,
+    session_or_current,
 )
 from app.services.report_lock import (
     find_published_block, locked_message, term_names_for_ids,
@@ -2586,7 +2587,9 @@ async def _entry_assessments(db, org_id, term_id, level, sub_term_id: str | None
     if sub_term_id:
         q = q.where(Assessment.sub_term_id == sub_term_id)
     rows = (await db.execute(q.order_by(Assessment.position, Assessment.name))).scalars().all()
-    return [a for a in rows if not a.year_group or a.year_group == level]
+    # One rule, one implementation -- see `level_matches` for the divergence
+    # this replaces (card case-folded in SQL, entry grid exact in Python).
+    return [a for a in rows if level_matches(a.year_group, level)]
 
 
 @router.get("/my-teaching-assignments", response_model=list[TeachingAssignment], dependencies=[_school_read])
@@ -3056,9 +3059,9 @@ async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
     )).scalars().all()
     s_ids = [s.id for s in students]
 
-    # Config for the (session, term): assessments, cumulatives (+ components).
+    # Config for the (session, term), scoped to this class's year group.
     sess_id = await session_or_current(db, org, session_id)
-    setup = await load_term_setup(db, org, sess_id, term_id)
+    setup = await load_term_setup(db, org, sess_id, term_id, level=level)
     assessments, cumulatives = setup.assessments, setup.cumulatives
     cumul_by_id, components = setup.cumul_by_id, setup.components
 
@@ -3208,10 +3211,11 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
     branding = _branding_response((await db.execute(select(ReportBranding).where(ReportBranding.org_id == org))).scalar_one_or_none())
 
-    # Config: assessments + cumulatives for the (session, term); the columns for
-    # this sub-term.
+    # Config: assessments + cumulatives for the (session, term), scoped to this
+    # pupil's year group; the columns for this sub-term.
     sess_id = await session_or_current(db, org, session_id)
-    setup = await load_term_setup(db, org, sess_id, term_id)
+    card_level = getattr(cls, "level", None)
+    setup = await load_term_setup(db, org, sess_id, term_id, level=card_level)
     assessments, cumulatives = setup.assessments, setup.cumulatives
     cumul_by_id, components = setup.cumul_by_id, setup.components
 
@@ -3380,7 +3384,7 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         # Its OWN components map (`all_comps`), not the viewed term's: the loop
         # below resolves each term's cumulative tree, and the term-scoped map
         # holds nothing for the other terms.
-        session_setup = await load_session_setup(db, org, sess_id)
+        session_setup = await load_session_setup(db, org, sess_id, level=card_level)
         all_asmts = session_setup.assessments
         all_cumuls = session_setup.cumulatives
         all_cumul_by_id = session_setup.cumul_by_id
@@ -3993,7 +3997,11 @@ async def report_insight(term_id: str, sub_term_id: str,
     sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
 
     sess_id = await session_or_current(db, org, session_id)
-    setup = await load_term_setup(db, org, sess_id, term_id)
+    # DELIBERATELY ANY_LEVEL. This report is whole-school -- it reads every score
+    # in the org and has no class to resolve a year group from -- so it must keep
+    # seeing every level's columns. Narrowing it to the shared ones would quietly
+    # drop per-level columns from a school-wide chart. See `ANY_LEVEL`.
+    setup = await load_term_setup(db, org, sess_id, term_id, level=ANY_LEVEL)
     assessments, cumulatives = setup.assessments, setup.cumulatives
     cumul_by_id, components = setup.cumul_by_id, setup.components
     display = _pick_display_cumulative(cumulatives, sub_term_id)
