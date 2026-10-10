@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { REPORT_SECTION_KEYS } from "../lib/reportSections";
+
 /**
  * A structural guard on the sidebar's nav manifest.
  *
@@ -44,7 +46,9 @@ function sectionsFromManifest(src: string): Record<string, string[]> {
 }
 
 const SECTIONS = sectionsFromManifest(SRC);
-const REPORT_SECTIONS = ["nursery-report", "primary-report", "secondary-report"];
+/** Taken from the rule module rather than restated, so the manifest, the filter
+ *  and this guard cannot drift apart on what the three keys are called. */
+const REPORT_SECTIONS = [...REPORT_SECTION_KEYS];
 const RESULT_ANALYSIS = "/dashboard/modules/school/result-analysis";
 
 describe("sidebar nav manifest", () => {

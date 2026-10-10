@@ -34,6 +34,22 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 settings = get_settings()
 
 
+async def _report_key_map(db: AsyncSession, org_id: str) -> dict[str, str]:
+    """section id -> sidebar report key, for the whole org.
+
+    The org's FULL list is needed, not just the viewer's sections: "junior" and
+    "senior" are relative, so a single section cannot classify itself. Three rows
+    at Fairview, read once per login/me — see `services.report_sections` for why
+    this is resolved here and not in the browser.
+    """
+    from app.services.report_sections import report_keys_for
+
+    rows = (await db.execute(
+        select(SchoolSection).where(SchoolSection.org_id == org_id)
+    )).scalars().all()
+    return report_keys_for(rows)
+
+
 @router.post(
     "/register",
     status_code=201,
@@ -214,6 +230,7 @@ async def login(
     await log_action(db, AuditAction.LOGIN, org.id, actor=user, request=request)
 
     # Compute teacher_sections (derived from their classes) — same logic as /me endpoint
+    report_keys = await _report_key_map(db, user.org_id)
     teacher_sections = []
     section_ids = (await db.execute(
         select(distinct(SchoolClass.section_id)).where(
@@ -229,7 +246,10 @@ async def login(
                 SchoolSection.org_id == user.org_id,
             )
         )).scalars().all()
-        teacher_sections = [SectionBrief(id=s.id, name=s.name) for s in sections]
+        teacher_sections = [
+            SectionBrief(id=s.id, name=s.name, report_key=report_keys.get(s.id))
+            for s in sections
+        ]
 
     # Compute student_sections — same logic as /me endpoint
     student_sections = []
@@ -251,7 +271,9 @@ async def login(
                 )
             )).scalar_one_or_none()
             if section:
-                student_sections = [SectionBrief(id=section.id, name=section.name)]
+                student_sections = [SectionBrief(
+                    id=section.id, name=section.name,
+                    report_key=report_keys.get(section.id))]
 
     claims = _identity_claims(user, org)
     access_token = create_access_token(claims)
@@ -414,6 +436,7 @@ async def get_me(
     # on a separate TeacherSection table (which is designed for admin Assign-To-School
     # flow), derive sections directly from the teacher's actual class assignments.
     # This ensures teachers always see report sections matching where they actually teach.
+    report_keys = await _report_key_map(db, current_user.org_id)
     teacher_sections = []
     section_ids = (await db.execute(
         select(distinct(SchoolClass.section_id)).where(
@@ -429,7 +452,10 @@ async def get_me(
                 SchoolSection.org_id == current_user.org_id,
             )
         )).scalars().all()
-        teacher_sections = [SectionBrief(id=s.id, name=s.name) for s in sections]
+        teacher_sections = [
+            SectionBrief(id=s.id, name=s.name, report_key=report_keys.get(s.id))
+            for s in sections
+        ]
 
     # Fetch student's assigned section (if this user is a student).
     student_sections = []
@@ -454,7 +480,9 @@ async def get_me(
             )).scalar_one_or_none()
 
             if section:
-                student_sections = [SectionBrief(id=section.id, name=section.name)]
+                student_sections = [SectionBrief(
+                    id=section.id, name=section.name,
+                    report_key=report_keys.get(section.id))]
 
     return UserMeResponse.from_user(current_user, org, teacher_sections, student_sections)
 
