@@ -208,20 +208,32 @@ async def main() -> None:
         already = {(r["student_id"], r["subject_id"]) for r in await c.fetch("""
             SELECT student_id, subject_id FROM student_subject_enrollments
              WHERE org_id = $1 AND academic_year = $2""", org, SESSION_NAME)}
+
+        # `session_id` is NOT NULL from migration 140. Resolved by NAME from
+        # SESSION_NAME so the id and the legacy string are one decision, and the
+        # script refuses rather than inserting a row the schema will reject.
+        sess_id = await c.fetchval(
+            "SELECT id FROM academic_sessions WHERE org_id = $1 AND name = $2",
+            org, SESSION_NAME)
+        if not sess_id:
+            raise SystemExit(
+                f"No academic_sessions row named {SESSION_NAME!r} for this org, "
+                "so enrolments cannot be created. Create the session first.")
         en = []
         for p in pupils:
             for name, _ in PRIMARY_SUBJECTS:
                 if (p["id"], subject_ids[name]) in already:
                     continue
                 eid = str(uuid.uuid4())
-                en.append((eid, p["id"], subject_ids[name], SESSION_NAME, now, org))
+                en.append((eid, p["id"], subject_ids[name], SESSION_NAME, now,
+                           org, sess_id))
                 man["enrollments_created"].append(eid)
         if en:
             await c.executemany("""
                 INSERT INTO student_subject_enrollments
                        (id, student_id, subject_id, academic_year, enrolled_at,
-                        source, org_id, created_at, updated_at)
-                VALUES ($1,$2,$3,$4,$5,'manual',$6,$5,$5)""", en)
+                        source, org_id, created_at, updated_at, session_id)
+                VALUES ($1,$2,$3,$4,$5,'manual',$6,$5,$5,$7)""", en)
         print(f"    created {len(en)} enrolments for {len(pupils)} pupils")
 
         # ── verify INSIDE the transaction, before committing ────────────────

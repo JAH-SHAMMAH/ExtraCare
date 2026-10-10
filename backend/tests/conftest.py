@@ -90,7 +90,7 @@ async def org(db) -> Organization:
     return o
 
 
-async def ensure_session(db, org):
+async def ensure_session(db, org, name: str | None = None):
     """The org's current academic session, created if it has none. Idempotent.
 
     Report setup is session-scoped (migration 134): `assessments.session_id` and
@@ -104,18 +104,33 @@ async def ensure_session(db, org):
     """
     from app.models.modules.platform import AcademicSession
 
-    existing = (await db.execute(
-        select(AcademicSession).where(
+    # Matched by NAME when one is given, so repeated calls for the same year
+    # resolve to ONE row. Enrolment is keyed on `session_id` (migration 140), and
+    # a helper that created a rival session per call would silently split a test's
+    # enrolments across two sessions and fail the gate for reasons invisible in
+    # the test body.
+    #
+    # ⚠️ Migration 141 adds UNIQUE (org_id) WHERE is_current, so a second session
+    # must NOT also be current — a named one beyond the first is created
+    # non-current deliberately.
+    q = select(AcademicSession).where(AcademicSession.org_id == org.id)
+    q = q.where(AcademicSession.name == name) if name else q.where(
+        AcademicSession.is_current == True)  # noqa: E712
+    existing = (await db.execute(q)).scalars().first()
+    if existing:
+        return existing
+
+    has_current = (await db.execute(
+        select(AcademicSession.id).where(
             AcademicSession.org_id == org.id,
             AcademicSession.is_current == True,  # noqa: E712
         )
     )).scalars().first()
-    if existing:
-        return existing
 
-    s = AcademicSession(id=str(uuid.uuid4()), name="2025/2026", term="Autumn",
+    s = AcademicSession(id=str(uuid.uuid4()), name=name or "2025/2026",
+                        term="Autumn",
                         start_date=date(2025, 9, 15), end_date=date(2026, 7, 10),
-                        is_current=True, org_id=org.id)
+                        is_current=not has_current, org_id=org.id)
     db.add(s)
     await db.commit()
     return s

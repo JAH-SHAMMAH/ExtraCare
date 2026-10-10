@@ -72,6 +72,31 @@ async def resolve_academic_year(db: AsyncSession, org_id: str) -> str:
     )
 
 
+async def resolve_session_id(db: AsyncSession, org_id: str) -> str:
+    """The `academic_sessions.id` enrolment is keyed on (migrations 139/140).
+
+    Resolved THROUGH `resolve_academic_year` rather than independently, so the id
+    and the legacy string can never disagree: both columns are written from the
+    same decision for as long as `academic_year` survives. Raises for the same
+    reason that function does — you cannot record "enrolled" without saying when.
+    """
+    from app.models.modules.platform import AcademicSession
+
+    name = await resolve_academic_year(db, org_id)
+    sid = (await db.execute(
+        select(AcademicSession.id).where(
+            AcademicSession.org_id == org_id,
+            AcademicSession.name == name,
+        )
+    )).scalars().first()
+    if not sid:
+        raise AcademicYearUnresolved(
+            f"The current academic session resolved to {name!r} but no session "
+            "row with that name exists for this organisation."
+        )
+    return sid
+
+
 # ── the gate ─────────────────────────────────────────────────────────────────
 
 async def resolve_academic_year_for_check(db: AsyncSession, org_id: str) -> str | None:
@@ -227,23 +252,34 @@ def plan_backfill_sync(conn, org_id: str, academic_year: str) -> list[tuple[str,
 
 
 def apply_backfill_sync(conn, org_id: str, academic_year: str,
-                        pairs: list[tuple[str, str]]) -> int:
-    """Insert `pairs` as enrolments. Returns how many rows were written."""
+                        pairs: list[tuple[str, str]],
+                        session_id: str | None = None) -> int:
+    """Insert `pairs` as enrolments. Returns how many rows were written.
+
+    `session_id` IS OPTIONAL AND MUST STAY OPTIONAL. Migration 128 imports and
+    CALLS this function (line ~110) without it, which freezes the signature — and
+    that call is safe, because 128 runs BEFORE migration 139 adds the column, so
+    there is nothing to populate at that point. Live callers (the backfill script)
+    pass it, and after migration 140 they must: the column is NOT NULL.
+    """
     import uuid as _uuid
     from datetime import datetime, timezone
 
     if not pairs:
         return 0
     now = datetime.now(timezone.utc)
+    _sess_col = "session_id," if session_id else ""
+    _sess_val = ":session_id," if session_id else ""
     conn.execute(text(f"""
         INSERT INTO {ENROLMENT_TABLE}
-            (id, org_id, student_id, subject_id, academic_year,
+            (id, org_id, student_id, subject_id, academic_year, {_sess_col}
              enrolled_by, enrolled_at, source, created_at, updated_at)
-        VALUES (:id, :org_id, :student_id, :subject_id, :academic_year,
+        VALUES (:id, :org_id, :student_id, :subject_id, :academic_year, {_sess_val}
                 NULL, :now, 'backfill', :now, :now)
     """), [
         {"id": str(_uuid.uuid4()), "org_id": org_id, "student_id": s,
-         "subject_id": sub, "academic_year": academic_year, "now": now}
+         "subject_id": sub, "academic_year": academic_year, "now": now,
+         **({"session_id": session_id} if session_id else {})}
         for (s, sub) in pairs
     ])
     return len(pairs)
