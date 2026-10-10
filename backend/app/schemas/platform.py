@@ -1121,6 +1121,14 @@ class BroadsheetResponse(BaseModel):
     subjects: list[BroadsheetSubject] = Field(default_factory=list)
     bands: list[BroadsheetBand] = Field(default_factory=list)
     rows: list[BroadsheetRow] = Field(default_factory=list)
+    # No column is configured for this (session, term, sub-term), so there is
+    # nothing to compute. Said explicitly because the alternative reads as
+    # "no marks entered yet", which is a different and much less alarming
+    # fact — and because the previous behaviour was worse than either: the
+    # display column fell back to ANOTHER sub-term's, printing the Full-Term
+    # figure under a Half-Term heading. Same field name and meaning as the
+    # ten result-analysis responses that already carry it.
+    not_configured: bool = False
 
 
 # ── Secondary Report parity S-4c: printable report card ──────────────────────
@@ -1180,6 +1188,14 @@ class ReportCardResponse(BaseModel):
     term_name: Optional[str] = None
     sub_term_name: Optional[str] = None
     report_title: Optional[str] = None
+    # No column is configured for this (session, term, sub-term), so there is
+    # nothing to compute. Said explicitly because the alternative reads as
+    # "no marks entered yet", which is a different and much less alarming
+    # fact — and because the previous behaviour was worse than either: the
+    # display column fell back to ANOTHER sub-term's, printing the Full-Term
+    # figure under a Half-Term heading. Same field name and meaning as the
+    # ten result-analysis responses that already carry it.
+    not_configured: bool = False
     branding: BrandingResponse = Field(default_factory=BrandingResponse)
     columns: list[CardColumn] = Field(default_factory=list)
     subjects: list[CardSubjectRow] = Field(default_factory=list)

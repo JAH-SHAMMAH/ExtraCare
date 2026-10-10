@@ -7,7 +7,7 @@ import { useHasPermission } from "@/components/guards/PermissionGate";
 import { BulkPrintTab, CommentGridTab } from "@/components/reports/ReportCardPrint";
 import { ReportInsightTab } from "@/components/reports/ReportInsightTab";
 import { cn } from "@/lib/utils";
-import { Loader2, LayoutGrid, BarChart3, RefreshCw, Download, ShieldAlert } from "lucide-react";
+import { Loader2, LayoutGrid, BarChart3, RefreshCw, Download, ShieldAlert, Settings2 } from "lucide-react";
 
 type Tab = "broadsheet" | "bulk" | "head" | "pc" | "insight";
 // adminOnly tabs (School Head Comment, Result Insight) are hidden from teachers,
@@ -178,6 +178,31 @@ function Broadsheet() {
         <p className="text-sm text-slate-500 py-14 text-center bg-white rounded-xl border border-slate-200">
           Couldn&apos;t load this class&rsquo;s results. Try again, or press Process Result.
         </p>
+      ) : bs?.not_configured ? (
+        /* No column is configured for this term + sub-term, so there is nothing
+           to compute. This branch must come BEFORE the "no results" one below:
+           that message blames the teachers for not entering marks, when the
+           marks have nowhere to land. Fairview's ACTIVE sub-term is Half-Term
+           and no term has a Half-Term column, so this is the live state, not a
+           hypothetical — and until now the grid silently showed the Full-Term
+           figures instead. */
+        <div className="bg-white rounded-xl border border-amber-200 py-14 px-6 text-center">
+          <Settings2 size={30} className="mx-auto mb-3 text-amber-500" />
+          <p className="text-sm font-bold text-slate-800 mb-1">
+            This sub-term isn&rsquo;t set up yet
+          </p>
+          <p className="text-sm text-amber-800 max-w-md mx-auto leading-relaxed">
+            No report column is configured for{" "}
+            <b>{bs.term_name || "this term"}</b>
+            {bs.sub_term_name ? <> &middot; <b>{bs.sub_term_name}</b></> : null},
+            so there are no results to show.
+          </p>
+          <p className="text-xs text-slate-500 mt-3 max-w-md mx-auto leading-relaxed">
+            Add the assessments and cumulative columns for it under{" "}
+            <span className="font-semibold">Report Setup &rarr; Result View</span>.
+            Marks already entered are untouched.
+          </p>
+        </div>
       ) : !bs || rows.length === 0 ? (
         <p className="text-sm text-slate-400 py-14 text-center bg-white rounded-xl border border-slate-200">No results — enter marks under Report Entry first.</p>
       ) : (

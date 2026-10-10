@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useClasses } from "@/hooks/useSchool";
 import { useTerms, useSubTerms, useBroadsheet, useReportCard, useReportCardsBulk, useCommentGrid, useSaveComments } from "@/hooks/usePlatform";
-import { Loader2, Printer, FileText, Save } from "lucide-react";
+import { Loader2, Printer, FileText, Save, Settings2 } from "lucide-react";
 
 /** Sentinel for the "every pupil in the class" option in the student picker. */
 const ALL = "__ALL__";
@@ -29,6 +29,11 @@ export function BulkPrintTab() {
   const num = (v: any) => (v == null ? "–" : Number(v));
   const cards: any[] = isAll ? (allCards ?? []) : card ? [card] : [];
   const busy = isAll ? allLoading : isLoading;
+  // The flag is a property of the (term, sub-term) setup, not of the pupil, so
+  // every card in a bulk run carries the same value -- the first is enough. The
+  // broadsheet's copy is the fallback for "All students", where no single card
+  // has been fetched yet.
+  const notConfigured: boolean = cards[0]?.not_configured ?? (bs as any)?.not_configured ?? false;
 
   return (
     <div className="space-y-4">
@@ -53,6 +58,27 @@ export function BulkPrintTab() {
         <div className="bg-white rounded-xl border border-dashed border-slate-200 py-16 text-center text-slate-400 no-print"><FileText size={30} className="mx-auto mb-3 opacity-40" /><p className="text-sm">Choose a class, term, sub-term and student — or &ldquo;All students&rdquo; to bulk-print the whole class.</p></div>
       ) : busy ? (
         <div className="py-16 text-center no-print"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /><p className="text-xs text-slate-400 mt-2">{isAll ? "Building every card in the class…" : "Loading…"}</p></div>
+      ) : notConfigured ? (
+        /* No column exists for this term + sub-term, so a card here would be a
+           blank table. Checked BEFORE "no report cards for this selection",
+           which reads as "nothing published yet" and sends the user to chase
+           marks that have nowhere to land. Until `_pick_display_cumulative`
+           stopped borrowing, this case printed ANOTHER sub-term's figures under
+           this sub-term's heading. */
+        <div className="bg-white rounded-xl border border-amber-200 py-16 px-6 text-center no-print">
+          <Settings2 size={30} className="mx-auto mb-3 text-amber-500" />
+          <p className="text-sm font-bold text-slate-800 mb-1">
+            This sub-term isn&rsquo;t set up yet
+          </p>
+          <p className="text-sm text-amber-800 max-w-md mx-auto leading-relaxed">
+            No report column is configured for this term and sub-term, so there
+            is nothing to print.
+          </p>
+          <p className="text-xs text-slate-500 mt-3 max-w-md mx-auto leading-relaxed">
+            Add its assessments and cumulative columns under{" "}
+            <span className="font-semibold">Report Setup &rarr; Result View</span>.
+          </p>
+        </div>
       ) : cards.length === 0 ? (
         <div className="bg-white rounded-xl border border-dashed border-slate-200 py-16 text-center text-slate-400 no-print"><p className="text-sm">No report cards for this selection.</p></div>
       ) : (

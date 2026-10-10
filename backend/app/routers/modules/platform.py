@@ -2992,14 +2992,35 @@ def _grade_for(pct, bands):
 
 
 def _pick_display_cumulative(cumulatives, sub_term_id):
+    """The column a card/broadsheet shows for this sub-term, or None.
+
+    ~~~ IT NO LONGER BORROWS FROM ANOTHER SUB-TERM ~~~
+    This used to end with `if cumulatives: return max(cumulatives, ...)` -- when
+    the requested sub-term had no column of its own, it returned ANY cumulative
+    of the term. The Result tracker had already found what that does and worked
+    around it locally: "it made the Autumn Half-Term column repeat the Full-Term
+    mark, which asserts a half-term score nobody recorded."
+
+    That is live right now. Fairview's ACTIVE term is Summer with Half-Term as
+    its active sub-term, and NO term has a Half-Term column -- so a card for the
+    active term silently printed the Full-Term figure under a Half-Term heading.
+    A parent reading it could not tell.
+
+    Returning None instead makes the condition visible: every caller already
+    tests `not display or not assessments`, and the two readers that face a user
+    now report `not_configured` so the page can say "not set up" rather than
+    showing an empty table that reads as "no marks entered".
+
+    The tracker's own `configured_pairs` pre-filter is left in place. It is now
+    belt-and-braces rather than a workaround, and it also guards the no-
+    assessments case, so removing it is a separate cleanup.
+    """
     for_sub = [c for c in cumulatives if c.sub_term_id == sub_term_id]
     for c in for_sub:
         if (c.name or "").strip().upper() == "TOTAL":
             return c
     if for_sub:
         return max(for_sub, key=lambda c: (c.position or 0))
-    if cumulatives:
-        return max(cumulatives, key=lambda c: (c.position or 0))
     return None
 
 
@@ -3124,6 +3145,11 @@ async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
 
     return BroadsheetResponse(
         class_id=class_id, class_name=cls.name, term_name=term_name, sub_term_name=sub_name,
+        # Nothing is configured for this sub-term. The rows above are already
+        # empty in that case -- the loop skips every subject when `display` is
+        # None -- so without this the page would show a blank grid and blame the
+        # teachers for not entering marks.
+        not_configured=(not display or not assessments),
         display_cumulative=(display.name if display else None),
         subjects=[BroadsheetSubject(**s) for s in subjects], bands=band_out, rows=rows_out,
     )
@@ -3488,6 +3514,10 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         student_id=student_id, student_name=f"{student.first_name} {student.last_name}".strip(),
         admission_no=student.student_id, photo_url=getattr(student, "photo_url", None),
         class_name=(cls.name if cls else None), term_name=term_name, sub_term_name=sub_name, report_title=title,
+        # See the broadsheet above, and `_pick_display_cumulative`: this used to
+        # be invisible because the display column silently borrowed another
+        # sub-term's.
+        not_configured=(not display or not assessments),
         branding=branding, columns=columns,
         subjects=subj_rows, bands=[BroadsheetBand(grade=b.grade, min_score=b.min_score, max_score=b.max_score, remark=b.remark) for b in bands],
         total=round_dp(my_total, 2), average=round_dp(average, 2), grade=_grade_for(average, bands) if n else None,
