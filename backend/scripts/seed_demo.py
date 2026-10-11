@@ -56,6 +56,8 @@ from app.models.modules.transport import (
 from app.models.organization import Organization, IndustryType, SubscriptionTier
 from app.models.role import Role, PERMISSION_PRESETS
 from app.models.user import User, UserStatus
+import os
+import secrets
 
 
 async def _section_id(db, org_id: str, prefer: str) -> str:
@@ -85,10 +87,15 @@ async def _section_id(db, org_id: str, prefer: str) -> str:
 
 
 
-DEMO_PASSWORD = "DemoPass123!"  # pragma: allowlist-secret -- shared SEED/DEMO account password,
-# known by design and documented as such. It still grants access to the
-# seeded accounts, so it is listed in the credential-exposure report and
-# must be changed if these accounts ever outlive the demo data.
+# GENERATED PER RUN, never committed. This was a literal shared password, which
+# is a credential for every deployment that ever ran the seed -- and it lived in
+# a repository that was public for seven weeks. The script already PRINTS it at
+# the end, so the operator still learns it; it is simply no longer in the source.
+#
+# Override with the env var when a reproducible value is genuinely needed (two
+# seed scripts run separately would otherwise choose different passwords, and
+# each prints its own).
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD") or secrets.token_urlsafe(12)
 @dataclass
 class DemoOrg:
     slug: str

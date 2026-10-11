@@ -7,6 +7,7 @@ SEED_ALLOW_PRODUCTION=yes-i-mean-it. The default safety never changes.
 from __future__ import annotations
 
 import os
+import secrets
 
 # A URL containing any of these is treated as production.
 FORBIDDEN = ("onyz", "prod", "render.com", "amazonaws")
@@ -19,10 +20,15 @@ FORBIDDEN = ("onyz", "prod", "render.com", "amazonaws")
 SEED_EMAIL_DOMAIN = "fairviewschoolng.com"
 SEED_PREFIX = "seed-"
 LEGACY_SEED_DOMAIN = "fairview.seed"      # the earlier run's fake domain (still purge-able)
-SEED_PASSWORD = "FairviewSeed#2026"  # pragma: allowlist-secret -- shared SEED/DEMO account password,
-# known by design and documented as such. It still grants access to the
-# seeded accounts, so it is listed in the credential-exposure report and
-# must be changed if these accounts ever outlive the demo data.
+# GENERATED PER RUN, never committed. This was a literal shared password, which
+# is a credential for every deployment that ever ran the seed -- and it lived in
+# a repository that was public for seven weeks. The script already PRINTS it at
+# the end, so the operator still learns it; it is simply no longer in the source.
+#
+# Override with the env var when a reproducible value is genuinely needed (two
+# seed scripts run separately would otherwise choose different passwords, and
+# each prints its own).
+SEED_PASSWORD = os.environ.get("SEED_PASSWORD") or secrets.token_urlsafe(12)
 SEED_EMAILS = (
     f"{SEED_PREFIX}superuser@{SEED_EMAIL_DOMAIN}",
     f"{SEED_PREFIX}classteacher@{SEED_EMAIL_DOMAIN}",

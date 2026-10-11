@@ -198,7 +198,7 @@ def reencrypt(token: str, *, aad: str | None = None) -> str:
 def mask(secret: str | None, visible: int = 4) -> str:
     """Human-safe display of a secret: only the last ``visible`` chars survive,
     the rest become bullets. Used for write-only fields that are never returned
-    in plaintext. ``"sk_live_51H8xAbCdEf" -> "••••••••••••••CdEf"``."""
+    in plaintext. ``"sk_live_EXAMPLE_ONLY_abcd" -> "•••••••••••••••••••abcd"``."""
     if not secret:
         return ""
     if len(secret) <= visible:

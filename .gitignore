@@ -29,8 +29,14 @@ __pycache__/
 # only cover those two directories.
 *.dump
 *.dump.*
+*.sql
 *.sql.gz
 *.pgdump
+# `*.sql` added deliberately: a hand-made `backup.sql` or `dump.sql` carries the
+# same user rows and password hashes as a .dump and was committable. ZERO .sql
+# files are tracked in this repo (checked), so nothing is lost -- alembic
+# migrations are .py. Force-add with `git add -f` if a real .sql fixture is ever
+# needed, and say why in the commit.
 backend/extracare.db*
 backups/
 backend/backups/
@@ -40,8 +46,12 @@ uploads/
 # ── Secrets / environment ────────────────────────────────────────────────────
 .env
 .env.*
+*.env
 !.env.example
 !.env.production.example
+# `.env` and `.env.*` miss a file whose name ENDS in .env -- `prod.env`,
+# `backend/staging.env`. Verified: all four spellings are ignored now, and the
+# two tracked examples are still re-included above.
 *.pem
 *.key
 *.pfx
@@ -63,6 +73,12 @@ certs/
 *password*.csv
 *_logins.csv
 *temp_password*
+*creds*.csv
+*creds*.json
+*secrets*.csv
+*.key.txt
+# "creds" is the spelling a hurried person reaches for, and it matched none of
+# the rules above.
 
 # ── Logs / temp ──────────────────────────────────────────────────────────────
 *.log
