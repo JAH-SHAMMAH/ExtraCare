@@ -3,10 +3,11 @@ import asyncpg
 import secrets
 import string
 import bcrypt
+from _dsn import dsn
 
 async def main():
     conn = await asyncpg.connect(
-        "postgresql://school_db_onyz_user:YkbhMJcvMDVWUmqS0k1kaLF837WclhIK@dpg-d9clkl9kh4rs73cv3lq0-a.ohio-postgres.render.com/school_db_onyz",
+        dsn(),
         ssl="require"
     )
     password = "".join(secrets.choice(string.ascii_letters + string.digits + "!@#$%^&*()") for _ in range(16))

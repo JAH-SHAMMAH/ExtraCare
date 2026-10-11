@@ -3,7 +3,8 @@
 Read-only diagnostic: Find student in production Postgres by name or email pattern.
 
 Usage:
-  python scripts/find_student_prod.py "Abebi Abioye" "postgresql://user:pass@host/db"
+  $env:ADHOC_DATABASE_URL = "<address>"   # or leave unset and it prompts
+  python scripts/find_student_prod.py "Abebi Abioye" "$ADHOC_DATABASE_URL"
 
 Shows:
   - Student ID, name, actual email as stored in production RIGHT NOW
@@ -14,17 +15,18 @@ Shows:
 import sys
 import asyncio
 
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from _dsn import dsn
+
 async def main():
-    if len(sys.argv) < 3:
-        print("usage: python scripts/find_student_prod.py '<name or email pattern>' '<postgresql_url>'")
-        print("")
-        print("Example:")
-        print("  python scripts/find_student_prod.py 'Abebi Abioye' \\")
-        print("    'postgresql://school_db_onyz_user:YkbhMJcvMDVWUmqS0k1kaLF837WclhIK@...'")
+    if len(sys.argv) < 2:
+        print("usage: python scripts/find_student_prod.py <name-or-email>")
+        print("       the address comes from ADHOC_DATABASE_URL, or a prompt")
         return 2
 
     search_term = sys.argv[1].strip()
-    database_url = sys.argv[2].strip()
+    database_url = dsn()
 
     try:
         import asyncpg

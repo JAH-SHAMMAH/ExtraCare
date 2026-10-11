@@ -2,8 +2,9 @@
 """
 REAL WRITE: Apply email domain changes in PRODUCTION.
 
-This connects to school_db_onyz via the postgresql:// URL passed as an argument,
-verified against production, not local SQLite.
+This connects to production via ADHOC_DATABASE_URL (or a hidden prompt), never
+via an argument -- an address on the command line is recorded in shell history
+and visible in the process list.
 
 IMPORTANT: Run backup and dry-run FIRST.
 
@@ -12,18 +13,19 @@ Changes applied:
   2. All others: unchanged
 
 Usage:
-  python scripts/bulk_update_students_real_prod.py "postgresql://user:pass@host/db"
+  $env:ADHOC_DATABASE_URL = "<address>"   # or leave unset and it prompts
+  python scripts/bulk_update_students_real_prod.py
 """
 
 import sys
 import asyncio
 
-async def main():
-    if len(sys.argv) < 2:
-        print("usage: python scripts/bulk_update_students_real_prod.py '<postgresql_url>'")
-        return 2
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from _dsn import dsn
 
-    database_url = sys.argv[1].strip().split("?")[0]
+async def main():
+    database_url = dsn().split("?")[0]
 
     try:
         import asyncpg

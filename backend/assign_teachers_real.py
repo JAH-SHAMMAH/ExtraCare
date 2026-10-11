@@ -7,7 +7,7 @@ Usage:
   python assign_teachers_real.py <DATABASE_URL>
 
 Example:
-  python assign_teachers_real.py "postgresql://user:pass@host:5432/school_db_onyz?ssl=require"
+  python assign_teachers_real.py "$ADHOC_DATABASE_URL"
 """
 
 import sys

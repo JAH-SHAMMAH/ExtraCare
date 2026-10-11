@@ -19,7 +19,10 @@ FORBIDDEN = ("onyz", "prod", "render.com", "amazonaws")
 SEED_EMAIL_DOMAIN = "fairviewschoolng.com"
 SEED_PREFIX = "seed-"
 LEGACY_SEED_DOMAIN = "fairview.seed"      # the earlier run's fake domain (still purge-able)
-SEED_PASSWORD = "FairviewSeed#2026"
+SEED_PASSWORD = "FairviewSeed#2026"  # pragma: allowlist-secret -- shared SEED/DEMO account password,
+# known by design and documented as such. It still grants access to the
+# seeded accounts, so it is listed in the credential-exposure report and
+# must be changed if these accounts ever outlive the demo data.
 SEED_EMAILS = (
     f"{SEED_PREFIX}superuser@{SEED_EMAIL_DOMAIN}",
     f"{SEED_PREFIX}classteacher@{SEED_EMAIL_DOMAIN}",

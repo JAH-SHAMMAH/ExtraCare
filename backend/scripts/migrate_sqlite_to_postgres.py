@@ -9,7 +9,7 @@ Postgres automatically. Password hashes are copied verbatim (never regenerated).
 Usage (schema must already exist on the target — run `alembic upgrade head`
 against it first):
 
-    TARGET_DATABASE_URL="postgresql+asyncpg://USER:PASS@HOST.oregon-postgres.render.com/DB" \
+    TARGET_DATABASE_URL="$ADHOC_DATABASE_URL" \
         ./venv/Scripts/python.exe scripts/migrate_sqlite_to_postgres.py
 
 Safety:

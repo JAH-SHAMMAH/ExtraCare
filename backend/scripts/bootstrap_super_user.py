@@ -4,10 +4,10 @@ Bootstrap Super User account for Fairview School organization.
 Runs locally from your machine, connects to the remote database via connection string.
 
 Usage (dry-run):
-    python scripts/bootstrap_super_user.py "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python scripts/bootstrap_super_user.py "$ADHOC_DATABASE_URL"
 
 Usage (write):
-    python scripts/bootstrap_super_user.py "postgresql+asyncpg://user:pass@host/db?ssl=require" --write
+    python scripts/bootstrap_super_user.py "$ADHOC_DATABASE_URL" --write
 """
 from __future__ import annotations
 

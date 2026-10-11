@@ -3,7 +3,7 @@ Check which tables/columns currently use a given Postgres enum type,
 and list all enum types already present in the database.
 
 Usage:
-    python -m scripts.check_enum_collision "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python -m scripts.check_enum_collision "$ADHOC_DATABASE_URL"
 """
 import asyncio
 import sys

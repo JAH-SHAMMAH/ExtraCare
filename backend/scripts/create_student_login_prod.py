@@ -3,33 +3,35 @@
 Create student login account in PRODUCTION Postgres database.
 
 Usage:
-  python scripts/create_student_login_prod.py "email@fairviewschoolng.com" "postgresql://user:pass@host/db"
+  $env:ADHOC_DATABASE_URL = "<address>"   # or leave unset and it prompts
+  python scripts/create_student_login_prod.py "email@fairviewschoolng.com" "$ADHOC_DATABASE_URL"
 
 Example:
   python scripts/create_student_login_prod.py "abebi.abioye@fairviewschoolng.com" \
-    "postgresql://school_db_onyz_user:YkbhMJcvMDVWUmqS0k1kaLF837WclhIK@dpg-d9clkl9kh4rs73cv3lq0-a.ohio-postgres.render.com/school_db_onyz"
+    "$ADHOC_DATABASE_URL"
 
 The password is printed to terminal ONLY — never stored in git or any file.
 """
 
 import sys
 import asyncio
+
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from _dsn import dsn
 import secrets
 import string
 from datetime import datetime
 import bcrypt
 
 async def main():
-    if len(sys.argv) < 3:
-        print("usage: python scripts/create_student_login_prod.py <email> <postgresql_url>")
-        print("")
-        print("Example:")
-        print("  python scripts/create_student_login_prod.py abebi.abioye@fairviewschoolng.com \\")
-        print("    'postgresql://user:pass@host/db'")
+    if len(sys.argv) < 2:
+        print("usage: python scripts/create_student_login_prod.py <email>")
+        print("       the address comes from ADHOC_DATABASE_URL, or a prompt")
         return 2
 
     student_email = sys.argv[1].strip().lower()
-    database_url = sys.argv[2].strip()
+    database_url = dsn()
 
     try:
         import asyncpg

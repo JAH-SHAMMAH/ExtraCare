@@ -3,7 +3,7 @@ Compare ALL ORM models against their live database tables, reporting any
 column that exists on a model but not in the corresponding table.
 
 Usage:
-    python -m scripts.compare_all_schemas "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python -m scripts.compare_all_schemas "$ADHOC_DATABASE_URL"
 """
 import asyncio
 import sys

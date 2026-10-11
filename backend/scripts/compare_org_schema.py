@@ -2,7 +2,7 @@
 Compare the Organization ORM model against the live organizations table.
 
 Usage:
-    python scripts/compare_org_schema.py "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python scripts/compare_org_schema.py "$ADHOC_DATABASE_URL"
 """
 import asyncio
 import sys

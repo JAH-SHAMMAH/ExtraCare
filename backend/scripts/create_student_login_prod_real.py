@@ -1,6 +1,10 @@
 ﻿#!/usr/bin/env python3
 import sys
 import asyncio
+
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from _dsn import dsn
 import secrets
 import string
 from datetime import datetime
@@ -8,12 +12,12 @@ import bcrypt
 import asyncpg
 
 async def main():
-    if len(sys.argv) < 3:
-        print("usage: create_student_login_prod_real.py <email> <postgresql_url>")
+    if len(sys.argv) < 2:
+        print("usage: create_student_login_prod_real.py <email> ")
         return 2
 
     student_email = sys.argv[1].strip().lower()
-    database_url = sys.argv[2].strip().split("?")[0]
+    database_url = dsn().split("?")[0]
 
     conn = await asyncpg.connect(database_url, ssl="require")
 

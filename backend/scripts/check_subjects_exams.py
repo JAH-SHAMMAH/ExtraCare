@@ -2,7 +2,7 @@
 Check whether Subject, CBTExam, GradingScale rows exist for Fairview.
 
 Usage:
-    python -m scripts.check_subjects_exams "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python -m scripts.check_subjects_exams "$ADHOC_DATABASE_URL"
 """
 import asyncio
 import sys

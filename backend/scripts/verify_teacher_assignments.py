@@ -3,7 +3,7 @@ Verify that each school class's teacher_id matches the intended teacher
 for its year group.
 
 Usage:
-    python -m scripts.verify_teacher_assignments "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python -m scripts.verify_teacher_assignments "$ADHOC_DATABASE_URL"
 """
 import asyncio
 import sys

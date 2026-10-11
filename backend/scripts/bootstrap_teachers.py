@@ -6,10 +6,10 @@ records read cleanly. Update to actual staff details when available.
 Runs locally from your machine, connects to the remote database via connection string.
 
 Usage (dry-run):
-    python -m scripts.bootstrap_teachers "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python -m scripts.bootstrap_teachers "$ADHOC_DATABASE_URL"
 
 Usage (write):
-    python -m scripts.bootstrap_teachers "postgresql+asyncpg://user:pass@host/db?ssl=require" --write
+    python -m scripts.bootstrap_teachers "$ADHOC_DATABASE_URL" --write
 """
 from __future__ import annotations
 

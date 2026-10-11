@@ -6,10 +6,10 @@ Bootstrap 450 student records + login accounts for Fairview School:
 Runs locally from your machine, connects to the remote database via connection string.
 
 Usage (dry-run):
-    python -m scripts.bootstrap_students "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python -m scripts.bootstrap_students "$ADHOC_DATABASE_URL"
 
 Usage (write):
-    python -m scripts.bootstrap_students "postgresql+asyncpg://user:pass@host/db?ssl=require" --write
+    python -m scripts.bootstrap_students "$ADHOC_DATABASE_URL" --write
 """
 from __future__ import annotations
 

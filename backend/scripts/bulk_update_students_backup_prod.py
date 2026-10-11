@@ -1,15 +1,19 @@
 ﻿#!/usr/bin/env python3
 import sys
 import asyncio
+
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from _dsn import dsn
 import csv
 from datetime import datetime
 
 async def main():
-    if len(sys.argv) < 2:
-        print("usage: python scripts/bulk_update_students_backup_prod.py '<postgresql_url>'")
+    if len(sys.argv) < 1:
+        print("usage: python scripts/bulk_update_students_backup_prod.py ''")
         return 2
 
-    database_url = sys.argv[1].strip().split("?")[0]
+    database_url = dsn().split("?")[0]
 
     import asyncpg
 

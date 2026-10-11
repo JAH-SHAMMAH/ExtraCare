@@ -85,9 +85,10 @@ async def _section_id(db, org_id: str, prefer: str) -> str:
 
 
 
-DEMO_PASSWORD = "DemoPass123!"
-
-
+DEMO_PASSWORD = "DemoPass123!"  # pragma: allowlist-secret -- shared SEED/DEMO account password,
+# known by design and documented as such. It still grants access to the
+# seeded accounts, so it is listed in the credential-exposure report and
+# must be changed if these accounts ever outlive the demo data.
 @dataclass
 class DemoOrg:
     slug: str

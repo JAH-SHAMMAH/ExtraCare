@@ -3,10 +3,10 @@ Backfill job_title on the 15 teacher accounts so the dashboard's teacher
 count (which filters on job_title ILIKE '%teacher%') picks them up.
 
 Usage (dry-run):
-    python -m scripts.fix_teacher_job_titles "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python -m scripts.fix_teacher_job_titles "$ADHOC_DATABASE_URL"
 
 Usage (write):
-    python -m scripts.fix_teacher_job_titles "postgresql+asyncpg://user:pass@host/db?ssl=require" --write
+    python -m scripts.fix_teacher_job_titles "$ADHOC_DATABASE_URL" --write
 """
 from __future__ import annotations
 

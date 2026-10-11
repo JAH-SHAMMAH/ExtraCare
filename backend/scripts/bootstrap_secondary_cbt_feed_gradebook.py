@@ -12,10 +12,10 @@ as EXAM grades (subject to the standard 40/60 CA/EXAM weighting).
 Runs locally from your machine, connects to the remote database via connection string.
 
 Usage (dry-run):
-    python -m scripts.bootstrap_secondary_cbt_feed_gradebook "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python -m scripts.bootstrap_secondary_cbt_feed_gradebook "$ADHOC_DATABASE_URL"
 
 Usage (write):
-    python -m scripts.bootstrap_secondary_cbt_feed_gradebook "postgresql+asyncpg://user:pass@host/db?ssl=require" --write
+    python -m scripts.bootstrap_secondary_cbt_feed_gradebook "$ADHOC_DATABASE_URL" --write
 """
 from __future__ import annotations
 

@@ -123,7 +123,7 @@ nginx enforces HTTPS (HTTP→HTTPS redirect), HSTS, and standard security header
 ## 5. Database
 Production uses MySQL 8 / TiDB (driver `aiomysql`, in `requirements.txt`).
 `docker-compose.prod.yml` bundles a `db` service; for a managed TiDB/RDS set
-`DATABASE_URL=mysql+aiomysql://user:pass@host:port/fairview` and drop the `db`
+`DATABASE_URL=mysql+aiomysql://<user>:<password>@host:port/fairview` and drop the `db`
 service. (PostgreSQL: swap to `asyncpg` and `postgresql+asyncpg://…`.)
 
 **Migrations on Render: NOT automatic — see §0.** `entrypoint.sh` would run

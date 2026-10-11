@@ -2,7 +2,7 @@
 Check whether director@fairviewschoolng.com already exists (partial write check).
 
 Usage:
-    python scripts/check_partial_write.py "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python scripts/check_partial_write.py "$ADHOC_DATABASE_URL"
 """
 import asyncio
 import sys

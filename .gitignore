@@ -44,7 +44,25 @@ uploads/
 !.env.production.example
 *.pem
 *.key
+*.pfx
+*.p12
+*.ppk
+id_rsa
+id_ed25519
 certs/
+
+# Credential dumps produced by the scripts in backend/scripts/.
+#
+# `student_credentials_output.csv` -- 450 rows of (student_id, email,
+# temp_password) -- was committed on 2026-08-23 and sat in a PUBLIC repository
+# for seven weeks. These rules are deliberately broad and anchored nowhere, so a
+# file like it cannot be committed from any directory in the tree.
+*credential*.csv
+*credentials*.json
+*_passwords.csv
+*password*.csv
+*_logins.csv
+*temp_password*
 
 # ── Logs / temp ──────────────────────────────────────────────────────────────
 *.log

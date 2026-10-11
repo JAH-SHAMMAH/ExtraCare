@@ -1,0 +1,26 @@
+#!/bin/sh
+# Refuse a commit that carries a credential. See tools/scan_secrets.py for why.
+#
+# ENABLE THIS ONCE PER CLONE -- git will not do it for you:
+#     git config core.hooksPath .githooks
+#
+# It scans STAGED content only, so it is fast enough to run on every commit.
+# It prints the file and line but never the value: a hook that echoed the secret
+# would copy it into the terminal scrollback, the shell history and any CI log,
+# turning a prevented leak into a second one.
+#
+# To bypass deliberately: git commit --no-verify  (and say why in the message).
+
+set -e
+
+if command -v python >/dev/null 2>&1; then
+    PY=python
+elif command -v python3 >/dev/null 2>&1; then
+    PY=python3
+else
+    echo "pre-commit: no python on PATH, cannot run the secret scan." >&2
+    echo "pre-commit: install python, or commit with --no-verify and scan by hand." >&2
+    exit 1
+fi
+
+exec "$PY" tools/scan_secrets.py

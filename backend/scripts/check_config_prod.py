@@ -5,18 +5,19 @@ Check the ACTUAL deployed backend config in production.
 Shows whether ALLOWED_STUDENT_EMAIL_DOMAIN is active or reverted.
 
 Usage:
-  python scripts/check_config_prod.py "postgresql://user:pass@host/db"
+  $env:ADHOC_DATABASE_URL = "<address>"   # or leave unset and it prompts
+  python scripts/check_config_prod.py
 """
 
 import sys
 import asyncio
 
-async def main():
-    if len(sys.argv) < 2:
-        print("usage: python scripts/check_config_prod.py '<postgresql_url>'")
-        return 2
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from _dsn import dsn
 
-    database_url = sys.argv[1].strip()
+async def main():
+    database_url = dsn()
 
     try:
         import asyncpg

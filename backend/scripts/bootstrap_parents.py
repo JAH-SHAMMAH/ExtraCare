@@ -17,10 +17,10 @@ Idempotent: students who already have a guardian are skipped, and an email that
 already exists is disambiguated with a numeric suffix.
 
 Usage (dry-run):
-    python -m scripts.bootstrap_parents "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python -m scripts.bootstrap_parents "$ADHOC_DATABASE_URL"
 
 Usage (write):
-    python -m scripts.bootstrap_parents "postgresql+asyncpg://user:pass@host/db?ssl=require" --write
+    python -m scripts.bootstrap_parents "$ADHOC_DATABASE_URL" --write
 """
 from __future__ import annotations
 

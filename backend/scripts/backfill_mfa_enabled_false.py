@@ -2,12 +2,16 @@
 import sys
 import asyncio
 
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from _dsn import dsn
+
 async def main():
-    if len(sys.argv) < 2:
-        print("usage: python backfill_mfa_enabled_false.py '<postgresql_url>'")
+    if len(sys.argv) < 1:
+        print("usage: python backfill_mfa_enabled_false.py ''")
         return 2
 
-    database_url = sys.argv[1].strip().split("?")[0]
+    database_url = dsn().split("?")[0]
     import asyncpg
     conn = await asyncpg.connect(database_url, ssl="require")
 

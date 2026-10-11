@@ -56,7 +56,7 @@ gunzip -c fairview-<ts>.sql.gz | mysql -h <host> -P 3306 -u <user> -p <database>
 
 **PostgreSQL**
 ```bash
-pg_restore --clean --no-owner --dbname "postgresql://<user>:<pw>@<host>:5432/<db>" fairview-<ts>.dump
+pg_restore --clean --no-owner --dbname "$ADHOC_DATABASE_URL" fairview-<ts>.dump
 ```
 
 After restore, run `alembic current` to confirm the schema revision, then smoke-test `/health` and a login.

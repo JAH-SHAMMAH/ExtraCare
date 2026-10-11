@@ -13,10 +13,10 @@ Idempotent: an existing account for either email is reported and left untouched,
 so a re-run never resets a password someone is already using.
 
 Usage (dry-run):
-    python -m scripts.bootstrap_staff_accounts "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python -m scripts.bootstrap_staff_accounts "$ADHOC_DATABASE_URL"
 
 Usage (write):
-    python -m scripts.bootstrap_staff_accounts "postgresql+asyncpg://user:pass@host/db?ssl=require" --write
+    python -m scripts.bootstrap_staff_accounts "$ADHOC_DATABASE_URL" --write
 """
 from __future__ import annotations
 

@@ -15,7 +15,7 @@ no soft-delete column - so every row counts.
 Read-only by construction: SELECTs only, no transaction, no writes. Safe to run
 against production.
 
-    python scripts/check_class_teachers.py "postgresql://user:pass@host/db"
+    python scripts/check_class_teachers.py "$ADHOC_DATABASE_URL"
 
 or set DATABASE_URL. A +asyncpg:// or postgresql+asyncpg:// URL is accepted and
 normalised — asyncpg wants the bare scheme.

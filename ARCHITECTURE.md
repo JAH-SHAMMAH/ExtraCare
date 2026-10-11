@@ -243,7 +243,7 @@ docker compose up -d
 
 ### Upgrade to TiDB/MySQL (when ready to scale)
 ```
-DATABASE_URL=mysql+aiomysql://root:password@tidb-host:4000/extracare
+DATABASE_URL=mysql+aiomysql://<user>:<password>@tidb-host:4000/extracare
 ```
 Zero other code changes needed.
 

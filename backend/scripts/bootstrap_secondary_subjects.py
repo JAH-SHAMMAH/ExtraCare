@@ -13,10 +13,10 @@ for placeholder data; real schools split JSS core vs SSS electives/streams.
 Runs locally from your machine, connects to the remote database via connection string.
 
 Usage (dry-run):
-    python -m scripts.bootstrap_secondary_subjects "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python -m scripts.bootstrap_secondary_subjects "$ADHOC_DATABASE_URL"
 
 Usage (write):
-    python -m scripts.bootstrap_secondary_subjects "postgresql+asyncpg://user:pass@host/db?ssl=require" --write
+    python -m scripts.bootstrap_secondary_subjects "$ADHOC_DATABASE_URL" --write
 """
 from __future__ import annotations
 

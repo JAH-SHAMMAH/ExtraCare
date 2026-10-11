@@ -1,15 +1,21 @@
-﻿import asyncio
+import asyncio
+import secrets
 import asyncpg
 import bcrypt
+from _dsn import dsn
 
 async def main():
     conn = await asyncpg.connect(
-        "postgresql://school_db_onyz_user:YkbhMJcvMDVWUmqS0k1kaLF837WclhIK@dpg-d9clkl9kh4rs73cv3lq0-a.ohio-postgres.render.com/school_db_onyz",
+        dsn(),
         ssl="require"
     )
 
     # Set a known, fresh password
-    test_password = "TestPassword123!"
+    # GENERATED, never committed. This script used to carry the literal
+    # password it set, so the account it reset was readable by anyone with the
+    # repository. It is printed once below and stored nowhere -- the same
+    # convention scripts/create_student_login_prod.py already documents.
+    test_password = secrets.token_urlsafe(12)
     new_hash = bcrypt.hashpw(test_password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
 
     await conn.execute(

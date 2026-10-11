@@ -21,10 +21,10 @@ Matches bands by grade letter within each numeric grading scale, so it is safe t
 re-run and it leaves descriptor scales (EYFS etc.) untouched. Idempotent.
 
 Usage (dry-run):
-    python -m scripts.fix_grading_remarks "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python -m scripts.fix_grading_remarks "$ADHOC_DATABASE_URL"
 
 Usage (write):
-    python -m scripts.fix_grading_remarks "postgresql+asyncpg://user:pass@host/db?ssl=require" --write
+    python -m scripts.fix_grading_remarks "$ADHOC_DATABASE_URL" --write
 """
 from __future__ import annotations
 

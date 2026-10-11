@@ -5,10 +5,10 @@ year group's school classes.
 Runs locally from your machine, connects to the remote database via connection string.
 
 Usage (dry-run):
-    python -m scripts.assign_teachers_to_classes "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python -m scripts.assign_teachers_to_classes "$ADHOC_DATABASE_URL"
 
 Usage (write):
-    python -m scripts.assign_teachers_to_classes "postgresql+asyncpg://user:pass@host/db?ssl=require" --write
+    python -m scripts.assign_teachers_to_classes "$ADHOC_DATABASE_URL" --write
 """
 from __future__ import annotations
 

@@ -3,7 +3,7 @@ Replicate the dashboard's exact student/teacher count queries directly,
 to see what the numbers actually are and why they might show as zero.
 
 Usage:
-    python -m scripts.diagnose_dashboard_counts "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    python -m scripts.diagnose_dashboard_counts "$ADHOC_DATABASE_URL"
 """
 import asyncio
 import sys
