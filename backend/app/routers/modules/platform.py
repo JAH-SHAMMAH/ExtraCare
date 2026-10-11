@@ -106,6 +106,7 @@ from app.services.report_engine import (
     evaluate_cumulative, is_fully_marked, round_dp, sessional_average,
 )
 from app.services.attendance_summary import term_attendance
+from app.services.ranking import dense_positions, position_of, tied_positions
 from app.services.session_scope import (
     ANY_LEVEL, level_matches, load_session_setup, load_term_setup,
     session_or_current,
@@ -3139,9 +3140,18 @@ async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
             total=round_dp(total, 2), average=round_dp(average, 2), grade=_grade_for(average, bands) if n else None,
         ))
 
-    rows_out.sort(key=lambda r: r.total, reverse=True)
-    for i, r in enumerate(rows_out, start=1):
-        r.position = i
+    # Dense position by AVERAGE, shared with the card and the Order of Merit --
+    # see services/ranking.py. This used to number the rows 1..n after sorting by
+    # TOTAL, which gave a pupil a different position here than on their own card,
+    # and ranked a nine-subject pupil above a seven-subject one on identical
+    # performance. Rows with no marks keep position 0 rather than being placed
+    # last: `grade` is already None for them.
+    positions = dense_positions({r.student_id: (r.average if r.grade else None)
+                                 for r in rows_out})
+    rows_out.sort(key=lambda r: (-(positions.get(r.student_id) or 10**9),
+                                 r.student_name.lower()))
+    for r in rows_out:
+        r.position = positions.get(r.student_id, 0)
 
     return BroadsheetResponse(
         class_id=class_id, class_name=cls.name, term_name=term_name, sub_term_name=sub_name,
@@ -3304,6 +3314,9 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     # the pupil's own `average` below (which is a mean of percentages, not of raw
     # display values). Reuses this same pass rather than re-querying the class.
     peer_averages: list = []
+    # Keyed as well as listed: the list feeds the class average, the mapping
+    # feeds the pupil's position. Both come from this one pass.
+    peer_average_by_student: dict[str, object] = {}
     for st in classmates:
         tot = money(0)
         p_sum = money(0)
@@ -3319,8 +3332,13 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         totals[st.id] = tot
         if p_n:
             peer_averages.append(p_sum / p_n)
-    ranking = sorted(classmates, key=lambda s: totals.get(s.id, money(0)), reverse=True)
-    position = next((i for i, s in enumerate(ranking, start=1) if s.id == student_id), 0)
+            peer_average_by_student[st.id] = p_sum / p_n
+    # Dense position by average, the same function the broadsheet uses, so a
+    # pupil's card and their class's broadsheet cannot disagree about where they
+    # came. Previously this sorted classmates by TOTAL and took the index, which
+    # is ordinal ranking -- two pupils with the same average printed 5th and 6th.
+    # An unmarked classmate is absent from the mapping and so is not ranked.
+    position = position_of(student_id, peer_average_by_student)
 
     # This pupil's detailed rows.
     subj_rows: list[CardSubjectRow] = []
@@ -4615,11 +4633,15 @@ async def order_of_merit(term_id: str, sub_term_id: str, class_id: str | None = 
                          current_user: User = Depends(get_current_active_user)):
     """Pupils ranked by average, best first.
 
-    STANDARD COMPETITION RANKING (1, 2, 2, 4). Two pupils with the same average
-    are the same position, and the next pupil takes the position their count
-    implies — printing equal averages as 2nd and 3rd would assert an order the
-    marks do not contain. Educare's own convention is unverified; if it uses dense
-    ranking (1, 2, 2, 3) this is the one place to change.
+    DENSE RANKING (1, 2, 2, 3), via services/ranking.py. This used standard
+    competition ranking (1, 2, 2, 4) and said so: "Educare's own convention is
+    unverified; if it uses dense ranking (1, 2, 2, 3) this is the one place to
+    change." The saved Secondary report settles it — two pupils tie at 88.80 and
+    BOTH print "5th", with the next distinct average at "6th", where competition
+    ranking would have printed "7th". So this is that change.
+
+    Two equal averages are still the same position; what changed is that the
+    pupil after them is no longer skipped past.
 
     An UNMARKED pupil is never ranked. Their standing is unknown, not last, and a
     merit list that placed them would be inventing a result for a child.
@@ -4636,23 +4658,20 @@ async def order_of_merit(term_id: str, sub_term_id: str, class_id: str | None = 
     marked = [p for p in analysis.pupils if p.average is not None]
     marked.sort(key=lambda p: (-p.average, (p.student_name or "").lower()))
 
+    # Compared at the PRINTED precision, which the old code did not do: it tested
+    # `p.average == marked[i-1].average` on the RAW value, so two averages that
+    # both display as 88.80 while differing in the fourth decimal were ranked 5th
+    # and 6th -- two identical printed numbers in different places.
+    positions = dense_positions({p.student_id: p.average for p in marked})
+    shared = tied_positions(positions)
     rows: list[MeritRow] = []
-    position = 0
-    for i, p in enumerate(marked):
-        if i and p.average == marked[i - 1].average:
-            pass                      # same average -> same position as the one above
-        else:
-            position = i + 1          # competition ranking: skip the shared places
+    for p in marked:
+        pos = positions.get(p.student_id, 0)
         rows.append(MeritRow(
-            position=position, student_id=p.student_id, student_name=p.student_name,
+            position=pos, student_id=p.student_id, student_name=p.student_name,
             admission_no=p.admission_no, class_name=p.class_name,
             average=round_dp(p.average, 2), grade=p.grade,
-            subjects_counted=p.subjects_counted))
-    counts: dict[int, int] = {}
-    for r in rows:
-        counts[r.position] = counts.get(r.position, 0) + 1
-    for r in rows:
-        r.tied = counts[r.position] > 1
+            subjects_counted=p.subjects_counted, tied=pos in shared))
 
     return OrderOfMeritResponse(
         term_name=analysis.term_name, sub_term_name=analysis.sub_term_name,

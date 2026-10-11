@@ -1543,9 +1543,10 @@ class MeritRow(BaseModel):
     average: Decimal
     grade: Optional[str] = None
     subjects_counted: int = 0
-    # True when this pupil shares their position with another. Standard
-    # competition ranking (1, 2, 2, 4) — two equal averages are equal, and
-    # printing them as 2nd and 3rd would assert an order the marks do not contain.
+    # True when this pupil shares their position with another. DENSE ranking
+    # (1, 2, 2, 3) — two equal averages are equal, and the pupil after them is
+    # not skipped past, which is what Educare's own cards print. The ranking
+    # itself lives in services/ranking.py.
     tied: bool = False
 
 
