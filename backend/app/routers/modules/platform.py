@@ -825,15 +825,105 @@ async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_us
                 f"individually under Report Setup instead."
             ),
         )
-    existing_secs = {s.name.casefold(): s for s in (await db.execute(select(SchoolSection).where(SchoolSection.org_id == org_id))).scalars().all()}
+    all_secs = list((await db.execute(select(SchoolSection).where(
+        SchoolSection.org_id == org_id))).scalars().all())
+    existing_secs = {s.name.casefold(): s for s in all_secs}
     existing_scales = {s.name.casefold(): s for s in (await db.execute(select(GradingScale).where(GradingScale.org_id == org_id))).scalars().all()}
 
+    # ── which EXISTING section is which, WITHOUT relying on its name ─────────
+    #
+    # THE BUG THIS REPLACES. `ensure_section` found an existing section by
+    # `existing_secs[name.casefold()]`. Rename the "Primary" row to "Junior" --
+    # which is what Educare calls it, and what the sidebar now displays -- and
+    # the next run of this endpoint finds no "Primary", creates a SECOND one,
+    # and this endpoint's own guard above states the consequence: two sections
+    # make "the report card resolve between them arbitrarily, which can change
+    # every pupil's grade."
+    #
+    # Identity now comes from the data, in this order:
+    #
+    #   1. CURRICULUM, for EYFS. There is at most one EYFS section, and the
+    #      guard above refuses to run when an org has two. This is already the
+    #      convention: `seed_domains` keys EYFS detection on curriculum, not
+    #      name, and says so.
+    #
+    #   2. THE YEAR GROUPS OF THE CLASSES ALREADY ASSIGNED TO IT. Primary's
+    #      twelve classes carry levels Year 1..Year 6; Secondary's carry
+    #      Year 7..Year 12. The alias list this function is called with is
+    #      exactly that set, so the overlap identifies the section whatever it
+    #      is called.
+    #
+    #      Second rather than third because MEASUREMENT SAYS SO: production's
+    #      Primary and Secondary rows both hold `level_aliases = NULL` -- only
+    #      Early Years has them -- so matching on stored aliases would fail for
+    #      the exact pair that needs it. The classes are where the evidence is.
+    #
+    #   3. STORED level_aliases, for an org that does have them populated.
+    #
+    #   4. The name, case-folded: the original behaviour, kept as the last
+    #      resort so a bare pre-existing section still matches on a first run.
+    #
+    # AMBIGUITY IS REFUSED, NOT GUESSED. Two sections tying on overlap resolves
+    # to None and falls through, because picking one would be exactly the
+    # arbitrary resolution this guard exists to prevent.
+    #
+    # A `slug` column would reduce this to one exact comparison and is the right
+    # long-term answer. It needs a migration, so this phase does the job with
+    # what is already on the row.
+    cls_rows = (await db.execute(select(SchoolClass).where(
+        SchoolClass.org_id == org_id,
+        SchoolClass.section_id.isnot(None)))).scalars().all()
+    levels_by_section: dict[str, set[str]] = {}
+    for c in cls_rows:
+        key = _norm_level(getattr(c, "level", None))
+        if key:
+            levels_by_section.setdefault(c.section_id, set()).add(key)
+
+    def _best_overlap(candidates, wanted: set[str]):
+        """The one section whose classes overlap `wanted` most, else None.
+
+        None for a tie, and None for no overlap at all -- see AMBIGUITY above.
+        """
+        scored = [(len(wanted & levels_by_section.get(s.id, set())), s)
+                  for s in candidates]
+        scored = [t for t in scored if t[0]]
+        if not scored:
+            return None
+        scored.sort(key=lambda t: -t[0])
+        if len(scored) > 1 and scored[0][0] == scored[1][0]:
+            return None
+        return scored[0][1]
+
+    def _resolve_existing(name, curriculum, aliases):
+        wanted = {_norm_level(a) for a in _clean_aliases(aliases)}
+        is_eyfs = (curriculum or "").casefold() == "eyfs"
+
+        if is_eyfs:
+            eyfs = [s for s in all_secs if (s.curriculum or "").casefold() == "eyfs"]
+            if len(eyfs) == 1:
+                return eyfs[0]
+
+        pool = all_secs if is_eyfs else [
+            s for s in all_secs if (s.curriculum or "").casefold() != "eyfs"]
+
+        by_classes = _best_overlap(pool, wanted)
+        if by_classes is not None:
+            return by_classes
+
+        by_aliases = [s for s in pool
+                      if wanted & {_norm_level(a) for a in (s.level_aliases or [])}]
+        if len(by_aliases) == 1:
+            return by_aliases[0]
+
+        return existing_secs.get(name.casefold())
+
     def ensure_section(name, curriculum, pos, aliases):
-        s = existing_secs.get(name.casefold())
+        s = _resolve_existing(name, curriculum, aliases)
         if not s:
             s = SchoolSection(name=name, curriculum=curriculum, position=pos,
                               level_aliases=_clean_aliases(aliases) or None, org_id=org_id)
             db.add(s)
+            all_secs.append(s)
             existing_secs[name.casefold()] = s
         elif not s.level_aliases:
             s.level_aliases = _clean_aliases(aliases) or None   # backfill aliases onto a pre-existing bare section
