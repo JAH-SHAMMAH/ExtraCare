@@ -213,8 +213,17 @@ async def test_rating_rejects_an_unknown_term(db, org, school_class, student, te
 async def test_ratings_write_is_reports_scope_not_held_by_parent(db, org):
     # Enforcement rides the route dependency (school:reports:write); assert the
     # preset boundary the guard relies on — a parent can read but never author.
+    #
+    # The READ half is now `school:reports:own:read`. It used to assert
+    # `school:reports:read`, which is the STAFF scope -- the one that also opens
+    # /report-cards-bulk (a whole class's cards, no ownership check) and put
+    # three staff report groups in a parent's sidebar. The intent of this test
+    # was always "can read, cannot author", and that is unchanged; only the name
+    # of the read scope moved.
     parent = await _preset_user(db, org, "parent")
-    assert parent.has_permission("school:reports:read")
+    assert parent.has_permission("school:reports:own:read")
+    assert not parent.has_permission("school:reports:read"), (
+        "a parent must not hold the staff report scope")
     assert not parent.has_permission("school:reports:write")
 
 
