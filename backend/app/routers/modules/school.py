@@ -32,7 +32,7 @@ from app.schemas.attendance_config import (
 )
 from app.services.attendance import default_late_after
 from app.core.tenant import require_role_module
-from app.core.permissions import PermissionChecker
+from app.core.permissions import PermissionChecker, AnyPermissionChecker
 from app.core.school_identity import teacher_identity_filter
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
@@ -75,6 +75,18 @@ _can_write = Depends(PermissionChecker("school:write"))
 # unaffected; students and parents reach them with their narrow grants, and the
 # per-record ownership check below stops them seeing anyone else's data.
 _reports_read = Depends(PermissionChecker("school:reports:read"))
+# The PAGE's report-card endpoint takes this instead, because a parent and a
+# pupil hold `school:reports:own:read` and nothing wider. Safe to widen because
+# the handler scopes itself per student: `_ensure_student_visible` refuses a
+# pupil the caller is not linked to, and `see_drafts` (keyed on
+# school:students:read) keeps a non-staff caller to PUBLISHED marks in a term
+# the school has signed off.
+#
+# Widening the GATE here, rather than re-granting `school:reports:read`, is the
+# whole point: that scope also opens /report-cards-bulk, which answers for a
+# whole class and has no ownership check of its own.
+_reports_read_or_own = Depends(AnyPermissionChecker(
+    "school:reports:read", "school:reports:own:read"))
 _reports_write = Depends(PermissionChecker("school:reports:write"))  # authoring report comments/attendance (staff)
 _attendance_read = Depends(PermissionChecker("school:attendance:read"))
 _lessons_read = Depends(PermissionChecker("school:lessons:read"))
@@ -1301,7 +1313,7 @@ async def _report_scope(db, org_id, term_name: str | None):
     return term_id, await resolve_session_id(db, org_id)
 
 
-@router.get("/students/{student_id}/report-card", dependencies=[_reports_read])
+@router.get("/students/{student_id}/report-card", dependencies=[_reports_read_or_own])
 async def get_report_card(
     student_id: str,
     term: str | None = None,
