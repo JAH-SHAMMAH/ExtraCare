@@ -215,6 +215,7 @@ DEFAULT_HONOURS = Decimal("80")
 
 async def resolve_thresholds(
     db: AsyncSession, org_id: str, sub_term_name: str | None,
+    section_id: str | None = None,
 ) -> tuple[Decimal, Decimal, str]:
     """(passmark, honours, source) from ReportBranding.
 
@@ -227,10 +228,9 @@ async def resolve_thresholds(
     a report can say which it used. A pupil listed as failing against a threshold
     nobody set is the kind of thing that should be visible on the page.
     """
-    from app.models.modules.platform import ReportBranding
+    from app.services.report_branding import get_branding_row
 
-    br = (await db.execute(select(ReportBranding).where(
-        ReportBranding.org_id == org_id))).scalars().first()
+    br, _inherited = await get_branding_row(db, org_id, section_id)
     if not br:
         return DEFAULT_PASSMARK, DEFAULT_HONOURS, "default"
 

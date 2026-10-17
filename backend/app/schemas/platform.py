@@ -387,6 +387,8 @@ class BrandingUpdate(BaseModel):
 
 class BrandingResponse(BrandingUpdate):
     id: Optional[str] = None
+    section_id: Optional[str] = None
+    inherited: bool = False     # True: this section has no row of its own; showing the default
 
 
 class ReportTemplateCreate(BaseModel):

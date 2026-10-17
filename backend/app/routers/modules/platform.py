@@ -675,11 +675,12 @@ async def delete_scale(scale_id: str, db: AsyncSession = Depends(get_db), curren
 
 # ── Secondary Report S-1b: School Motto, Seal & Sponsor (report branding) ────
 
-def _branding_response(b: ReportBranding | None) -> BrandingResponse:
+def _branding_response(b: ReportBranding | None, inherited: bool = False) -> BrandingResponse:
     if not b:
         return BrandingResponse()
     return BrandingResponse(
-        id=b.id, school_motto=b.school_motto, school_name_alias=b.school_name_alias,
+        id=b.id, section_id=b.section_id, inherited=inherited,
+        school_motto=b.school_motto, school_name_alias=b.school_name_alias,
         school_address=b.school_address, school_website=b.school_website, school_email=b.school_email,
         school_phone=b.school_phone, class_teacher_title=b.class_teacher_title,
         school_head_title=b.school_head_title, school_head_name=b.school_head_name,
@@ -691,16 +692,27 @@ def _branding_response(b: ReportBranding | None) -> BrandingResponse:
 
 
 @router.get("/report-branding", response_model=BrandingResponse, dependencies=[_school_or_own_read])
-async def get_report_branding(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    b = (await db.execute(select(ReportBranding).where(ReportBranding.org_id == current_user.org_id))).scalar_one_or_none()
-    return _branding_response(b)
+async def get_report_branding(section_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """The letterhead for a section if given (its own row, else the school default,
+    with inherited=true), otherwise the school-wide default."""
+    from app.services.report_branding import get_branding_row
+    b, inherited = await get_branding_row(db, current_user.org_id, section_id)
+    return _branding_response(b, inherited)
 
 
 @router.put("/report-branding", response_model=BrandingResponse, dependencies=[_write])
-async def update_report_branding(payload: BrandingUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    b = (await db.execute(select(ReportBranding).where(ReportBranding.org_id == current_user.org_id))).scalar_one_or_none()
+async def update_report_branding(payload: BrandingUpdate, section_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Saves the school default, or, with ?section_id=, that section's own row.
+    A new section row starts empty; unset fields fall through to nothing, not to
+    the default, so copy what you want to keep."""
+    if section_id:
+        await _require_section(db, section_id, current_user.org_id)
+    b = (await db.execute(select(ReportBranding).where(
+        ReportBranding.org_id == current_user.org_id,
+        ReportBranding.section_id == section_id if section_id else ReportBranding.section_id.is_(None),
+    ))).scalars().first()
     if not b:
-        b = ReportBranding(org_id=current_user.org_id)
+        b = ReportBranding(org_id=current_user.org_id, section_id=section_id)
         db.add(b)
     for f, v in payload.model_dump(exclude_unset=True).items():
         setattr(b, f, v)
@@ -3352,7 +3364,9 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
             raise HTTPException(status_code=403, detail="You do not teach in this academic section.")
     term_name = (await db.execute(select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org))).scalar_one_or_none()
     sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
-    branding = _branding_response((await db.execute(select(ReportBranding).where(ReportBranding.org_id == org))).scalar_one_or_none())
+    from app.services.report_branding import get_branding_row
+    _br, _inh = await get_branding_row(db, org, cls.section_id if cls else None)
+    branding = _branding_response(_br, _inh)
 
     # Config: assessments + cumulatives for the (session, term), scoped to this
     # pupil's year group; the columns for this sub-term.

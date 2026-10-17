@@ -85,7 +85,7 @@ async def main() -> int:
             sys.exit("No academic terms found — cannot resolve the organisation.")
 
         # ── 1. thresholds ─────────────────────────────────────────────────────
-        br = (await db.execute(select(ReportBranding).where(ReportBranding.org_id == org_id))).scalars().first()
+        br = (await db.execute(select(ReportBranding).where(ReportBranding.org_id == org_id, ReportBranding.section_id.is_(None)))).scalars().first()
         if br:
             print("thresholds  = report_branding row exists; updating the three values:")
             for k, v in THRESHOLDS.items():
