@@ -164,7 +164,8 @@ export function Card({ card, num }: { card: any; num: (v: any) => any }) {
   return (
     <>
       <div className="flex items-center gap-4 border-b-2 border-[#2f5f1f] pb-3">
-        {b.logo_url ? <img src={b.logo_url} alt="School logo" className="w-20 h-20 object-contain shrink-0" /> : <div className="w-20 h-20 shrink-0" />}
+        {/* Saved letterhead logo, else the school crest the portal itself ships. */}
+        <img src={b.logo_url || "/logo-square.png"} alt="School logo" className="w-20 h-20 object-contain shrink-0" />
         <div className="flex-1 text-center">
           <h2 className="text-xl font-black tracking-tight">{b.school_name_alias || "SCHOOL REPORT"}</h2>
           {b.school_address && <p className="text-[11px] text-slate-600">{b.school_address}</p>}

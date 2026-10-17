@@ -67,7 +67,7 @@ describe("report card templates", () => {
     expect(screen.getByText("Learning Areas")).toBeTruthy();
     expect(screen.getByText("ELG 1")).toBeTruthy();
     expect(screen.getByText("ACHIEVEMENT")).toBeTruthy();
-    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector('img:not([alt="School logo"])')).toBeNull();
     rerender(<Card num={num} card={mk("https://cdn.example/a.jpg")} />);
     expect(screen.getByText("SAMPLE PICTURE")).toBeTruthy();
     expect(container.querySelector('img[src="https://cdn.example/a.jpg"]')).toBeTruthy();
@@ -90,6 +90,8 @@ describe("report header", () => {
     const html = renderToStaticMarkup(<Card card={{ ...base, branding: { logo_url: "https://x/logo.png" }, report_key: "junior-report" }} num={(v: any) => v} />);
     expect(html).toContain('src="https://x/logo.png"');
     expect(html).toContain('data-testid="photo-placeholder"');
+    const noLogo = renderToStaticMarkup(<Card card={{ ...base, branding: {}, report_key: "junior-report" }} num={(v: any) => v} />);
+    expect(noLogo).toContain('src="/logo-square.png"');
     const withPhoto = renderToStaticMarkup(<Card card={{ ...base, photo_url: "https://x/ada.jpg", report_key: "junior-report" }} num={(v: any) => v} />);
     expect(withPhoto).toContain('src="https://x/ada.jpg"');
   });
