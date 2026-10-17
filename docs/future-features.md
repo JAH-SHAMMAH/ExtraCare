@@ -220,3 +220,43 @@ two failures deserve two messages.
 **Not urgent:** nothing publishes itself, publishing is an administrator's
 deliberate act, and the workflow ladder (draft → submitted → reviewed → approved →
 published) already puts three steps in front of it.
+
+---
+
+## Parents fall through to the teacher-shaped Report Cards page
+
+`frontend/app/(dashboard)/dashboard/modules/school/report-cards/page.tsx`
+branches on one role slug:
+
+```tsx
+const isStudent = user?.roles?.some((r) => r.slug === "student") ?? false;
+if (isStudent) return <StudentReportCardsView />;
+return <TeacherReportCardsView />;
+```
+
+There is no parent branch, so a parent gets the **teacher** view: a class
+picker, a pupil list, an edit affordance behind a `school:reports:write` check,
+and the language of someone marking a cohort rather than a parent reading one
+child's card.
+
+**It is not a leak.** The picker reads `GET /school/students`, which is
+ownership-scoped, so a parent sees only their own children; the card itself
+comes from `GET /report-card`, which enforces `_ensure_student_visible` and
+`_user_owns_student`; and after the scope split a parent holds
+`school:reports:own:read`, so the write affordances are hidden. It is a fit and
+clarity problem, not an access one — which is why it was left out of the
+sidebar hotfix rather than rushed into it.
+
+**What a parent-specific view would be.** The pupil view
+(`StudentReportCardsView`) is already the right shape — term dropdown, one
+card, a print button — and needs only two changes to serve a parent: a child
+selector when `GET /school/students` returns more than one row, and "My
+Report Card" retitled. So the work is a third branch reusing the pupil view,
+not a new page.
+
+**Pick the branch condition carefully.** Branching on `r.slug === "parent"`
+repeats the mistake this came out of: slugs are per-org and a cloned role gets
+a suffixed one, so `parent-boarding` would miss. Branch on the absence of the
+staff scope instead — `!hasPermission("school:reports:read")` — which is the
+same test the sidebar and the API now use, and is true for a pupil, a parent
+and any clone of either.

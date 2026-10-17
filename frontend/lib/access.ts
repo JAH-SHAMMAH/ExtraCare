@@ -160,7 +160,20 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // It is now self-scoping instead — its picker reads GET /school/students, which
   // returns only the caller's own record / linked children for a non-staff caller,
   // so a parent sees exactly their children and a student sees only themselves.
-  { prefix: "/dashboard/modules/school/report-cards", permission: "school:reports:read" },
+  // Report Cards is the ONE academic surface a pupil or parent reaches. It is
+  // gated on the own-read scope they hold, with the staff scope accepted too so
+  // teachers and admins keep the same page (it branches internally).
+  //
+  // It used to require `school:reports:read`, the STAFF scope -- which parents
+  // and pupils also held, so "Teacher Reports" and "Result Analysis" passed the
+  // same gate and three staff report groups appeared in their sidebar. The
+  // backend scope split (see app/models/role.py) is what actually closes it;
+  // this keeps the one legitimate page reachable afterwards.
+  {
+    prefix: "/dashboard/modules/school/report-cards",
+    permission: "school:reports:own:read",
+    anyOf: ["school:reports:read"],
+  },
   // Fee Management is staff-side. Parents now hold `payments:own:read` (not the
   // broad staff `payments:read`), so this gate excludes them without further change.
   { prefix: "/dashboard/modules/school/fees", permission: "payments:read" },

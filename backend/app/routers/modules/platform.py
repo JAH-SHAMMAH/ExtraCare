@@ -127,6 +127,21 @@ _write = Depends(PermissionChecker("settings:write"))
 # longer holds the broad `school:read` (see role.py — that grant reached every
 # fine-grained child). Widening only; no role loses access.
 _school_read = Depends(AnyPermissionChecker("school:read", "school:reports:read"))
+# A pupil or parent holds NEITHER of the above -- they hold
+# `school:reports:own:read`, which reaches exactly one pupil's own card. But the
+# page that shows it needs the term list to populate its dropdown and the
+# branding row for the printed letterhead, and both of those ride _school_read.
+#
+# So those few CONFIG reads take this wider alias, and nothing else does. In
+# particular /report-entry, which is a class's marks grid, stays on _school_read
+# -- it is pupil data, not configuration, and that distinction is the whole
+# reason this is a separate name rather than three extra scopes on the old one.
+#
+# Without it the dropdown comes back empty and the page renders "No report card
+# available", which reads to a parent as "your child's report is not published".
+# A permission failure that looks like an absence of data is the worst kind.
+_school_or_own_read = Depends(AnyPermissionChecker(
+    "school:read", "school:reports:read", "school:reports:own:read"))
 # Report Entry is grade entry, not admin config — gate it on the reports scope.
 _reports_write = Depends(PermissionChecker("school:reports:write"))
 # Admin-only report actions (Approve/Process, Reports Upload) — the classroom tier
@@ -480,7 +495,7 @@ def _section_response(s: SchoolSection) -> SectionResponse:
 # Readable at the broad school:read (not just settings:read): sections are report
 # reference data the level report views + term-consuming forms resolve. Writes stay
 # settings:write. Mirrors the current-session resolver's broad-read rationale.
-@router.get("/sections", response_model=list[SectionResponse], dependencies=[_school_read])
+@router.get("/sections", response_model=list[SectionResponse], dependencies=[_school_or_own_read])
 async def list_sections(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     rows = (await db.execute(
         select(SchoolSection).where(SchoolSection.org_id == current_user.org_id).order_by(SchoolSection.position, SchoolSection.name)
@@ -675,7 +690,7 @@ def _branding_response(b: ReportBranding | None) -> BrandingResponse:
     )
 
 
-@router.get("/report-branding", response_model=BrandingResponse, dependencies=[_school_read])
+@router.get("/report-branding", response_model=BrandingResponse, dependencies=[_school_or_own_read])
 async def get_report_branding(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     b = (await db.execute(select(ReportBranding).where(ReportBranding.org_id == current_user.org_id))).scalar_one_or_none()
     return _branding_response(b)
@@ -1663,7 +1678,7 @@ def _subterm_response(s: AcademicSubTerm) -> SubTermResponse:
     return SubTermResponse(id=s.id, name=s.name, alias=s.alias, position=s.position, is_active=s.is_active)
 
 
-@router.get("/academic-sub-terms", response_model=list[SubTermResponse], dependencies=[_school_read])
+@router.get("/academic-sub-terms", response_model=list[SubTermResponse], dependencies=[_school_or_own_read])
 async def list_sub_terms(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     rows = (await db.execute(select(AcademicSubTerm).where(AcademicSubTerm.org_id == current_user.org_id)
                              .order_by(AcademicSubTerm.position, AcademicSubTerm.name))).scalars().all()
@@ -1709,7 +1724,7 @@ async def _term_response(db: AsyncSession, org_id: str, t: AcademicTerm, sub_nam
                         active_sub_term_position=(st[1] if st else None))
 
 
-@router.get("/academic-terms", response_model=list[TermResponse], dependencies=[_school_read])
+@router.get("/academic-terms", response_model=list[TermResponse], dependencies=[_school_or_own_read])
 async def list_terms(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     rows = (await db.execute(select(AcademicTerm).where(AcademicTerm.org_id == current_user.org_id)
                              .order_by(AcademicTerm.position, AcademicTerm.name))).scalars().all()
@@ -3257,7 +3272,9 @@ async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
 
 # ── Secondary Report S-4c: printable report card (one pupil) ─────────────────
 
-@router.get("/report-card", response_model=ReportCardResponse, dependencies=[Depends(PermissionChecker("school:reports:read"))])
+@router.get("/report-card", response_model=ReportCardResponse,
+            dependencies=[Depends(AnyPermissionChecker(
+                "school:reports:read", "school:reports:own:read"))])
 async def report_card(student_id: str, term_id: str, sub_term_id: str,
                       session_id: str | None = None,
                       db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):

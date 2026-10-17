@@ -89,7 +89,12 @@ SCHOOL_STUDENT_PERMISSIONS = [
     # Core personal read-only access (own records only, enforced server-side via _scoped checks)
     "school:timetable:read",        # my timetable
     "school:library:read",          # browse catalogue + own loans
-    "school:reports:read",          # own report card (published-only, enforced server-side)
+    # OWN report card only. This used to be `school:reports:read`, which is the
+    # scope every STAFF report screen is gated on -- so a pupil held it, three
+    # staff report groups appeared in their sidebar, and /report-cards-bulk
+    # answered for a whole class. One scope cannot mean both "across the
+    # school" and "mine".
+    "school:reports:own:read",      # own report card (published-only, enforced server-side)
     "school:classroom:read",        # own assignments / classwork (enforced server-side)
     "school:journals:read",         # own photo journals
     "school:lessons:read",          # assigned lesson material
@@ -105,7 +110,11 @@ SCHOOL_STUDENT_PERMISSIONS = [
 # rejected). Fees/payments stay on the separate `payments` namespace.
 SCHOOL_PARENT_PERMISSIONS = [
     "school:attendance:read",   # child attendance (ownership-scoped in-endpoint)
-    "school:reports:read",      # child grades / report card (ownership-scoped in-endpoint)
+    # The CHILD's report card, and nothing wider. See the note in
+    # SCHOOL_STUDENT_PERMISSIONS: `school:reports:read` is the staff scope, and
+    # granting it here is what put "Nursery/Primary/Secondary School Report"
+    # in a parent's sidebar and opened /report-cards-bulk to them.
+    "school:reports:own:read",  # child report card (ownership-scoped in-endpoint)
     "school:journals:read",     # child class journals
     "school:feedback:read",     # raise & view feedback
     # NOT `payments:read` -- that is the STAFF finance scope. It gates ~18 org-wide
