@@ -155,9 +155,7 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/library", permission: "school:library:write" },
   { prefix: "/dashboard/modules/school/sms", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/transport", permission: "school_admin:read" },
-  // Report Cards is SHARED, not admin-only: students already view their own report
-  // here (they hold school:reports:read, never :write), so it must stay on :read.
-  // It is now self-scoping instead — its picker reads GET /school/students, which
+  // Report Cards is self-scoping — its picker reads GET /school/students, which
   // returns only the caller's own record / linked children for a non-staff caller,
   // so a parent sees exactly their children and a student sees only themselves.
   // Report Cards is the ONE academic surface a pupil or parent reaches. It is

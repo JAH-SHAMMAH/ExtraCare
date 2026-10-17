@@ -13,28 +13,38 @@ import { PrintLetterhead } from "@/components/branding/Brand";
 import type { Student, ReportCardDomain, SchoolClass, SchoolSection } from "@/types";
 
 export default function ReportCardsPage() {
-  const { user } = useAuthStore();
-  const isStudent = user?.roles?.some((r: any) => r.slug === "student") ?? false;
+  // Branch on the STAFF scope, not a role slug: slugs are per-org and a cloned
+  // role gets a suffixed one ("parent-boarding"), which a slug test misses and
+  // drops into the teacher desk. A pupil, a parent and any clone of either hold
+  // only school:reports:own:read -- the same test the sidebar and the API use.
+  const isStaff = useHasPermission("school:reports:read");
 
-  if (isStudent) {
-    return <StudentReportCardsView />;
+  if (!isStaff) {
+    return <OwnReportCardsView />;
   }
 
   return <TeacherReportCardsView />;
 }
 
-// ── Student view: just term dropdown, show own report ──
+// ── Own view (pupil or parent): term dropdown, one card ──
 
-function StudentReportCardsView() {
+function OwnReportCardsView() {
+  const { activeRole } = useAuthStore();
   const [term, setTerm] = useTermState();
   const termNames = useTermNames();
   // The report-card endpoint keys on Student.id, which is NOT the signed-in
   // User.id. Passing the user id 403s ("You can only access your own records")
   // and this page renders its empty state as though no report existed — which
   // reads as "your results aren't published" when they are. /school/students is
-  // ownership-scoped for a student caller, so it returns exactly one row: theirs.
+  // ownership-scoped for a non-staff caller: a pupil gets exactly one row
+  // (theirs), a parent gets their linked children.
   const { data: studentData, isLoading: sLoading } = useStudents();
-  const studentId = ((studentData?.items ?? []) as Student[])[0]?.id ?? "";
+  const children = (studentData?.items ?? []) as Student[];
+  const [pickedId, setPickedId] = useState("");
+  const studentId = children.some((c) => c.id === pickedId) ? pickedId : (children[0]?.id ?? "");
+  // Wording only -- access is decided above and by the API. activeRole comes
+  // from /me/contexts (linkage), so it is right for cloned roles too.
+  const isParent = activeRole === "parent" || children.length > 1;
   const { data: reportCard, isLoading: rcLoading } = useReportCard(studentId, term);
   const canWrite = useHasPermission("school:reports:write");
   const isLoading = sLoading || rcLoading;
@@ -42,13 +52,20 @@ function StudentReportCardsView() {
   return (
     <div className="p-8 max-w-3xl mx-auto">
       <div className="mb-8 no-print">
-        <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Education</span><span>/</span><span className="text-brand-600 font-semibold">My Report Card</span></nav>
-        <h1 className="text-2xl font-black text-slate-900 tracking-tight">My Report Card</h1>
-        <p className="text-slate-500 text-sm mt-0.5">View and print your report card.</p>
+        <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Education</span><span>/</span><span className="text-brand-600 font-semibold">{isParent ? "Report Cards" : "My Report Card"}</span></nav>
+        <h1 className="text-2xl font-black text-slate-900 tracking-tight">{isParent ? "Report Cards" : "My Report Card"}</h1>
+        <p className="text-slate-500 text-sm mt-0.5">{isParent ? "View and print your child's report card." : "View and print your report card."}</p>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex items-center justify-between gap-3 no-print">
-        <select value={term} onChange={(e) => setTerm(e.target.value)} className="input w-40">{termNames.map((t) => (<option key={t} value={t}>{t}</option>))}</select>
+        <div className="flex items-center gap-3">
+          {children.length > 1 && (
+            <select value={studentId} onChange={(e) => setPickedId(e.target.value)} className="input w-56" aria-label="Child">
+              {children.map((c) => (<option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>))}
+            </select>
+          )}
+          <select value={term} onChange={(e) => setTerm(e.target.value)} className="input w-40">{termNames.map((t) => (<option key={t} value={t}>{t}</option>))}</select>
+        </div>
         {reportCard && (<button onClick={() => window.print()} className="btn-secondary gap-2"><Printer size={14} />Print</button>)}
       </div>
 
@@ -56,7 +73,7 @@ function StudentReportCardsView() {
         {isLoading ? (
           <div className="py-16 text-center"><Loader2 size={24} className="animate-spin text-slate-400 mx-auto" /></div>
         ) : !reportCard ? (
-          <div className="py-16 text-center text-slate-400"><p className="font-semibold">No report card available</p><p className="text-sm mt-1">No grades have been submitted for this term yet, or your report is not published.</p></div>
+          <div className="py-16 text-center text-slate-400"><p className="font-semibold">No report card available</p><p className="text-sm mt-1">No grades have been submitted for this term yet, or {isParent ? "the" : "your"} report is not published.</p></div>
         ) : (
           <ReportCardView card={reportCard} term={term} studentId={studentId} canWrite={canWrite} />
         )}
