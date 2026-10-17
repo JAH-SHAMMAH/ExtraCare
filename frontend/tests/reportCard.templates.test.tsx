@@ -39,6 +39,8 @@ describe("report card templates", () => {
         items: [{ domain_id: "g1", name: "Listening", rating: "A" }, { domain_id: "g2", name: "Speaking", rating: "E", comment: "Building sentences" }] },
     ] }} />);
     expect(screen.getByText("Communication and Language")).toBeTruthy();
+    expect(screen.getByText("ELG 2")).toBeTruthy();
+    expect(screen.getByText("ACHIEVEMENT")).toBeTruthy();
     expect(screen.getByText("Building sentences")).toBeTruthy();
     expect(screen.queryByText("Mathematics")).toBeNull();
     expect(screen.queryByText("Student's Average")).toBeNull();

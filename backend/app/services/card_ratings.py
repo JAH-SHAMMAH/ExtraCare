@@ -14,7 +14,7 @@ from app.models.modules.platform import (
 from app.schemas.platform import CardDomainBlock, CardRatingItem, CardRatingKeyEntry
 from app.services.report_sections import report_keys_for
 
-_TITLES = {"affective": "AFFECTIVE DOMAIN", "psychomotor": "PSYCHOMOTOR DOMAIN"}
+_TITLES = {"affective": "AFFECTIVE", "psychomotor": "PSYCHOMOTOR"}
 
 
 async def report_key_for_section(db: AsyncSession, org_id: str, section_id: str | None) -> str | None:
@@ -26,6 +26,7 @@ async def report_key_for_section(db: AsyncSession, org_id: str, section_id: str 
 
 async def card_domain_blocks(
     db: AsyncSession, org_id: str, section_id: str | None, student_id: str, term_id: str,
+    report_key: str | None = None,
 ) -> list[CardDomainBlock]:
     if not section_id:
         return []
@@ -57,7 +58,10 @@ async def card_domain_blocks(
         rows = [d for d in domains if d.domain_type == kind]
         if rows:
             blocks.append(CardDomainBlock(
-                domain_type=kind, title=_TITLES[kind], items=[item(d) for d in rows],
+                domain_type=kind,
+                # Secondary prints ONE block called SKILLS AND BEHAVIOUR; Junior prints
+                # AFFECTIVE and PSYCHOMOTOR side by side.
+                title=("SKILLS AND BEHAVIOUR" if report_key == "secondary-report" else _TITLES[kind]), items=[item(d) for d in rows],
                 key=keys.get(next((d.rating_scale_id for d in rows if d.rating_scale_id), ""), [])))
     goals_by_area: dict[str, list] = {}
     for d in domains:

@@ -57,8 +57,11 @@ async def test_affective_and_psychomotor_blocks_with_key_and_blank_ratings(db, o
     db.add(StudentDomainRating(id=str(uuid.uuid4()), org_id=org.id, student_id=stu.id, term_id=term.id,
                                domain_id=punct.id, rating="5"))
     await db.commit()
-    blocks = await card_domain_blocks(db, org.id, prim.id, stu.id, term.id)
+    blocks = await card_domain_blocks(db, org.id, prim.id, stu.id, term.id, "junior-report")
     by = {b.domain_type: b for b in blocks}
+    assert by["affective"].title == "AFFECTIVE" and by["psychomotor"].title == "PSYCHOMOTOR"
+    sec_blocks = await card_domain_blocks(db, org.id, prim.id, stu.id, term.id, "secondary-report")
+    assert {b.title for b in sec_blocks} == {"SKILLS AND BEHAVIOUR"}
     assert [i.name for i in by["affective"].items] == ["Punctuality", "Neatness"]
     assert by["affective"].items[0].rating == "5"
     assert by["affective"].items[1].rating is None            # unrated stays blank, never defaulted

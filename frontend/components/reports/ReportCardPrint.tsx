@@ -355,40 +355,40 @@ function RatingBlocks({ blocks }: { blocks: any[] }) {
   );
 }
 
-/** Nursery: no marks. One table per area of learning, each goal with its rating
- *  (and the teacher's note if there is one), and the key printed once per area. */
+/** Nursery: no marks. Fairview's page is one row per Early Learning Goal:
+ *  Learning Area | ELG n | goal | ACHIEVEMENT (the teacher's sentence). The ELG
+ *  number runs on across areas, as on the Educare page. A rating column appears
+ *  only if the school uses a key or a goal has been rated. */
 function NurseryAreas({ blocks }: { blocks: any[] }) {
   if (!blocks.length) {
     return <p className="mt-4 text-center text-xs text-slate-400 border border-dashed border-slate-200 py-6">No areas of learning have been set up for this class yet.</p>;
   }
+  const showRating = blocks.some((blk: any) => blk.key?.length > 0 || blk.items.some((it: any) => it.rating));
+  let n = 0;
   return (
-    <div className="mt-3 space-y-3 text-xs">
-      {blocks.map((blk: any, i: number) => (
-        <div key={blk.title + i} className="break-inside-avoid">
-          <table className="w-full border border-slate-300">
-            <thead><tr className="bg-slate-100">
-              <th className="border border-slate-300 px-2 py-1 text-left">{blk.title}</th>
-              <th className="border border-slate-300 px-2 py-1 w-16">Rating</th>
-              <th className="border border-slate-300 px-2 py-1 text-left">Teacher&apos;s note</th>
-            </tr></thead>
-            <tbody>
-              {blk.items.map((it: any) => (
-                <tr key={it.domain_id}>
-                  <td className="border border-slate-300 px-2 py-1">{it.name}</td>
-                  <td className="border border-slate-300 px-2 py-1 text-center font-bold">{it.rating || ""}</td>
-                  <td className="border border-slate-300 px-2 py-1 text-[10px] leading-snug">{it.comment || ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {blk.key?.length > 0 && (
-            <p className="text-[10px] text-slate-600 mt-1">
-              Key: {blk.key.map((k: any) => `${k.label}${k.meaning ? ` = ${k.meaning}` : ""}`).join("; ")}
-            </p>
-          )}
-        </div>
-      ))}
-    </div>
+    <table className="w-full mt-3 text-xs border border-slate-300">
+      <thead><tr className="bg-slate-100">
+        <th className="border border-slate-300 px-2 py-1 text-left w-36">Learning Areas</th>
+        <th className="border border-slate-300 px-2 py-1 text-left w-16">ELG</th>
+        <th className="border border-slate-300 px-2 py-1 text-left w-44">&nbsp;</th>
+        <th className="border border-slate-300 px-2 py-1 text-left">ACHIEVEMENT</th>
+        {showRating && <th className="border border-slate-300 px-2 py-1 w-14">Rating</th>}
+      </tr></thead>
+      <tbody>
+        {blocks.flatMap((blk: any, bi: number) => blk.items.map((it: any, ii: number) => {
+          n += 1;
+          return (
+            <tr key={it.domain_id} className="align-top">
+              {ii === 0 && <td rowSpan={blk.items.length} className="border border-slate-300 px-2 py-1 font-bold">{blk.title}</td>}
+              <td className="border border-slate-300 px-2 py-1 font-bold underline">ELG {n}</td>
+              <td className="border border-slate-300 px-2 py-1 font-bold uppercase">{it.name}</td>
+              <td className="border border-slate-300 px-2 py-1 leading-snug">{it.comment || ""}</td>
+              {showRating && <td className="border border-slate-300 px-2 py-1 text-center font-bold">{it.rating || ""}</td>}
+            </tr>
+          );
+        }))}
+      </tbody>
+    </table>
   );
 }
 

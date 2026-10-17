@@ -3651,7 +3651,7 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     from app.services.card_ratings import card_domain_blocks, report_key_for_section
     _sec_id = cls.section_id if cls else None
     report_key = await report_key_for_section(db, org, _sec_id)
-    domain_blocks = await card_domain_blocks(db, org, _sec_id, student_id, term_id)
+    domain_blocks = await card_domain_blocks(db, org, _sec_id, student_id, term_id, report_key)
 
     title = " ".join(x for x in [(term_name or "").upper(), (sub_name or "").upper(), "REPORT"] if x).strip()
     return ReportCardResponse(
