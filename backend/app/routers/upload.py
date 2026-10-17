@@ -105,3 +105,15 @@ async def upload_report_photo(
     url = await save_upload(current_user.org_id, "report-photos", file.filename, content, file.content_type)
     _logger.info("upload.report_photo user=%s url=%s", current_user.id, url)
     return {"url": url, "filename": file.filename}
+
+
+@router.post("/student-photo", dependencies=[Depends(PermissionChecker("school:write"))])
+async def upload_student_photo(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_active_user),
+):
+    """A student's profile picture. Returns a URL; attach it by saving the student
+    with photo_url (create/edit student)."""
+    content = await _read_validated(file, _IMAGE_TYPES, _MAX_AVATAR)
+    url = await save_upload(current_user.org_id, "student-photos", file.filename, content, file.content_type)
+    return {"url": url, "filename": file.filename}

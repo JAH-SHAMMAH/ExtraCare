@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useStudents, useCreateStudent, useUpdateStudent, useDeleteStudent } from "@/hooks/useSchool";
-import { cn, formatDate, getInitials } from "@/lib/utils";
+import { useEffect, useState } from "react";
+import { useStudents, useCreateStudent, useUpdateStudent, useDeleteStudent, useClasses } from "@/hooks/useSchool";
+import { uploadApi, schoolApi } from "@/lib/api";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
+import { cn, formatDate } from "@/lib/utils";
 import Link from "next/link";
-import { Search, UserPlus, GraduationCap, MoreVertical, Edit2, Trash2, X, Loader2, Eye, Upload } from "lucide-react";
+import { Search, UserPlus, GraduationCap, Edit2, Trash2, X, Loader2, Eye, Upload, Camera } from "lucide-react";
 import { toast } from "sonner";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { useDelayedFlag } from "@/hooks/useDelayedFlag";
@@ -18,13 +20,20 @@ export default function StudentsPage() {
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
-  const [menuOpen, setMenuOpen] = useState<string | null>(null);
-  const [viewStudent, setViewStudent] = useState<Student | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string>("");
+  const [uploading, setUploading] = useState(false);
+  const { data: classData } = useClasses({ page_size: 100 });
+  const classOptions: { id: string; name: string }[] = (classData?.items ?? (Array.isArray(classData) ? classData : []))
+    .slice().sort((a: any, b: any) => String(a.name).localeCompare(String(b.name), undefined, { numeric: true }));
 
   const { data, isLoading } = useStudents({ page, page_size: 25, search: search || undefined, status: roster === "all" ? undefined : roster });
   // Only show the skeleton after 300ms of loading — sub-300ms responses
   // render straight to data with no flicker.
   const showSkeleton = useDelayedFlag(isLoading);
+  // True school-wide totals (not just the 25 rows on this page).
+  const { data: allCount } = useStudents({ page: 1, page_size: 1 });
+  const { data: activeCount } = useStudents({ page: 1, page_size: 1, status: "active" });
+  const { data: inactiveCount } = useStudents({ page: 1, page_size: 1, status: "inactive" });
   const createStudent = useCreateStudent();
   const updateStudent = useUpdateStudent();
   const deleteStudent = useDeleteStudent();
@@ -38,6 +47,7 @@ export default function StudentsPage() {
   const resetForm = () => {
     setForm({ first_name: "", last_name: "", student_id: "", email: "", phone: "", date_of_birth: "", gender: "male", class_id: "", guardian_name: "", guardian_phone: "", address: "" });
     setEditingStudent(null);
+    setPhotoUrl("");
     setShowForm(false);
   };
 
@@ -57,9 +67,9 @@ export default function StudentsPage() {
       return;
     }
     if (editingStudent) {
-      updateStudent.mutate({ id: editingStudent.id, data: form }, { onSuccess: resetForm });
+      updateStudent.mutate({ id: editingStudent.id, data: { ...form, photo_url: photoUrl || null } }, { onSuccess: resetForm });
     } else {
-      createStudent.mutate(form, { onSuccess: resetForm });
+      createStudent.mutate({ ...form, photo_url: photoUrl || null }, { onSuccess: resetForm });
     }
   };
 
@@ -71,15 +81,39 @@ export default function StudentsPage() {
       guardian_name: s.guardian_name || "", guardian_phone: s.guardian_phone || "", address: s.address || "",
     });
     setEditingStudent(s);
+    setPhotoUrl(s.avatar_url || "");
     setShowForm(true);
-    setMenuOpen(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm("Are you sure you want to remove this student?")) {
-      deleteStudent.mutate(id);
+  // Deep link from the profile page: /students?edit=<id> opens that student's edit form.
+  useEffect(() => {
+    const editParam = new URLSearchParams(window.location.search).get("edit");
+    if (!editParam) return;
+    schoolApi.students.get(editParam).then((st: Student) => handleEdit(st)).catch(() => toast.error("Couldn't open that student."));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleDelete = (s: Student) => {
+    if (confirm(`Remove ${s.first_name} ${s.last_name} from the school roll? This can't be undone from here.`)) {
+      deleteStudent.mutate(s.id);
     }
-    setMenuOpen(null);
+  };
+
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error("Photo must be under 5MB."); return; }
+    setUploading(true);
+    try {
+      const r = await uploadApi.studentPhoto(file);
+      setPhotoUrl(r.url);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Couldn't upload the photo.");
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -111,10 +145,10 @@ export default function StudentsPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {[
-          { label: "Total Students", value: data?.total ?? "—" },
-          { label: "Active", value: data?.items?.filter((s: Student) => s.is_active).length ?? "—" },
-          { label: "Inactive", value: data?.items?.filter((s: Student) => !s.is_active).length ?? "—" },
-          { label: "Classes", value: [...new Set(data?.items?.map((s: Student) => s.class_id).filter(Boolean) || [])].length || "—" },
+          { label: "Total Students", value: allCount?.total ?? "—" },
+          { label: "Active", value: activeCount?.total ?? "—" },
+          { label: "Inactive", value: inactiveCount?.total ?? "—" },
+          { label: "Classes", value: classOptions.length || "—" },
         ].map(({ label, value }) => (
           <div key={label} className="bg-white rounded-xl border border-slate-200 p-4">
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">{label}</p>
@@ -130,6 +164,18 @@ export default function StudentsPage() {
             <h2 className="text-sm font-bold text-slate-800">{editingStudent ? "Edit Student" : "New Student"}</h2>
             <button onClick={resetForm} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
           </div>
+          <div className="flex items-center gap-4 mb-5">
+            <StudentAvatar name={`${form.first_name} ${form.last_name}`.trim() || "Student"} url={photoUrl} size={72} />
+            <div>
+              <label className="btn-secondary gap-2 cursor-pointer inline-flex">
+                {uploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+                {photoUrl ? "Change photo" : "Add photo"}
+                <input type="file" accept="image/*" className="hidden" onChange={handlePhoto} disabled={uploading} />
+              </label>
+              {photoUrl && <button type="button" onClick={() => setPhotoUrl("")} className="ml-3 text-xs text-slate-500 hover:text-red-600">Remove photo</button>}
+              <p className="text-[11px] text-slate-400 mt-1">JPG or PNG, up to 5MB.</p>
+            </div>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div><label className="label">First Name *</label><input required value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} className="input" /></div>
             <div><label className="label">Last Name *</label><input required value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} className="input" /></div>
@@ -143,7 +189,13 @@ export default function StudentsPage() {
                 <option value="male">Male</option><option value="female">Female</option><option value="other">Other</option>
               </select>
             </div>
-            <div><label className="label">Class ID</label><input value={form.class_id} onChange={(e) => setForm({ ...form, class_id: e.target.value })} className="input" /></div>
+            <div>
+              <label className="label">Class</label>
+              <select value={form.class_id} onChange={(e) => setForm({ ...form, class_id: e.target.value })} className="input">
+                <option value="">No class yet</option>
+                {classOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
             <div><label className="label">Guardian Name</label><input value={form.guardian_name} onChange={(e) => setForm({ ...form, guardian_name: e.target.value })} className="input" /></div>
             <div><label className="label">Guardian Phone</label><input value={form.guardian_phone} onChange={(e) => setForm({ ...form, guardian_phone: e.target.value })} className="input" /></div>
             <div className="md:col-span-2"><label className="label">Address</label><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="input" /></div>
@@ -181,26 +233,6 @@ export default function StudentsPage() {
         </div>
       </div>
 
-      {/* View Student Detail */}
-      {viewStudent && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6 mb-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-bold text-slate-800">Student Details</h2>
-            <button onClick={() => setViewStudent(null)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div><p className="text-[10px] font-bold uppercase text-slate-400">Name</p><p className="text-sm font-medium text-slate-800">{viewStudent.first_name} {viewStudent.last_name}</p></div>
-            <div><p className="text-[10px] font-bold uppercase text-slate-400">Student ID</p><p className="text-sm font-mono text-slate-800">{viewStudent.student_id}</p></div>
-            <div><p className="text-[10px] font-bold uppercase text-slate-400">Email</p><p className="text-sm text-slate-800">{viewStudent.email || "—"}</p></div>
-            <div><p className="text-[10px] font-bold uppercase text-slate-400">Phone</p><p className="text-sm text-slate-800">{viewStudent.phone || "—"}</p></div>
-            <div><p className="text-[10px] font-bold uppercase text-slate-400">Class</p><p className="text-sm text-slate-800">{viewStudent.class_name || viewStudent.class_id || "—"}</p></div>
-            <div><p className="text-[10px] font-bold uppercase text-slate-400">Guardian</p><p className="text-sm text-slate-800">{viewStudent.guardian_name || "—"}</p></div>
-            <div><p className="text-[10px] font-bold uppercase text-slate-400">Guardian Phone</p><p className="text-sm text-slate-800">{viewStudent.guardian_phone || "—"}</p></div>
-            <div><p className="text-[10px] font-bold uppercase text-slate-400">Enrolled</p><p className="text-sm text-slate-800">{formatDate(viewStudent.created_at)}</p></div>
-          </div>
-        </div>
-      )}
-
       {/* Table */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
@@ -220,17 +252,15 @@ export default function StudentsPage() {
                   <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-indigo-600/10 border border-indigo-100 flex items-center justify-center text-indigo-700 text-sm font-bold shrink-0">
-                          {getInitials(`${s.first_name} ${s.last_name}`)}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-900">{s.first_name} {s.last_name}</p>
+                        <StudentAvatar name={`${s.first_name} ${s.last_name}`} url={s.avatar_url} size={44} />
+                        <div className="min-w-0">
+                          <Link href={`/dashboard/modules/school/students/${s.id}`} className="text-sm font-bold text-slate-900 hover:text-brand-700">{s.first_name} {s.last_name}</Link>
                           {s.email && <p className="text-xs text-slate-400">{s.email}</p>}
                         </div>
                       </div>
                     </td>
                     <td className="px-5 py-4"><span className="text-xs font-mono text-slate-600">{s.student_id}</span></td>
-                    <td className="px-5 py-4"><span className="text-sm text-slate-600">{s.class_name || s.class_id || "—"}</span></td>
+                    <td className="px-5 py-4"><span className="text-sm text-slate-600">{s.class_name || "No class"}</span></td>
                     <td className="px-5 py-4"><span className="text-sm text-slate-600 capitalize">{s.gender || "—"}</span></td>
                     <td className="px-5 py-4">
                       <span className={cn("badge", s.is_active ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600 border-slate-200")}>
@@ -240,17 +270,13 @@ export default function StudentsPage() {
                     </td>
                     <td className="px-5 py-4"><span className="text-xs text-slate-500">{formatDate(s.created_at)}</span></td>
                     <td className="px-5 py-4">
-                      <div className="relative">
-                        <button onClick={() => setMenuOpen(menuOpen === s.id ? null : s.id)} className="p-1 rounded hover:bg-slate-100">
-                          <MoreVertical size={14} className="text-slate-400" />
-                        </button>
-                        {menuOpen === s.id && (
-                          <div className="absolute right-0 top-full mt-1 w-36 bg-white rounded-lg border border-slate-200 shadow-lg z-10 py-1">
-                            <button onClick={() => { setViewStudent(s); setMenuOpen(null); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"><Eye size={13} /> View</button>
-                            <button onClick={() => handleEdit(s)} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"><Edit2 size={13} /> Edit</button>
-                            <button onClick={() => handleDelete(s.id)} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"><Trash2 size={13} /> Delete</button>
-                          </div>
-                        )}
+                      <div className="flex items-center gap-1">
+                        <Link href={`/dashboard/modules/school/students/${s.id}`} title="View full profile" aria-label={`View ${s.first_name} ${s.last_name}'s profile`}
+                          className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-brand-700"><Eye size={15} /></Link>
+                        <button onClick={() => handleEdit(s)} title="Edit profile" aria-label={`Edit ${s.first_name} ${s.last_name}`}
+                          className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-brand-700"><Edit2 size={15} /></button>
+                        <button onClick={() => handleDelete(s)} title="Remove student" aria-label={`Remove ${s.first_name} ${s.last_name}`}
+                          className="p-2 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
                       </div>
                     </td>
                   </tr>

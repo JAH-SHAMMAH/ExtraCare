@@ -844,6 +844,13 @@ export const uploadApi = {
       headers: { "Content-Type": "multipart/form-data" },
     }).then((r) => r.data as { url: string });
   },
+  studentPhoto: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return api.post("/upload/student-photo", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }).then((r) => r.data as { url: string });
+  },
   document: (file: File, category?: string) => {
     const formData = new FormData();
     formData.append("file", file);

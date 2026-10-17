@@ -250,11 +250,12 @@ async def list_students(
         query = query.where(Student.is_active == False, Student.withdrawal_date.isnot(None))  # noqa: E712
 
     total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar()
-    result = await db.execute(query.offset((page - 1) * page_size).limit(page_size))
+    result = await db.execute(query.order_by(Student.last_name, Student.first_name, Student.id).offset((page - 1) * page_size).limit(page_size))
     students = result.scalars().all()
+    names = await _class_names(db, current_user.org_id, [x.class_id for x in students])
 
     return {
-        "items": [_student_dict(s) for s in students],
+        "items": [_student_dict(s, names.get(s.class_id)) for s in students],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -321,7 +322,7 @@ async def create_student(
         new_values={"student_id": student.student_id, "class_id": student.class_id},
         request=request,
     )
-    return _student_dict(student)
+    return await _student_out(db, student)
 
 
 @router.get("/students/{id}", dependencies=[_students_read])
@@ -339,7 +340,7 @@ async def get_student(
     )).scalar_one_or_none()
     if not s:
         raise HTTPException(status_code=404, detail=f"Student not found for id: {id}")
-    return _student_dict(s)
+    return await _student_out(db, s)
 
 
 @router.patch("/students/{id}", dependencies=[_can_write])
@@ -390,7 +391,7 @@ async def update_student(
         resource_label=f"{student.first_name} {student.last_name}",
         new_values=updates, request=request,
     )
-    return _student_dict(student)
+    return await _student_out(db, student)
 
 
 async def _load_student_or_404(db: AsyncSession, student_id: str, org_id: str) -> Student:
@@ -424,7 +425,7 @@ async def withdraw_student(
                      resource_type="Student", resource_id=student.id,
                      resource_label=f"{student.first_name} {student.last_name}",
                      new_values={"withdrawn": True, "reason": student.withdrawal_reason}, request=request)
-    return _student_dict(student)
+    return await _student_out(db, student)
 
 
 @router.post("/students/{id}/reactivate", dependencies=[_can_write])
@@ -442,7 +443,7 @@ async def reactivate_student(
                      resource_type="Student", resource_id=student.id,
                      resource_label=f"{student.first_name} {student.last_name}",
                      new_values={"reactivated": True}, request=request)
-    return _student_dict(student)
+    return await _student_out(db, student)
 
 
 @router.delete("/students/{id}", status_code=204, dependencies=[_can_write])
@@ -1949,19 +1950,45 @@ async def set_domain_ratings(
     return [_domain_rating_response(r, term.name) for r in rows]
 
 
-def _student_dict(s: Student) -> dict:
+def _student_dict(s: Student, class_name: str | None = None) -> dict:
     return {
         "id": s.id,
         "student_id": s.student_id,
         "first_name": s.first_name,
         "last_name": s.last_name,
         "email": s.email,
+        "phone": s.phone,
+        "date_of_birth": s.date_of_birth.isoformat() if s.date_of_birth else None,
+        "gender": s.gender,
+        "address": s.address,
+        "avatar_url": s.photo_url,
+        "photo_url": s.photo_url,
         "class_id": s.class_id,
+        "class_name": class_name,
+        "admission_date": s.admission_date.isoformat() if s.admission_date else None,
+        "guardian_name": s.guardian_name,
+        "guardian_phone": s.guardian_phone,
+        "guardian_email": s.guardian_email,
+        "guardian_relationship": s.guardian_relationship,
         "is_active": s.is_active,
         "withdrawal_date": s.withdrawal_date.isoformat() if s.withdrawal_date else None,
         "withdrawal_reason": s.withdrawal_reason,
         "created_at": s.created_at.isoformat() if s.created_at else None,
     }
+
+
+async def _class_names(db: AsyncSession, org_id: str, class_ids) -> dict[str, str]:
+    ids = {c for c in class_ids if c}
+    if not ids:
+        return {}
+    rows = (await db.execute(select(SchoolClass.id, SchoolClass.name).where(
+        SchoolClass.org_id == org_id, SchoolClass.id.in_(ids)))).all()
+    return {i: n for i, n in rows}
+
+
+async def _student_out(db: AsyncSession, s: Student) -> dict:
+    names = await _class_names(db, s.org_id, [s.class_id])
+    return _student_dict(s, names.get(s.class_id))
 
 
 # ── Result publishing ───────────────────────────────────────────────────────────

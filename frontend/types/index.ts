@@ -131,6 +131,11 @@ export interface Student {
   class_name: string | null;
   guardian_name: string | null;
   guardian_phone: string | null;
+  guardian_email?: string | null;
+  guardian_relationship?: string | null;
+  admission_date?: string | null;
+  withdrawal_date?: string | null;
+  withdrawal_reason?: string | null;
   address: string | null;
   avatar_url: string | null;
   is_active: boolean;
