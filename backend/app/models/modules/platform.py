@@ -137,6 +137,18 @@ class AcademicSession(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     __table_args__ = (
         Index("ix_academic_sessions_org", "org_id"),
+        # At most ONE current session per org (migration 141). Exclusivity was
+        # application-code only — two router paths unset the others first — which
+        # a script or a bulk importer bypasses. A plain UNIQUE (org_id,
+        # is_current) would also forbid a second NON-current session, i.e. forbid
+        # history, so it has to be partial.
+        #
+        # BOTH dialect clauses are required: `postgresql_where` is silently
+        # ignored on SQLite, where the index would degrade to a FULL unique on
+        # org_id and stop an org having more than one session at all (the drift
+        # recorded for migration 133).
+        Index("uq_one_current_session_per_org", "org_id", unique=True,
+              postgresql_where=sql_text("is_current"), sqlite_where=sql_text("is_current")),
     )
 
 

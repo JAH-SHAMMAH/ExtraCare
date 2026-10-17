@@ -47,6 +47,12 @@ async def enrol(db, org, students, subjects, academic_year: str = "2025/2026"):
         )).scalars().all()
     }
 
+    # `session_id` is NOT NULL from migration 140, so the helper has to name a
+    # session. `ensure_session` is idempotent and matches on NAME, so every
+    # helper call in a test resolves to the same row rather than creating rivals.
+    from tests.conftest import ensure_session
+    sess = await ensure_session(db, org, name=academic_year)
+
     now = datetime.now(timezone.utc)
     for st in stus:
         for sb in subs:
@@ -56,7 +62,8 @@ async def enrol(db, org, students, subjects, academic_year: str = "2025/2026"):
                 continue
             db.add(StudentSubjectEnrollment(
                 id=str(uuid.uuid4()), org_id=org.id, student_id=sid, subject_id=bid,
-                academic_year=academic_year, enrolled_at=now, source="manual"))
+                academic_year=academic_year, session_id=sess.id,
+                enrolled_at=now, source="manual"))
     await db.commit()
 
 

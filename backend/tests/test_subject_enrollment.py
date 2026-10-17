@@ -94,10 +94,15 @@ async def _world(db, org, *, session_name=YEAR, is_current=True):
 
 
 async def _enrol(db, org, student, subject, year=YEAR):
+    # session_id is NOT NULL from migration 140. ensure_session matches on name,
+    # so every call for the same year resolves to one row rather than creating
+    # rivals that would split the enrolments this test then asserts on.
+    from tests.conftest import ensure_session
+    sess = await ensure_session(db, org, name=year)
     db.add(StudentSubjectEnrollment(
         id=str(uuid.uuid4()), org_id=org.id, student_id=student.id,
-        subject_id=subject.id, academic_year=year, enrolled_at=datetime.now(timezone.utc),
-        source="manual"))
+        subject_id=subject.id, academic_year=year, session_id=sess.id,
+        enrolled_at=datetime.now(timezone.utc), source="manual"))
     await db.commit()
 
 
