@@ -4,17 +4,19 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { Bell, HelpCircle, Settings, Loader2, MessageSquare, Menu } from "lucide-react";
+import { Bell, BookOpen, HelpCircle, Settings, Loader2, MessageSquare, Menu } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { timeAgo } from "@/lib/utils";
 import { useNotifications, useMarkNotificationRead } from "@/hooks/useNotifications";
 
 const GlobalSearch = dynamic(() => import("./GlobalSearch").then((mod) => mod.GlobalSearch), { ssr: false });
+import { QuickGuideModal } from "@/components/guide/QuickGuide";
 import { RoleSwitcher } from "@/components/role/RoleSwitcher";
 
 export function TopBar({ onMenu }: { onMenu?: () => void }) {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, activeRole } = useAuthStore();
+  const [guideOpen, setGuideOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
@@ -115,6 +117,19 @@ export function TopBar({ onMenu }: { onMenu?: () => void }) {
             </div>
           )}
         </div>
+
+        {/* Quick Guide — admins/directors only */}
+        {(!activeRole || activeRole === "admin") && (
+          <button
+            onClick={() => setGuideOpen(true)}
+            className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+            title="Quick Guide"
+            aria-label="Open Quick Guide"
+          >
+            <BookOpen size={18} />
+          </button>
+        )}
+        {guideOpen && <QuickGuideModal onClose={() => setGuideOpen(false)} />}
 
         {/* Help */}
         <button

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { BookOpen, Info, Search, X, ArrowLeft, ArrowRight, Lightbulb } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { GUIDE_TOPICS, searchTopics, type GuideTopic } from "@/lib/quickGuide";
@@ -34,7 +35,7 @@ export function QuickGuideModal({ onClose }: { onClose: () => void }) {
 
   const categories = Array.from(new Set(topics.map((t) => t.category)));
 
-  return (
+  const modal = (
     <div className="fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/50 p-0 sm:p-6 overflow-y-auto" role="dialog" aria-label="Quick Guide" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="bg-white w-full max-w-3xl sm:rounded-2xl shadow-2xl overflow-hidden my-0 sm:my-6 min-h-screen sm:min-h-0">
         <div className="bg-brand-700 text-white px-5 py-4 flex items-center justify-between">
@@ -105,4 +106,5 @@ export function QuickGuideModal({ onClose }: { onClose: () => void }) {
       </div>
     </div>
   );
+  return typeof document !== "undefined" ? createPortal(modal, document.body) : modal;
 }

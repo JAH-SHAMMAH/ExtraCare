@@ -240,8 +240,8 @@ function Composer() {
         </div>
       )}
 
-      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+        <div className="flex flex-wrap items-center gap-1">
           <input ref={imageRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
           <input ref={videoRef} type="file" accept="video/*" className="hidden" onChange={handleFile} />
           <input ref={docRef} type="file" accept={DOC_ACCEPT} className="hidden" onChange={handleDoc} />
@@ -291,7 +291,7 @@ function Composer() {
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end min-w-0">
           {canTarget && (
             <AudiencePicker
               roles={audRoles}

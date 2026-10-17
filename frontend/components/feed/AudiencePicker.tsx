@@ -46,7 +46,7 @@ export function AudiencePicker({
     onChange(roles.includes(slug) ? roles.filter((r) => r !== slug) : [...roles, slug], users);
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative min-w-0" ref={ref}>
       <button
         type="button" disabled={disabled} onClick={() => setOpen((o) => !o)}
         className={cn(
@@ -55,7 +55,7 @@ export function AudiencePicker({
         )}
       >
         <Users2 className="w-3.5 h-3.5 shrink-0" />
-        <span className="max-w-[150px] truncate">Publish to: {summary}</span>
+        <span className="max-w-[120px] sm:max-w-[150px] truncate">Publish to: {summary}</span>
         <ChevronDown className={cn("w-3.5 h-3.5 shrink-0 transition-transform", open && "rotate-180")} />
       </button>
 
