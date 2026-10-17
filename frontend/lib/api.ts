@@ -1681,7 +1681,6 @@ export const biometricApi = {
 };
 
 export const platformApi = {
-  fairviewSetup: (apply: boolean) => api.post("/platform/report-setup/fairview", null, { params: { apply } }).then((r) => r.data),
   sessions: { list: () => api.get("/platform/sessions").then((r) => r.data), current: () => api.get("/platform/sessions/current").then((r) => r.data), create: (d: object) => api.post("/platform/sessions", d).then((r) => r.data), update: (id: string, d: object) => api.patch(`/platform/sessions/${id}`, d).then((r) => r.data), remove: (id: string) => api.delete(`/platform/sessions/${id}`) },
   weeks: {
     list: (params?: { academic_year?: string; term?: string }) => api.get("/platform/weeks", { params }).then((r) => r.data),

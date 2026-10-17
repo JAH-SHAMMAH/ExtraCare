@@ -361,7 +361,7 @@ function RatingBlocks({ blocks, clubs }: { blocks: any[]; clubs: string[] | null
           )}
         </div>
       ))}
-      {/* Secondary only: Educare prints a "Club/Sports Choice" box beside the key. */}
+      {/* Secondary only: the reference prints a "Club/Sports Choice" box beside the key. */}
       {clubs && (
         <div>
           <table className="w-full border border-slate-300">
@@ -380,7 +380,7 @@ function RatingBlocks({ blocks, clubs }: { blocks: any[]; clubs: string[] | null
 
 /** Nursery: no marks. Fairview's page is one row per Early Learning Goal:
  *  Learning Area | ELG n | goal | ACHIEVEMENT (the teacher's sentence). The ELG
- *  number runs on across areas, as on the Educare page. A rating column appears
+ *  number runs on across areas, as on the the reference page. A rating column appears
  *  only if the school uses a key or a goal has been rated. */
 function NurseryAreas({ blocks }: { blocks: any[] }) {
   if (!blocks.length) {

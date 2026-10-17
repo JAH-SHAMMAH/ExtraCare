@@ -60,3 +60,20 @@ async def test_preview_changes_nothing_apply_carries_marks_and_hides_old(db, org
     again = await run_setup(db, org.id, write=True)                          # idempotent
     await db.commit()
     assert again["marks"]["scores_added"] == 0
+
+
+async def test_boot_setup_runs_once_then_leaves_admin_edits_alone(db, org):
+    from app.services.fairview_setup import auto_setup_on_boot
+
+    class F:                       # reuse the test session as the factory
+        def __call__(self): return self
+        async def __aenter__(self): return db
+        async def __aexit__(self, *a): return False
+
+    stu, subj, old = await _world(db, org)
+    await auto_setup_on_boot(F())
+    ex = (await db.execute(select(Assessment).where(Assessment.name == "EXAM", Assessment.year_group == "YEAR 10"))).scalars().all()
+    assert len(ex) == 1
+    await db.delete(ex[0]); await db.commit()
+    await auto_setup_on_boot(F())                                   # second boot: nothing re-added
+    assert (await db.execute(select(Assessment).where(Assessment.name == "EXAM", Assessment.year_group == "YEAR 10"))).scalars().all() == []
