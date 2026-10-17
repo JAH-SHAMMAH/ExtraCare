@@ -8,6 +8,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.modules.school import Club, ClubMembership
 from app.models.modules.platform import (
     AssessmentDomain, GradingBand, SchoolSection, StudentDomainRating,
 )
@@ -75,3 +76,28 @@ async def card_domain_blocks(
             domain_type="eyfs_area", title=area.name, items=it.children or [it],
             key=keys.get(area.rating_scale_id or "", [])))
     return blocks
+
+
+async def student_clubs(db: AsyncSession, org_id: str, student_id: str, term_name: str | None) -> list[str]:
+    """Names of the clubs/sports a pupil is in, for the card's "Club/Sports Choice".
+
+    Only APPROVED, active memberships of live clubs. A membership recorded against
+    a term counts on that term's card only; one with no term applies to every term.
+    The term is compared by name because club memberships store a name (not an id);
+    it is a display filter here, not an access decision.
+    """
+    rows = (await db.execute(
+        select(Club.name, ClubMembership.term).join(Club, Club.id == ClubMembership.club_id).where(
+            ClubMembership.org_id == org_id, ClubMembership.student_id == student_id,
+            ClubMembership.is_active == True, ClubMembership.status == "approved",  # noqa: E712
+            Club.is_deleted == False,  # noqa: E712
+        ).order_by(Club.name))).all()
+    want = (term_name or "").strip().casefold()
+    out: list[str] = []
+    for name, term in rows:
+        t = (term or "").strip().casefold()
+        if t and want and t != want:
+            continue
+        if name not in out:
+            out.append(name)
+    return out

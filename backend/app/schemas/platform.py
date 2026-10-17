@@ -1232,6 +1232,8 @@ class ReportCardResponse(BaseModel):
     # then uses the marks-table layout, the safe default).
     report_key: Optional[str] = None
     domain_blocks: list[CardDomainBlock] = Field(default_factory=list)
+    # Approved clubs / sports for this term; Secondary prints them as "Club/Sports Choice".
+    clubs: list[str] = Field(default_factory=list)
     branding: BrandingResponse = Field(default_factory=BrandingResponse)
     columns: list[CardColumn] = Field(default_factory=list)
     subjects: list[CardSubjectRow] = Field(default_factory=list)

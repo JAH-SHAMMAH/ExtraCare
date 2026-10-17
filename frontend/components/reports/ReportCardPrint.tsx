@@ -286,7 +286,7 @@ export function Card({ card, num }: { card: any; num: (v: any) => any }) {
       </div>
 
 
-      <RatingBlocks blocks={sideBlocks} />
+      <RatingBlocks blocks={sideBlocks} clubs={card.report_key === "secondary-report" ? (card.clubs ?? []) : null} />
       </>)}
       {isNursery && <NurseryAreas blocks={areaBlocks} />}
 
@@ -336,7 +336,7 @@ export function Card({ card, num }: { card: any; num: (v: any) => any }) {
 
 /** Affective + Psychomotor, side by side, each line with its rating and one key
  *  underneath. A line nobody has rated prints blank rather than a default. */
-function RatingBlocks({ blocks }: { blocks: any[] }) {
+function RatingBlocks({ blocks, clubs }: { blocks: any[]; clubs: string[] | null }) {
   if (!blocks.length) return null;
   return (
     <div className="grid grid-cols-2 gap-3 mt-3 text-xs items-start break-inside-avoid">
@@ -360,6 +360,19 @@ function RatingBlocks({ blocks }: { blocks: any[] }) {
           )}
         </div>
       ))}
+      {/* Secondary only: Educare prints a "Club/Sports Choice" box beside the key. */}
+      {clubs && (
+        <div>
+          <table className="w-full border border-slate-300">
+            <thead><tr className="bg-slate-100"><th className="border border-slate-300 px-2 py-1 text-left">Club/Sports Choice</th></tr></thead>
+            <tbody>
+              {clubs.length > 0
+                ? clubs.map((c) => <tr key={c}><td className="border border-slate-300 px-2 py-0.5">{c}</td></tr>)
+                : <tr><td className="border border-slate-300 px-2 py-3">&nbsp;</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

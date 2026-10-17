@@ -121,3 +121,24 @@ async def test_photo_rides_with_the_rating(db, org):
     await db.commit()
     blocks = await card_domain_blocks(db, org.id, early.id, stu.id, term.id)
     assert blocks[0].items[0].photo_url == "https://x/y.jpg"
+
+
+async def test_clubs_only_approved_active_and_for_the_card_term(db, org):
+    from app.models.modules.school import Club, ClubMembership
+    from app.services.card_ratings import student_clubs
+    _e, _p, _s, term, stu = await _world(db, org)
+    def club(name, deleted=False):
+        c = Club(id=str(uuid.uuid4()), name=name, org_id=org.id, is_deleted=deleted)
+        db.add(c)
+        return c
+    chess, football, drama, gone, music = club("Chess"), club("Football"), club("Drama"), club("Old Club", True), club("Music")
+    await db.flush()
+    def mem(c, **kw):
+        db.add(ClubMembership(id=str(uuid.uuid4()), club_id=c.id, student_id=stu.id, org_id=org.id, **kw))
+    mem(chess, status="approved")                              # no term: every term
+    mem(football, status="approved", term="AUTUMN")           # this term (case-insensitive)
+    mem(drama, status="approved", term="SPRING")              # another term
+    mem(gone, status="approved")                               # deleted club
+    mem(music, status="pending")                               # not approved
+    await db.commit()
+    assert await student_clubs(db, org.id, stu.id, "Autumn") == ["Chess", "Football"]

@@ -33,6 +33,16 @@ describe("report card templates", () => {
     expect(screen.getByText("Position")).toBeTruthy();
   });
 
+  it("secondary card has a Club/Sports Choice box listing the pupil's clubs; junior does not", () => {
+    const blocks = [{ domain_type: "affective", title: "SKILLS AND BEHAVIOUR", items: [{ domain_id: "a", name: "Leadership", rating: "4" }], key: [] }];
+    const { unmount } = render(<Card num={num} card={{ ...base, report_key: "secondary-report", clubs: ["Chess", "Football"], domain_blocks: blocks }} />);
+    expect(screen.getByText("Club/Sports Choice")).toBeTruthy();
+    expect(screen.getByText("Chess")).toBeTruthy();
+    unmount();
+    render(<Card num={num} card={{ ...base, report_key: "junior-report", clubs: ["Chess"], domain_blocks: blocks }} />);
+    expect(screen.queryByText("Club/Sports Choice")).toBeNull();
+  });
+
   it("nursery card prints areas and goals, with no marks table or position", () => {
     render(<Card num={num} card={{ ...base, report_key: "nursery-report", subjects: [], domain_blocks: [
       { domain_type: "eyfs_area", title: "Communication and Language", key: [{ label: "A", meaning: "Achieved" }, { label: "E", meaning: "Emerging" }],

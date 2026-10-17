@@ -3648,14 +3648,15 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         db, org, student_id,
         session_id=sess_id, term_id=term_id, sub_term_id=sub_term_id)
 
-    from app.services.card_ratings import card_domain_blocks, report_key_for_section
+    from app.services.card_ratings import card_domain_blocks, report_key_for_section, student_clubs
     _sec_id = cls.section_id if cls else None
     report_key = await report_key_for_section(db, org, _sec_id)
     domain_blocks = await card_domain_blocks(db, org, _sec_id, student_id, term_id, report_key)
+    clubs = await student_clubs(db, org, student_id, term_name)
 
     title = " ".join(x for x in [(term_name or "").upper(), (sub_name or "").upper(), "REPORT"] if x).strip()
     return ReportCardResponse(
-        report_key=report_key, domain_blocks=domain_blocks,
+        report_key=report_key, domain_blocks=domain_blocks, clubs=clubs,
         student_id=student_id, student_name=f"{student.first_name} {student.last_name}".strip(),
         admission_no=student.student_id, photo_url=getattr(student, "photo_url", None),
         class_name=(cls.name if cls else None), term_name=term_name, sub_term_name=sub_name, report_title=title,
