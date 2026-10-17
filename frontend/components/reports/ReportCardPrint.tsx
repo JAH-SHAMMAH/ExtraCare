@@ -94,7 +94,7 @@ export function BulkPrintTab() {
   );
 }
 
-function Card({ card, num }: { card: any; num: (v: any) => any }) {
+export function Card({ card, num }: { card: any; num: (v: any) => any }) {
   const b = card.branding || {};
   // Both operands checked, not just the denominator. `null / 60` is 0 in JS, so
   // a missing `present` beside a real `total` would have printed "0%" — an
@@ -120,6 +120,13 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
   const showSubjectComments = (card.subjects ?? []).some((r: any) => (r.comment ?? "").trim());
   // Date on the signature line: when the card was produced.
   const printedOn = new Date().toLocaleDateString("en-GB");
+  // Template dispatch. Nursery prints no marks at all (areas of learning rated
+  // A/E/SNS); Junior and Secondary print the marks table plus behaviour and skills.
+  // An unclassified section (report_key null) keeps the marks layout, the old default.
+  const isNursery = card.report_key === "nursery-report";
+  const blocks: any[] = card.domain_blocks ?? [];
+  const sideBlocks = blocks.filter((x) => x.domain_type === "affective" || x.domain_type === "psychomotor");
+  const areaBlocks = blocks.filter((x) => x.domain_type === "eyfs_area");
   return (
     <>
       <div className="flex items-center gap-4 border-b-2 border-slate-800 pb-3">
@@ -140,8 +147,8 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
             <td className="border border-slate-300 px-2 py-1">{card.student_name}</td>
             <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Class</td>
             <td className="border border-slate-300 px-2 py-1">{card.class_name || "—"}</td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Position</td>
-            <td className="border border-slate-300 px-2 py-1">{card.position} of {card.class_size}</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">{isNursery ? "Term" : "Position"}</td>
+            <td className="border border-slate-300 px-2 py-1">{isNursery ? (card.term_name || "—") : `${card.position} of ${card.class_size}`}</td>
           </tr>
           <tr>
             <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Admission No</td>
@@ -181,6 +188,7 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
         </p>
       )}
 
+      {!isNursery && (<>
       <table className="w-full text-xs mt-3 border border-slate-300">
         <thead>
           <tr className="bg-slate-100">
@@ -268,6 +276,11 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
         ) : <div />}
       </div>
 
+
+      <RatingBlocks blocks={sideBlocks} />
+      </>)}
+      {isNursery && <NurseryAreas blocks={areaBlocks} />}
+
       {/* Three fixed comments plus any configured custom slots. class_teacher and
           head come from StudentReport; pc is the newer per-(term, sub-term) store;
           slot_comments are the school's own named slots.
@@ -309,6 +322,73 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
         </tbody>
       </table>
     </>
+  );
+}
+
+/** Affective + Psychomotor, side by side, each line with its rating and one key
+ *  underneath. A line nobody has rated prints blank rather than a default. */
+function RatingBlocks({ blocks }: { blocks: any[] }) {
+  if (!blocks.length) return null;
+  return (
+    <div className="grid grid-cols-2 gap-3 mt-3 text-xs items-start break-inside-avoid">
+      {blocks.map((blk: any) => (
+        <div key={blk.domain_type}>
+          <table className="w-full border border-slate-300">
+            <thead><tr className="bg-slate-100"><th colSpan={2} className="border border-slate-300 px-2 py-1 text-left">{blk.title}</th></tr></thead>
+            <tbody>
+              {blk.items.map((it: any) => (
+                <tr key={it.domain_id}>
+                  <td className="border border-slate-300 px-2 py-0.5">{it.name}</td>
+                  <td className="border border-slate-300 px-2 py-0.5 text-center font-bold w-14">{it.rating || ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {blk.key?.length > 0 && (
+            <p className="text-[10px] text-slate-600 mt-1">
+              Key: {blk.key.map((k: any) => `${k.label}${k.meaning ? ` = ${k.meaning}` : ""}`).join("; ")}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Nursery: no marks. One table per area of learning, each goal with its rating
+ *  (and the teacher's note if there is one), and the key printed once per area. */
+function NurseryAreas({ blocks }: { blocks: any[] }) {
+  if (!blocks.length) {
+    return <p className="mt-4 text-center text-xs text-slate-400 border border-dashed border-slate-200 py-6">No areas of learning have been set up for this class yet.</p>;
+  }
+  return (
+    <div className="mt-3 space-y-3 text-xs">
+      {blocks.map((blk: any, i: number) => (
+        <div key={blk.title + i} className="break-inside-avoid">
+          <table className="w-full border border-slate-300">
+            <thead><tr className="bg-slate-100">
+              <th className="border border-slate-300 px-2 py-1 text-left">{blk.title}</th>
+              <th className="border border-slate-300 px-2 py-1 w-16">Rating</th>
+              <th className="border border-slate-300 px-2 py-1 text-left">Teacher&apos;s note</th>
+            </tr></thead>
+            <tbody>
+              {blk.items.map((it: any) => (
+                <tr key={it.domain_id}>
+                  <td className="border border-slate-300 px-2 py-1">{it.name}</td>
+                  <td className="border border-slate-300 px-2 py-1 text-center font-bold">{it.rating || ""}</td>
+                  <td className="border border-slate-300 px-2 py-1 text-[10px] leading-snug">{it.comment || ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {blk.key?.length > 0 && (
+            <p className="text-[10px] text-slate-600 mt-1">
+              Key: {blk.key.map((k: any) => `${k.label}${k.meaning ? ` = ${k.meaning}` : ""}`).join("; ")}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
