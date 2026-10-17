@@ -21,7 +21,7 @@ from app.models.modules.school import (
 from app.models.modules.platform import (
     AcademicSession, AcademicTerm, SchoolSection, ReportTemplate, GradingBand,
     ReportSubjectAssessment, AssessmentDomain, StudentDomainRating, MailboxMessage,
-    MailboxRecipient,
+    MailboxRecipient, ClassAreaTopic,
 )
 from app.models.modules.academics import ReportApproval
 from app.models.role import Role, user_roles
@@ -46,7 +46,7 @@ from app.schemas.grade import GradePublish, ReportMetaUpdate
 from app.schemas.academics import REPORT_PUBLISHABLE_STAGES, REPORT_RELEASED_STAGE
 from app.schemas.platform import (
     DomainRatingsSet, DomainRatingResponse, DomainRatingsGrid,
-    DomainRatingColumn, DomainRatingCell, DomainRatingsStudentRow,
+    DomainRatingColumn, DomainRatingCell, DomainRatingsStudentRow, AreaTopicsUpdate,
 )
 from app.schemas.lesson_planner import (
     CategoryCreate, CategoryUpdate, CategoryResponse,
@@ -1807,9 +1807,12 @@ async def class_domain_ratings_grid(
         )).scalars().all():
             rated[(r.student_id, r.domain_id)] = r
 
+    topic_rows = (await db.execute(select(ClassAreaTopic).where(
+        ClassAreaTopic.org_id == org_id, ClassAreaTopic.class_id == class_id,
+        ClassAreaTopic.term_id == term_id))).scalars().all()
     return DomainRatingsGrid(
         class_id=class_id, class_name=cls.name, term_id=term_id, term_name=term.name,
-        section_name=section_name,
+        section_name=section_name, topics={t.domain_id: (t.topics or "") for t in topic_rows},
         domains=[DomainRatingColumn(
             domain_id=d.id, name=d.name, domain_type=d.domain_type,
             parent_domain_id=d.parent_domain_id, parent_subject_id=d.parent_subject_id,
@@ -1829,6 +1832,48 @@ async def class_domain_ratings_grid(
             },
         ) for st in students],
     )
+
+
+@router.put("/classes/{class_id}/area-topics", dependencies=[_reports_write])
+async def set_class_area_topics(
+    class_id: str, data: AreaTopicsUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Save what a Nursery class covered in each area this term. Class teacher only,
+    like the ratings grid. An empty text clears the area's row."""
+    org_id = current_user.org_id
+    cls = (await db.execute(select(SchoolClass).where(
+        SchoolClass.id == class_id, SchoolClass.org_id == org_id))).scalar_one_or_none()
+    if not cls:
+        raise HTTPException(status_code=404, detail="class not found in your organisation.")
+    await _ensure_class_rating_author(db, current_user, class_id)
+    term = (await db.execute(select(AcademicTerm).where(
+        AcademicTerm.id == data.term_id, AcademicTerm.org_id == org_id))).scalar_one_or_none()
+    if not term:
+        raise HTTPException(status_code=404, detail="term not found in your organisation.")
+    # Only areas of THIS class's section may be written.
+    areas = {d.id for d in (await db.execute(select(AssessmentDomain).where(
+        AssessmentDomain.org_id == org_id, AssessmentDomain.section_id == cls.section_id,
+        AssessmentDomain.domain_type == "eyfs_area"))).scalars().all()} if cls.section_id else set()
+    bad = [d for d in data.topics if d not in areas]
+    if bad:
+        raise HTTPException(status_code=422, detail="Topics can only be set for this class's areas of learning.")
+    existing = {t.domain_id: t for t in (await db.execute(select(ClassAreaTopic).where(
+        ClassAreaTopic.org_id == org_id, ClassAreaTopic.class_id == class_id,
+        ClassAreaTopic.term_id == data.term_id))).scalars().all()}
+    for did, text in data.topics.items():
+        text = (text or "").strip()
+        row = existing.get(did)
+        if not text:
+            if row:
+                await db.delete(row)
+        elif row:
+            row.topics = text
+        else:
+            db.add(ClassAreaTopic(org_id=org_id, class_id=class_id, term_id=data.term_id, domain_id=did, topics=text))
+    await db.commit()
+    return {"saved": len(data.topics)}
 
 
 @router.put("/students/{student_id}/domain-ratings", dependencies=[_reports_write])

@@ -3187,6 +3187,18 @@ async def _report_key_for_section(db, org, section_id):
     return await report_key_for_section(db, org, section_id)
 
 
+async def _area_topics(db, org, cls, term_id, domain_blocks):
+    """The class's "topics covered so far", per area, in the order the areas print."""
+    from app.models.modules.platform import ClassAreaTopic
+    if not cls:
+        return []
+    rows = {t.domain_id: (t.topics or "").strip() for t in (await db.execute(select(ClassAreaTopic).where(
+        ClassAreaTopic.org_id == org, ClassAreaTopic.class_id == cls.id,
+        ClassAreaTopic.term_id == term_id))).scalars().all()}
+    return [{"title": b.title, "topics": rows[b.domain_id]} for b in domain_blocks
+            if getattr(b, "domain_type", None) == "eyfs_area" and rows.get(getattr(b, "domain_id", None))]
+
+
 @router.get("/report-broadsheet", response_model=BroadsheetResponse, dependencies=[Depends(PermissionChecker("school:reports:write"))])
 async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
                             session_id: str | None = None,
@@ -3684,6 +3696,7 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         heading=heading, first_name=student.first_name, last_name=student.last_name, session_name=_sess_name,
         class_teacher_name=_teacher, age_text=_age, next_term_begins=(_tp.next_term_begins if _tp else None),
         report_key=report_key, domain_blocks=domain_blocks, clubs=clubs,
+        area_topics=await _area_topics(db, org, cls, term_id, domain_blocks),
         student_id=student_id, student_name=f"{student.first_name} {student.last_name}".strip(),
         admission_no=student.student_id, photo_url=getattr(student, "photo_url", None),
         class_name=(cls.name if cls else None), term_name=term_name, sub_term_name=sub_name, report_title=title,

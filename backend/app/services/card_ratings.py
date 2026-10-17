@@ -73,7 +73,7 @@ async def card_domain_blocks(
         it = item(area)
         it.children = [item(g) for g in goals_by_area.get(area.id, [])]
         blocks.append(CardDomainBlock(
-            domain_type="eyfs_area", title=area.name, items=it.children or [it],
+            domain_type="eyfs_area", domain_id=area.id, title=area.name, items=it.children or [it],
             key=keys.get(area.rating_scale_id or "", [])))
     return blocks
 

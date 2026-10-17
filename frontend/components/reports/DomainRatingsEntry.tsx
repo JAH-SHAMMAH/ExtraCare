@@ -18,8 +18,9 @@
 import { useMemo, useState } from "react";
 import { Loader2, Save, ImagePlus, X } from "lucide-react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { useClassDomainRatings, useSaveDomainRatings } from "@/hooks/useSchool";
-import { uploadApi } from "@/lib/api";
+import { uploadApi, schoolApi } from "@/lib/api";
 
 type Cell = { rating: string | null; comment: string | null; photo_url: string | null };
 const key = (s: string, d: string) => `${s}:${d}`;
@@ -102,6 +103,7 @@ export function DomainRatingsEntry({ classId, termId, canWrite }: { classId: str
     let n = 0;
     return (
       <div className="space-y-4">
+        <AreaTopicsEditor classId={classId} termId={termId} areas={areas} saved={(g as any)?.topics ?? {}} canWrite={canWrite} />
         <div className="flex flex-wrap items-end gap-3 justify-between">
           <div>
             <label className="label">Pupil</label>
@@ -205,6 +207,52 @@ export function DomainRatingsEntry({ classId, termId, canWrite }: { classId: str
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** "The topics we have covered so far" for the whole class, one box per area of
+ *  learning. Printed once at the top of every pupil's Nursery report. */
+export function AreaTopicsEditor({ classId, termId, areas, saved, canWrite }: {
+  classId: string; termId: string; areas: any[]; saved: Record<string, string>; canWrite: boolean;
+}) {
+  const qc = useQueryClient();
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const value = (id: string) => draft[id] ?? saved[id] ?? "";
+  const changed = Object.keys(draft).filter((id) => draft[id] !== (saved[id] ?? ""));
+  const save = async () => {
+    setBusy(true);
+    try {
+      await schoolApi.grades.saveAreaTopics(classId, { term_id: termId, topics: Object.fromEntries(changed.map((id) => [id, draft[id]])) });
+      await qc.invalidateQueries({ queryKey: ["class-domain-ratings"] });
+      setDraft({});
+      toast.success("Topics saved.");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Could not save the topics.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4">
+      <h3 className="font-bold text-slate-900">Topics covered this term</h3>
+      <p className="text-xs text-slate-500 mb-3">For the whole class. Printed at the top of every pupil&apos;s report.</p>
+      <div className="space-y-3">
+        {areas.map((a) => (
+          <div key={a.domain_id}>
+            <label className="text-xs font-bold uppercase text-slate-600">{a.name}</label>
+            <textarea rows={2} disabled={!canWrite} value={value(a.domain_id)}
+              onChange={(e) => setDraft((p) => ({ ...p, [a.domain_id]: e.target.value }))}
+              placeholder="e.g. Listening to stories, following directions…" className="input w-full mt-1" />
+          </div>
+        ))}
+      </div>
+      {canWrite && (
+        <button onClick={save} disabled={!changed.length || busy} className="btn-primary gap-2 mt-3">
+          {busy ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save topics
+        </button>
+      )}
     </div>
   );
 }

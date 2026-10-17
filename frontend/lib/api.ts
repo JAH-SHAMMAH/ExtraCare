@@ -325,6 +325,9 @@ export const schoolApi = {
     // per-pupil read above would need a request per child.
     classDomainRatings: (class_id: string, term_id: string) =>
       api.get(`/school/classes/${class_id}/domain-ratings`, { params: { term_id } }).then((r) => r.data),
+    // Nursery: what the class covered in each area this term (domain_id -> text).
+    saveAreaTopics: (class_id: string, data: { term_id: string; topics: Record<string, string> }) =>
+      api.put(`/school/classes/${class_id}/area-topics`, data).then((r) => r.data),
   },
   // Library (Phase 6.5). Routes live under /library/* — separate router.
   library: {

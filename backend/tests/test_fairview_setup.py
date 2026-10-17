@@ -105,3 +105,31 @@ async def test_card_carries_heading_teacher_session(db, org):
     card = await report_card(student_id=w.pupil.id, term_id=w.term.id, sub_term_id=w.full.id, db=db, current_user=w.admin)
     assert card.heading.endswith(" SESSION") and card.heading.startswith(w.term.name.upper() + " REPORT")
     assert card.first_name and card.session_name
+
+
+async def test_nursery_topics_are_saved_by_the_class_teacher_and_print_on_the_card(db, org):
+    import uuid as _u
+    from fastapi import HTTPException
+    from app.models.modules.platform import AssessmentDomain, ClassAreaTopic
+    from app.routers.modules.school import set_class_area_topics, class_domain_ratings_grid
+    from app.schemas.platform import AreaTopicsUpdate
+    from tests.test_not_configured_sub_term import _world as nworld
+    w = await nworld(db, org)
+    cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == w.pupil.class_id))).scalars().one()
+    cls.teacher_id = w.admin.id
+    area = AssessmentDomain(id=str(_u.uuid4()), section_id=cls.section_id, domain_type="eyfs_area", name="Literacy", position=0, org_id=org.id)
+    sec2 = SchoolSection(id=str(_u.uuid4()), org_id=org.id, name="Other", curriculum="nigerian", position=9)
+    db.add(sec2); await db.flush()
+    other = AssessmentDomain(id=str(_u.uuid4()), section_id=sec2.id, domain_type="eyfs_area", name="Elsewhere", position=0, org_id=org.id)
+    db.add_all([area, other]); await db.commit()
+    await set_class_area_topics(cls.id, AreaTopicsUpdate(term_id=w.term.id, topics={area.id: "Phonics, tricky words"}), db=db, current_user=w.admin)
+    row = (await db.execute(select(ClassAreaTopic))).scalars().one()
+    assert row.topics == "Phonics, tricky words"
+    with pytest.raises(HTTPException):                       # another section's area is refused
+        await set_class_area_topics(cls.id, AreaTopicsUpdate(term_id=w.term.id, topics={other.id: "x"}), db=db, current_user=w.admin)
+    from app.routers.modules.platform import _area_topics
+    from app.schemas.platform import CardDomainBlock
+    printed = await _area_topics(db, org.id, cls, w.term.id, [CardDomainBlock(domain_type="eyfs_area", domain_id=area.id, title="Literacy")])
+    assert printed == [{"title": "Literacy", "topics": "Phonics, tricky words"}]
+    await set_class_area_topics(cls.id, AreaTopicsUpdate(term_id=w.term.id, topics={area.id: "  "}), db=db, current_user=w.admin)
+    assert (await db.execute(select(ClassAreaTopic))).scalars().all() == []   # empty clears

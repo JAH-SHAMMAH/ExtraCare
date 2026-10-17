@@ -730,6 +730,21 @@ class AssessmentDomain(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class ClassAreaTopic(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """What a Nursery CLASS covered in one area of learning this term: the
+    "topics we have covered so far in the Specific Areas of learning" box at the top
+    of every pupil's report. One text per (class, term, area); the area is an
+    ``eyfs_area`` AssessmentDomain."""
+    __tablename__ = "class_area_topics"
+
+    class_id = Column(String(36), ForeignKey("school_classes.id", ondelete="CASCADE"), nullable=False, index=True)
+    term_id = Column(String(36), ForeignKey("academic_terms.id", ondelete="CASCADE"), nullable=False, index=True)
+    domain_id = Column(String(36), ForeignKey("assessment_domains.id", ondelete="CASCADE"), nullable=False, index=True)
+    topics = Column(Text, nullable=True)
+
+    __table_args__ = (UniqueConstraint("class_id", "term_id", "domain_id", name="uq_class_area_topic"),)
+
+
 class StudentDomainRating(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A student's assessment against one domain for a term (School Reports R3).
 

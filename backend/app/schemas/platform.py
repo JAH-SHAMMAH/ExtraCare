@@ -557,6 +557,8 @@ class DomainRatingsGrid(BaseModel):
     term_id: str
     term_name: Optional[str] = None
     section_name: Optional[str] = None
+    # Nursery: what the class covered per area (domain_id -> text).
+    topics: dict[str, str] = Field(default_factory=dict)
     domains: list[DomainRatingColumn] = Field(default_factory=list)
     students: list[DomainRatingsStudentRow] = Field(default_factory=list)
 
@@ -1208,9 +1210,20 @@ class CardDomainBlock(BaseModel):
     Nursery area of learning). `key` is the rating scale as the school printed it,
     so the card can show what each letter means."""
     domain_type: str                  # affective | psychomotor | eyfs_area
+    domain_id: Optional[str] = None   # the area's own id (eyfs_area blocks)
     title: str
     items: list[CardRatingItem] = Field(default_factory=list)
     key: list[CardRatingKeyEntry] = Field(default_factory=list)
+
+
+class CardAreaTopic(BaseModel):
+    title: str
+    topics: str
+
+
+class AreaTopicsUpdate(BaseModel):
+    term_id: str
+    topics: dict[str, str] = Field(default_factory=dict)   # domain_id -> text; empty clears
 
 
 class ReportCardResponse(BaseModel):
@@ -1244,6 +1257,8 @@ class ReportCardResponse(BaseModel):
     # then uses the marks-table layout, the safe default).
     report_key: Optional[str] = None
     domain_blocks: list[CardDomainBlock] = Field(default_factory=list)
+    # Nursery: the class's "topics covered so far" per area, printed above the goals table.
+    area_topics: list[CardAreaTopic] = Field(default_factory=list)
     # Approved clubs / sports for this term; Secondary prints them as "Club/Sports Choice".
     clubs: list[str] = Field(default_factory=list)
     branding: BrandingResponse = Field(default_factory=BrandingResponse)

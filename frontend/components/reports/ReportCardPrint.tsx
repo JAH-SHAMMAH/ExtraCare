@@ -354,6 +354,14 @@ export function Card({ card, num }: { card: any; num: (v: any) => any }) {
       <RatingBlocks blocks={sideBlocks} clubs={null} />
       </>) : <SecondaryBottom card={card} num={num} blocks={sideBlocks} />}
       </>)}
+      {isNursery && (card.area_topics ?? []).length > 0 && (
+        <div className="mt-4 border border-black p-4 text-base leading-snug">
+          <p className="text-xl font-bold mb-2">The topics we have covered so far in the Specific Areas of learning are:</p>
+          {(card.area_topics as any[]).map((t) => (
+            <p key={t.title} className="mb-2"><span className="font-bold">{t.title}:</span> {t.topics}</p>
+          ))}
+        </div>
+      )}
       {isNursery && <NurseryAreas blocks={areaBlocks} />}
 
       {/* Three fixed comments plus any configured custom slots. class_teacher and
