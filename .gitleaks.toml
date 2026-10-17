@@ -1,0 +1,112 @@
+# gitleaks configuration for this repository.
+#
+# Starts from the maintained default rule set and ADDS what this project's own
+# incident showed the defaults do not catch. It never relaxes a default rule --
+# the whole point of the CI job is that it has no bypass, and quietly widening an
+# allowlist here would be a bypass with extra steps.
+#
+# `[extend] useDefault = true` pulls in gitleaks' ~170 provider rules (AWS,
+# GitHub, Stripe, Slack, private keys, and so on). Everything below is additive.
+
+title = "ExtraCare ERP"
+
+[extend]
+useDefault = true
+
+# ── what the defaults missed in the 2026-08-23 incident ──────────────────────
+#
+# gitleaks' default set is organised around PROVIDER TOKEN FORMATS -- things with
+# a recognisable prefix like `AKIA` or `ghp_`. The two things that actually
+# leaked here have no such shape:
+#
+#   1. a PostgreSQL URL with an embedded password. There is a default rule for
+#      some database URIs, but this repository had 40 files carrying one and the
+#      scan that found them was our own, so it is pinned explicitly here.
+#   2. a CSV of 450 passwords. No token-format rule can see that at all -- it is
+#      caught by `tools/scan_secrets.py`, which looks at the header ROW, and the
+#      CI job runs that too. It is named here only so the reason is on record.
+
+[[rules]]
+id = "database-url-with-password"
+description = "connection string with an embedded password"
+# Excludes ${VAR} templates and <user>:<password> documentation placeholders --
+# docker-compose.prod.yml builds its DSN from ${DB_USER}:${DB_PASSWORD}@, and
+# flagging that would train people to ignore this job.
+regex = '''(?i)(postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)(?:\+\w+)?://[^\s:/@"'$<>]+:[^\s@/"'$<>][^\s@/"'<>]{2,}@'''
+tags = ["database", "credential"]
+
+[[rules]]
+id = "cloudinary-url-with-secret"
+description = "Cloudinary URL carrying the API secret"
+regex = '''cloudinary://[0-9]{6,}:[A-Za-z0-9_\-]{10,}@'''
+tags = ["cloudinary", "credential"]
+
+[[rules]]
+id = "assigned-credential-literal"
+description = "a password/secret/token assigned a literal in source"
+# Deliberately narrow: at least 12 characters, no spaces (a value with a space
+# is prose -- `newErrors.password = \"Password is required\"`), and not an
+# obvious placeholder. The repository's own scanner applies the same reasoning
+# and explains it at length.
+#
+# NO LOOKAHEAD HERE. gitleaks uses Go's regexp, which is RE2 -- it has no
+# lookahead or lookbehind at all, and a config containing one does not merely
+# mis-match, it makes gitleaks EXIT 2 and the whole job fails for the wrong
+# reason. The identifier exclusion is a per-rule allowlist instead.
+regex = '''(?i)\b[a-z0-9_]*(?:password|passwd|pwd|secret|api_?key|auth_token)[a-z0-9_]*\s*[:=]\s*["'][^"'\s]{12,}["']'''
+tags = ["credential"]
+
+  # An enum member whose value restates its own name is an identifier, not a
+  # credential: `PASSWORD_RESET = "auth.password_reset"`. Matched against the
+  # whole match, so only this rule is softened -- gitleaks' default
+  # provider-format rules are untouched and still fire anywhere.
+  [rules.allowlist]
+  regexTarget = "match"
+  regexes = ['''[:=]\s*["'][a-z0-9_.]+["']''']
+
+# ── allowlist: documentation and fixtures, narrowly ─────────────────────────
+#
+# These are PATHS and PLACEHOLDER SHAPES, never specific findings. There is no
+# entry here that exempts a particular line or a particular value, because that
+# is the bypass this job is built to refuse. If a real finding appears in one of
+# these paths it is still a real finding -- fix it.
+
+[allowlist]
+description = "placeholders, examples and test fixtures"
+
+paths = [
+  # Example env files carry names and `CHANGE_THIS` markers, never values.
+  '''^\.env\.example$''',
+  '''^\.env\.production\.example$''',
+  # Test fixtures. A *provider-format* key here would still be caught, because
+  # this allowlist narrows only the regexes above, not gitleaks' default rules.
+  '''(^|/)tests?/''',
+  '''(^|/)test_[^/]*\.py$''',
+  '''\.test\.tsx?$''',
+  '''\.spec\.tsx?$''',
+  # The scanner and this config necessarily contain the patterns themselves.
+  '''^tools/scan_secrets\.py$''',
+  '''^\.gitleaks\.toml$''',
+  '''^\.githooks/''',
+  # Carries a planted fake AWS key ON PURPOSE: the self-test step proves the
+  # scan actually fails on a secret, which a green run alone cannot show.
+  '''^\.github/workflows/secret-scan\.yml$''',
+  # Our own documentation of the incident quotes shapes, not values.
+  '''^CLAUDE\.md$''',
+  '''^GO_LIVE_DELETION_CHECKLIST\.md$''',
+]
+
+regexes = [
+  # ${VAR} and $VAR references -- a template is not a credential.
+  '''\$\{[A-Za-z_][A-Za-z0-9_]*\}''',
+  '''\$[A-Z][A-Z0-9_]{2,}''',
+  # <user>:<password> and friends, the documentation convention this repo uses.
+  '''<[a-z_ ]{3,20}>''',
+  # the usual placeholder words
+  '''(?i)\b(changeme|change_me|your[-_ ]?\w+|placeholder|example|redacted|dummy|xxx+)\b''',
+  # runtime generation, which is what seed and reset scripts now do
+  '''secrets\.token_urlsafe''',
+  '''os\.environ''',
+  '''getenv''',
+  '''getpass''',
+]
