@@ -5,6 +5,7 @@ import { useHasPermission } from "@/components/guards/PermissionGate";
 import { TermsTab, TermDatesTab, AttendanceTab, DeadlineTab, CommentTab, DefaultCommentTab, GradingSystemTab, BrandingTab, ResultTypeTab, ResultPhotoTab, ExclusionTab } from "@/components/reports/ReportSetupTabs";
 import { AssessmentGroupTab, AssessmentTab } from "@/components/reports/ReportAssessmentTabs";
 import { ResultViewTab } from "@/components/reports/ReportResultViewTab";
+import { NonAssessmentTab } from "@/components/reports/NonAssessmentTab";
 import { BehaviourSkillsTab } from "@/components/reports/BehaviourSkillsTab";
 import { cn } from "@/lib/utils";
 import { Settings2 } from "lucide-react";
@@ -26,7 +27,7 @@ const TABS: [Tab, string][] = [
   ["photo", "Result Photo Setup"], ["exclusion", "Subjects For Score Exclusion"], ["result-view", "Result View"],
 ];
 
-const LIVE = new Set<Tab>(["terms", "comment", "grading", "assessment-group", "assessment", "default-comment", "behaviour-skills", "term-dates", "attendance", "deadline", "branding", "result-type", "photo", "exclusion", "result-view"]);
+const LIVE = new Set<Tab>(["terms", "comment", "non-assessment", "grading", "assessment-group", "assessment", "default-comment", "behaviour-skills", "term-dates", "attendance", "deadline", "branding", "result-type", "photo", "exclusion", "result-view"]);
 
 export default function ReportSetupPage() {
   const canWrite = useHasPermission("settings:write");
@@ -58,6 +59,7 @@ export default function ReportSetupPage() {
         : tab === "assessment-group" ? <AssessmentGroupTab canWrite={canWrite} />
         : tab === "assessment" ? <AssessmentTab canWrite={canWrite} />
         : tab === "result-view" ? <ResultViewTab canWrite={canWrite} />
+        : tab === "non-assessment" ? <NonAssessmentTab />
         : tab === "behaviour-skills" ? <BehaviourSkillsTab canWrite={canWrite} />
         : <Placeholder label={TABS.find(([k]) => k === tab)?.[1] ?? ""} />}
     </div>

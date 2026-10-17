@@ -554,7 +554,11 @@ function NurseryAreas({ blocks }: { blocks: any[] }) {
 
 // ── S-4d: Head / PC comment grids ────────────────────────────────────────────
 
-export function CommentGridTab({ kind, label }: { kind: "head" | "pc"; label: string }) {
+export function CommentGridTab({ kind, label, commentTypeId, maxLength }: {
+  kind: "head" | "pc" | "custom"; label: string;
+  /** A school-defined slot (Report Setup → Comment). When set, `kind` is ignored by the API. */
+  commentTypeId?: string; maxLength?: number | null;
+}) {
   const classesData: any = useClasses({ page_size: 200 }).data;
   const classes: any[] = classesData?.items ?? classesData ?? [];
   const { data: terms = [] } = useTerms();
@@ -562,7 +566,7 @@ export function CommentGridTab({ kind, label }: { kind: "head" | "pc"; label: st
   const [classId, setClassId] = useState("");
   const [termId, setTermId] = useState("");
   const [subTermId, setSubTermId] = useState("");
-  const { data: grid, isLoading, isError, error } = useCommentGrid({ class_id: classId, term_id: termId, sub_term_id: subTermId, kind });
+  const { data: grid, isLoading, isError, error } = useCommentGrid({ class_id: classId, term_id: termId, sub_term_id: subTermId, kind, comment_type_id: commentTypeId });
   // The class picker offers every class, but the API only lets you write comments
   // for your own: head comments are admin-only and PC comments are limited to
   // that class's PC teacher. A refusal used to fall through to "No pupils in this
@@ -577,7 +581,8 @@ export function CommentGridTab({ kind, label }: { kind: "head" | "pc"; label: st
   }, [grid]);
 
   const submit = () => save.mutate({
-    term_id: termId, sub_term_id: subTermId, kind,
+    term_id: termId, sub_term_id: subTermId, kind, class_id: classId,
+    ...(commentTypeId ? { comment_type_id: commentTypeId } : {}),
     items: (grid?.rows ?? []).map((r: any) => ({ student_id: r.student_id, text: draft[r.student_id] ?? "" })),
   });
 
@@ -612,7 +617,7 @@ export function CommentGridTab({ kind, label }: { kind: "head" | "pc"; label: st
           {(grid.rows as any[]).map((r) => (
             <div key={r.student_id} className="flex flex-col sm:flex-row sm:items-start gap-3 px-5 py-3">
               <span className="text-sm font-semibold text-slate-800 sm:w-48 shrink-0 pt-2">{r.student_name}</span>
-              <textarea value={draft[r.student_id] ?? ""} onChange={(e) => setDraft((p) => ({ ...p, [r.student_id]: e.target.value }))} className="input flex-1" rows={2} placeholder={`${label}…`} />
+              <textarea value={draft[r.student_id] ?? ""} onChange={(e) => setDraft((p) => ({ ...p, [r.student_id]: e.target.value }))} className="input flex-1" rows={2} maxLength={maxLength ?? undefined} placeholder={`${label}…`} />
             </div>
           ))}
         </div>

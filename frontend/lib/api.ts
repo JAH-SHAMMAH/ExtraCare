@@ -1804,7 +1804,7 @@ export const platformApi = {
   reportCard: (p: { student_id: string; term_id: string; sub_term_id: string }) => api.get("/platform/report-card", { params: p }).then((r) => r.data),
   reportCardsBulk: (p: { class_id: string; term_id: string; sub_term_id: string }) => api.get("/platform/report-cards-bulk", { params: p }).then((r) => r.data),
   reportComments: {
-    grid: (p: { class_id: string; term_id: string; sub_term_id: string; kind: string }) => api.get("/platform/report-comments", { params: p }).then((r) => r.data),
+    grid: (p: { class_id: string; term_id: string; sub_term_id: string; kind: string; comment_type_id?: string }) => api.get("/platform/report-comments", { params: p }).then((r) => r.data),
     save: (d: object) => api.post("/platform/report-comments", d).then((r) => r.data),
   },
   // The subject teacher's own per-pupil remark. Sibling of reportComments above,

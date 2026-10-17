@@ -467,7 +467,7 @@ export function useReportCardsBulk(p: { class_id: string; term_id: string; sub_t
 }
 
 // ── S-4d: report-card comment grids ──────────────────────────────────────────
-export function useCommentGrid(p: { class_id: string; term_id: string; sub_term_id: string; kind: string }) {
+export function useCommentGrid(p: { class_id: string; term_id: string; sub_term_id: string; kind: string; comment_type_id?: string }) {
   return useQuery<any>({
     queryKey: ["report-comments", p],
     queryFn: () => platformApi.reportComments.grid(p),

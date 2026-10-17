@@ -1,6 +1,7 @@
 "use client";
 
 import { CommentGridTab } from "@/components/reports/ReportCardPrint";
+import { NonAssessmentTab } from "@/components/reports/NonAssessmentTab";
 import { MessageSquareText } from "lucide-react";
 
 /**
@@ -39,6 +40,10 @@ export default function TeacherCommentsPage() {
       </p>
 
       <CommentGridTab kind="pc" label="PC Comment" />
+
+      {/* The school's own comment slots (Report Setup → Comment), minus any marked admin-only. */}
+      <h2 className="text-sm font-bold text-slate-800 mt-8 mb-3">Other comments</h2>
+      <NonAssessmentTab adminOnly={false} />
     </div>
   );
 }
