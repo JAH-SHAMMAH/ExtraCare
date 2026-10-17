@@ -87,10 +87,10 @@ describe("report card templates", () => {
 
 describe("report header", () => {
   it("shows the school logo top-left and a photo box top-right, even without a pupil photo", () => {
-    const html = renderToStaticMarkup(<Card card={{ branding: { logo_url: "https://x/logo.png" }, student_name: "Ada", subjects: [], report_key: "junior-report" }} num={(v: any) => v} />);
+    const html = renderToStaticMarkup(<Card card={{ ...base, branding: { logo_url: "https://x/logo.png" }, report_key: "junior-report" }} num={(v: any) => v} />);
     expect(html).toContain('src="https://x/logo.png"');
     expect(html).toContain('data-testid="photo-placeholder"');
-    const withPhoto = renderToStaticMarkup(<Card card={{ branding: {}, student_name: "Ada", photo_url: "https://x/ada.jpg", subjects: [], report_key: "junior-report" }} num={(v: any) => v} />);
+    const withPhoto = renderToStaticMarkup(<Card card={{ ...base, photo_url: "https://x/ada.jpg", report_key: "junior-report" }} num={(v: any) => v} />);
     expect(withPhoto).toContain('src="https://x/ada.jpg"');
   });
 });
