@@ -150,6 +150,14 @@ export function Card({ card, num }: { card: any; num: (v: any) => any }) {
             <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">{isNursery ? "Term" : "Position"}</td>
             <td className="border border-slate-300 px-2 py-1">{isNursery ? (card.term_name || "—") : `${card.position} of ${card.class_size}`}</td>
           </tr>
+          {isNursery ? (
+            <tr>
+              <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Admission No</td>
+              <td className="border border-slate-300 px-2 py-1">{card.admission_no || "—"}</td>
+              <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Session</td>
+              <td colSpan={3} className="border border-slate-300 px-2 py-1">{card.term_name || "—"}{card.sub_term_name ? ` · ${card.sub_term_name}` : ""}</td>
+            </tr>
+          ) : (<>
           <tr>
             <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Admission No</td>
             <td className="border border-slate-300 px-2 py-1">{card.admission_no || "—"}</td>
@@ -166,13 +174,14 @@ export function Card({ card, num }: { card: any; num: (v: any) => any }) {
             <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Term</td>
             <td className="border border-slate-300 px-2 py-1">{card.term_name || "—"}{card.sub_term_name ? ` · ${card.sub_term_name}` : ""}</td>
           </tr>
+          </>)}
         </tbody>
       </table>
 
       {/* Provenance, on screen only. A figure that was typed should not be
           mistaken for one that was counted — the same reason `threshold_source`
           is surfaced on the Result Analysis reports. */}
-      {attSource && attSource !== "none" && (
+      {!isNursery && attSource && attSource !== "none" && (
         <p className="print:hidden text-[11px] text-slate-400 -mt-2 mb-2">
           {attSource === "register" ? (
             <>Attendance counted from the daily register

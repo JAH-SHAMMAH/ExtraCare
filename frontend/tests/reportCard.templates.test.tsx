@@ -45,6 +45,7 @@ describe("report card templates", () => {
     expect(screen.queryByText("Mathematics")).toBeNull();
     expect(screen.queryByText("Student's Average")).toBeNull();
     expect(screen.queryByText("Position")).toBeNull();
+    expect(screen.queryByText("Times School Opened")).toBeNull();     // Nursery prints no attendance block
   });
 
   it("nursery card always has Learning Areas, ELG, Achievement and Sample Picture columns", () => {
