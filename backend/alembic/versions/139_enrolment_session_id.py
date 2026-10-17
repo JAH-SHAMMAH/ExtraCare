@@ -57,7 +57,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "139_enrolment_session_id"
-down_revision = "138_subject_section_required"
+down_revision = "141_domain_rating_photo"
 branch_labels = None
 depends_on = None
 
