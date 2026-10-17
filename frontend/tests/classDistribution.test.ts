@@ -24,7 +24,7 @@ describe("a class with no academic_year", () => {
     // row was dropped and the chart drew 30 bars for 31 classes.
     const rows = currentSessionRows(FAIRVIEW);
     expect(rows.map((r) => r.label)).toContain("Playgroup");
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(3); // Year 1 A + Year 1 B are one year group
   });
 
   it("contributes its pupils to the total", () => {
@@ -64,14 +64,11 @@ describe("a class with no academic_year", () => {
   });
 });
 
-describe("labels come from the shared helper", () => {
-  it("does not double an arm the name already carries", () => {
+describe("bars are year groups, not arms", () => {
+  it("drops the arm and adds the arms together", () => {
     const rows = currentSessionRows(FAIRVIEW);
-    expect(rows.map((r) => r.label)).toEqual([
-      "Playgroup", "Reception Olive A", "Year 1 A", "Year 1 B",
-    ]);
-    // The reported symptom, asserted as absent.
-    expect(rows.map((r) => r.label)).not.toContain("Year 1 A A");
+    expect(rows.map((r) => r.label)).toEqual(["Playgroup", "Reception Olive", "Year 1"]);
+    expect(rows.find((r) => r.label === "Year 1")?.students).toBe(15 + 14);
   });
 
   it("sorts numerically so Year 10 follows Year 9", () => {
@@ -81,7 +78,7 @@ describe("labels come from the shared helper", () => {
       { name: "Year 2 A", section: "A", academic_year: "2025/2026", student_count: 1 },
     ];
     expect(currentSessionRows(many).map((r) => r.label))
-      .toEqual(["Year 2 A", "Year 9 A", "Year 10 A"]);
+      .toEqual(["Year 2", "Year 9", "Year 10"]);
   });
 });
 
@@ -95,7 +92,7 @@ describe("the All sessions view", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].label).toBe("2025/2026");
     expect(rows[0].students).toBe(41);
-    expect(rows[0].classes).toBe(4);
+    expect(rows[0].classes).toBe(4); // still four classes, shown as three bars
   });
 
   it("agrees exactly with the current-session view", () => {
@@ -103,7 +100,7 @@ describe("the All sessions view", () => {
     const current = currentSessionRows(FAIRVIEW);
     const all = allSessionsRows(FAIRVIEW);
     expect(all[0].students).toBe(current.reduce((s, r) => s + r.students, 0));
-    expect(all[0].classes).toBe(current.length);
+    expect(all[0].classes).toBe(FAIRVIEW.length);
   });
 
   it("has a label even with no session on any row", () => {

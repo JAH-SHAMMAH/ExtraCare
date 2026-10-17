@@ -14,7 +14,7 @@
  * correct 450/450; but enrol one child there and they vanish from both the
  * chart and the count, with no empty state to explain where they went.
  */
-import { classLabel, type ClassLike } from "./classLabel";
+import { yearGroupLabel, type ClassLike } from "./classLabel";
 
 export interface DistributionClass extends ClassLike {
   academic_year?: string | null;
@@ -65,18 +65,26 @@ export function isInCurrentSession(
   return cls.academic_year === currentSession;
 }
 
-/** One row per class in the current session, sorted by label. */
+/**
+ * One row per YEAR GROUP in the current session: arms ("Year 7 A", "Year 7 B")
+ * are added together under "Year 7". Capacity is summed when every arm has one.
+ */
 export function currentSessionRows(
   classes: readonly DistributionClass[],
   currentSession: string | null = currentSessionOf(classes),
 ): DistributionRow[] {
-  return classes
-    .filter((c) => isInCurrentSession(c, currentSession))
-    .map((c) => ({
-      label: classLabel(c),
-      students: c.student_count ?? 0,
-      capacity: c.capacity,
-    }))
+  const groups = new Map<string, DistributionRow & { allCap: boolean }>();
+  for (const c of classes.filter((x) => isInCurrentSession(x, currentSession))) {
+    const label = yearGroupLabel(c);
+    const key = label.toLowerCase();
+    const g = groups.get(key) ?? { label, students: 0, capacity: 0, allCap: true };
+    g.students += c.student_count ?? 0;
+    if (typeof c.capacity === "number") g.capacity = (g.capacity ?? 0) + c.capacity;
+    else g.allCap = false;
+    groups.set(key, g);
+  }
+  return Array.from(groups.values())
+    .map(({ label, students, capacity, allCap }) => ({ label, students, capacity: allCap ? capacity : null }))
     .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
 }
 
@@ -100,6 +108,6 @@ export function allSessionsRows(
   return [{
     label: currentSession ?? "Current session",
     students: rows.reduce((sum, r) => sum + r.students, 0),
-    classes: rows.length,
+    classes: classes.filter((c) => isInCurrentSession(c, currentSession)).length,
   }];
 }

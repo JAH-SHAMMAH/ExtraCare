@@ -63,3 +63,20 @@ export function classLabel(cls: ClassLike | null | undefined): string {
   if (!arm) return name;
   return alreadyEndsWithArm(name, arm) ? name : `${name} ${arm}`;
 }
+
+
+/**
+ * The year group a class belongs to, with its arm taken off: "Year 7 A" and
+ * "Year 7 B" are both "Year 7". Used by the School Class Distribution chart,
+ * which shows pupils per YEAR GROUP, not per arm.
+ *
+ * Only a trailing single letter is treated as an arm ("Year 1 A", "Year 1A").
+ * Names that end in a word ("Reception Olive", "Year 6 Pearl") are kept as
+ * stored, and the stored `section` field is ignored — on those classes it is a
+ * synthetic "A" the school never uses.
+ */
+export function yearGroupLabel(cls: ClassLike | null | undefined): string {
+  const name = (cls?.name ?? "").trim();
+  if (!name) return "";
+  return name.replace(/\s+[A-Za-z]$/, "").replace(/(\d)[A-Za-z]$/, "$1").trim() || name;
+}
