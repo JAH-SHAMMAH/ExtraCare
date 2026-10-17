@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMyTeachingAssignments, useReportEntryGrid, useSaveReportEntry, useSaveSubjectComments, useSubjectCommentGrid, useSubTerms, useTerms } from "@/hooks/usePlatform";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { classesFromAssignments, defaultSubTermId, subjectsForClass, subTermDisplay } from "@/lib/reportEntry";
 import { useSubjectReadiness, useSubmitClassReport, useSubmitSubjectReport, useWithdrawSubjectReport } from "@/hooks/useAcademics";
@@ -101,6 +102,10 @@ export default function MakeReportPage() {
       <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>School Report</span><span>/</span><span className="text-brand-600 font-semibold">Make Report</span></nav>
       <h1 className="text-2xl font-black text-slate-900 tracking-tight mb-1 flex items-center gap-2"><NotebookPen size={22} className="text-brand-600" /> Make Report</h1>
       <p className="text-slate-500 text-sm mb-5">Enter scores for the subjects you teach. You only see the classes and subjects assigned to you on the timetable.</p>
+      <p className="text-sm bg-brand-50 border border-brand-100 text-brand-800 rounded-lg px-3 py-2 mb-5">
+        Class teacher? Rate your pupils&apos; skills and behaviour (or Nursery learning goals) in{" "}
+        <Link href="/dashboard/modules/school/skills-behaviour" className="font-semibold underline">Skills &amp; Behaviour</Link>.
+      </p>
 
       {loadingA ? (
         <div className="py-16 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
