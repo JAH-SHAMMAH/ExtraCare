@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """
 Create student login account in PRODUCTION Postgres database.
@@ -7,7 +8,7 @@ Usage:
 
 Example:
   python scripts/create_student_login_prod.py "abebi.abioye@fairviewschoolng.com" \
-    "postgresql://school_db_onyz_user:YkbhMJcvMDVWUmqS0k1kaLF837WclhIK@dpg-d9clkl9kh4rs73cv3lq0-a.ohio-postgres.render.com/school_db_onyz"
+    os.environ["PROD_DATABASE_URL"]
 
 The password is printed to terminal ONLY — never stored in git or any file.
 """

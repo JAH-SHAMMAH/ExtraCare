@@ -1,3 +1,4 @@
+import os
 """
 Reset passwords for one or more teachers.
 Parameterized for reuse.
@@ -9,7 +10,7 @@ import bcrypt
 async def reset_password(email: str, password: str):
     """Reset password for a specific teacher email."""
     conn = await asyncpg.connect(
-        "postgresql://school_db_onyz_user:YkbhMJcvMDVWUmqS0k1kaLF837WclhIK@dpg-d9clkl9kh4rs73cv3lq0-a.ohio-postgres.render.com/school_db_onyz",
+        os.environ["PROD_DATABASE_URL"],
         ssl="require"
     )
 

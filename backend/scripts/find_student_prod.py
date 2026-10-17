@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """
 Read-only diagnostic: Find student in production Postgres by name or email pattern.
@@ -20,7 +21,7 @@ async def main():
         print("")
         print("Example:")
         print("  python scripts/find_student_prod.py 'Abebi Abioye' \\")
-        print("    'postgresql://school_db_onyz_user:YkbhMJcvMDVWUmqS0k1kaLF837WclhIK@...'")
+        print("    'postgresql://<user>:<password>@host/db'")
         return 2
 
     search_term = sys.argv[1].strip()

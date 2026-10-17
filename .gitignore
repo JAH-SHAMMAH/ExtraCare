@@ -56,3 +56,12 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# ── Never commit credentials ──
+*credentials*.csv
+*_credentials_output*
+.env
+.env.*
+!.env.example
+!.env.production.example
+!*.env.example

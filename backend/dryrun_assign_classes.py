@@ -1,3 +1,4 @@
+import os
 """
 DRY RUN: Assign existing school_classes to new school_sections.
 Maps based on class level (Early Years → Nursery, Primary → Primary, Secondary → Secondary).
@@ -8,7 +9,7 @@ import asyncpg
 
 async def main():
     conn = await asyncpg.connect(
-        "postgresql://school_db_onyz_user:YkbhMJcvMDVWUmqS0k1kaLF837WclhIK@dpg-d9clkl9kh4rs73cv3lq0-a.ohio-postgres.render.com/school_db_onyz",
+        os.environ["PROD_DATABASE_URL"],
         ssl="require"
     )
     
