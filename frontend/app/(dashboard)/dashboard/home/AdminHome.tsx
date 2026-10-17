@@ -1,5 +1,6 @@
 "use client";
 
+import { QuickGuideButton } from "@/components/guide/QuickGuide";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
@@ -69,6 +70,8 @@ export function AdminHome() {
             {org?.name}{dateStr ? ` · ${dateStr}` : ""}
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        <QuickGuideButton />
         <button
           onClick={() => refetch()}
           disabled={isFetching}
@@ -78,6 +81,7 @@ export function AdminHome() {
           {isFetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
           Refresh
         </button>
+        </div>
       </div>
 
       {/* Primary stats strip — 6 prominent cards */}
