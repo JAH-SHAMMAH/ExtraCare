@@ -700,6 +700,26 @@ async def get_report_branding(section_id: str | None = None, db: AsyncSession = 
     return _branding_response(b, inherited)
 
 
+@router.post("/report-setup/fairview", dependencies=[_report_admin_write])
+async def fairview_report_setup(apply: bool = False, align: bool = True, request: Request = None,
+                                db: AsyncSession = Depends(get_db),
+                                current_user: User = Depends(get_current_active_user)):
+    """Put the Educare-style cards in place without a shell. Default is a PREVIEW
+    that changes nothing; ?apply=true does it in one transaction. Adds domains and
+    columns only, and carries old marks onto the new columns proportionally; the
+    old columns are hidden (year_group='LEGACY'), never deleted."""
+    from app.services.fairview_setup import run_setup
+    result = await run_setup(db, current_user.org_id, write=apply, align=align)
+    if apply:
+        await log_action(
+            db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
+            resource_type="ReportSetup", resource_id=current_user.org_id,
+            resource_label="applied Fairview report card setup", request=request,
+        )
+        await db.commit()
+    return result
+
+
 @router.put("/report-branding", response_model=BrandingResponse, dependencies=[_write])
 async def update_report_branding(payload: BrandingUpdate, section_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Saves the school default, or, with ?section_id=, that section's own row.

@@ -6,6 +6,7 @@ import { TermsTab, TermDatesTab, AttendanceTab, DeadlineTab, CommentTab, Default
 import { AssessmentGroupTab, AssessmentTab } from "@/components/reports/ReportAssessmentTabs";
 import { ResultViewTab } from "@/components/reports/ReportResultViewTab";
 import { BehaviourSkillsTab } from "@/components/reports/BehaviourSkillsTab";
+import { FairviewSetupCard } from "@/components/reports/FairviewSetupCard";
 import { cn } from "@/lib/utils";
 import { Settings2 } from "lucide-react";
 
@@ -37,6 +38,8 @@ export default function ReportSetupPage() {
       <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Secondary School Report</span><span>/</span><span className="text-brand-600 font-semibold">Report Setup</span></nav>
       <h1 className="text-2xl font-black text-slate-900 tracking-tight mb-1 flex items-center gap-2"><Settings2 size={22} className="text-brand-600" /> Report Setup</h1>
       <p className="text-slate-500 text-sm mb-5">Configuration hub for the report-card engine. Terms, dates, attendance and deadlines are live; the assessment &amp; result-view tabs arrive in later batches.</p>
+
+      {canWrite && <FairviewSetupCard />}
 
       <div className="flex flex-wrap gap-1 border-b border-slate-200 mb-6">
         {TABS.map(([k, l]) => (
