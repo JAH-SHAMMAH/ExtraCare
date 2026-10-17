@@ -85,6 +85,8 @@ function TeacherReportCardsView() {
     [sections, sectionName],
   );
   const scoped = !!sectionName;
+  // The section ROW is still called Primary / Early Years; the reports call them Junior / Nursery.
+  const levelLabel = ({ primary: "Junior", "early years": "Nursery" } as Record<string, string>)[sectionName.toLowerCase()] ?? sectionName;
   // Classes belonging to this level (for the class sub-filter).
   const { data: classesResp } = useClasses({ page_size: 100 });
   const levelClasses = useMemo(
@@ -108,9 +110,9 @@ function TeacherReportCardsView() {
   return (
     <div className="p-8 max-w-7xl mx-auto">
       <div className="mb-8 no-print">
-        <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Education</span><span>/</span>{scoped && <><span>Reports</span><span>/</span></>}<span className="text-brand-600 font-semibold">{scoped ? `${sectionName} School Report` : "Report Cards"}</span></nav>
-        <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">{scoped && <GraduationCap size={22} className="text-brand-600" />}{scoped ? `${sectionName} School Report` : "Report Cards"}</h1>
-        <p className="text-slate-500 text-sm mt-0.5">{scoped ? `View, complete and print report cards for the ${sectionName} level.` : "View, complete and print student report cards."}</p>
+        <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Education</span><span>/</span>{scoped && <><span>Reports</span><span>/</span></>}<span className="text-brand-600 font-semibold">{scoped ? `${levelLabel} School Report` : "Report Cards"}</span></nav>
+        <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">{scoped && <GraduationCap size={22} className="text-brand-600" />}{scoped ? `${levelLabel} School Report` : "Report Cards"}</h1>
+        <p className="text-slate-500 text-sm mt-0.5">{scoped ? `View, complete and print report cards for the ${levelLabel} level.` : "View, complete and print student report cards."}</p>
       </div>
 
       {scoped && !section && (

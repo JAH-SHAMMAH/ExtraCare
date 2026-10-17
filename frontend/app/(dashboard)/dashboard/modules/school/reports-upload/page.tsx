@@ -24,7 +24,7 @@ export default function ReportsUploadPage() {
 
   return (
     <div className="p-8 max-w-3xl mx-auto">
-      <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Secondary School Report</span><span>/</span><span className="text-brand-600 font-semibold">Reports Upload</span></nav>
+      <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>School Report</span><span>/</span><span className="text-brand-600 font-semibold">Reports Upload</span></nav>
       <h1 className="text-2xl font-black text-slate-900 tracking-tight mb-1 flex items-center gap-2"><FileSpreadsheet size={22} className="text-brand-600" /> Reports Upload</h1>
       <p className="text-slate-500 text-sm mb-5">Import assessment scores in bulk from a spreadsheet instead of typing them one by one.</p>
 

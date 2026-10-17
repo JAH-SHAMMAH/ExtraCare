@@ -1135,6 +1135,9 @@ class BroadsheetResponse(BaseModel):
     # figure under a Half-Term heading. Same field name and meaning as the
     # ten result-analysis responses that already carry it.
     not_configured: bool = False
+    # Which card template this class prints (nursery-report has no marks, so its
+    # Reports View is just the pupil list with the report icons).
+    report_key: Optional[str] = None
 
 
 # ── Secondary Report parity S-4c: printable report card ──────────────────────

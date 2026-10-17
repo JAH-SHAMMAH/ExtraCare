@@ -94,6 +94,43 @@ export function BulkPrintTab() {
   );
 }
 
+/** One pupil's full report in a pop-up, opened from the Reports View list.
+ *  `print` opens it and immediately offers the browser's Save-as-PDF dialog. */
+export function StudentReportDialog({ studentId, termId, subTermId, print, onClose }: {
+  studentId: string; termId: string; subTermId: string; print?: boolean; onClose: () => void;
+}) {
+  const { data: card, isLoading } = useReportCard({ student_id: studentId, term_id: termId, sub_term_id: subTermId });
+  const num = (v: any) => (v == null ? "–" : Number(v));
+  const ready = !!card && !card.not_configured;
+  useEffect(() => {
+    if (print && ready) { const t = setTimeout(() => window.print(), 300); return () => clearTimeout(t); }
+  }, [print, ready]);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 overflow-y-auto p-4 no-print-bg" role="dialog" aria-label="Student report">
+      <style>{`@media print {
+        body * { visibility: hidden !important; }
+        #single-report, #single-report * { visibility: visible !important; }
+        #single-report { position: absolute; left: 0; top: 0; width: 100%; }
+      }`}</style>
+      <div className="max-w-4xl mx-auto">
+        <div className="flex justify-end gap-2 mb-2 no-print print:hidden">
+          {ready && <button onClick={() => window.print()} className="btn-primary gap-2"><Printer size={15} /> Export PDF</button>}
+          <button onClick={onClose} className="btn-secondary">Close</button>
+        </div>
+        {isLoading ? (
+          <div className="bg-white rounded-xl py-16 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
+        ) : !card || card.not_configured ? (
+          <div className="bg-white rounded-xl py-16 px-6 text-center text-sm text-slate-500">No report is available for this pupil in the chosen term yet.</div>
+        ) : (
+          <div id="single-report" className="bg-white rounded-xl border border-slate-300 p-6 text-slate-900 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+            <Card card={card} num={num} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Card({ card, num }: { card: any; num: (v: any) => any }) {
   const b = card.branding || {};
   // Both operands checked, not just the denominator. `null / 60` is 0 in JS, so

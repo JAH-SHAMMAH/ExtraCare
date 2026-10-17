@@ -77,3 +77,10 @@ async def test_boot_setup_runs_once_then_leaves_admin_edits_alone(db, org):
     await db.delete(ex[0]); await db.commit()
     await auto_setup_on_boot(F())                                   # second boot: nothing re-added
     assert (await db.execute(select(Assessment).where(Assessment.name == "EXAM", Assessment.year_group == "YEAR 10"))).scalars().all() == []
+
+
+async def test_broadsheet_names_the_cards_template(db, org):
+    from app.routers.modules.platform import _report_key_for_section
+    stu, subj, old = await _world(db, org)
+    cls = (await db.execute(select(SchoolClass))).scalars().first()
+    assert await _report_key_for_section(db, org.id, cls.section_id) == "secondary-report"

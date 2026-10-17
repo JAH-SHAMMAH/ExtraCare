@@ -64,7 +64,7 @@ export default function ReportEntryPage() {
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
-      <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Secondary School Report</span><span>/</span><span className="text-brand-600 font-semibold">Report Entry</span></nav>
+      <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>School Report</span><span>/</span><span className="text-brand-600 font-semibold">Report Entry</span></nav>
       <h1 className="text-2xl font-black text-slate-900 tracking-tight mb-1 flex items-center gap-2"><NotebookPen size={22} className="text-brand-600" /> Report Entry</h1>
       <p className="text-slate-500 text-sm mb-5">Enter pupils&apos; marks for each assessment. These feed the cumulative columns and the report card.</p>
 

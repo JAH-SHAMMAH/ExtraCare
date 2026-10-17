@@ -3182,6 +3182,11 @@ async def _class_for_reports_or_403(db: AsyncSession, org: str, user: User,
     return cls
 
 
+async def _report_key_for_section(db, org, section_id):
+    from app.services.card_ratings import report_key_for_section
+    return await report_key_for_section(db, org, section_id)
+
+
 @router.get("/report-broadsheet", response_model=BroadsheetResponse, dependencies=[Depends(PermissionChecker("school:reports:write"))])
 async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
                             session_id: str | None = None,
@@ -3277,6 +3282,7 @@ async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
         # None -- so without this the page would show a blank grid and blame the
         # teachers for not entering marks.
         not_configured=(not display or not assessments),
+        report_key=await _report_key_for_section(db, org, cls.section_id),
         display_cumulative=(display.name if display else None),
         subjects=[BroadsheetSubject(**s) for s in subjects], bands=band_out, rows=rows_out,
     )

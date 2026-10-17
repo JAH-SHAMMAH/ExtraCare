@@ -34,7 +34,7 @@ export default function ReportSetupPage() {
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
-      <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Secondary School Report</span><span>/</span><span className="text-brand-600 font-semibold">Report Setup</span></nav>
+      <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>School Report</span><span>/</span><span className="text-brand-600 font-semibold">Report Setup</span></nav>
       <h1 className="text-2xl font-black text-slate-900 tracking-tight mb-1 flex items-center gap-2"><Settings2 size={22} className="text-brand-600" /> Report Setup</h1>
       <p className="text-slate-500 text-sm mb-5">Configuration hub for the report-card engine. Terms, dates, attendance and deadlines are live; the assessment &amp; result-view tabs arrive in later batches.</p>
 
