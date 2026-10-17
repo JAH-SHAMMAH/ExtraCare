@@ -74,7 +74,7 @@ async def test_check_in_creates_event_daily_record_and_parent_notification(db, o
         select(Notification).where(Notification.type == TYPE_ATTENDANCE, Notification.user_id == parent.id)
     )).scalars().all()
     assert len(notifs) == 1
-    assert notifs[0].message == "Ferdinand has successfully checked into Fairview School at 7:32 AM."
+    assert notifs[0].message == "Ferdinand arrived at school at 7:32 AM."
 
 
 @pytest.mark.asyncio
@@ -105,7 +105,7 @@ async def test_check_out_notification_copy(db, org, school_class):
     notif = (await db.execute(
         select(Notification).where(Notification.type == TYPE_ATTENDANCE, Notification.user_id == parent.id)
     )).scalar_one()
-    assert notif.message == "Ferdinand has successfully checked out of Fairview School at 3:15 PM."
+    assert notif.message == "Ferdinand left school at 3:15 PM."
 
 
 @pytest.mark.asyncio

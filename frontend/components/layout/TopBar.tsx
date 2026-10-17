@@ -7,12 +7,10 @@ import dynamic from "next/dynamic";
 import { Bell, HelpCircle, Settings, Loader2, MessageSquare, Menu } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { timeAgo } from "@/lib/utils";
-import { useQuery } from "@tanstack/react-query";
-import { analyticsApi } from "@/lib/api";
+import { useNotifications, useMarkNotificationRead } from "@/hooks/useNotifications";
 
 const GlobalSearch = dynamic(() => import("./GlobalSearch").then((mod) => mod.GlobalSearch), { ssr: false });
 import { RoleSwitcher } from "@/components/role/RoleSwitcher";
-import type { ActivityLog } from "@/types";
 
 export function TopBar({ onMenu }: { onMenu?: () => void }) {
   const router = useRouter();
@@ -20,11 +18,10 @@ export function TopBar({ onMenu }: { onMenu?: () => void }) {
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
-  const { data: notifications = [], isLoading: notifsLoading } = useQuery<ActivityLog[]>({
-    queryKey: ["analytics", "activity-feed", "topbar"],
-    queryFn: () => analyticsApi.activityFeed(5),
-    refetchInterval: 30_000,
-  });
+  const { data: inbox, isLoading: notifsLoading } = useNotifications({ limit: 6 });
+  const markRead = useMarkNotificationRead();
+  const notifications = inbox?.items ?? [];
+  const unreadCount = inbox?.unread_count ?? 0;
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -73,8 +70,10 @@ export function TopBar({ onMenu }: { onMenu?: () => void }) {
             className="relative p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
           >
             <Bell size={18} />
-            {notifications.length > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
+            {unreadCount > 0 && (
+              <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full border-2 border-white flex items-center justify-center">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
             )}
           </button>
 
@@ -101,14 +100,14 @@ export function TopBar({ onMenu }: { onMenu?: () => void }) {
                   </div>
                 ) : (
                   notifications.map((n) => (
-                    <div key={n.id} className="px-4 py-3 hover:bg-slate-50 transition-colors cursor-pointer">
-                      <p className="text-sm font-medium text-slate-800 capitalize leading-snug">
-                        {n.action.replace(".", " ").replace(/_/g, " ")}
-                      </p>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {n.actor_email && <span>{n.actor_email} &middot; </span>}
-                        {timeAgo(n.created_at)}
-                      </p>
+                    <div
+                      key={n.id}
+                      onClick={() => !n.read && markRead.mutate(n.id)}
+                      className={`px-4 py-3 hover:bg-slate-50 transition-colors cursor-pointer ${n.read ? "" : "bg-brand-50/40"}`}
+                    >
+                      <p className="text-sm font-medium text-slate-800 leading-snug">{n.title}</p>
+                      {n.message && <p className="text-xs text-slate-500 mt-0.5">{n.message}</p>}
+                      <p className="text-xs text-slate-400 mt-0.5">{n.created_at ? timeAgo(n.created_at) : ""}</p>
                     </div>
                   ))
                 )}

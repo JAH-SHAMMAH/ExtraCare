@@ -129,7 +129,7 @@ export function AttendanceAlertsPanel({ limit = 20 }: { limit?: number }) {
           <div className="flex flex-col items-center justify-center py-14 text-slate-400">
             <Bell size={34} className="mb-2 opacity-40" />
             <p className="font-semibold text-sm">No attendance alerts yet</p>
-            <p className="text-xs mt-1">You&apos;ll be notified the moment your child checks in or out.</p>
+            <p className="text-xs mt-1">You&apos;ll be notified the moment your child arrives at or leaves school.</p>
           </div>
         ) : (
           items.map((n) => <AlertRow key={n.id} n={n} />)

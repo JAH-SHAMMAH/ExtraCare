@@ -296,20 +296,19 @@ async def _notify_guardians(
     """In-app alert to every guardian of the student. Returns the count sent.
 
     Copy matches the brief exactly:
-      "Ferdinand has successfully checked into Fairview School at 7:32 AM."
-      "Ferdinand has successfully checked out of Fairview School at 3:15 PM."
+      "Ferdinand arrived at school at 7:32 AM."
+      "Ferdinand left school at 3:15 PM."
 
     Channel is in-app only for v1; the payload carries everything an SMS/push
     fan-out worker would need to deliver the same alert later (outbox-ready).
     """
-    school_name = getattr(org, "name", None) or settings.SCHOOL_NAME
     clock = format_clock(to_local(event_time, getattr(org, "timezone", None)))
     if event_type == AttendanceEventType.CHECK_IN:
-        title = "Arrival confirmed"
-        message = f"{student.first_name} has successfully checked into {school_name} at {clock}."
+        title = f"{student.first_name} arrived at school"
+        message = f"{student.first_name} arrived at school at {clock}."
     else:
-        title = "Departure confirmed"
-        message = f"{student.first_name} has successfully checked out of {school_name} at {clock}."
+        title = f"{student.first_name} left school"
+        message = f"{student.first_name} left school at {clock}."
 
     guardian_user_ids = (
         await db.execute(
