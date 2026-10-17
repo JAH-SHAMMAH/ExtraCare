@@ -84,3 +84,24 @@ async def test_broadsheet_names_the_cards_template(db, org):
     stu, subj, old = await _world(db, org)
     cls = (await db.execute(select(SchoolClass))).scalars().first()
     assert await _report_key_for_section(db, org.id, cls.section_id) == "secondary-report"
+
+
+async def test_each_level_gets_its_own_letterhead_once(db, org):
+    from app.models.modules.platform import ReportBranding
+    from app.services.fairview_setup import ensure_letterheads
+    await _world(db, org)
+    first = await ensure_letterheads(db, org.id)
+    await db.commit()
+    assert set(first) == {"secondary-report", "junior-report"}
+    names = {r.school_name_alias for r in (await db.execute(select(ReportBranding))).scalars().all()}
+    assert names == {"FAIRVIEW SECONDARY SCHOOL", "FAIRVIEW SCHOOL (PRE-SCHOOL and PRIMARY)"}
+    assert await ensure_letterheads(db, org.id) == []          # idempotent
+
+
+async def test_card_carries_heading_teacher_session(db, org):
+    from app.routers.modules.platform import report_card
+    from tests.test_not_configured_sub_term import _world as nworld
+    w = await nworld(db, org)
+    card = await report_card(student_id=w.pupil.id, term_id=w.term.id, sub_term_id=w.full.id, db=db, current_user=w.admin)
+    assert card.heading.endswith(" SESSION") and card.heading.startswith(w.term.name.upper() + " REPORT")
+    assert card.first_name and card.session_name

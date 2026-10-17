@@ -1,6 +1,6 @@
-# What Fairview's the reference report pages print (read off real pages, Oct 2026)
+# What Fairview's report pages print (read off real pages, Oct 2026)
 
-Source: screenshots of fairview.the reference.school, Autumn 2025/2026. No pupil data is kept here.
+Source: screenshots of the school's previous system, Autumn 2025/2026. No pupil data is kept here.
 
 ## Secondary (one page) - "FAIRVIEW SECONDARY SCHOOL"
 - Heading: PLOT 4674, EDWIN CLARK CRESCENT, GUZAPE, ABUJA. Email info@fairviewschool.com. "AUTUMN REPORT 2025/2026 SESSION". Pupil photo top right.

@@ -131,6 +131,44 @@ export function StudentReportDialog({ studentId, termId, subTermId, print, onClo
   );
 }
 
+const LBL = "border border-black px-2 py-1 bg-[#a0de8c]";
+const VAL = "border border-black px-2 py-1";
+
+/** Letterhead: crest left, school name centred, pupil photo right. Pre-school and
+ *  Primary print "( PRE-SCHOOL and PRIMARY)" and the motto in gold under the name;
+ *  Secondary prints a bold-italic name, the address and the session heading. */
+function ReportHeader({ card, b, isSecondary, isNursery }: { card: any; b: any; isSecondary: boolean; isNursery: boolean }) {
+  const alias: string = b.school_name_alias || "FAIRVIEW SCHOOL";
+  const cut = alias.indexOf("(");
+  const main = cut > 0 ? alias.slice(0, cut).trim() : alias;
+  const sub = cut > 0 ? `( ${alias.slice(cut + 1).trim()}` : "";
+  const title = isNursery ? `${(card.term_name || "").toUpperCase()} TERM ASSESSMENT REPORT` : (card.heading || card.report_title);
+  const photo = card.photo_url
+    ? <img src={card.photo_url} alt={`${card.student_name} photo`} className={cn("w-24 h-28 object-cover shrink-0", isSecondary ? "border border-slate-400" : "rounded-full w-24 h-24")} />
+    : <div data-testid="photo-placeholder" aria-label="No photo" className="w-24 h-24 rounded-full bg-slate-200 shrink-0 flex items-end justify-center overflow-hidden">
+        <svg viewBox="0 0 24 24" className="w-20 h-20 text-slate-500" fill="currentColor"><circle cx="12" cy="8" r="4.5" /><path d="M3 24c0-5.5 4-9 9-9s9 3.5 9 9z" /></svg>
+      </div>;
+  return (
+    <div className="flex items-start gap-4 pb-2">
+      {/* Saved letterhead logo, else the school crest the portal itself ships. */}
+      <img src={b.logo_url || "/logo-square.png"} alt="School logo" className="w-24 h-24 object-contain shrink-0" />
+      <div className="flex-1 text-center">
+        {isSecondary ? (<>
+          <h2 className="text-3xl font-black italic uppercase leading-tight">{main}</h2>
+          {b.school_address && <p className="text-sm font-bold italic mt-2 leading-tight"><span className="uppercase">{b.school_address}</span>{b.school_email ? `. Email:${b.school_email}` : ""}</p>}
+          <p className="text-sm font-bold italic uppercase mt-2">{title}</p>
+        </>) : (<>
+          <h2 className="text-4xl font-black tracking-wide uppercase">{main}</h2>
+          {sub && <p className="text-xl font-bold tracking-wide text-[#8a5a14]">{sub}</p>}
+          {b.school_motto && <p className="text-xl font-bold tracking-wide text-[#8a5a14] mt-1">{b.school_motto}</p>}
+          <p className="text-xl font-black tracking-wide mt-3">{title}</p>
+        </>)}
+      </div>
+      {photo}
+    </div>
+  );
+}
+
 export function Card({ card, num }: { card: any; num: (v: any) => any }) {
   const b = card.branding || {};
   // Both operands checked, not just the denominator. `null / 60` is 0 in JS, so
@@ -158,81 +196,87 @@ export function Card({ card, num }: { card: any; num: (v: any) => any }) {
   // An unclassified section (report_key null) keeps the marks layout, the old default.
   const isNursery = card.report_key === "nursery-report";
   const isJunior = card.report_key === "junior-report";
+  const isSecondary = card.report_key === "secondary-report";
   const blocks: any[] = card.domain_blocks ?? [];
   const sideBlocks = blocks.filter((x) => x.domain_type === "affective" || x.domain_type === "psychomotor");
   const areaBlocks = blocks.filter((x) => x.domain_type === "eyfs_area");
   return (
-    <>
-      <div className="flex items-center gap-4 border-b-2 border-[#2f5f1f] pb-3">
-        {/* Saved letterhead logo, else the school crest the portal itself ships. */}
-        <img src={b.logo_url || "/logo-square.png"} alt="School logo" className="w-20 h-20 object-contain shrink-0" />
-        <div className="flex-1 text-center">
-          <h2 className="text-xl font-black tracking-tight">{b.school_name_alias || "SCHOOL REPORT"}</h2>
-          {b.school_address && <p className="text-[11px] text-slate-600">{b.school_address}</p>}
-          {b.school_email && <p className="text-[11px] text-slate-600">Email: {b.school_email}</p>}
-          <p className="text-xs font-bold mt-1">{card.report_title} {b.school_name_alias ? "" : ""}</p>
-        </div>
-        {card.photo_url
-          ? <img src={card.photo_url} alt={`${card.student_name} photo`} className="w-20 h-24 object-cover border border-slate-400 shrink-0" />
-          : <div data-testid="photo-placeholder" className="w-20 h-24 border border-slate-400 bg-slate-50 shrink-0 flex items-end justify-center overflow-hidden" aria-label="No photo">
-              <svg viewBox="0 0 24 24" className="w-16 h-16 text-slate-300" fill="currentColor"><circle cx="12" cy="8" r="4.5" /><path d="M3 24c0-5.5 4-9 9-9s9 3.5 9 9z" /></svg>
-            </div>}
-      </div>
+    <div className="relative overflow-hidden">
+      {/* Faint crest behind the page, as on the school's own reports. */}
+      <img src={b.logo_url || "/logo-square.png"} alt="" aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[70%] opacity-[0.06] select-none" />
+      <div className="relative">
+      <ReportHeader card={card} b={b} isSecondary={isSecondary} isNursery={isNursery} />
 
-      <table className="w-full text-xs mt-3 border border-slate-300">
-        <tbody>
-          <tr>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Name</td>
-            <td className="border border-slate-300 px-2 py-1">{card.student_name}</td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Class</td>
-            <td className="border border-slate-300 px-2 py-1">{card.class_name || "—"}</td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">{isNursery ? "Term" : "Position"}</td>
-            <td className="border border-slate-300 px-2 py-1">{isNursery ? (card.term_name || "—") : `${card.position} of ${card.class_size}`}</td>
-          </tr>
-          {isNursery ? (
+      {isNursery ? (
+        <div className="mt-4 text-base font-bold uppercase leading-snug">
+          {([["Name of Pupil", card.student_name], ["Class", card.class_name], ["Teacher", card.class_teacher_name],
+             ["Session", card.session_name], ["Age", card.age_text]] as [string, any][]).map(([k, v]) => (
+            <div key={k} className="flex gap-2"><span className="w-48 shrink-0 capitalize">{k}</span><span>:</span><span className="ml-2">{v || "—"}</span></div>
+          ))}
+        </div>
+      ) : isSecondary ? (
+        /* Secondary: the school's own grid — First/Last name, the year spanning the
+           rows, then the attendance figures and the admission number. */
+        <table className="w-full text-sm mt-2 border border-black italic font-bold">
+          <tbody>
             <tr>
-              <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Admission No</td>
-              <td className="border border-slate-300 px-2 py-1">{card.admission_no || "—"}</td>
-              <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Session</td>
-              <td colSpan={3} className="border border-slate-300 px-2 py-1">{card.term_name || "—"}{card.sub_term_name ? ` · ${card.sub_term_name}` : ""}</td>
+              <td className={`${LBL}`}>First Name</td><td className={VAL}>{card.first_name || "—"}</td>
+              <td rowSpan={3} className={`${VAL} text-center w-24`}>YEAR<br />{(/\d+/.exec(card.class_name || "")?.[0]) || (card.class_name || "—")}</td>
+              <td className={LBL}>Times School Opened</td><td className={VAL}>{card.attendance_total ?? "—"}</td>
+              <td className={LBL}>Times Punctual</td><td className={VAL}>{card.attendance_punctual ?? "—"}</td>
             </tr>
-          ) : (<>
-          <tr>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Admission No</td>
-            <td className="border border-slate-300 px-2 py-1">{card.admission_no || "—"}</td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Times School Opened</td>
-            <td className="border border-slate-300 px-2 py-1">{card.attendance_total ?? "—"}</td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">{isJunior ? "Times Absent" : "Times Punctual"}</td>
-            <td className="border border-slate-300 px-2 py-1">{isJunior ? (card.attendance_absent ?? "—") : (card.attendance_punctual ?? "—")}</td>
-          </tr>
-          <tr>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Times Present</td>
-            <td className="border border-slate-300 px-2 py-1">{card.attendance_present ?? "—"}</td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">% Attendance</td>
-            <td className="border border-slate-300 px-2 py-1">{attPct != null ? `${attPct}%` : "—"}</td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Term</td>
-            <td className="border border-slate-300 px-2 py-1">{card.term_name || "—"}{card.sub_term_name ? ` · ${card.sub_term_name}` : ""}</td>
-          </tr>
-          </>)}
-        </tbody>
-      </table>
+            <tr>
+              <td className={LBL}>Last Name</td><td className={VAL}>{card.last_name || "—"}</td>
+              <td className={LBL}>Times Present</td><td className={VAL}>{card.attendance_present ?? "—"}</td>
+              <td className={LBL}>% Attendance</td><td className={VAL}>{attPct != null ? `${attPct}%` : "—"}</td>
+            </tr>
+            <tr>
+              <td className={LBL}>Admission No</td><td className={VAL}>{card.admission_no || "—"}</td>
+              <td className={LBL}>Next Term Begins</td><td colSpan={3} className={VAL}>{card.next_term_begins ? new Date(card.next_term_begins).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : "—"}</td>
+            </tr>
+          </tbody>
+        </table>
+      ) : (
+        <table className="w-full text-xs mt-3 border border-slate-400">
+          <tbody>
+            <tr>
+              <td className={LBL}>Name</td><td className={VAL}>{card.student_name}</td>
+              <td className={LBL}>Class</td><td className={VAL}>{card.class_name || "—"}</td>
+              <td className={LBL}>Position</td><td className={VAL}>{`${card.position} of ${card.class_size}`}</td>
+            </tr>
+            <tr>
+              <td className={LBL}>Admission No</td><td className={VAL}>{card.admission_no || "—"}</td>
+              <td className={LBL}>Times School Opened</td><td className={VAL}>{card.attendance_total ?? "—"}</td>
+              <td className={LBL}>Times Absent</td><td className={VAL}>{card.attendance_absent ?? "—"}</td>
+            </tr>
+            <tr>
+              <td className={LBL}>Times Present</td><td className={VAL}>{card.attendance_present ?? "—"}</td>
+              <td className={LBL}>% Attendance</td><td className={VAL}>{attPct != null ? `${attPct}%` : "—"}</td>
+              <td className={LBL}>Term</td><td className={VAL}>{card.term_name || "—"}{card.sub_term_name ? ` · ${card.sub_term_name}` : ""}</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
 
       {!isNursery && (<>
       <table className="w-full text-xs mt-3 border border-slate-300">
         <thead>
           <tr className="bg-[#2f5f1f] text-white">
+            <th className="border border-slate-300 px-2 py-1 text-center w-8">SN</th>
             <th className="border border-slate-300 px-2 py-1 text-left">Subject</th>
             {card.columns.map((c: any) => <th key={c.key} className="border border-slate-300 px-2 py-1 text-center">{c.name}{c.max_score != null ? <span className="block font-normal text-[9px] text-green-100">/{num(c.max_score)}</span> : null}</th>)}
             <th className="border border-slate-300 px-2 py-1 text-center">Grade</th>
             <th className="border border-slate-300 px-2 py-1 text-center">Remark</th>
-            <th className="border border-slate-300 px-2 py-1 text-center">Arm Avg</th>
+            <th className="border border-slate-300 px-2 py-1 text-center">Class Avg</th>
             {showSessional && <th className="border border-slate-300 px-2 py-1 text-center">Session Avg</th>}
             {showSubjectComments && <th className="border border-slate-300 px-2 py-1 text-left">Teacher&apos;s Remark</th>}
           </tr>
         </thead>
         <tbody>
-          {card.subjects.map((r: any) => (
+          {card.subjects.map((r: any, idx: number) => (
             <tr key={r.subject_id}>
+              <td className="border border-slate-300 px-2 py-1 text-center text-slate-500">{idx + 1}</td>
               <td className="border border-slate-300 px-2 py-1 font-semibold">{r.subject_name}</td>
               {/* A column the server could not complete comes back null with its
                   name in incomplete_components. It says "not entered" rather than
@@ -257,10 +301,11 @@ export function Card({ card, num }: { card: any; num: (v: any) => any }) {
               {showSubjectComments && <td className="border border-slate-300 px-2 py-1 text-[10px] leading-snug">{r.comment || "–"}</td>}
             </tr>
           ))}
-          {card.subjects.length === 0 && <tr><td colSpan={card.columns.length + 4 + (showSessional ? 1 : 0) + (showSubjectComments ? 1 : 0)} className="border border-slate-300 px-2 py-3 text-center text-slate-400">No marks entered for this pupil.</td></tr>}
+          {card.subjects.length === 0 && <tr><td colSpan={card.columns.length + 5 + (showSessional ? 1 : 0) + (showSubjectComments ? 1 : 0)} className="border border-slate-300 px-2 py-3 text-center text-slate-400">No marks entered for this pupil.</td></tr>}
         </tbody>
       </table>
 
+      {!isSecondary ? (<>
       {/* Summary boxes beside the grading scale, matching the reference card. */}
       <div className="grid grid-cols-2 gap-3 mt-3 text-xs items-start">
         <div className="space-y-3">
@@ -306,7 +351,8 @@ export function Card({ card, num }: { card: any; num: (v: any) => any }) {
       </div>
 
 
-      <RatingBlocks blocks={sideBlocks} clubs={card.report_key === "secondary-report" ? (card.clubs ?? []) : null} />
+      <RatingBlocks blocks={sideBlocks} clubs={null} />
+      </>) : <SecondaryBottom card={card} num={num} blocks={sideBlocks} />}
       </>)}
       {isNursery && <NurseryAreas blocks={areaBlocks} />}
 
@@ -324,7 +370,7 @@ export function Card({ card, num }: { card: any; num: (v: any) => any }) {
           <tbody>
             {card.class_teacher_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c] w-40 align-top">{isJunior ? "Class Teacher's Remarks" : (b.class_teacher_title || "Class Teacher")}</td><td className="border border-slate-300 px-2 py-1">{card.class_teacher_comment}</td></tr>}
             {card.pc_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c] align-top">PC Teacher&apos;s Comment</td><td className="border border-slate-300 px-2 py-1">{card.pc_comment}</td></tr>}
-            {card.head_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c] align-top">{isJunior ? "Head Teacher's Remarks" : `${b.school_head_title || "Head"}'s Comment`}</td><td className="border border-slate-300 px-2 py-1">{card.head_comment}</td></tr>}
+            {card.head_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c] align-top">{isJunior ? "Head Teacher's Remarks" : (b.school_head_title || "Principal")}</td><td className="border border-slate-300 px-2 py-1">{card.head_comment}</td></tr>}
             {(card.slot_comments ?? []).map((sc: any) => (
               <tr key={sc.comment_type_id}>
                 <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c] align-top">{sc.name}</td>
@@ -350,7 +396,67 @@ export function Card({ card, num }: { card: any; num: (v: any) => any }) {
           </tr>
         </tbody>
       </table>
-    </>
+      </div>
+    </div>
+  );
+}
+
+/** Secondary's closing block, laid out as the school prints it: one three-column
+ *  grid. Skills on the left; the key and the Club/Sports Choice box in the middle;
+ *  the grading scale and the pupil's total on the right; then the two averages. */
+function SecondaryBottom({ card, num, blocks }: { card: any; num: (v: any) => any; blocks: any[] }) {
+  const skills = blocks[0];
+  const clubs: string[] = card.clubs ?? [];
+  const keys: any[] = skills?.key ?? [];
+  const bands: any[] = card.bands ?? [];
+  const H = "bg-[#2f5f1f] text-white text-center font-black italic text-lg border border-black py-1";
+  const C = "border border-black px-2 py-1 bg-[#dff3d6] font-bold italic";
+  return (
+    <div className="mt-3 break-inside-avoid">
+      <div className="grid grid-cols-[1.25fr_1fr_1.1fr]">
+        <div className={H}>SKILLS AND BEHAVIOUR</div><div className={H}>KEYS</div><div className={H}>GRADING SCALE</div>
+        <table className="text-sm border-collapse"><tbody>
+          {(skills?.items ?? []).map((it: any) => (
+            <tr key={it.domain_id}><td className={C}>{it.name}</td><td className={`${C} text-center w-10`}>{it.rating || ""}</td></tr>
+          ))}
+        </tbody></table>
+        <div>
+          <table className="w-full text-sm border-collapse"><tbody>
+            {keys.map((k: any) => <tr key={k.label}><td className={`${C} font-normal`}>{k.meaning}</td><td className={`${C} font-normal text-center w-10`}>{k.label}</td></tr>)}
+          </tbody></table>
+          <div className="bg-[#a0de8c] border border-black text-center font-black italic text-lg py-1">Club/Sports Choice</div>
+          {Array.from({ length: Math.max(4, clubs.length) }).map((_, i) => (
+            <div key={i} className="border border-black bg-[#dff3d6] px-2 py-1 min-h-[30px] text-sm font-bold italic">{clubs[i] ?? ""}</div>
+          ))}
+        </div>
+        <div>
+          <table className="w-full text-sm border-collapse"><tbody>
+            {bands.map((bnd: any) => (
+              <tr key={bnd.grade}>
+                <td className={`${C} font-normal text-center`}>{bnd.min_score != null ? `${num(bnd.min_score)}-${num(bnd.max_score)}` : "–"}</td>
+                <td className={`${C} font-normal text-center`}>{bnd.grade}</td>
+                <td className={`${C} font-normal text-center`}>{bnd.remark || ""}</td>
+              </tr>
+            ))}
+          </tbody></table>
+          <div className="grid grid-cols-[1fr_1.3fr]">
+            <div className="border border-black bg-[#dff3d6] text-center font-black italic text-2xl py-2 leading-tight">Student&apos;s Total Score</div>
+            <div className="border border-black bg-[#dff3d6] flex items-center justify-center font-black italic text-3xl">{num(card.total)}</div>
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-[1.25fr_1fr_1.1fr]">
+        <div className="bg-[#2f5f1f] border border-black" />
+        <div className="grid grid-cols-[1.4fr_1fr] border border-black">
+          <div className="font-black italic text-2xl leading-tight p-2 flex items-center">Student&apos;s Average</div>
+          <div className="font-black italic text-3xl flex items-center justify-center">{num(card.average)}</div>
+        </div>
+        <div className="grid grid-cols-[1.2fr_1fr] border border-black">
+          <div className="font-black italic text-2xl leading-tight p-2 flex items-center">Class Average</div>
+          <div className="font-black italic text-3xl flex items-center justify-center">{card.class_average != null ? num(card.class_average) : "–"}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -410,26 +516,26 @@ function NurseryAreas({ blocks }: { blocks: any[] }) {
   const showRating = blocks.some((blk: any) => blk.key?.length > 0 || blk.items.some((it: any) => it.rating));
   let n = 0;
   return (
-    <table className="w-full mt-3 text-xs border border-slate-300">
-      <thead><tr className="bg-[#2f5f1f] text-white">
-        <th className="border border-slate-300 px-2 py-1 text-left w-36">Learning Areas</th>
-        <th className="border border-slate-300 px-2 py-1 text-left w-16">ELG</th>
-        <th className="border border-slate-300 px-2 py-1 text-left w-44">&nbsp;</th>
-        <th className="border border-slate-300 px-2 py-1 text-left">ACHIEVEMENT</th>
-        {showRating && <th className="border border-slate-300 px-2 py-1 w-14">Rating</th>}
-        {showPhoto && <th className="border border-slate-300 px-2 py-1 w-28">SAMPLE PICTURE</th>}
+    <table className="w-full mt-3 text-base border border-black">
+      <thead><tr className="bg-white text-black">
+        <th className="border border-black px-2 py-1 text-left font-normal w-36">Learning Areas</th>
+        <th className="border border-black px-2 py-1 text-left font-normal w-16">ELG</th>
+        <th className="border border-black px-2 py-1 text-left w-44">&nbsp;</th>
+        <th className="border border-black px-2 py-1 text-left font-normal">ACHIEVEMENT</th>
+        {showRating && <th className="border border-black px-2 py-1 w-14">Rating</th>}
+        {showPhoto && <th className="border border-black px-2 py-1 w-28 font-normal">SAMPLE PICTURE</th>}
       </tr></thead>
       <tbody>
         {blocks.flatMap((blk: any, bi: number) => blk.items.map((it: any, ii: number) => {
           n += 1;
           return (
             <tr key={it.domain_id} className="align-top">
-              {ii === 0 && <td rowSpan={blk.items.length} className="border border-slate-300 px-2 py-1 font-bold">{blk.title}</td>}
-              <td className="border border-slate-300 px-2 py-1 font-bold underline">ELG {n}</td>
-              <td className="border border-slate-300 px-2 py-1 font-bold uppercase">{it.name}</td>
-              <td className="border border-slate-300 px-2 py-1 leading-snug">{it.comment || ""}</td>
-              {showRating && <td className="border border-slate-300 px-2 py-1 text-center font-bold">{it.rating || ""}</td>}
-              {showPhoto && <td className="border border-slate-300 p-1 text-center">{it.photo_url ? <img src={it.photo_url} alt="" className="w-24 h-20 object-cover mx-auto" /> : null}</td>}
+              {ii === 0 && <td rowSpan={blk.items.length} className="border border-black px-2 py-1 font-bold">{blk.title}</td>}
+              <td className="border border-black px-2 py-1 font-bold underline">ELG {n}</td>
+              <td className="border border-black px-2 py-1 font-bold uppercase underline">{it.name}</td>
+              <td className="border border-black px-2 py-1 leading-snug">{it.comment || ""}</td>
+              {showRating && <td className="border border-black px-2 py-1 text-center font-bold">{it.rating || ""}</td>}
+              {showPhoto && <td className="border border-black p-1 text-center">{it.photo_url ? <img src={it.photo_url} alt="" className="w-24 h-20 object-cover mx-auto" /> : null}</td>}
             </tr>
           );
         }))}

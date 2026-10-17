@@ -1222,6 +1222,15 @@ class ReportCardResponse(BaseModel):
     term_name: Optional[str] = None
     sub_term_name: Optional[str] = None
     report_title: Optional[str] = None
+    # The printed heading, e.g. "AUTUMN REPORT 2025/2026 SESSION", and the pieces the
+    # report's info grid prints separately.
+    heading: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    session_name: Optional[str] = None
+    class_teacher_name: Optional[str] = None
+    age_text: Optional[str] = None
+    next_term_begins: Optional[date] = None
     # No column is configured for this (session, term, sub-term), so there is
     # nothing to compute. Said explicitly because the alternative reads as
     # "no marks entered yet", which is a different and much less alarming

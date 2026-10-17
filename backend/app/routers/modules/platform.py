@@ -3666,7 +3666,23 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     clubs = await student_clubs(db, org, student_id, term_name)
 
     title = " ".join(x for x in [(term_name or "").upper(), (sub_name or "").upper(), "REPORT"] if x).strip()
+    _sess_name = (await db.execute(select(AcademicSession.name).where(
+        AcademicSession.id == sess_id, AcademicSession.org_id == org))).scalar_one_or_none()
+    heading = " ".join(x for x in [(term_name or "").upper(), "REPORT", f"{_sess_name} SESSION" if _sess_name else ""] if x)
+    _tp = (await db.execute(select(TermPeriod).where(
+        TermPeriod.org_id == org, TermPeriod.session_id == sess_id, TermPeriod.term_id == term_id,
+        TermPeriod.next_term_begins.is_not(None)).order_by(
+            (TermPeriod.sub_term_id == sub_term_id).desc()).limit(1))).scalars().first()
+    _teacher = (await db.execute(select(User.full_name).where(User.id == cls.teacher_id))).scalar_one_or_none() if cls and cls.teacher_id else None
+    _age = None
+    if getattr(student, "date_of_birth", None):
+        from datetime import date as _d
+        t = _d.today(); b = student.date_of_birth
+        yrs = t.year - b.year - ((t.month, t.day) < (b.month, b.day))
+        _age = f"{yrs} YEAR{'S' if yrs != 1 else ''}" if yrs >= 0 else None
     return ReportCardResponse(
+        heading=heading, first_name=student.first_name, last_name=student.last_name, session_name=_sess_name,
+        class_teacher_name=_teacher, age_text=_age, next_term_begins=(_tp.next_term_begins if _tp else None),
         report_key=report_key, domain_blocks=domain_blocks, clubs=clubs,
         student_id=student_id, student_name=f"{student.first_name} {student.last_name}".strip(),
         admission_no=student.student_id, photo_url=getattr(student, "photo_url", None),
