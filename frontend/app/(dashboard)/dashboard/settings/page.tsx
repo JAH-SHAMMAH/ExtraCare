@@ -2,6 +2,7 @@
 
 import { useAuthStore } from "@/lib/store";
 import { useLogout } from "@/hooks/useAuth";
+import BackupCard from "@/components/settings/BackupCard";
 import { Settings, Building2, User, Shield, Bell, LogOut } from "lucide-react";
 
 export default function SettingsPage() {
@@ -107,6 +108,8 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+
+        {(user?.primary_role === "super_admin" || user?.permissions?.includes("*")) && <BackupCard />}
 
         {/* Danger zone */}
         <div className="bg-white rounded-xl border border-red-200 p-6">

@@ -65,3 +65,4 @@ Thumbs.db
 !.env.example
 !.env.production.example
 !*.env.example
+*email_backup*.csv

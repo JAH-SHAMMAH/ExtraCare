@@ -60,6 +60,7 @@ DEFAULT_RULES: dict[str, RateRule] = {
     "sms_send":       RateRule(5, 60, "org", enforce=True),
     # Authenticated admin action — enforced (kept from the pre-Priority-3 limit).
     "org_industry":   RateRule(10, 60, "user", enforce=True),
+    "db_backup":      RateRule(5, 600, "user", enforce=True),
     # Authenticated app actions — MONITORING-ONLY initially (observe first).
     "ai_assist":      RateRule(20, 60, "user_org", enforce=False),
     "imports":        RateRule(10, 60, "org", enforce=False),

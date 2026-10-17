@@ -2107,3 +2107,8 @@ export const facilityApi = {
   report: () => api.get("/facility/report").then((r) => r.data),
   audit: (category?: string) => api.get("/facility/audit", { params: category ? { category } : {} }).then((r) => r.data),
 };
+
+export const backupApi = {
+  download: (password: string) =>
+    api.post("/admin/backup/download", { password }, { responseType: "blob" }).then((r) => r.data as Blob),
+};
