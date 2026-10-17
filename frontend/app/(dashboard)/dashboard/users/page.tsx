@@ -5,6 +5,7 @@ import { useUsers, useUpdateUserStatus, useDeleteUser, useAvailableRoles, useRes
 import { UserCreateModal } from "@/components/users/UserCreateModal";
 import { cn, timeAgo, STATUS_COLORS, getInitials, resolveMediaUrl } from "@/lib/utils";
 import { Search, Download, UserPlus, MoreVertical, Shield, Ban, Trash2, Edit, KeyRound, Copy, X, Check, Camera, Loader2 } from "lucide-react";
+import { downloadCsv } from "@/lib/csv";
 import type { User, UserStatus } from "@/types";
 import { useAuthStore } from "@/lib/store";
 
@@ -43,7 +44,15 @@ export default function UsersPage() {
         </div>
         {canWrite && (
           <div className="flex items-center gap-3">
-            <button className="btn-secondary gap-2">
+            <button
+              className="btn-secondary gap-2"
+              disabled={!data?.items?.length}
+              onClick={() =>
+                downloadCsv(`users-${new Date().toISOString().slice(0, 10)}.csv`,
+                  ["Name", "Email", "Phone", "Department", "Job title", "Status", "Last login"],
+                  (data?.items || []).map((u: User) => [u.full_name, u.email, u.phone, u.department, u.job_title, u.status, u.last_login_at]))
+              }
+            >
               <Download size={15} />
               Export
             </button>

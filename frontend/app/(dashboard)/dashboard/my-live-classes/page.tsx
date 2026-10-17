@@ -183,9 +183,12 @@ function StudentSessionCard({
 
       <div className="pt-3 border-t border-slate-100">
         {canJoin && isLive ? (
-          <button className="w-full text-xs font-semibold text-rose-600 hover:text-rose-700 py-2">
+          <a
+            href={`/dashboard/modules/school/cbt/live/${session.id}`}
+            className="block w-full text-center text-xs font-semibold text-rose-600 hover:text-rose-700 py-2"
+          >
             Join Now →
-          </button>
+          </a>
         ) : session.has_recording && onPlayRecording ? (
           <button
             onClick={onPlayRecording}

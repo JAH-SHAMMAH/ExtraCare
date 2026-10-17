@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { analyticsApi } from "@/lib/api";
 import { cn, timeAgo, SEVERITY_COLORS } from "@/lib/utils";
 import { Shield, Download, Filter } from "lucide-react";
+import { downloadCsv } from "@/lib/csv";
 import type { ActivityLog } from "@/types";
 
 export default function AuditLogPage() {
@@ -32,7 +33,15 @@ export default function AuditLogPage() {
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Audit Log</h1>
           <p className="text-slate-500 text-sm mt-0.5">Complete security and activity trail for your organization.</p>
         </div>
-        <button className="btn-secondary gap-2">
+        <button
+          className="btn-secondary gap-2"
+          disabled={filtered.length === 0}
+          onClick={() =>
+            downloadCsv(`audit-log-${new Date().toISOString().slice(0, 10)}.csv`,
+              ["When", "Action", "Resource", "Item", "User", "Severity"],
+              filtered.map((l) => [l.created_at, l.action, l.resource_type, l.resource_label, l.actor_email, l.severity]))
+          }
+        >
           <Download size={15} />
           Export CSV
         </button>

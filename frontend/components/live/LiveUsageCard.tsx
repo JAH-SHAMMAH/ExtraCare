@@ -122,11 +122,7 @@ export function LiveUsageCard() {
           </div>
           {nearCap && (
             <p className="text-[11px] text-rose-600 mt-2">
-              You're using {pct.toFixed(0)}% of your recording storage.{" "}
-              <a href="/billing" className="underline font-semibold">
-                Upgrade plan
-              </a>
-              .
+              You're using {pct.toFixed(0)}% of your recording storage.{" "}Please contact your administrator to free up space or upgrade.
             </p>
           )}
         </div>

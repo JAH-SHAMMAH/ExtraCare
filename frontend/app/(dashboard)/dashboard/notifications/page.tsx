@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { notificationsApi } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
-import { Bell, CheckCheck, Trash2 } from "lucide-react";
+import { Bell } from "lucide-react";
 
 interface Notification {
   id: string;
@@ -35,12 +35,6 @@ export default function NotificationsPage() {
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Notifications</h1>
           <p className="text-slate-500 text-sm mt-0.5">Your recent activity and updates.</p>
         </div>
-        {notifications.length > 0 && (
-          <button className="btn-secondary gap-2 text-sm">
-            <CheckCheck size={15} />
-            Mark all read
-          </button>
-        )}
       </div>
 
       {/* Notification list */}
@@ -74,9 +68,6 @@ export default function NotificationsPage() {
                 </p>
                 <p className="text-[10px] text-slate-400 mt-1">{timeAgo(notif.created_at)}</p>
               </div>
-              <button className="p-1.5 rounded-lg text-slate-300 hover:text-slate-600 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-all">
-                <Trash2 size={14} />
-              </button>
             </div>
           ))
         )}
