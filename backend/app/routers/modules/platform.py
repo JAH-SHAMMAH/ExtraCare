@@ -106,8 +106,10 @@ from app.services.report_engine import (
     evaluate_cumulative, is_fully_marked, round_dp, sessional_average,
 )
 from app.services.attendance_summary import term_attendance
+from app.services.ranking import dense_positions, position_of, tied_positions
 from app.services.session_scope import (
-    load_session_setup, load_term_setup, session_or_current,
+    ANY_LEVEL, level_matches, load_session_setup, load_term_setup,
+    session_or_current,
 )
 from app.services.report_lock import (
     find_published_block, locked_message, term_names_for_ids,
@@ -673,11 +675,12 @@ async def delete_scale(scale_id: str, db: AsyncSession = Depends(get_db), curren
 
 # ── Secondary Report S-1b: School Motto, Seal & Sponsor (report branding) ────
 
-def _branding_response(b: ReportBranding | None) -> BrandingResponse:
+def _branding_response(b: ReportBranding | None, inherited: bool = False) -> BrandingResponse:
     if not b:
         return BrandingResponse()
     return BrandingResponse(
-        id=b.id, school_motto=b.school_motto, school_name_alias=b.school_name_alias,
+        id=b.id, section_id=b.section_id, inherited=inherited,
+        school_motto=b.school_motto, school_name_alias=b.school_name_alias,
         school_address=b.school_address, school_website=b.school_website, school_email=b.school_email,
         school_phone=b.school_phone, class_teacher_title=b.class_teacher_title,
         school_head_title=b.school_head_title, school_head_name=b.school_head_name,
@@ -689,16 +692,27 @@ def _branding_response(b: ReportBranding | None) -> BrandingResponse:
 
 
 @router.get("/report-branding", response_model=BrandingResponse, dependencies=[_school_or_own_read])
-async def get_report_branding(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    b = (await db.execute(select(ReportBranding).where(ReportBranding.org_id == current_user.org_id))).scalar_one_or_none()
-    return _branding_response(b)
+async def get_report_branding(section_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """The letterhead for a section if given (its own row, else the school default,
+    with inherited=true), otherwise the school-wide default."""
+    from app.services.report_branding import get_branding_row
+    b, inherited = await get_branding_row(db, current_user.org_id, section_id)
+    return _branding_response(b, inherited)
 
 
 @router.put("/report-branding", response_model=BrandingResponse, dependencies=[_write])
-async def update_report_branding(payload: BrandingUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    b = (await db.execute(select(ReportBranding).where(ReportBranding.org_id == current_user.org_id))).scalar_one_or_none()
+async def update_report_branding(payload: BrandingUpdate, section_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Saves the school default, or, with ?section_id=, that section's own row.
+    A new section row starts empty; unset fields fall through to nothing, not to
+    the default, so copy what you want to keep."""
+    if section_id:
+        await _require_section(db, section_id, current_user.org_id)
+    b = (await db.execute(select(ReportBranding).where(
+        ReportBranding.org_id == current_user.org_id,
+        ReportBranding.section_id == section_id if section_id else ReportBranding.section_id.is_(None),
+    ))).scalars().first()
     if not b:
-        b = ReportBranding(org_id=current_user.org_id)
+        b = ReportBranding(org_id=current_user.org_id, section_id=section_id)
         db.add(b)
     for f, v in payload.model_dump(exclude_unset=True).items():
         setattr(b, f, v)
@@ -838,15 +852,105 @@ async def bootstrap_report_config(db: AsyncSession = Depends(get_db), current_us
                 f"individually under Report Setup instead."
             ),
         )
-    existing_secs = {s.name.casefold(): s for s in (await db.execute(select(SchoolSection).where(SchoolSection.org_id == org_id))).scalars().all()}
+    all_secs = list((await db.execute(select(SchoolSection).where(
+        SchoolSection.org_id == org_id))).scalars().all())
+    existing_secs = {s.name.casefold(): s for s in all_secs}
     existing_scales = {s.name.casefold(): s for s in (await db.execute(select(GradingScale).where(GradingScale.org_id == org_id))).scalars().all()}
 
+    # ── which EXISTING section is which, WITHOUT relying on its name ─────────
+    #
+    # THE BUG THIS REPLACES. `ensure_section` found an existing section by
+    # `existing_secs[name.casefold()]`. Rename the "Primary" row to "Junior" --
+    # which is what Educare calls it, and what the sidebar now displays -- and
+    # the next run of this endpoint finds no "Primary", creates a SECOND one,
+    # and this endpoint's own guard above states the consequence: two sections
+    # make "the report card resolve between them arbitrarily, which can change
+    # every pupil's grade."
+    #
+    # Identity now comes from the data, in this order:
+    #
+    #   1. CURRICULUM, for EYFS. There is at most one EYFS section, and the
+    #      guard above refuses to run when an org has two. This is already the
+    #      convention: `seed_domains` keys EYFS detection on curriculum, not
+    #      name, and says so.
+    #
+    #   2. THE YEAR GROUPS OF THE CLASSES ALREADY ASSIGNED TO IT. Primary's
+    #      twelve classes carry levels Year 1..Year 6; Secondary's carry
+    #      Year 7..Year 12. The alias list this function is called with is
+    #      exactly that set, so the overlap identifies the section whatever it
+    #      is called.
+    #
+    #      Second rather than third because MEASUREMENT SAYS SO: production's
+    #      Primary and Secondary rows both hold `level_aliases = NULL` -- only
+    #      Early Years has them -- so matching on stored aliases would fail for
+    #      the exact pair that needs it. The classes are where the evidence is.
+    #
+    #   3. STORED level_aliases, for an org that does have them populated.
+    #
+    #   4. The name, case-folded: the original behaviour, kept as the last
+    #      resort so a bare pre-existing section still matches on a first run.
+    #
+    # AMBIGUITY IS REFUSED, NOT GUESSED. Two sections tying on overlap resolves
+    # to None and falls through, because picking one would be exactly the
+    # arbitrary resolution this guard exists to prevent.
+    #
+    # A `slug` column would reduce this to one exact comparison and is the right
+    # long-term answer. It needs a migration, so this phase does the job with
+    # what is already on the row.
+    cls_rows = (await db.execute(select(SchoolClass).where(
+        SchoolClass.org_id == org_id,
+        SchoolClass.section_id.isnot(None)))).scalars().all()
+    levels_by_section: dict[str, set[str]] = {}
+    for c in cls_rows:
+        key = _norm_level(getattr(c, "level", None))
+        if key:
+            levels_by_section.setdefault(c.section_id, set()).add(key)
+
+    def _best_overlap(candidates, wanted: set[str]):
+        """The one section whose classes overlap `wanted` most, else None.
+
+        None for a tie, and None for no overlap at all -- see AMBIGUITY above.
+        """
+        scored = [(len(wanted & levels_by_section.get(s.id, set())), s)
+                  for s in candidates]
+        scored = [t for t in scored if t[0]]
+        if not scored:
+            return None
+        scored.sort(key=lambda t: -t[0])
+        if len(scored) > 1 and scored[0][0] == scored[1][0]:
+            return None
+        return scored[0][1]
+
+    def _resolve_existing(name, curriculum, aliases):
+        wanted = {_norm_level(a) for a in _clean_aliases(aliases)}
+        is_eyfs = (curriculum or "").casefold() == "eyfs"
+
+        if is_eyfs:
+            eyfs = [s for s in all_secs if (s.curriculum or "").casefold() == "eyfs"]
+            if len(eyfs) == 1:
+                return eyfs[0]
+
+        pool = all_secs if is_eyfs else [
+            s for s in all_secs if (s.curriculum or "").casefold() != "eyfs"]
+
+        by_classes = _best_overlap(pool, wanted)
+        if by_classes is not None:
+            return by_classes
+
+        by_aliases = [s for s in pool
+                      if wanted & {_norm_level(a) for a in (s.level_aliases or [])}]
+        if len(by_aliases) == 1:
+            return by_aliases[0]
+
+        return existing_secs.get(name.casefold())
+
     def ensure_section(name, curriculum, pos, aliases):
-        s = existing_secs.get(name.casefold())
+        s = _resolve_existing(name, curriculum, aliases)
         if not s:
             s = SchoolSection(name=name, curriculum=curriculum, position=pos,
                               level_aliases=_clean_aliases(aliases) or None, org_id=org_id)
             db.add(s)
+            all_secs.append(s)
             existing_secs[name.casefold()] = s
         elif not s.level_aliases:
             s.level_aliases = _clean_aliases(aliases) or None   # backfill aliases onto a pre-existing bare section
@@ -2601,7 +2705,9 @@ async def _entry_assessments(db, org_id, term_id, level, sub_term_id: str | None
     if sub_term_id:
         q = q.where(Assessment.sub_term_id == sub_term_id)
     rows = (await db.execute(q.order_by(Assessment.position, Assessment.name))).scalars().all()
-    return [a for a in rows if not a.year_group or a.year_group == level]
+    # One rule, one implementation -- see `level_matches` for the divergence
+    # this replaces (card case-folded in SQL, entry grid exact in Python).
+    return [a for a in rows if level_matches(a.year_group, level)]
 
 
 @router.get("/my-teaching-assignments", response_model=list[TeachingAssignment], dependencies=[_school_read])
@@ -3004,14 +3110,35 @@ def _grade_for(pct, bands):
 
 
 def _pick_display_cumulative(cumulatives, sub_term_id):
+    """The column a card/broadsheet shows for this sub-term, or None.
+
+    ~~~ IT NO LONGER BORROWS FROM ANOTHER SUB-TERM ~~~
+    This used to end with `if cumulatives: return max(cumulatives, ...)` -- when
+    the requested sub-term had no column of its own, it returned ANY cumulative
+    of the term. The Result tracker had already found what that does and worked
+    around it locally: "it made the Autumn Half-Term column repeat the Full-Term
+    mark, which asserts a half-term score nobody recorded."
+
+    That is live right now. Fairview's ACTIVE term is Summer with Half-Term as
+    its active sub-term, and NO term has a Half-Term column -- so a card for the
+    active term silently printed the Full-Term figure under a Half-Term heading.
+    A parent reading it could not tell.
+
+    Returning None instead makes the condition visible: every caller already
+    tests `not display or not assessments`, and the two readers that face a user
+    now report `not_configured` so the page can say "not set up" rather than
+    showing an empty table that reads as "no marks entered".
+
+    The tracker's own `configured_pairs` pre-filter is left in place. It is now
+    belt-and-braces rather than a workaround, and it also guards the no-
+    assessments case, so removing it is a separate cleanup.
+    """
     for_sub = [c for c in cumulatives if c.sub_term_id == sub_term_id]
     for c in for_sub:
         if (c.name or "").strip().upper() == "TOTAL":
             return c
     if for_sub:
         return max(for_sub, key=lambda c: (c.position or 0))
-    if cumulatives:
-        return max(cumulatives, key=lambda c: (c.position or 0))
     return None
 
 
@@ -3055,6 +3182,11 @@ async def _class_for_reports_or_403(db: AsyncSession, org: str, user: User,
     return cls
 
 
+async def _report_key_for_section(db, org, section_id):
+    from app.services.card_ratings import report_key_for_section
+    return await report_key_for_section(db, org, section_id)
+
+
 @router.get("/report-broadsheet", response_model=BroadsheetResponse, dependencies=[Depends(PermissionChecker("school:reports:write"))])
 async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
                             session_id: str | None = None,
@@ -3071,9 +3203,9 @@ async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
     )).scalars().all()
     s_ids = [s.id for s in students]
 
-    # Config for the (session, term): assessments, cumulatives (+ components).
+    # Config for the (session, term), scoped to this class's year group.
     sess_id = await session_or_current(db, org, session_id)
-    setup = await load_term_setup(db, org, sess_id, term_id)
+    setup = await load_term_setup(db, org, sess_id, term_id, level=level)
     assessments, cumulatives = setup.assessments, setup.cumulatives
     cumul_by_id, components = setup.cumul_by_id, setup.components
 
@@ -3130,12 +3262,27 @@ async def report_broadsheet(class_id: str, term_id: str, sub_term_id: str,
             total=round_dp(total, 2), average=round_dp(average, 2), grade=_grade_for(average, bands) if n else None,
         ))
 
-    rows_out.sort(key=lambda r: r.total, reverse=True)
-    for i, r in enumerate(rows_out, start=1):
-        r.position = i
+    # Dense position by AVERAGE, shared with the card and the Order of Merit --
+    # see services/ranking.py. This used to number the rows 1..n after sorting by
+    # TOTAL, which gave a pupil a different position here than on their own card,
+    # and ranked a nine-subject pupil above a seven-subject one on identical
+    # performance. Rows with no marks keep position 0 rather than being placed
+    # last: `grade` is already None for them.
+    positions = dense_positions({r.student_id: (r.average if r.grade else None)
+                                 for r in rows_out})
+    rows_out.sort(key=lambda r: (-(positions.get(r.student_id) or 10**9),
+                                 r.student_name.lower()))
+    for r in rows_out:
+        r.position = positions.get(r.student_id, 0)
 
     return BroadsheetResponse(
         class_id=class_id, class_name=cls.name, term_name=term_name, sub_term_name=sub_name,
+        # Nothing is configured for this sub-term. The rows above are already
+        # empty in that case -- the loop skips every subject when `display` is
+        # None -- so without this the page would show a blank grid and blame the
+        # teachers for not entering marks.
+        not_configured=(not display or not assessments),
+        report_key=await _report_key_for_section(db, org, cls.section_id),
         display_cumulative=(display.name if display else None),
         subjects=[BroadsheetSubject(**s) for s in subjects], bands=band_out, rows=rows_out,
     )
@@ -3223,12 +3370,15 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
             raise HTTPException(status_code=403, detail="You do not teach in this academic section.")
     term_name = (await db.execute(select(AcademicTerm.name).where(AcademicTerm.id == term_id, AcademicTerm.org_id == org))).scalar_one_or_none()
     sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
-    branding = _branding_response((await db.execute(select(ReportBranding).where(ReportBranding.org_id == org))).scalar_one_or_none())
+    from app.services.report_branding import get_branding_row
+    _br, _inh = await get_branding_row(db, org, cls.section_id if cls else None)
+    branding = _branding_response(_br, _inh)
 
-    # Config: assessments + cumulatives for the (session, term); the columns for
-    # this sub-term.
+    # Config: assessments + cumulatives for the (session, term), scoped to this
+    # pupil's year group; the columns for this sub-term.
     sess_id = await session_or_current(db, org, session_id)
-    setup = await load_term_setup(db, org, sess_id, term_id)
+    card_level = getattr(cls, "level", None)
+    setup = await load_term_setup(db, org, sess_id, term_id, level=card_level)
     assessments, cumulatives = setup.assessments, setup.cumulatives
     cumul_by_id, components = setup.cumul_by_id, setup.components
 
@@ -3291,6 +3441,9 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     # the pupil's own `average` below (which is a mean of percentages, not of raw
     # display values). Reuses this same pass rather than re-querying the class.
     peer_averages: list = []
+    # Keyed as well as listed: the list feeds the class average, the mapping
+    # feeds the pupil's position. Both come from this one pass.
+    peer_average_by_student: dict[str, object] = {}
     for st in classmates:
         tot = money(0)
         p_sum = money(0)
@@ -3306,8 +3459,13 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         totals[st.id] = tot
         if p_n:
             peer_averages.append(p_sum / p_n)
-    ranking = sorted(classmates, key=lambda s: totals.get(s.id, money(0)), reverse=True)
-    position = next((i for i, s in enumerate(ranking, start=1) if s.id == student_id), 0)
+            peer_average_by_student[st.id] = p_sum / p_n
+    # Dense position by average, the same function the broadsheet uses, so a
+    # pupil's card and their class's broadsheet cannot disagree about where they
+    # came. Previously this sorted classmates by TOTAL and took the index, which
+    # is ordinal ranking -- two pupils with the same average printed 5th and 6th.
+    # An unmarked classmate is absent from the mapping and so is not ranked.
+    position = position_of(student_id, peer_average_by_student)
 
     # This pupil's detailed rows.
     subj_rows: list[CardSubjectRow] = []
@@ -3397,7 +3555,7 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         # Its OWN components map (`all_comps`), not the viewed term's: the loop
         # below resolves each term's cumulative tree, and the term-scoped map
         # holds nothing for the other terms.
-        session_setup = await load_session_setup(db, org, sess_id)
+        session_setup = await load_session_setup(db, org, sess_id, level=card_level)
         all_asmts = session_setup.assessments
         all_cumuls = session_setup.cumulatives
         all_cumul_by_id = session_setup.cumul_by_id
@@ -3496,11 +3654,22 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
         db, org, student_id,
         session_id=sess_id, term_id=term_id, sub_term_id=sub_term_id)
 
+    from app.services.card_ratings import card_domain_blocks, report_key_for_section, student_clubs
+    _sec_id = cls.section_id if cls else None
+    report_key = await report_key_for_section(db, org, _sec_id)
+    domain_blocks = await card_domain_blocks(db, org, _sec_id, student_id, term_id, report_key)
+    clubs = await student_clubs(db, org, student_id, term_name)
+
     title = " ".join(x for x in [(term_name or "").upper(), (sub_name or "").upper(), "REPORT"] if x).strip()
     return ReportCardResponse(
+        report_key=report_key, domain_blocks=domain_blocks, clubs=clubs,
         student_id=student_id, student_name=f"{student.first_name} {student.last_name}".strip(),
         admission_no=student.student_id, photo_url=getattr(student, "photo_url", None),
         class_name=(cls.name if cls else None), term_name=term_name, sub_term_name=sub_name, report_title=title,
+        # See the broadsheet above, and `_pick_display_cumulative`: this used to
+        # be invisible because the display column silently borrowed another
+        # sub-term's.
+        not_configured=(not display or not assessments),
         branding=branding, columns=columns,
         subjects=subj_rows, bands=[BroadsheetBand(grade=b.grade, min_score=b.min_score, max_score=b.max_score, remark=b.remark) for b in bands],
         total=round_dp(my_total, 2), average=round_dp(average, 2), grade=_grade_for(average, bands) if n else None,
@@ -4010,7 +4179,11 @@ async def report_insight(term_id: str, sub_term_id: str,
     sub_name = (await db.execute(select(AcademicSubTerm.name).where(AcademicSubTerm.id == sub_term_id, AcademicSubTerm.org_id == org))).scalar_one_or_none()
 
     sess_id = await session_or_current(db, org, session_id)
-    setup = await load_term_setup(db, org, sess_id, term_id)
+    # DELIBERATELY ANY_LEVEL. This report is whole-school -- it reads every score
+    # in the org and has no class to resolve a year group from -- so it must keep
+    # seeing every level's columns. Narrowing it to the shared ones would quietly
+    # drop per-level columns from a school-wide chart. See `ANY_LEVEL`.
+    setup = await load_term_setup(db, org, sess_id, term_id, level=ANY_LEVEL)
     assessments, cumulatives = setup.assessments, setup.cumulatives
     cumul_by_id, components = setup.cumul_by_id, setup.components
     display = _pick_display_cumulative(cumulatives, sub_term_id)
@@ -4594,11 +4767,15 @@ async def order_of_merit(term_id: str, sub_term_id: str, class_id: str | None = 
                          current_user: User = Depends(get_current_active_user)):
     """Pupils ranked by average, best first.
 
-    STANDARD COMPETITION RANKING (1, 2, 2, 4). Two pupils with the same average
-    are the same position, and the next pupil takes the position their count
-    implies — printing equal averages as 2nd and 3rd would assert an order the
-    marks do not contain. Educare's own convention is unverified; if it uses dense
-    ranking (1, 2, 2, 3) this is the one place to change.
+    DENSE RANKING (1, 2, 2, 3), via services/ranking.py. This used standard
+    competition ranking (1, 2, 2, 4) and said so: "Educare's own convention is
+    unverified; if it uses dense ranking (1, 2, 2, 3) this is the one place to
+    change." The saved Secondary report settles it — two pupils tie at 88.80 and
+    BOTH print "5th", with the next distinct average at "6th", where competition
+    ranking would have printed "7th". So this is that change.
+
+    Two equal averages are still the same position; what changed is that the
+    pupil after them is no longer skipped past.
 
     An UNMARKED pupil is never ranked. Their standing is unknown, not last, and a
     merit list that placed them would be inventing a result for a child.
@@ -4615,23 +4792,20 @@ async def order_of_merit(term_id: str, sub_term_id: str, class_id: str | None = 
     marked = [p for p in analysis.pupils if p.average is not None]
     marked.sort(key=lambda p: (-p.average, (p.student_name or "").lower()))
 
+    # Compared at the PRINTED precision, which the old code did not do: it tested
+    # `p.average == marked[i-1].average` on the RAW value, so two averages that
+    # both display as 88.80 while differing in the fourth decimal were ranked 5th
+    # and 6th -- two identical printed numbers in different places.
+    positions = dense_positions({p.student_id: p.average for p in marked})
+    shared = tied_positions(positions)
     rows: list[MeritRow] = []
-    position = 0
-    for i, p in enumerate(marked):
-        if i and p.average == marked[i - 1].average:
-            pass                      # same average -> same position as the one above
-        else:
-            position = i + 1          # competition ranking: skip the shared places
+    for p in marked:
+        pos = positions.get(p.student_id, 0)
         rows.append(MeritRow(
-            position=position, student_id=p.student_id, student_name=p.student_name,
+            position=pos, student_id=p.student_id, student_name=p.student_name,
             admission_no=p.admission_no, class_name=p.class_name,
             average=round_dp(p.average, 2), grade=p.grade,
-            subjects_counted=p.subjects_counted))
-    counts: dict[int, int] = {}
-    for r in rows:
-        counts[r.position] = counts.get(r.position, 0) + 1
-    for r in rows:
-        r.tied = counts[r.position] > 1
+            subjects_counted=p.subjects_counted, tied=pos in shared))
 
     return OrderOfMeritResponse(
         term_name=analysis.term_name, sub_term_name=analysis.sub_term_name,

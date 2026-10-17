@@ -306,9 +306,22 @@ class ReportBranding(Base, UUIDMixin, TimestampMixin, TenantMixin):
     head_signature_url = Column(String(500), nullable=True)
     logo_background_url = Column(String(500), nullable=True)
     sponsor_url = Column(String(500), nullable=True)
+    # NULL = the school-wide default. A value = this school section's own letterhead
+    # (Nursery, Primary and Secondary carry different logos, heads and passmarks).
+    # Resolution is section row first, then the default; see services/report_branding.
+    section_id = Column(String(36), ForeignKey("school_sections.id", ondelete="CASCADE"),
+                        nullable=True, index=True)
 
     __table_args__ = (
-        UniqueConstraint("org_id", name="uq_report_branding_org"),
+        # One default per org and one row per (org, section). Two PARTIAL indexes,
+        # because a plain UNIQUE(org_id, section_id) treats NULLs as distinct and
+        # would allow any number of defaults.
+        Index("uq_report_branding_org_default", "org_id", unique=True,
+              postgresql_where=sql_text("section_id IS NULL"),
+              sqlite_where=sql_text("section_id IS NULL")),
+        Index("uq_report_branding_org_section", "org_id", "section_id", unique=True,
+              postgresql_where=sql_text("section_id IS NOT NULL"),
+              sqlite_where=sql_text("section_id IS NOT NULL")),
     )
 
 
@@ -722,6 +735,8 @@ class StudentDomainRating(Base, UUIDMixin, TimestampMixin, TenantMixin):
     domain_id = Column(String(36), ForeignKey("assessment_domains.id", ondelete="CASCADE"), nullable=False, index=True)
     rating = Column(String(60), nullable=True)   # descriptor label (e.g. "Expected")
     comment = Column(Text, nullable=True)
+    # Nursery's "SAMPLE PICTURE": a photo of the child's work for this goal.
+    photo_url = Column(String(500), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("student_id", "term_id", "domain_id", name="uq_student_domain_rating"),

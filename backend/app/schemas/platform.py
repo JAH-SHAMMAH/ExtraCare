@@ -387,6 +387,8 @@ class BrandingUpdate(BaseModel):
 
 class BrandingResponse(BrandingUpdate):
     id: Optional[str] = None
+    section_id: Optional[str] = None
+    inherited: bool = False     # True: this section has no row of its own; showing the default
 
 
 class ReportTemplateCreate(BaseModel):
@@ -499,8 +501,10 @@ class DomainResponse(BaseModel):
 
 class DomainRatingItem(BaseModel):
     domain_id: str
-    rating: Optional[str] = None    # descriptor label; empty rating+comment clears the row
+    rating: Optional[str] = None    # descriptor label; empty rating+comment+photo clears the row
     comment: Optional[str] = None
+    # Left out of the request = keep the stored photo. Sent as null/"" = remove it.
+    photo_url: Optional[str] = None
 
 
 class DomainRatingsSet(BaseModel):
@@ -530,6 +534,7 @@ class DomainRatingColumn(BaseModel):
 class DomainRatingCell(BaseModel):
     rating: Optional[str] = None
     comment: Optional[str] = None
+    photo_url: Optional[str] = None
 
 
 class DomainRatingsStudentRow(BaseModel):
@@ -564,6 +569,7 @@ class DomainRatingResponse(BaseModel):
     domain_id: str
     rating: Optional[str] = None
     comment: Optional[str] = None
+    photo_url: Optional[str] = None
     org_id: str
 
 
@@ -1121,6 +1127,17 @@ class BroadsheetResponse(BaseModel):
     subjects: list[BroadsheetSubject] = Field(default_factory=list)
     bands: list[BroadsheetBand] = Field(default_factory=list)
     rows: list[BroadsheetRow] = Field(default_factory=list)
+    # No column is configured for this (session, term, sub-term), so there is
+    # nothing to compute. Said explicitly because the alternative reads as
+    # "no marks entered yet", which is a different and much less alarming
+    # fact — and because the previous behaviour was worse than either: the
+    # display column fell back to ANOTHER sub-term's, printing the Full-Term
+    # figure under a Half-Term heading. Same field name and meaning as the
+    # ten result-analysis responses that already carry it.
+    not_configured: bool = False
+    # Which card template this class prints (nursery-report has no marks, so its
+    # Reports View is just the pupil list with the report icons).
+    report_key: Optional[str] = None
 
 
 # ── Secondary Report parity S-4c: printable report card ──────────────────────
@@ -1171,6 +1188,31 @@ class SessionalTerm(BaseModel):
     average: Optional[Decimal] = None
 
 
+class CardRatingItem(BaseModel):
+    """One rated line: a behaviour, a skill, an Early Learning Goal."""
+    domain_id: str
+    name: str
+    rating: Optional[str] = None      # descriptor label as stored; None = not rated yet
+    comment: Optional[str] = None
+    photo_url: Optional[str] = None
+    children: list["CardRatingItem"] = Field(default_factory=list)   # goals under an area
+
+
+class CardRatingKeyEntry(BaseModel):
+    label: str
+    meaning: Optional[str] = None
+
+
+class CardDomainBlock(BaseModel):
+    """A block of rated lines that prints on a card (Affective, Psychomotor, or a
+    Nursery area of learning). `key` is the rating scale as the school printed it,
+    so the card can show what each letter means."""
+    domain_type: str                  # affective | psychomotor | eyfs_area
+    title: str
+    items: list[CardRatingItem] = Field(default_factory=list)
+    key: list[CardRatingKeyEntry] = Field(default_factory=list)
+
+
 class ReportCardResponse(BaseModel):
     student_id: str
     student_name: Optional[str] = None
@@ -1180,6 +1222,21 @@ class ReportCardResponse(BaseModel):
     term_name: Optional[str] = None
     sub_term_name: Optional[str] = None
     report_title: Optional[str] = None
+    # No column is configured for this (session, term, sub-term), so there is
+    # nothing to compute. Said explicitly because the alternative reads as
+    # "no marks entered yet", which is a different and much less alarming
+    # fact — and because the previous behaviour was worse than either: the
+    # display column fell back to ANOTHER sub-term's, printing the Full-Term
+    # figure under a Half-Term heading. Same field name and meaning as the
+    # ten result-analysis responses that already carry it.
+    not_configured: bool = False
+    # Which template prints this card: secondary-report | junior-report |
+    # nursery-report, or None when the section cannot be classified (the client
+    # then uses the marks-table layout, the safe default).
+    report_key: Optional[str] = None
+    domain_blocks: list[CardDomainBlock] = Field(default_factory=list)
+    # Approved clubs / sports for this term; Secondary prints them as "Club/Sports Choice".
+    clubs: list[str] = Field(default_factory=list)
     branding: BrandingResponse = Field(default_factory=BrandingResponse)
     columns: list[CardColumn] = Field(default_factory=list)
     subjects: list[CardSubjectRow] = Field(default_factory=list)
@@ -1527,9 +1584,10 @@ class MeritRow(BaseModel):
     average: Decimal
     grade: Optional[str] = None
     subjects_counted: int = 0
-    # True when this pupil shares their position with another. Standard
-    # competition ranking (1, 2, 2, 4) — two equal averages are equal, and
-    # printing them as 2nd and 3rd would assert an order the marks do not contain.
+    # True when this pupil shares their position with another. DENSE ranking
+    # (1, 2, 2, 3) — two equal averages are equal, and the pupil after them is
+    # not skipped past, which is what Educare's own cards print. The ranking
+    # itself lives in services/ranking.py.
     tied: bool = False
 
 

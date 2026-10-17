@@ -135,19 +135,30 @@ async def test_merit_ranks_best_first(db, org):
 
 
 @pytest.mark.asyncio
-async def test_merit_uses_standard_competition_ranking(db, org):
-    """1, 2, 2, 4 — two equal averages are the same position, and the next pupil
-    takes the place their count implies. Dense ranking (1, 2, 2, 3) would assert
-    an order the marks do not contain. Educare's convention is unverified."""
+async def test_merit_uses_dense_ranking(db, org):
+    """1, 2, 2, 3 — two equal averages share a position, and the pupil AFTER them
+    is not skipped past.
+
+    THIS TEST USED TO ASSERT [1, 2, 2, 4], standard competition ranking, on the
+    stated grounds that "Educare's convention is unverified". It is now verified:
+    the saved Secondary report shows two pupils tied at 88.80 both printing
+    "5th" with the next distinct average at "6th", where competition ranking
+    would have printed "7th". The endpoint's own docstring named this as the one
+    place to change, and phase C changed it.
+
+    Two equal averages are still equal, and `tied` still flags them; only the
+    numbering after a tie moved.
+    """
     w = await _world(db, org, marks={
         "Ada Obi": {"Maths": 90}, "Bode Ade": {"Maths": 70},
         "Chi Eze": {"Maths": 70}, "Dayo Ola": {"Maths": 50}})
     admin = await _admin(db, org)
     res = await order_of_merit(term_id=w["term"].id, sub_term_id=w["full"].id,
                                class_id=w["cls"].id, db=db, current_user=admin)
-    assert [r.position for r in res.rows] == [1, 2, 2, 4]
+    assert [r.position for r in res.rows] == [1, 2, 2, 3]
     tied = {r.student_name for r in res.rows if r.tied}
     assert tied == {"Bode Ade", "Chi Eze"}
+    assert max(r.position for r in res.rows) == 3, "positions must be gap-free"
 
 
 @pytest.mark.asyncio

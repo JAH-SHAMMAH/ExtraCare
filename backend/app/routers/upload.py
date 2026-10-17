@@ -92,3 +92,16 @@ async def upload_document(
     url = await save_upload(current_user.org_id, "documents", file.filename, content, file.content_type)
     _logger.info("upload.document user=%s category=%s url=%s", current_user.id, category, url)
     return {"url": url, "filename": file.filename, "category": category}
+
+
+@router.post("/report-photo")
+async def upload_report_photo(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_active_user),
+):
+    """A picture of a child's work, for the Nursery report's SAMPLE PICTURE column.
+    Returns a URL; attach it by sending photo_url with that goal's rating."""
+    content = await _read_validated(file, _IMAGE_TYPES, _MAX_AVATAR)
+    url = await save_upload(current_user.org_id, "report-photos", file.filename, content, file.content_type)
+    _logger.info("upload.report_photo user=%s url=%s", current_user.id, url)
+    return {"url": url, "filename": file.filename}

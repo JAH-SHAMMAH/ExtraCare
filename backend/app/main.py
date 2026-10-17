@@ -71,6 +71,9 @@ async def lifespan(app: FastAPI):
     logger.info("Starting %s...", settings.APP_NAME)
     await init_db()
     logger.info("Database initialized.")
+    from app.database import AsyncSessionLocal
+    from app.services.fairview_setup import auto_setup_on_boot
+    await auto_setup_on_boot(AsyncSessionLocal)
     start_flusher()
     logger.info("Usage flusher started.")
 

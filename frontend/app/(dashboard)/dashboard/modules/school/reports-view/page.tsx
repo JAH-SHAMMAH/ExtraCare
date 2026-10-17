@@ -4,10 +4,10 @@ import { useState, useMemo } from "react";
 import { useClasses, useYearGroups } from "@/hooks/useSchool";
 import { useTerms, useSubTerms, useBroadsheet, useSessions } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
-import { BulkPrintTab, CommentGridTab } from "@/components/reports/ReportCardPrint";
+import { BulkPrintTab, CommentGridTab, StudentReportDialog } from "@/components/reports/ReportCardPrint";
 import { ReportInsightTab } from "@/components/reports/ReportInsightTab";
 import { cn } from "@/lib/utils";
-import { Loader2, LayoutGrid, BarChart3, RefreshCw, Download, ShieldAlert } from "lucide-react";
+import { Loader2, LayoutGrid, BarChart3, RefreshCw, Download, ShieldAlert, Settings2, Eye, FileDown } from "lucide-react";
 
 type Tab = "broadsheet" | "bulk" | "head" | "pc" | "insight";
 // adminOnly tabs (School Head Comment, Result Insight) are hidden from teachers,
@@ -27,7 +27,7 @@ export default function ReportsViewPage() {
   const [tab, setTab] = useState<Tab>("broadsheet");
   return (
     <div className="p-8 max-w-full mx-auto">
-      <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Secondary School Report</span><span>/</span><span className="text-brand-600 font-semibold">Reports View</span></nav>
+      <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>School Report</span><span>/</span><span className="text-brand-600 font-semibold">Reports View</span></nav>
       <h1 className="text-2xl font-black text-slate-900 tracking-tight mb-1 flex items-center gap-2"><LayoutGrid size={22} className="text-brand-600" /> Reports View</h1>
       <p className="text-slate-500 text-sm mb-5">Class results built from the Report Entry marks and the cumulative columns.</p>
 
@@ -75,6 +75,20 @@ function Broadsheet() {
   // matching the reference. Changing a dropdown alone does not fire a request.
   const [applied, setApplied] = useState({ class_id: "", term_id: "", sub_term_id: "" });
   const { data: bs, isLoading, isError, error } = useBroadsheet(applied);
+  // Which pupil's full report is open, and whether it opened to be saved as PDF.
+  const [open, setOpen] = useState<{ id: string; print: boolean } | null>(null);
+  const isNursery = bs?.report_key === "nursery-report";
+  /** The two per-pupil icons: view the full report, or export it as a PDF. */
+  const ReportIcons = ({ id, name }: { id: string; name: string }) => (
+    <span className="inline-flex items-center gap-1 ml-2 align-middle">
+      <button type="button" title={`View ${name}'s full report`} aria-label={`View full report for ${name}`}
+        onClick={() => setOpen({ id, print: false })}
+        className="p-1 rounded-md text-slate-400 hover:text-brand-700 hover:bg-brand-50"><Eye size={15} /></button>
+      <button type="button" title={`Export ${name}'s report as PDF`} aria-label={`Export PDF for ${name}`}
+        onClick={() => setOpen({ id, print: true })}
+        className="p-1 rounded-md text-slate-400 hover:text-brand-700 hover:bg-brand-50"><FileDown size={15} /></button>
+    </span>
+  );
 
   // Reports View is class-teacher-only, enforced by the API:
   // report_broadsheet refuses a teacher who is not SchoolClass.teacher_id for the
@@ -178,6 +192,51 @@ function Broadsheet() {
         <p className="text-sm text-slate-500 py-14 text-center bg-white rounded-xl border border-slate-200">
           Couldn&apos;t load this class&rsquo;s results. Try again, or press Process Result.
         </p>
+      ) : isNursery ? (
+        /* Nursery reports carry no marks, so there is no broadsheet to build —
+           the list of pupils with the two report icons IS the view. */
+        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+          <table className="w-full text-left">
+            <thead><tr className="bg-slate-50/80 border-b border-slate-100">
+              <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500 w-12">#</th>
+              <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">Student</th>
+            </tr></thead>
+            <tbody className="divide-y divide-slate-50">
+              {rows.map((r: any, i: number) => (
+                <tr key={r.student_id} className="hover:bg-slate-50/70">
+                  <td className="px-4 py-2 text-xs text-slate-400">{i + 1}</td>
+                  <td className="px-4 py-2 text-sm font-semibold text-slate-800 whitespace-nowrap">{r.student_name}<ReportIcons id={r.student_id} name={r.student_name} /></td>
+                </tr>
+              ))}
+              {rows.length === 0 && <tr><td colSpan={2} className="px-4 py-10 text-center text-sm text-slate-400">No pupils in this class.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      ) : bs?.not_configured ? (
+        /* No column is configured for this term + sub-term, so there is nothing
+           to compute. This branch must come BEFORE the "no results" one below:
+           that message blames the teachers for not entering marks, when the
+           marks have nowhere to land. Fairview's ACTIVE sub-term is Half-Term
+           and no term has a Half-Term column, so this is the live state, not a
+           hypothetical — and until now the grid silently showed the Full-Term
+           figures instead. */
+        <div className="bg-white rounded-xl border border-amber-200 py-14 px-6 text-center">
+          <Settings2 size={30} className="mx-auto mb-3 text-amber-500" />
+          <p className="text-sm font-bold text-slate-800 mb-1">
+            This sub-term isn&rsquo;t set up yet
+          </p>
+          <p className="text-sm text-amber-800 max-w-md mx-auto leading-relaxed">
+            No report column is configured for{" "}
+            <b>{bs.term_name || "this term"}</b>
+            {bs.sub_term_name ? <> &middot; <b>{bs.sub_term_name}</b></> : null},
+            so there are no results to show.
+          </p>
+          <p className="text-xs text-slate-500 mt-3 max-w-md mx-auto leading-relaxed">
+            Add the assessments and cumulative columns for it under{" "}
+            <span className="font-semibold">Report Setup &rarr; Result View</span>.
+            Marks already entered are untouched.
+          </p>
+        </div>
       ) : !bs || rows.length === 0 ? (
         <p className="text-sm text-slate-400 py-14 text-center bg-white rounded-xl border border-slate-200">No results — enter marks under Report Entry first.</p>
       ) : (
@@ -187,7 +246,7 @@ function Broadsheet() {
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-100">
                   <th className="px-3 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500 sticky left-0 bg-slate-50">#</th>
-                  <th className="px-3 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500 sticky left-8 bg-slate-50 min-w-[160px]">Student</th>
+                  <th className="px-3 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500 sticky left-8 bg-slate-50 min-w-[220px]">Student</th>
                   {bs.subjects.map((s: any) => <th key={s.id} className="px-2 py-3 text-[9px] font-bold uppercase tracking-wide text-slate-500 text-center min-w-[54px] max-w-[70px]"><div className="leading-tight">{s.name}</div></th>)}
                   {([["total", "Total"], ["average", "Avg"], ["grade", "Grade"], ["position", "Pos"]] as [string, string][]).map(([k, h]) => (
                     <th key={k} onClick={() => toggleSort(k)} title="Sort" className="px-3 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500 text-center bg-slate-100/60 cursor-pointer select-none hover:text-slate-700">
@@ -200,7 +259,7 @@ function Broadsheet() {
                 {rows.map((r: any) => (
                   <tr key={r.student_id} className="hover:bg-slate-50/70">
                     <td className="px-3 py-2 text-xs text-slate-400 sticky left-0 bg-white">{r.position}</td>
-                    <td className="px-3 py-2 text-sm font-semibold text-slate-800 whitespace-nowrap sticky left-8 bg-white">{r.student_name}</td>
+                    <td className="px-3 py-2 text-sm font-semibold text-slate-800 whitespace-nowrap sticky left-8 bg-white">{r.student_name}<ReportIcons id={r.student_id} name={r.student_name} /></td>
                     {bs.subjects.map((s: any) => { const cell = r.subjects[s.id]; return (
                       <td key={s.id} className={cn("px-2 py-2 text-center text-sm tabular-nums", cell?.grade ? GRADE_COLOR[cell.grade] : "text-slate-300")}>{cell?.value != null ? num(cell.value) : "–"}</td>
                     ); })}
@@ -228,6 +287,7 @@ function Broadsheet() {
           )}
         </>
       )}
+      {open && <StudentReportDialog studentId={open.id} termId={applied.term_id} subTermId={applied.sub_term_id} print={open.print} onClose={() => setOpen(null)} />}
     </div>
   );
 }

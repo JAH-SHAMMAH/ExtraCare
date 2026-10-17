@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useClasses } from "@/hooks/useSchool";
 import { useTerms, useSubTerms, useBroadsheet, useReportCard, useReportCardsBulk, useCommentGrid, useSaveComments } from "@/hooks/usePlatform";
-import { Loader2, Printer, FileText, Save } from "lucide-react";
+import { Loader2, Printer, FileText, Save, Settings2 } from "lucide-react";
 
 /** Sentinel for the "every pupil in the class" option in the student picker. */
 const ALL = "__ALL__";
@@ -29,6 +29,11 @@ export function BulkPrintTab() {
   const num = (v: any) => (v == null ? "–" : Number(v));
   const cards: any[] = isAll ? (allCards ?? []) : card ? [card] : [];
   const busy = isAll ? allLoading : isLoading;
+  // The flag is a property of the (term, sub-term) setup, not of the pupil, so
+  // every card in a bulk run carries the same value -- the first is enough. The
+  // broadsheet's copy is the fallback for "All students", where no single card
+  // has been fetched yet.
+  const notConfigured: boolean = cards[0]?.not_configured ?? (bs as any)?.not_configured ?? false;
 
   return (
     <div className="space-y-4">
@@ -53,12 +58,33 @@ export function BulkPrintTab() {
         <div className="bg-white rounded-xl border border-dashed border-slate-200 py-16 text-center text-slate-400 no-print"><FileText size={30} className="mx-auto mb-3 opacity-40" /><p className="text-sm">Choose a class, term, sub-term and student — or &ldquo;All students&rdquo; to bulk-print the whole class.</p></div>
       ) : busy ? (
         <div className="py-16 text-center no-print"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /><p className="text-xs text-slate-400 mt-2">{isAll ? "Building every card in the class…" : "Loading…"}</p></div>
+      ) : notConfigured ? (
+        /* No column exists for this term + sub-term, so a card here would be a
+           blank table. Checked BEFORE "no report cards for this selection",
+           which reads as "nothing published yet" and sends the user to chase
+           marks that have nowhere to land. Until `_pick_display_cumulative`
+           stopped borrowing, this case printed ANOTHER sub-term's figures under
+           this sub-term's heading. */
+        <div className="bg-white rounded-xl border border-amber-200 py-16 px-6 text-center no-print">
+          <Settings2 size={30} className="mx-auto mb-3 text-amber-500" />
+          <p className="text-sm font-bold text-slate-800 mb-1">
+            This sub-term isn&rsquo;t set up yet
+          </p>
+          <p className="text-sm text-amber-800 max-w-md mx-auto leading-relaxed">
+            No report column is configured for this term and sub-term, so there
+            is nothing to print.
+          </p>
+          <p className="text-xs text-slate-500 mt-3 max-w-md mx-auto leading-relaxed">
+            Add its assessments and cumulative columns under{" "}
+            <span className="font-semibold">Report Setup &rarr; Result View</span>.
+          </p>
+        </div>
       ) : cards.length === 0 ? (
         <div className="bg-white rounded-xl border border-dashed border-slate-200 py-16 text-center text-slate-400 no-print"><p className="text-sm">No report cards for this selection.</p></div>
       ) : (
         <div id="report-card" className="space-y-6">
           {cards.map((c: any) => (
-            <div key={c.student_id} className="card-page bg-white rounded-xl border border-slate-300 p-6 max-w-4xl mx-auto text-slate-900">
+            <div key={c.student_id} className="card-page bg-white rounded-xl border border-slate-300 p-6 max-w-4xl mx-auto text-slate-900 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
               <Card card={c} num={num} />
             </div>
           ))}
@@ -68,7 +94,44 @@ export function BulkPrintTab() {
   );
 }
 
-function Card({ card, num }: { card: any; num: (v: any) => any }) {
+/** One pupil's full report in a pop-up, opened from the Reports View list.
+ *  `print` opens it and immediately offers the browser's Save-as-PDF dialog. */
+export function StudentReportDialog({ studentId, termId, subTermId, print, onClose }: {
+  studentId: string; termId: string; subTermId: string; print?: boolean; onClose: () => void;
+}) {
+  const { data: card, isLoading } = useReportCard({ student_id: studentId, term_id: termId, sub_term_id: subTermId });
+  const num = (v: any) => (v == null ? "–" : Number(v));
+  const ready = !!card && !card.not_configured;
+  useEffect(() => {
+    if (print && ready) { const t = setTimeout(() => window.print(), 300); return () => clearTimeout(t); }
+  }, [print, ready]);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 overflow-y-auto p-4 no-print-bg" role="dialog" aria-label="Student report">
+      <style>{`@media print {
+        body * { visibility: hidden !important; }
+        #single-report, #single-report * { visibility: visible !important; }
+        #single-report { position: absolute; left: 0; top: 0; width: 100%; }
+      }`}</style>
+      <div className="max-w-4xl mx-auto">
+        <div className="flex justify-end gap-2 mb-2 no-print print:hidden">
+          {ready && <button onClick={() => window.print()} className="btn-primary gap-2"><Printer size={15} /> Export PDF</button>}
+          <button onClick={onClose} className="btn-secondary">Close</button>
+        </div>
+        {isLoading ? (
+          <div className="bg-white rounded-xl py-16 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
+        ) : !card || card.not_configured ? (
+          <div className="bg-white rounded-xl py-16 px-6 text-center text-sm text-slate-500">No report is available for this pupil in the chosen term yet.</div>
+        ) : (
+          <div id="single-report" className="bg-white rounded-xl border border-slate-300 p-6 text-slate-900 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+            <Card card={card} num={num} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function Card({ card, num }: { card: any; num: (v: any) => any }) {
   const b = card.branding || {};
   // Both operands checked, not just the denominator. `null / 60` is 0 in JS, so
   // a missing `present` beside a real `total` would have printed "0%" — an
@@ -94,9 +157,17 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
   const showSubjectComments = (card.subjects ?? []).some((r: any) => (r.comment ?? "").trim());
   // Date on the signature line: when the card was produced.
   const printedOn = new Date().toLocaleDateString("en-GB");
+  // Template dispatch. Nursery prints no marks at all (areas of learning rated
+  // A/E/SNS); Junior and Secondary print the marks table plus behaviour and skills.
+  // An unclassified section (report_key null) keeps the marks layout, the old default.
+  const isNursery = card.report_key === "nursery-report";
+  const isJunior = card.report_key === "junior-report";
+  const blocks: any[] = card.domain_blocks ?? [];
+  const sideBlocks = blocks.filter((x) => x.domain_type === "affective" || x.domain_type === "psychomotor");
+  const areaBlocks = blocks.filter((x) => x.domain_type === "eyfs_area");
   return (
     <>
-      <div className="flex items-center gap-4 border-b-2 border-slate-800 pb-3">
+      <div className="flex items-center gap-4 border-b-2 border-[#2f5f1f] pb-3">
         {b.logo_url ? <img src={b.logo_url} alt="" className="w-16 h-16 object-contain" /> : <div className="w-16 h-16" />}
         <div className="flex-1 text-center">
           <h2 className="text-xl font-black tracking-tight">{b.school_name_alias || "SCHOOL REPORT"}</h2>
@@ -110,36 +181,45 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
       <table className="w-full text-xs mt-3 border border-slate-300">
         <tbody>
           <tr>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Name</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Name</td>
             <td className="border border-slate-300 px-2 py-1">{card.student_name}</td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Class</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Class</td>
             <td className="border border-slate-300 px-2 py-1">{card.class_name || "—"}</td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Position</td>
-            <td className="border border-slate-300 px-2 py-1">{card.position} of {card.class_size}</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">{isNursery ? "Term" : "Position"}</td>
+            <td className="border border-slate-300 px-2 py-1">{isNursery ? (card.term_name || "—") : `${card.position} of ${card.class_size}`}</td>
           </tr>
+          {isNursery ? (
+            <tr>
+              <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Admission No</td>
+              <td className="border border-slate-300 px-2 py-1">{card.admission_no || "—"}</td>
+              <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Session</td>
+              <td colSpan={3} className="border border-slate-300 px-2 py-1">{card.term_name || "—"}{card.sub_term_name ? ` · ${card.sub_term_name}` : ""}</td>
+            </tr>
+          ) : (<>
           <tr>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Admission No</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Admission No</td>
             <td className="border border-slate-300 px-2 py-1">{card.admission_no || "—"}</td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Times School Opened</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Times School Opened</td>
             <td className="border border-slate-300 px-2 py-1">{card.attendance_total ?? "—"}</td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Times Punctual</td>
-            <td className="border border-slate-300 px-2 py-1">{card.attendance_punctual ?? "—"}</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">{isJunior ? "Times Absent" : "Times Punctual"}</td>
+            <td className="border border-slate-300 px-2 py-1">{isJunior ? (card.attendance_absent ?? "—") : (card.attendance_punctual ?? "—")}</td>
           </tr>
           <tr>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Times Present</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Times Present</td>
             <td className="border border-slate-300 px-2 py-1">{card.attendance_present ?? "—"}</td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">% Attendance</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">% Attendance</td>
             <td className="border border-slate-300 px-2 py-1">{attPct != null ? `${attPct}%` : "—"}</td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50">Term</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c]">Term</td>
             <td className="border border-slate-300 px-2 py-1">{card.term_name || "—"}{card.sub_term_name ? ` · ${card.sub_term_name}` : ""}</td>
           </tr>
+          </>)}
         </tbody>
       </table>
 
       {/* Provenance, on screen only. A figure that was typed should not be
           mistaken for one that was counted — the same reason `threshold_source`
           is surfaced on the Result Analysis reports. */}
-      {attSource && attSource !== "none" && (
+      {!isNursery && attSource && attSource !== "none" && (
         <p className="print:hidden text-[11px] text-slate-400 -mt-2 mb-2">
           {attSource === "register" ? (
             <>Attendance counted from the daily register
@@ -155,11 +235,12 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
         </p>
       )}
 
+      {!isNursery && (<>
       <table className="w-full text-xs mt-3 border border-slate-300">
         <thead>
-          <tr className="bg-slate-100">
+          <tr className="bg-[#2f5f1f] text-white">
             <th className="border border-slate-300 px-2 py-1 text-left">Subject</th>
-            {card.columns.map((c: any) => <th key={c.key} className="border border-slate-300 px-2 py-1 text-center">{c.name}{c.max_score != null ? <span className="block font-normal text-[9px] text-slate-500">/{num(c.max_score)}</span> : null}</th>)}
+            {card.columns.map((c: any) => <th key={c.key} className="border border-slate-300 px-2 py-1 text-center">{c.name}{c.max_score != null ? <span className="block font-normal text-[9px] text-green-100">/{num(c.max_score)}</span> : null}</th>)}
             <th className="border border-slate-300 px-2 py-1 text-center">Grade</th>
             <th className="border border-slate-300 px-2 py-1 text-center">Remark</th>
             <th className="border border-slate-300 px-2 py-1 text-center">Arm Avg</th>
@@ -228,7 +309,7 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
         </div>
         {card.bands.length > 0 ? (
           <table className="w-full text-[10px] border border-slate-300">
-            <thead><tr className="bg-slate-100"><th colSpan={3} className="border border-slate-300 px-2 py-1">GRADING SCALE</th></tr></thead>
+            <thead><tr className="bg-[#2f5f1f] text-white"><th colSpan={3} className="border border-slate-300 px-2 py-1">GRADING SCALE</th></tr></thead>
             <tbody>
               {card.bands.map((bnd: any) => (
                 <tr key={bnd.grade}>
@@ -242,6 +323,11 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
         ) : <div />}
       </div>
 
+
+      <RatingBlocks blocks={sideBlocks} clubs={card.report_key === "secondary-report" ? (card.clubs ?? []) : null} />
+      </>)}
+      {isNursery && <NurseryAreas blocks={areaBlocks} />}
+
       {/* Three fixed comments plus any configured custom slots. class_teacher and
           head come from StudentReport; pc is the newer per-(term, sub-term) store;
           slot_comments are the school's own named slots.
@@ -252,14 +338,14 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
       {(card.class_teacher_comment || card.pc_comment || card.head_comment
         || (card.slot_comments?.length ?? 0) > 0) && (
         <table className="w-full text-xs mt-3 border border-slate-300">
-          <thead><tr className="bg-slate-100"><th colSpan={2} className="border border-slate-300 px-2 py-1">COMMENTS</th></tr></thead>
+          <thead><tr className="bg-[#2f5f1f] text-white"><th colSpan={2} className="border border-slate-300 px-2 py-1">COMMENTS</th></tr></thead>
           <tbody>
-            {card.class_teacher_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 w-40 align-top">{b.class_teacher_title || "Class Teacher"}</td><td className="border border-slate-300 px-2 py-1">{card.class_teacher_comment}</td></tr>}
-            {card.pc_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 align-top">PC Teacher&apos;s Comment</td><td className="border border-slate-300 px-2 py-1">{card.pc_comment}</td></tr>}
-            {card.head_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 align-top">{b.school_head_title || "Head"}&apos;s Comment</td><td className="border border-slate-300 px-2 py-1">{card.head_comment}</td></tr>}
+            {card.class_teacher_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c] w-40 align-top">{isJunior ? "Class Teacher's Remarks" : (b.class_teacher_title || "Class Teacher")}</td><td className="border border-slate-300 px-2 py-1">{card.class_teacher_comment}</td></tr>}
+            {card.pc_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c] align-top">PC Teacher&apos;s Comment</td><td className="border border-slate-300 px-2 py-1">{card.pc_comment}</td></tr>}
+            {card.head_comment && <tr><td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c] align-top">{isJunior ? "Head Teacher's Remarks" : `${b.school_head_title || "Head"}'s Comment`}</td><td className="border border-slate-300 px-2 py-1">{card.head_comment}</td></tr>}
             {(card.slot_comments ?? []).map((sc: any) => (
               <tr key={sc.comment_type_id}>
-                <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 align-top">{sc.name}</td>
+                <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c] align-top">{sc.name}</td>
                 <td className="border border-slate-300 px-2 py-1">{sc.text}</td>
               </tr>
             ))}
@@ -271,18 +357,102 @@ function Card({ card, num }: { card: any; num: (v: any) => any }) {
       <table className="w-full text-xs mt-3 border border-slate-300">
         <tbody>
           <tr>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 w-24">Signed:</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c] w-24">Signed:</td>
             <td className="border border-slate-300 px-2 py-6">
               {/* Branding stores ONE signature (head_signature_url); there is no
                   separate class-teacher signature field, so that is what prints. */}
               {b.head_signature_url ? <img src={b.head_signature_url} alt="" className="h-10 object-contain" /> : null}
             </td>
-            <td className="border border-slate-300 px-2 py-1 font-bold bg-slate-50 w-20">Date:</td>
+            <td className="border border-slate-300 px-2 py-1 font-bold bg-[#a0de8c] w-20">Date:</td>
             <td className="border border-slate-300 px-2 py-1 tabular-nums w-32">{printedOn}</td>
           </tr>
         </tbody>
       </table>
     </>
+  );
+}
+
+/** Affective + Psychomotor, side by side, each line with its rating and one key
+ *  underneath. A line nobody has rated prints blank rather than a default. */
+function RatingBlocks({ blocks, clubs }: { blocks: any[]; clubs: string[] | null }) {
+  if (!blocks.length) return null;
+  return (
+    <div className="grid grid-cols-2 gap-3 mt-3 text-xs items-start break-inside-avoid">
+      {blocks.map((blk: any) => (
+        <div key={blk.domain_type}>
+          <table className="w-full border border-slate-300">
+            <thead><tr className="bg-[#2f5f1f] text-white"><th colSpan={2} className="border border-slate-300 px-2 py-1 text-left">{blk.title}</th></tr></thead>
+            <tbody>
+              {blk.items.map((it: any) => (
+                <tr key={it.domain_id}>
+                  <td className="border border-slate-300 px-2 py-0.5">{it.name}</td>
+                  <td className="border border-slate-300 px-2 py-0.5 text-center font-bold w-14">{it.rating || ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {blk.key?.length > 0 && (
+            <p className="text-[10px] text-slate-600 mt-1">
+              Key: {blk.key.map((k: any) => `${k.label}${k.meaning ? ` = ${k.meaning}` : ""}`).join("; ")}
+            </p>
+          )}
+        </div>
+      ))}
+      {/* Secondary only: the reference prints a "Club/Sports Choice" box beside the key. */}
+      {clubs && (
+        <div>
+          <table className="w-full border border-slate-300">
+            <thead><tr className="bg-[#2f5f1f] text-white"><th className="border border-slate-300 px-2 py-1 text-left">Club/Sports Choice</th></tr></thead>
+            <tbody>
+              {clubs.length > 0
+                ? clubs.map((c) => <tr key={c}><td className="border border-slate-300 px-2 py-0.5">{c}</td></tr>)
+                : <tr><td className="border border-slate-300 px-2 py-3">&nbsp;</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Nursery: no marks. Fairview's page is one row per Early Learning Goal:
+ *  Learning Area | ELG n | goal | ACHIEVEMENT (the teacher's sentence). The ELG
+ *  number runs on across areas, as on the the reference page. A rating column appears
+ *  only if the school uses a key or a goal has been rated. */
+function NurseryAreas({ blocks }: { blocks: any[] }) {
+  if (!blocks.length) {
+    return <p className="mt-4 text-center text-xs text-slate-400 border border-dashed border-slate-200 py-6">No areas of learning have been set up for this class yet.</p>;
+  }
+  // Fairview's Nursery page always has the SAMPLE PICTURE column, filled or not.
+  const showPhoto = true;
+  const showRating = blocks.some((blk: any) => blk.key?.length > 0 || blk.items.some((it: any) => it.rating));
+  let n = 0;
+  return (
+    <table className="w-full mt-3 text-xs border border-slate-300">
+      <thead><tr className="bg-[#2f5f1f] text-white">
+        <th className="border border-slate-300 px-2 py-1 text-left w-36">Learning Areas</th>
+        <th className="border border-slate-300 px-2 py-1 text-left w-16">ELG</th>
+        <th className="border border-slate-300 px-2 py-1 text-left w-44">&nbsp;</th>
+        <th className="border border-slate-300 px-2 py-1 text-left">ACHIEVEMENT</th>
+        {showRating && <th className="border border-slate-300 px-2 py-1 w-14">Rating</th>}
+        {showPhoto && <th className="border border-slate-300 px-2 py-1 w-28">SAMPLE PICTURE</th>}
+      </tr></thead>
+      <tbody>
+        {blocks.flatMap((blk: any, bi: number) => blk.items.map((it: any, ii: number) => {
+          n += 1;
+          return (
+            <tr key={it.domain_id} className="align-top">
+              {ii === 0 && <td rowSpan={blk.items.length} className="border border-slate-300 px-2 py-1 font-bold">{blk.title}</td>}
+              <td className="border border-slate-300 px-2 py-1 font-bold underline">ELG {n}</td>
+              <td className="border border-slate-300 px-2 py-1 font-bold uppercase">{it.name}</td>
+              <td className="border border-slate-300 px-2 py-1 leading-snug">{it.comment || ""}</td>
+              {showRating && <td className="border border-slate-300 px-2 py-1 text-center font-bold">{it.rating || ""}</td>}
+              {showPhoto && <td className="border border-slate-300 p-1 text-center">{it.photo_url ? <img src={it.photo_url} alt="" className="w-24 h-20 object-cover mx-auto" /> : null}</td>}
+            </tr>
+          );
+        }))}
+      </tbody>
+    </table>
   );
 }
 

@@ -81,9 +81,18 @@ class RoleBrief(BaseModel):
 
 
 class SectionBrief(BaseModel):
-    """Brief section info for nav filtering."""
+    """Brief section info for nav filtering.
+
+    ``report_key`` says which sidebar report section this one belongs to
+    (``secondary-report`` / ``junior-report`` / ``nursery-report``), resolved
+    server-side by `services.report_sections` because the answer depends on the
+    org's whole section list. None means "could not classify", and the sidebar
+    treats that as "show them all" rather than hiding any — see that module for
+    why the alternative was a lockout.
+    """
     id: str
     name: str
+    report_key: str | None = None
 
 
 class UserMeResponse(BaseModel):

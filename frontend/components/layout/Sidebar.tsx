@@ -22,6 +22,7 @@ import { BrandMark } from "@/components/branding/Brand";
 import { useAuthStore, type ActiveRole } from "@/lib/store";
 import { effectiveModulesForOrg, moduleAllowedForOrg } from "@/lib/workspace";
 import { canAccessPath } from "@/lib/access";
+import { reportSectionVisible, visibleReportKeys } from "@/lib/reportSections";
 import { useLogout } from "@/hooks/useAuth";
 import { MyRolesMenu } from "@/components/role/MyRolesMenu";
 import { markNavClick } from "@/lib/perf";
@@ -249,12 +250,75 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/cbt/live", label: "Live Classes", icon: Radio },
     ],
   },
-  // Educare's three per-level report modules (Nursery / Primary / Secondary School
-  // Report). Our report engine is unified (the card adapts to the student's section
+  // Educare's three per-level report modules, in Educare's own order and naming:
+  // Secondary / Junior / Nursery. "Junior" was "Primary" here; the section ROW is
+  // still named Primary and deliberately not renamed — `ensure_section` in the
+  // report-config bootstrap matches sections BY NAME, so renaming the row would
+  // make a later bootstrap run create a second "Primary" section, which that
+  // endpoint's own guard warns "can change every pupil's grade".
+  //
+  // Our report engine is unified (the card adapts to the student's section
   // template), so these are level-organised entry points into the shared report
   // tools. Every child links to a REAL page. Educare children we don't have as pages
   // yet (Reports Insight, Result Analysis, Communication Book) are
   // deliberately omitted rather than shipped as dead links.
+  //
+  // WHICH VIEWER SEES WHICH is decided by `report_key` on their section briefs,
+  // never by the section's name — see lib/reportSections.ts for the lockout that
+  // caused.
+  {
+    key: "secondary-report",
+    requiredModule: "school",
+    label: "Secondary School Report",
+    icon: FileText,
+    items: [
+      { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
+      { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/make-report", label: "Make Report", icon: NotebookPen },
+      { href: "/dashboard/modules/school/teacher-reports", label: "Teacher Reports", icon: ClipboardList },
+      { href: "/dashboard/modules/school/teacher-comments", label: "Teacher Comments", icon: MessageSquareText },
+      { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
+      { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
+      { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
+      { href: "/dashboard/modules/school/grade-analysis", label: "Grade Analysis", icon: BarChart3 },
+      // One route, two views, resolved by permission inside the page: a class
+      // teacher gets their own class's Performance Tracker / Booster List /
+      // Honours Roll, an administrator the whole-school reports. It belongs in
+      // every report section beside Grade Analysis — the section filter above
+      // then shows it only for the levels a teacher actually teaches in.
+      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3 },
+      { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
+    ],
+  },
+  {
+    key: "junior-report",
+    requiredModule: "school",
+    label: "Junior School Report",
+    icon: FileText,
+    items: [
+      { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
+      { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/make-report", label: "Make Report", icon: NotebookPen },
+      // Teacher Reports and Teacher Comments are phase-agnostic: the first shows
+      // the teacher's OWN submissions whatever the class, the second gates per
+      // class rather than per phase. Secondary had them; the other two levels
+      // teach real pupils and needed them too.
+      { href: "/dashboard/modules/school/teacher-reports", label: "Teacher Reports", icon: ClipboardList },
+      { href: "/dashboard/modules/school/teacher-comments", label: "Teacher Comments", icon: MessageSquareText },
+      { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
+      { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
+      { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
+      { href: "/dashboard/modules/school/grade-analysis", label: "Grade Analysis", icon: BarChart3 },
+      // One route, two views, resolved by permission inside the page: a class
+      // teacher gets their own class's Performance Tracker / Booster List /
+      // Honours Roll, an administrator the whole-school reports. It belongs in
+      // every report section beside Grade Analysis — the section filter above
+      // then shows it only for the levels a teacher actually teaches in.
+      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3 },
+      { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
+      { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: BookOpen },
+    ],
+  },
   {
     key: "nursery-report",
     requiredModule: "school",
@@ -283,59 +347,6 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
       { href: "/dashboard/modules/school/promotion", label: "Promotion Manager", icon: BarChart3 },
       { href: "/dashboard/modules/school/transfer", label: "Transfer Manager", icon: UserCog },
-    ],
-  },
-  {
-    key: "primary-report",
-    requiredModule: "school",
-    label: "Primary School Report",
-    icon: FileText,
-    items: [
-      { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
-      { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
-      { href: "/dashboard/modules/school/make-report", label: "Make Report", icon: NotebookPen },
-      // Teacher Reports and Teacher Comments are phase-agnostic: the first shows
-      // the teacher's OWN submissions whatever the class, the second gates per
-      // class rather than per phase. Secondary had them; the other two levels
-      // teach real pupils and needed them too.
-      { href: "/dashboard/modules/school/teacher-reports", label: "Teacher Reports", icon: ClipboardList },
-      { href: "/dashboard/modules/school/teacher-comments", label: "Teacher Comments", icon: MessageSquareText },
-      { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
-      { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
-      { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
-      { href: "/dashboard/modules/school/grade-analysis", label: "Grade Analysis", icon: BarChart3 },
-      // One route, two views, resolved by permission inside the page: a class
-      // teacher gets their own class's Performance Tracker / Booster List /
-      // Honours Roll, an administrator the whole-school reports. It belongs in
-      // every report section beside Grade Analysis — the section filter above
-      // then shows it only for the levels a teacher actually teaches in.
-      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3 },
-      { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
-      { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: BookOpen },
-    ],
-  },
-  {
-    key: "secondary-report",
-    requiredModule: "school",
-    label: "Secondary School Report",
-    icon: FileText,
-    items: [
-      { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
-      { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
-      { href: "/dashboard/modules/school/make-report", label: "Make Report", icon: NotebookPen },
-      { href: "/dashboard/modules/school/teacher-reports", label: "Teacher Reports", icon: ClipboardList },
-      { href: "/dashboard/modules/school/teacher-comments", label: "Teacher Comments", icon: MessageSquareText },
-      { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
-      { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
-      { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
-      { href: "/dashboard/modules/school/grade-analysis", label: "Grade Analysis", icon: BarChart3 },
-      // One route, two views, resolved by permission inside the page: a class
-      // teacher gets their own class's Performance Tracker / Booster List /
-      // Honours Roll, an administrator the whole-school reports. It belongs in
-      // every report section beside Grade Analysis — the section filter above
-      // then shows it only for the levels a teacher actually teaches in.
-      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3 },
-      { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
     ],
   },
   {
@@ -743,20 +754,21 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   const visibleSections = useMemo(() => {
     if (!enabled) return [] as ModuleSection[];
 
-    // Map section names to report section keys for filtering.
-    const sectionNameToReportKey: Record<string, string> = {
-      "Nursery": "nursery-report",
-      "Primary": "primary-report",
-      "Secondary": "secondary-report",
-    };
     const teacherSections = (user as any)?.teacher_sections || [];
-    const teacherSectionNames = new Set(teacherSections.map((s: any) => s.name));
     const studentSections = (user as any)?.student_sections || [];
-    const studentSectionNames = new Set(studentSections.map((s: any) => s.name));
     const hasStudentRole = (user as any)?.roles?.some((r: any) => r.slug === 'student') ?? false;
     // A teacher is someone with sections assigned who is not a school admin.
     // This is more robust than checking a specific permission, which may not be granted.
     const isTeacher = teacherSections.length > 0 && !hasPermission("school_admin:write");
+
+    // Which report sections this viewer may see, by the server-resolved
+    // `report_key` on their own section briefs. `null` means "cannot tell" and
+    // shows them all — an unresolvable section must never hide a report section
+    // from the person who teaches in it, which is the bug this replaced.
+    const allowedReportKeys =
+      isTeacher ? visibleReportKeys(teacherSections)
+      : (hasStudentRole && studentSections.length > 0) ? visibleReportKeys(studentSections)
+      : null;
 
     return MODULE_SECTIONS
       .filter((s) => moduleAllowedForOrg(org, s.requiredModule as "school" | "business" | "hospital"))
@@ -768,25 +780,9 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
           return false;
         }
 
-        // If this is a report section:
-        const reportKey = Object.values(sectionNameToReportKey).find(key => key === s.key);
-        if (reportKey) {
-          // Teachers: only show if section matches
-          if (isTeacher) {
-            const sectionName = Object.entries(sectionNameToReportKey).find(
-              ([, key]) => key === s.key
-            )?.[0];
-            return sectionName && teacherSectionNames.has(sectionName);
-          }
-          // Students: only show if section matches
-          if (hasStudentRole && studentSectionNames.size > 0) {
-            const sectionName = Object.entries(sectionNameToReportKey).find(
-              ([, key]) => key === s.key
-            )?.[0];
-            return sectionName && studentSectionNames.has(sectionName);
-          }
-        }
-        return true;
+        // Report sections are scoped to the levels this viewer belongs to.
+        // Everything else passes straight through.
+        return reportSectionVisible(s.key, allowedReportKeys);
       })
       .map((s) => ({
         ...s,
