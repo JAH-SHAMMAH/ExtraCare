@@ -223,7 +223,11 @@ published) already puts three steps in front of it.
 
 ---
 
-## Parents fall through to the teacher-shaped Report Cards page
+## ✅ DONE — Parents fall through to the teacher-shaped Report Cards page
+
+**Resolved:** `ReportCardsPage` now branches on `!hasPermission("school:reports:read")`
+into `OwnReportCardsView` (the former pupil view) with a child selector when a
+parent has more than one linked child. Kept below for the reasoning.
 
 `frontend/app/(dashboard)/dashboard/modules/school/report-cards/page.tsx`
 branches on one role slug:
