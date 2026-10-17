@@ -3921,6 +3921,18 @@ async def save_subject_enrollments(payload: EnrollmentSave,
         except AcademicYearUnresolved as e:
             raise HTTPException(status_code=422, detail=str(e))
 
+    # The session row the enrolment is keyed on (migrations 139/140). Looked up
+    # from `year` rather than resolved independently, so the id and the legacy
+    # string are always two spellings of ONE decision — including when the caller
+    # supplied `academic_year` explicitly.
+    sess_row_id = (await db.execute(select(AcademicSession.id).where(
+        AcademicSession.org_id == org, AcademicSession.name == year))).scalars().first()
+    if not sess_row_id:
+        raise HTTPException(
+            status_code=422,
+            detail=f"No academic session named {year!r} exists, so enrolment "
+                   "cannot be recorded against it. Create it under School Setup.")
+
     # Pupils must be in the named class, so a valid caller cannot enrol arbitrary
     # pupils elsewhere in the school by passing their ids.
     in_class = set((await db.execute(select(Student.id).where(
@@ -3958,7 +3970,8 @@ async def save_subject_enrollments(payload: EnrollmentSave,
         for sub_id in want - have:
             db.add(StudentSubjectEnrollment(
                 org_id=org, student_id=it.student_id, subject_id=sub_id,
-                academic_year=year, enrolled_by=current_user.id,
+                academic_year=year, session_id=sess_row_id,
+                enrolled_by=current_user.id,
                 enrolled_at=datetime.now(timezone.utc), source="manual"))
             added += 1
         for sub_id in have - want:

@@ -50,12 +50,23 @@ class StudentSubjectEnrollment(Base, UUIDMixin, TimestampMixin, TenantMixin):
     rather than a term. The cost is that a pupil dropping a subject mid-year
     cannot be expressed; accepted deliberately as rare.
 
-    `academic_year` IS A STRING, NOT A FK to academic_sessions, and that is
-    load-bearing. That table's single row carries BOTH `name='2025/2026'` AND
-    `term='Autumn'` — it is a session/term hybrid. Keying enrolment on its id
-    would silently bind every enrolment to Autumn, so next term's marks would all
-    be refused by a gate that looks correct. SubjectSelection already uses a
-    string for the same reason.
+    `session_id` IS THE KEY (migrations 139/140). `academic_year` is still
+    populated and still carries the old unique constraint, because
+    `plan_backfill_sync` is imported and CALLED by migration 128, which freezes
+    its signature — it filters on `academic_year`, so the column outlives the
+    switch. Dropping it is a separate, later migration.
+
+    THIS DOCSTRING PREVIOUSLY ARGUED THE OPPOSITE, and the reasoning is recorded
+    because it was correct when written: `academic_sessions` then held a SINGLE
+    row carrying both `name='2025/2026'` and `term='Autumn'`, so keying enrolment
+    on its id would have bound every enrolment to Autumn and had next term's
+    marks refused by a gate that looked correct. That shape is gone —
+    `academic_sessions` now holds one row PER YEAR (2025/2026, 2026/2027), `term`
+    on it is nullable legacy free text, the structured term list is
+    `academic_terms`, and migration 134 already treats `assessments.session_id`
+    as the year while `term_periods` keys (session, term, sub_term) separately.
+    A session id denotes a year, so binding enrolment to one does not bind it to
+    a term.
 
     WHAT ENFORCES IT: `app/services/subject_enrollment.py`, called from the two
     human write paths (the Report Entry grid and Reports Upload). The automated
@@ -68,6 +79,13 @@ class StudentSubjectEnrollment(Base, UUIDMixin, TimestampMixin, TenantMixin):
     student_id = Column(String(36), ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
     subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False, index=True)
     academic_year = Column(String(20), nullable=False, index=True)
+    # The real key since migration 140. RESTRICT, not CASCADE: `term_id` cascades
+    # and `student_assessment_scores.assessment_id` cascades in turn, so a
+    # cascading session FK would put a year of enrolment one DELETE away.
+    session_id = Column(
+        String(36), ForeignKey("academic_sessions.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
     enrolled_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     enrolled_at = Column(DateTime(timezone=True), nullable=True)
     # How the row came to exist: 'manual' from the enrolment screen/API,
@@ -78,7 +96,13 @@ class StudentSubjectEnrollment(Base, UUIDMixin, TimestampMixin, TenantMixin):
     __table_args__ = (
         UniqueConstraint("org_id", "student_id", "subject_id", "academic_year",
                          name="uq_student_subject_enrollment"),
+        # The session-keyed uniqueness (migration 140). Both hold at once and
+        # agree, because the backfill maps one year string to exactly one
+        # session; they stop being redundant when `academic_year` is dropped.
+        UniqueConstraint("org_id", "student_id", "subject_id", "session_id",
+                         name="uq_student_subject_enrollment_session"),
         Index("ix_student_subject_enrollments_year", "org_id", "academic_year"),
+        Index("ix_student_subject_enrollments_org_session", "org_id", "session_id"),
         Index("ix_student_subject_enrollments_lookup", "org_id", "student_id", "subject_id", "academic_year"),
     )
 
