@@ -735,6 +735,8 @@ class StudentDomainRating(Base, UUIDMixin, TimestampMixin, TenantMixin):
     domain_id = Column(String(36), ForeignKey("assessment_domains.id", ondelete="CASCADE"), nullable=False, index=True)
     rating = Column(String(60), nullable=True)   # descriptor label (e.g. "Expected")
     comment = Column(Text, nullable=True)
+    # Nursery's "SAMPLE PICTURE": a photo of the child's work for this goal.
+    photo_url = Column(String(500), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("student_id", "term_id", "domain_id", name="uq_student_domain_rating"),

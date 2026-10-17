@@ -1625,7 +1625,7 @@ def _domain_rating_response(r: StudentDomainRating,
                             term_name: str | None = None) -> DomainRatingResponse:
     return DomainRatingResponse(
         id=r.id, student_id=r.student_id, term_id=r.term_id, term_name=term_name,
-        domain_id=r.domain_id, rating=r.rating, comment=r.comment, org_id=r.org_id,
+        domain_id=r.domain_id, rating=r.rating, comment=r.comment, photo_url=r.photo_url, org_id=r.org_id,
     )
 
 
@@ -1823,6 +1823,7 @@ async def class_domain_ratings_grid(
                 d.id: DomainRatingCell(
                     rating=rated[(st.id, d.id)].rating,
                     comment=rated[(st.id, d.id)].comment,
+                    photo_url=rated[(st.id, d.id)].photo_url,
                 )
                 for d in domains if (st.id, d.id) in rated
             },
@@ -1878,7 +1879,11 @@ async def set_domain_ratings(
         rating = (item.rating or "").strip() or None
         comment = (item.comment or "").strip() or None
         r = existing.get(item.domain_id)
-        if rating is None and comment is None:
+        # photo_url is only touched when the request names it; omitting it keeps the
+        # stored picture, so saving a rating never silently drops a photo.
+        photo_given = "photo_url" in item.model_fields_set
+        photo = ((item.photo_url or "").strip() or None) if photo_given else (r.photo_url if r else None)
+        if rating is None and comment is None and photo is None:
             if r:
                 await db.delete(r)      # clear
             continue
@@ -1888,6 +1893,7 @@ async def set_domain_ratings(
             db.add(r)
         r.rating = rating
         r.comment = comment
+        r.photo_url = photo
     await db.flush()
     rows = (await db.execute(
         select(StudentDomainRating).where(

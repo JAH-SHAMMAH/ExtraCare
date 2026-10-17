@@ -105,3 +105,19 @@ async def test_other_sections_and_other_terms_do_not_leak(db, org):
     assert await card_domain_blocks(db, org.id, early.id, stu.id, term.id) == []     # Nursery has none
     got = await card_domain_blocks(db, org.id, prim.id, stu.id, term.id)
     assert got[0].items[0].rating is None                                           # Spring's rating is not Autumn's
+
+
+async def test_photo_rides_with_the_rating(db, org):
+    early, _p, _s, term, stu = await _world(db, org)
+    area = AssessmentDomain(id=str(uuid.uuid4()), org_id=org.id, section_id=early.id, domain_type="eyfs_area",
+                            name="Literacy", position=0)
+    db.add(area)
+    await db.flush()
+    g = AssessmentDomain(id=str(uuid.uuid4()), org_id=org.id, section_id=early.id, domain_type="eyfs_goal",
+                         name="Writing", parent_domain_id=area.id, position=0)
+    db.add(g)
+    db.add(StudentDomainRating(id=str(uuid.uuid4()), org_id=org.id, student_id=stu.id, term_id=term.id,
+                               domain_id=g.id, comment="Writes her name", photo_url="https://x/y.jpg"))
+    await db.commit()
+    blocks = await card_domain_blocks(db, org.id, early.id, stu.id, term.id)
+    assert blocks[0].items[0].photo_url == "https://x/y.jpg"

@@ -51,7 +51,8 @@ async def card_domain_blocks(
     def item(d) -> CardRatingItem:
         r = ratings.get(d.id)
         return CardRatingItem(domain_id=d.id, name=d.name,
-                              rating=(r.rating if r else None), comment=(r.comment if r else None))
+                              rating=(r.rating if r else None), comment=(r.comment if r else None),
+                              photo_url=(r.photo_url if r else None))
 
     blocks: list[CardDomainBlock] = []
     for kind in ("affective", "psychomotor"):

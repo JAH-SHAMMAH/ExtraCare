@@ -363,6 +363,7 @@ function NurseryAreas({ blocks }: { blocks: any[] }) {
   if (!blocks.length) {
     return <p className="mt-4 text-center text-xs text-slate-400 border border-dashed border-slate-200 py-6">No areas of learning have been set up for this class yet.</p>;
   }
+  const showPhoto = blocks.some((blk: any) => blk.items.some((it: any) => it.photo_url));
   const showRating = blocks.some((blk: any) => blk.key?.length > 0 || blk.items.some((it: any) => it.rating));
   let n = 0;
   return (
@@ -373,6 +374,7 @@ function NurseryAreas({ blocks }: { blocks: any[] }) {
         <th className="border border-slate-300 px-2 py-1 text-left w-44">&nbsp;</th>
         <th className="border border-slate-300 px-2 py-1 text-left">ACHIEVEMENT</th>
         {showRating && <th className="border border-slate-300 px-2 py-1 w-14">Rating</th>}
+        {showPhoto && <th className="border border-slate-300 px-2 py-1 w-28">SAMPLE PICTURE</th>}
       </tr></thead>
       <tbody>
         {blocks.flatMap((blk: any, bi: number) => blk.items.map((it: any, ii: number) => {
@@ -384,6 +386,7 @@ function NurseryAreas({ blocks }: { blocks: any[] }) {
               <td className="border border-slate-300 px-2 py-1 font-bold uppercase">{it.name}</td>
               <td className="border border-slate-300 px-2 py-1 leading-snug">{it.comment || ""}</td>
               {showRating && <td className="border border-slate-300 px-2 py-1 text-center font-bold">{it.rating || ""}</td>}
+              {showPhoto && <td className="border border-slate-300 p-1 text-center">{it.photo_url ? <img src={it.photo_url} alt="" className="w-24 h-20 object-cover mx-auto" /> : null}</td>}
             </tr>
           );
         }))}

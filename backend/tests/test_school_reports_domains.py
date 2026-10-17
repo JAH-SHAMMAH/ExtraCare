@@ -453,3 +453,26 @@ async def test_the_grid_and_the_per_pupil_write_share_one_rule(db, org, school_c
             await call()
         assert ei.value.status_code == 403
         assert "No class teacher is assigned" in ei.value.detail
+
+
+async def test_goal_photo_is_kept_unless_named(db, org, school_class, student, teacher):
+    admin = await _preset_user(db, org, "org_admin")
+    term = await _autumn(db, org)
+    sec = await create_section(SectionCreate(name="Nursery", curriculum="eyfs"), db=db, current_user=admin)
+    await create_template(ReportTemplateCreate(section_id=sec.id, name="Nursery", assessment_mode="descriptive"),
+                          db=db, current_user=admin)
+    await update_class(school_class.id, ClassUpdate(section_id=sec.id), request=None, db=db, current_user=admin)
+    goal = next(d for d in await seed_domains(sec.id, db=db, current_user=admin) if d.domain_type == "eyfs_goal")
+
+    async def put(**kw):
+        return await set_domain_ratings(student.id, DomainRatingsSet(term_id=term.id, ratings=[
+            DomainRatingItem(domain_id=goal.id, **kw)]), db=db, current_user=teacher)
+
+    r = await put(comment="Counts to 10", photo_url="https://cdn.example/a.jpg")
+    assert r[0].photo_url == "https://cdn.example/a.jpg"
+    r = await put(comment="Counts to 20")                      # photo not named: kept
+    assert r[0].photo_url == "https://cdn.example/a.jpg" and r[0].comment == "Counts to 20"
+    r = await put(comment="Counts to 20", photo_url="")        # named empty: removed
+    assert r[0].photo_url is None
+    await put(photo_url="https://cdn.example/b.jpg")           # a photo alone is a row
+    assert len(await list_domain_ratings(student.id, term_id=term.id, db=db, current_user=admin)) == 1

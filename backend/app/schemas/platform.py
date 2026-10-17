@@ -501,8 +501,10 @@ class DomainResponse(BaseModel):
 
 class DomainRatingItem(BaseModel):
     domain_id: str
-    rating: Optional[str] = None    # descriptor label; empty rating+comment clears the row
+    rating: Optional[str] = None    # descriptor label; empty rating+comment+photo clears the row
     comment: Optional[str] = None
+    # Left out of the request = keep the stored photo. Sent as null/"" = remove it.
+    photo_url: Optional[str] = None
 
 
 class DomainRatingsSet(BaseModel):
@@ -532,6 +534,7 @@ class DomainRatingColumn(BaseModel):
 class DomainRatingCell(BaseModel):
     rating: Optional[str] = None
     comment: Optional[str] = None
+    photo_url: Optional[str] = None
 
 
 class DomainRatingsStudentRow(BaseModel):
@@ -566,6 +569,7 @@ class DomainRatingResponse(BaseModel):
     domain_id: str
     rating: Optional[str] = None
     comment: Optional[str] = None
+    photo_url: Optional[str] = None
     org_id: str
 
 
@@ -1187,6 +1191,7 @@ class CardRatingItem(BaseModel):
     name: str
     rating: Optional[str] = None      # descriptor label as stored; None = not rated yet
     comment: Optional[str] = None
+    photo_url: Optional[str] = None
     children: list["CardRatingItem"] = Field(default_factory=list)   # goals under an area
 
 

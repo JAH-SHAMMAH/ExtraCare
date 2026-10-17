@@ -5,9 +5,7 @@ import { useClasses, useSubjects } from "@/hooks/useSchool";
 import { defaultSubTermId } from "@/lib/reportEntry";
 import { useTerms, useSubTerms, useReportEntryGrid, useSaveReportEntry } from "@/hooks/usePlatform";
 import { useHasPermission } from "@/components/guards/PermissionGate";
-import { useAssessmentDomains } from "@/hooks/useAssessmentDomains";
-import { useClassDomainRatings, useSaveDomainRatings } from "@/hooks/useSchool";
-import { ReportDomainGrid } from "@/components/ReportDomainGrid";
+import { DomainRatingsEntry } from "@/components/reports/DomainRatingsEntry";
 import { Loader2, NotebookPen, Save } from "lucide-react";
 
 export default function ReportEntryPage() {
@@ -34,28 +32,6 @@ export default function ReportEntryPage() {
   const { data: grid, isLoading } = useReportEntryGrid({ class_id: classId, subject_id: subjectId, term_id: termId, sub_term_id: subTermId || undefined });
   const save = useSaveReportEntry();
 
-  // Get section_id from selected class
-  const selectedClass = classes.find((c: any) => c.id === classId);
-  const sectionId = selectedClass?.section_id || "";
-
-  // Behaviour & Skills domain hooks
-  const { data: domains = [] } = useAssessmentDomains(sectionId, undefined);
-  const upsertRatings = useSaveDomainRatings();
-  // Hydrate the grid from ONE class-scoped call. The per-pupil read would need a
-  // request per child, which is why this form previously shipped showing blanks.
-  const { data: ratingsGrid, isError: ratingsFailed } = useClassDomainRatings(classId, termId);
-  // The grid component takes a flat list keyed by (student, domain).
-  const domainRatings = useMemo(() => {
-    const out: Array<{ student_id: string; domain_id: string; rating: string | null; comment: string | null }> = [];
-    ((ratingsGrid?.students ?? []) as any[]).forEach((s) => {
-      Object.entries(s.ratings ?? {}).forEach(([domain_id, cell]: [string, any]) => {
-        out.push({ student_id: s.student_id, domain_id, rating: cell?.rating ?? null, comment: cell?.comment ?? null });
-      });
-    });
-    return out;
-  }, [ratingsGrid]);
-  const [domainRatingsDraft, setDomainRatingsDraft] = useState<Record<string, Array<{ domain_id: string; rating: string | null }>>>({});
-
   // draft[studentId][assessmentId] = string
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
   useEffect(() => {
@@ -68,19 +44,6 @@ export default function ReportEntryPage() {
     }
     setDraft(seed);
   }, [grid]);
-
-  // Initialize domain ratings draft when domains/students change
-  useEffect(() => {
-    if (!grid?.students || !domains.length) {
-      setDomainRatingsDraft({});
-      return;
-    }
-    const seed: Record<string, Array<{ domain_id: string; rating: string | null }>> = {};
-    for (const s of grid.students) {
-      seed[s.id] = domains.map((d) => ({ domain_id: d.id, rating: null }));
-    }
-    setDomainRatingsDraft(seed);
-  }, [grid?.students, domains]);
 
   const setCell = (sid: string, aid: string, v: string) =>
     setDraft((p) => ({ ...p, [sid]: { ...p[sid], [aid]: v } }));
@@ -95,33 +58,6 @@ export default function ReportEntryPage() {
       }
     }
     save.mutate({ subject_id: subjectId, class_id: classId, items });
-  };
-
-  const handleDomainRatingChange = (studentId: string, domainId: string, rating: string | null) => {
-    setDomainRatingsDraft((p) => ({
-      ...p,
-      [studentId]: (p[studentId] || []).map((r) =>
-        r.domain_id === domainId ? { ...r, rating } : r
-      ),
-    }));
-  };
-
-  const submitDomainRatings = () => {
-    if (!grid?.students || !termId) return;
-    for (const s of grid.students) {
-      const ratings = domainRatingsDraft[s.id] || [];
-      if (ratings.some((r) => r.rating !== null)) {
-        upsertRatings.mutate({
-          student_id: s.id,
-          data: {
-            // An AcademicTerm id. The retired endpoint matched this by NAME, so
-            // passing termId here could only ever have 404'd.
-            term_id: termId,
-            ratings: ratings.map((r) => ({ domain_id: r.domain_id, rating: r.rating })),
-          },
-        });
-      }
-    }
   };
 
   const ready = grid && grid.assessments.length > 0 && grid.students.length > 0;
@@ -184,45 +120,14 @@ export default function ReportEntryPage() {
         </div>
       )}
 
-      {/* Behaviour & Skills Section */}
-      {classId && termId && domains.length > 0 && (
+      {/* Behaviour & skills, or a Nursery class's achievements */}
+      {classId && termId && (
         <div className="mt-8 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Behaviour & Skills</h2>
-              <p className="text-sm text-slate-500 mt-1">Rate pupils on psychomotor and affective skills.</p>
-            </div>
-            {canWrite && (
-              <button
-                onClick={submitDomainRatings}
-                disabled={upsertRatings.isPending}
-                className="btn-primary gap-2"
-              >
-                {upsertRatings.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-                Save Skills
-              </button>
-            )}
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Behaviour, Skills &amp; Learning Goals</h2>
+            <p className="text-sm text-slate-500 mt-1">Rate pupils on the school&apos;s own key, or write a Nursery pupil&apos;s achievements and add sample pictures.</p>
           </div>
-
-          {/* A failed hydration must not look like an unrated class. Blanks are
-              indistinguishable from "nothing entered", and a teacher would re-enter
-              ratings that are already saved. */}
-          {ratingsFailed && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 mb-3 text-xs text-amber-900">
-              <span className="font-semibold">Existing ratings could not be loaded.</span>{" "}
-              Anything already saved for this class is not shown below — reload before
-              entering, or you may overwrite it.
-            </div>
-          )}
-
-          <ReportDomainGrid
-            domains={domains}
-            students={grid?.students || []}
-            ratings={domainRatings}
-            readOnly={!canWrite}
-            onRatingChange={handleDomainRatingChange}
-            isLoading={false}
-          />
+          <DomainRatingsEntry classId={classId} termId={termId} canWrite={canWrite} />
         </div>
       )}
     </div>
