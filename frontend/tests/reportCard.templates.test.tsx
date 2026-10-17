@@ -1,3 +1,4 @@
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
@@ -81,5 +82,15 @@ describe("report card templates", () => {
     render(<Card num={num} card={{ ...base, report_key: null }} />);
     expect(screen.getByText("Mathematics")).toBeTruthy();
     expect(screen.getByText("Position")).toBeTruthy();
+  });
+});
+
+describe("report header", () => {
+  it("shows the school logo top-left and a photo box top-right, even without a pupil photo", () => {
+    const html = renderToStaticMarkup(<Card card={{ branding: { logo_url: "https://x/logo.png" }, student_name: "Ada", subjects: [], report_key: "junior-report" }} num={(v: any) => v} />);
+    expect(html).toContain('src="https://x/logo.png"');
+    expect(html).toContain('data-testid="photo-placeholder"');
+    const withPhoto = renderToStaticMarkup(<Card card={{ branding: {}, student_name: "Ada", photo_url: "https://x/ada.jpg", subjects: [], report_key: "junior-report" }} num={(v: any) => v} />);
+    expect(withPhoto).toContain('src="https://x/ada.jpg"');
   });
 });

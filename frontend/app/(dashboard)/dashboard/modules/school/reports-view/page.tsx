@@ -81,12 +81,12 @@ function Broadsheet() {
   /** The two per-pupil icons: view the full report, or export it as a PDF. */
   const ReportIcons = ({ id, name }: { id: string; name: string }) => (
     <span className="inline-flex items-center gap-1 ml-2 align-middle">
-      <button type="button" title={`View ${name}'s full report`} aria-label={`View full report for ${name}`}
-        onClick={() => setOpen({ id, print: false })}
-        className="p-1 rounded-md text-slate-400 hover:text-brand-700 hover:bg-brand-50"><Eye size={15} /></button>
       <button type="button" title={`Export ${name}'s report as PDF`} aria-label={`Export PDF for ${name}`}
         onClick={() => setOpen({ id, print: true })}
-        className="p-1 rounded-md text-slate-400 hover:text-brand-700 hover:bg-brand-50"><FileDown size={15} /></button>
+        className="p-1.5 rounded-md bg-red-500 text-white hover:bg-red-600"><FileDown size={14} /></button>
+      <button type="button" title={`View ${name}'s full report`} aria-label={`View full report for ${name}`}
+        onClick={() => setOpen({ id, print: false })}
+        className="p-1.5 rounded-md bg-sky-500 text-white hover:bg-sky-600"><Eye size={14} /></button>
     </span>
   );
 

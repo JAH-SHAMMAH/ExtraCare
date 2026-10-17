@@ -168,14 +168,18 @@ export function Card({ card, num }: { card: any; num: (v: any) => any }) {
   return (
     <>
       <div className="flex items-center gap-4 border-b-2 border-[#2f5f1f] pb-3">
-        {b.logo_url ? <img src={b.logo_url} alt="" className="w-16 h-16 object-contain" /> : <div className="w-16 h-16" />}
+        {b.logo_url ? <img src={b.logo_url} alt="School logo" className="w-20 h-20 object-contain shrink-0" /> : <div className="w-20 h-20 shrink-0" />}
         <div className="flex-1 text-center">
           <h2 className="text-xl font-black tracking-tight">{b.school_name_alias || "SCHOOL REPORT"}</h2>
           {b.school_address && <p className="text-[11px] text-slate-600">{b.school_address}</p>}
           {b.school_email && <p className="text-[11px] text-slate-600">Email: {b.school_email}</p>}
           <p className="text-xs font-bold mt-1">{card.report_title} {b.school_name_alias ? "" : ""}</p>
         </div>
-        {card.photo_url ? <img src={card.photo_url} alt="" className="w-16 h-20 object-cover border border-slate-300" /> : <div className="w-16 h-20 border border-dashed border-slate-200" />}
+        {card.photo_url
+          ? <img src={card.photo_url} alt={`${card.student_name} photo`} className="w-20 h-24 object-cover border border-slate-400 shrink-0" />
+          : <div data-testid="photo-placeholder" className="w-20 h-24 border border-slate-400 bg-slate-50 shrink-0 flex items-end justify-center overflow-hidden" aria-label="No photo">
+              <svg viewBox="0 0 24 24" className="w-16 h-16 text-slate-300" fill="currentColor"><circle cx="12" cy="8" r="4.5" /><path d="M3 24c0-5.5 4-9 9-9s9 3.5 9 9z" /></svg>
+            </div>}
       </div>
 
       <table className="w-full text-xs mt-3 border border-slate-300">

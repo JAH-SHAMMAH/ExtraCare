@@ -3373,6 +3373,11 @@ async def report_card(student_id: str, term_id: str, sub_term_id: str,
     from app.services.report_branding import get_branding_row
     _br, _inh = await get_branding_row(db, org, cls.section_id if cls else None)
     branding = _branding_response(_br, _inh)
+    # No letterhead logo saved for this level (or no letterhead at all): print the
+    # school's own logo, the one the portal already shows, rather than a blank box.
+    if not branding.logo_url:
+        from app.models.organization import Organization
+        branding.logo_url = (await db.execute(select(Organization.logo_url).where(Organization.id == org))).scalar_one_or_none()
 
     # Config: assessments + cumulatives for the (session, term), scoped to this
     # pupil's year group; the columns for this sub-term.
