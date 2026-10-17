@@ -23,6 +23,6 @@ Source: screenshots of fairview.educare.school, Autumn 2025/2026. No pupil data 
 - Info: Name of Pupil, Class, Teacher, Session, Age. Page of "topics we have covered so far in the Specific Areas of learning" per area.
 - Table: Learning Areas | ELG n | goal | ACHIEVEMENT (teacher's sentence about the child) | SAMPLE PICTURE. No marks.
 - 18 goals in 8 areas (list read from a very small screenshot - CONFIRM): Communication And Language (Listening, Attention and Understanding; Speaking); Physical Development (Gross Motor Skills; Fine Motor Skills); Personal, Social And Emotional Development (Self-Regulation; Managing Self; Building Relationships); Literacy (Comprehension; Word Reading; Writing); Mathematics (Number; Numerical Patterns); Understanding The World (Past and Present; People, Culture and Communities; The Natural World); Expressive Art And Design (Creating with Materials; Being Imaginative and Expressive); Practical Life Work (Care for Self).
-- Not seen yet: any A / E / SNS key, and the "Prime Areas" heading.
+- The Nursery page has only: Learning Areas, ELG, Achievement, Sample Picture. No A / E / SNS key or rating exists (confirmed by the school).
 
 Not built yet: the Nursery SAMPLE PICTURE column (needs a stored photo per goal).

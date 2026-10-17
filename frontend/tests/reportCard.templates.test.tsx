@@ -47,11 +47,15 @@ describe("report card templates", () => {
     expect(screen.queryByText("Position")).toBeNull();
   });
 
-  it("nursery card shows the sample picture only when a goal has one", () => {
+  it("nursery card always has Learning Areas, ELG, Achievement and Sample Picture columns", () => {
     const mk = (photo: string | null) => ({ ...base, report_key: "nursery-report", subjects: [], domain_blocks: [
       { domain_type: "eyfs_area", title: "Literacy", key: [], items: [{ domain_id: "g", name: "Writing", rating: null, comment: "Writes her name", photo_url: photo }] }] });
     const { container, rerender } = render(<Card num={num} card={mk(null)} />);
-    expect(screen.queryByText("SAMPLE PICTURE")).toBeNull();
+    expect(screen.getByText("SAMPLE PICTURE")).toBeTruthy();      // present even with no picture
+    expect(screen.getByText("Learning Areas")).toBeTruthy();
+    expect(screen.getByText("ELG 1")).toBeTruthy();
+    expect(screen.getByText("ACHIEVEMENT")).toBeTruthy();
+    expect(container.querySelector("img")).toBeNull();
     rerender(<Card num={num} card={mk("https://cdn.example/a.jpg")} />);
     expect(screen.getByText("SAMPLE PICTURE")).toBeTruthy();
     expect(container.querySelector('img[src="https://cdn.example/a.jpg"]')).toBeTruthy();

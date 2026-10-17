@@ -363,7 +363,8 @@ function NurseryAreas({ blocks }: { blocks: any[] }) {
   if (!blocks.length) {
     return <p className="mt-4 text-center text-xs text-slate-400 border border-dashed border-slate-200 py-6">No areas of learning have been set up for this class yet.</p>;
   }
-  const showPhoto = blocks.some((blk: any) => blk.items.some((it: any) => it.photo_url));
+  // Fairview's Nursery page always has the SAMPLE PICTURE column, filled or not.
+  const showPhoto = true;
   const showRating = blocks.some((blk: any) => blk.key?.length > 0 || blk.items.some((it: any) => it.rating));
   let n = 0;
   return (
