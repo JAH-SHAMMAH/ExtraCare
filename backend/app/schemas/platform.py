@@ -1181,6 +1181,30 @@ class SessionalTerm(BaseModel):
     average: Optional[Decimal] = None
 
 
+class CardRatingItem(BaseModel):
+    """One rated line: a behaviour, a skill, an Early Learning Goal."""
+    domain_id: str
+    name: str
+    rating: Optional[str] = None      # descriptor label as stored; None = not rated yet
+    comment: Optional[str] = None
+    children: list["CardRatingItem"] = Field(default_factory=list)   # goals under an area
+
+
+class CardRatingKeyEntry(BaseModel):
+    label: str
+    meaning: Optional[str] = None
+
+
+class CardDomainBlock(BaseModel):
+    """A block of rated lines that prints on a card (Affective, Psychomotor, or a
+    Nursery area of learning). `key` is the rating scale as the school printed it,
+    so the card can show what each letter means."""
+    domain_type: str                  # affective | psychomotor | eyfs_area
+    title: str
+    items: list[CardRatingItem] = Field(default_factory=list)
+    key: list[CardRatingKeyEntry] = Field(default_factory=list)
+
+
 class ReportCardResponse(BaseModel):
     student_id: str
     student_name: Optional[str] = None
@@ -1198,6 +1222,11 @@ class ReportCardResponse(BaseModel):
     # figure under a Half-Term heading. Same field name and meaning as the
     # ten result-analysis responses that already carry it.
     not_configured: bool = False
+    # Which template prints this card: secondary-report | junior-report |
+    # nursery-report, or None when the section cannot be classified (the client
+    # then uses the marks-table layout, the safe default).
+    report_key: Optional[str] = None
+    domain_blocks: list[CardDomainBlock] = Field(default_factory=list)
     branding: BrandingResponse = Field(default_factory=BrandingResponse)
     columns: list[CardColumn] = Field(default_factory=list)
     subjects: list[CardSubjectRow] = Field(default_factory=list)
