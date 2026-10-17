@@ -12,6 +12,9 @@ export interface AuthUser {
   email: string;
   full_name: string;
   avatar_url: string | null;
+  phone?: string | null;
+  department?: string | null;
+  job_title?: string | null;
   status: UserStatus;
   org_id: string;
   primary_role: string;

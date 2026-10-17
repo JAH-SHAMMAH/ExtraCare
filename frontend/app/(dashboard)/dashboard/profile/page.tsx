@@ -23,18 +23,30 @@ export default function ProfilePage() {
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState({
     full_name: user?.full_name || "",
-    phone: "",
-    department: "",
-    job_title: "",
+    phone: user?.phone || "",
+    department: user?.department || "",
+    job_title: user?.job_title || "",
   });
 
   const updateMutation = useMutation({
     mutationFn: (data: object) => usersApi.update(user!.id, data),
     onSuccess: (data) => {
-      setUser(data);
+      // The PATCH response has no permissions/primary_role — merge into the
+      // existing session user instead of replacing it (replacing crashed the UI).
+      const nameChanged = !!data?.full_name && data.full_name !== user?.full_name;
+      if (user) {
+        setUser({
+          ...user,
+          full_name: data.full_name ?? user.full_name,
+          phone: data.phone ?? user.phone,
+          department: data.department ?? user.department,
+          job_title: data.job_title ?? user.job_title,
+          avatar_url: data.avatar_url ?? user.avatar_url,
+        });
+      }
       setEditMode(false);
       qc.invalidateQueries({ queryKey: ["me"] });
-      toast.success("Profile updated.");
+      toast.success(nameChanged ? "Name changed successfully." : "Profile updated.");
     },
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to update profile."),
   });
@@ -110,7 +122,10 @@ export default function ProfilePage() {
             </div>
 
             <button
-              onClick={() => setEditMode(!editMode)}
+              onClick={() => {
+                if (!editMode) setForm({ full_name: user?.full_name || "", phone: user?.phone || "", department: user?.department || "", job_title: user?.job_title || "" });
+                setEditMode(!editMode);
+              }}
               className={editMode ? "btn-secondary" : "btn-primary"}
             >
               {editMode ? "Cancel" : "Edit Profile"}
@@ -157,7 +172,15 @@ export default function ProfilePage() {
               </div>
               <div className="flex justify-end mt-4">
                 <button
-                  onClick={() => updateMutation.mutate(form)}
+                  onClick={() => {
+                  // Send only what changed so untouched (possibly unloaded) fields are never blanked.
+                  const changed: Record<string, string> = {};
+                  (Object.keys(form) as (keyof typeof form)[]).forEach((k) => {
+                    if (form[k] !== ((user?.[k] as string | null | undefined) || "")) changed[k] = form[k];
+                  });
+                  if (Object.keys(changed).length === 0) { setEditMode(false); return; }
+                  updateMutation.mutate(changed);
+                }}
                   disabled={updateMutation.isPending}
                   className="btn-primary gap-2"
                 >
