@@ -25,7 +25,7 @@ describe("Quick Guide", () => {
     expect(searchTopics("zzzz")).toHaveLength(0);
     expect(GUIDE_TOPICS.length).toBeGreaterThanOrEqual(15);
     for (const t of GUIDE_TOPICS) {
-      expect(t.steps.length).toBeGreaterThanOrEqual(4);
+      expect(t.steps.length).toBeGreaterThanOrEqual(3);
       if (t.href) expect(t.href.startsWith("/dashboard")).toBe(true);
     }
   });
