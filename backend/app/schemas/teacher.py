@@ -10,7 +10,7 @@ shape the request/response around that reality: the teacher-specific bits
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, EmailStr, field_validator
 
@@ -33,6 +33,7 @@ class TeacherCreate(BaseModel):
     subjects: list[str] = []
     hire_date: Optional[date] = None
     section_id: Optional[str] = None       # Educare "Select School" section
+    section_ids: Optional[list[str]] = None  # several sections (Primary AND Secondary)
 
     @field_validator("phone", "department", "qualification", "hire_date",
                      "other_names", "employee_id", "section_id", mode="before")
@@ -69,6 +70,7 @@ class TeacherUpdate(BaseModel):
     hire_date: Optional[date] = None
     is_active: Optional[bool] = None
     section_id: Optional[str] = None
+    section_ids: Optional[list[str]] = None
 
     @field_validator(
         "first_name", "last_name", "phone", "department",
@@ -105,6 +107,8 @@ class TeacherResponse(BaseModel):
     is_active: bool
     section_id: Optional[str] = None
     section_name: Optional[str] = None
+    sections: list[dict] = []
+    section_ids: list[str] = []
     created_at: Optional[datetime] = None
 
 
@@ -117,3 +121,5 @@ class TeacherSubjectsUpdate(BaseModel):
 
 class AssignSectionRequest(BaseModel):
     section_id: Optional[str] = None       # null = unassign from any section
+    # set = replace all (default); add = join this one too; remove = leave this one
+    mode: Literal["set", "add", "remove"] = "set"

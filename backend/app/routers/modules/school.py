@@ -2742,6 +2742,9 @@ def _teacher_dict(u: User, section: tuple = (None, None)) -> dict:
         "is_active": u.status == UserStatus.ACTIVE,
         "section_id": section[0],
         "section_name": section[1],
+        # A teacher can belong to several sections (e.g. Primary AND Secondary).
+        "sections": section[2] if len(section) > 2 else ([{"id": section[0], "name": section[1]}] if section[0] else []),
+        "section_ids": [x["id"] for x in section[2]] if len(section) > 2 else ([section[0]] if section[0] else []),
         "created_at": u.created_at.isoformat() if u.created_at else None,
     }
 
@@ -2755,36 +2758,59 @@ def _teacher_query_base(org_id: str):
 
 
 async def _teacher_sections_map(db: AsyncSession, org_id: str, teacher_ids: list[str]) -> dict[str, tuple]:
-    """{teacher_id: (section_id, section_name)} for the given teachers."""
+    """{teacher_id: (first_section_id, "Name, Name", [{id, name}, ...])}.
+
+    A teacher may belong to more than one section (Primary and Secondary, say),
+    so every assignment is returned, ordered by section name."""
     if not teacher_ids:
         return {}
     rows = (await db.execute(
         select(TeacherSection.teacher_id, TeacherSection.section_id, SchoolSection.name)
         .join(SchoolSection, SchoolSection.id == TeacherSection.section_id)
         .where(TeacherSection.org_id == org_id, TeacherSection.teacher_id.in_(teacher_ids))
+        .order_by(SchoolSection.name)
     )).all()
-    return {r.teacher_id: (r.section_id, r.name) for r in rows}
+    grouped: dict[str, list[dict]] = {}
+    for r in rows:
+        grouped.setdefault(r.teacher_id, []).append({"id": r.section_id, "name": r.name})
+    return {
+        tid: (secs[0]["id"], ", ".join(x["name"] for x in secs), secs)
+        for tid, secs in grouped.items()
+    }
+
+
+async def _set_teacher_sections(db: AsyncSession, org_id: str, teacher_id: str, section_ids: list[str]) -> None:
+    """Make `section_ids` exactly the teacher's sections (empty list clears them)."""
+    wanted = list(dict.fromkeys(i for i in section_ids if i))
+    if wanted:
+        found = set((await db.execute(
+            select(SchoolSection.id).where(SchoolSection.id.in_(wanted), SchoolSection.org_id == org_id)
+        )).scalars().all())
+        if found != set(wanted):
+            raise HTTPException(status_code=422, detail="section_id: not a section in your organisation")
+    existing = (await db.execute(
+        select(TeacherSection).where(TeacherSection.org_id == org_id, TeacherSection.teacher_id == teacher_id)
+    )).scalars().all()
+    have = {e.section_id: e for e in existing}
+    for sid, row in have.items():
+        if sid not in wanted:
+            await db.delete(row)
+    for sid in wanted:
+        if sid not in have:
+            db.add(TeacherSection(org_id=org_id, teacher_id=teacher_id, section_id=sid))
 
 
 async def _set_teacher_section(db: AsyncSession, org_id: str, teacher_id: str, section_id: str | None) -> None:
-    """Upsert (or clear) a teacher's current section — the Assign-To-School link."""
-    existing = (await db.execute(
-        select(TeacherSection).where(TeacherSection.org_id == org_id, TeacherSection.teacher_id == teacher_id)
-    )).scalar_one_or_none()
-    if not section_id:
-        if existing:
-            await db.delete(existing)
-        return
-    # Validate the section belongs to this org before linking.
-    ok = (await db.execute(
-        select(SchoolSection.id).where(SchoolSection.id == section_id, SchoolSection.org_id == org_id)
-    )).scalar_one_or_none()
-    if not ok:
-        raise HTTPException(status_code=422, detail="section_id: not a section in your organisation")
-    if existing:
-        existing.section_id = section_id
-    else:
-        db.add(TeacherSection(org_id=org_id, teacher_id=teacher_id, section_id=section_id))
+    """Single-section form of `_set_teacher_sections` (null clears)."""
+    await _set_teacher_sections(db, org_id, teacher_id, [section_id] if section_id else [])
+
+
+async def _add_teacher_section(db: AsyncSession, org_id: str, teacher_id: str, section_id: str) -> None:
+    """Join one more section, keeping the ones the teacher already has."""
+    current = (await db.execute(
+        select(TeacherSection.section_id).where(TeacherSection.org_id == org_id, TeacherSection.teacher_id == teacher_id)
+    )).scalars().all()
+    await _set_teacher_sections(db, org_id, teacher_id, [*current, section_id])
 
 
 def _teacher_list_query(org_id: str, search: str | None, section: str | None):
@@ -2942,8 +2968,8 @@ async def create_teacher(
             detail="Teacher could not be created due to a database conflict.",
         )
 
-    if data.section_id:
-        await _set_teacher_section(db, org_id, teacher.id, data.section_id)
+    if data.section_ids or data.section_id:
+        await _set_teacher_sections(db, org_id, teacher.id, data.section_ids or [data.section_id])
         await db.flush()
 
     logger.info(
@@ -3005,7 +3031,9 @@ async def update_teacher(
         teacher.status = UserStatus.ACTIVE if updates["is_active"] else UserStatus.INACTIVE
 
     # Section (Assign-To-School link).
-    if "section_id" in updates:
+    if "section_ids" in updates and updates["section_ids"] is not None:
+        await _set_teacher_sections(db, org_id, teacher.id, updates["section_ids"])
+    elif "section_id" in updates:
         await _set_teacher_section(org_id=org_id, db=db, teacher_id=teacher.id, section_id=updates["section_id"])
 
     # Pref-backed fields (and name split).
@@ -3145,12 +3173,19 @@ async def assign_teacher_section(
     """Assign / transfer a teacher to a school section (null = unassign)."""
     org_id = current_user.org_id
     teacher = await _require_teacher(db, org_id, id)
-    await _set_teacher_section(db, org_id, id, data.section_id)
+    if data.mode == "add" and data.section_id:
+        await _add_teacher_section(db, org_id, id, data.section_id)
+    elif data.mode == "remove" and data.section_id:
+        keep = [x for x in (await db.execute(select(TeacherSection.section_id).where(
+            TeacherSection.org_id == org_id, TeacherSection.teacher_id == id))).scalars().all() if x != data.section_id]
+        await _set_teacher_sections(db, org_id, id, keep)
+    else:
+        await _set_teacher_section(db, org_id, id, data.section_id)
     await db.flush()
     await log_action(
         db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
         resource_type="Teacher", resource_id=id, resource_label=teacher.full_name or teacher.email,
-        new_values={"section_id": data.section_id}, request=request,
+        new_values={"section_id": data.section_id, "mode": data.mode}, request=request,
     )
     smap = await _teacher_sections_map(db, org_id, [id])
     return _teacher_dict(teacher, smap.get(id, (None, None)))

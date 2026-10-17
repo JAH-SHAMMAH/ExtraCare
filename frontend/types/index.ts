@@ -152,6 +152,9 @@ export interface Teacher {
   is_active: boolean;
   section_id?: string | null;
   section_name?: string | null;
+  /** Every section the teacher belongs to (e.g. Primary and Secondary). */
+  sections?: { id: string; name: string }[];
+  section_ids?: string[];
   avatar_url?: string | null;
   created_at: string;
 }

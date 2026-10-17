@@ -33,7 +33,7 @@ export default function AssignToSchoolPage() {
 
   const addTeacher = (t: Teacher) => {
     setMovingId(t.id);
-    assign.mutate({ id: t.id, sectionId: toId }, { onSettled: () => setMovingId(null) });
+    assign.mutate({ id: t.id, sectionId: toId, mode: "add" }, { onSettled: () => setMovingId(null) });
   };
 
   return (
@@ -65,7 +65,7 @@ export default function AssignToSchoolPage() {
         <div className="bg-white rounded-xl border border-dashed border-slate-200 p-10 text-center text-slate-400">
           <ArrowRight size={28} className="mx-auto mb-3 opacity-40" />
           <p className="text-sm font-medium text-slate-600">Choose a destination and a source school.</p>
-          <p className="text-xs mt-1">Then add teachers from the source into the destination.</p>
+          <p className="text-xs mt-1">Then add teachers from the source into the destination. A teacher keeps any other school they already belong to, so one teacher can be in both Primary and Secondary.</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">

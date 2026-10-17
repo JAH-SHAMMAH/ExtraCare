@@ -109,7 +109,8 @@ export function useSetTeacherSubjects() {
 export function useAssignTeacherSection() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, sectionId }: { id: string; sectionId: string | null }) => schoolApi.teachers.assignSection(id, sectionId),
+    mutationFn: ({ id, sectionId, mode }: { id: string; sectionId: string | null; mode?: "set" | "add" | "remove" }) =>
+      schoolApi.teachers.assignSection(id, sectionId, mode),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["teachers"] });
       toast.success("Teacher assigned.");

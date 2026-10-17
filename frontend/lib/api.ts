@@ -237,8 +237,8 @@ export const schoolApi = {
     subjects: (id: string) => api.get(`/school/teachers/${id}/subjects`).then((r) => r.data),
     setSubjects: (id: string, subject_ids: string[]) =>
       api.put(`/school/teachers/${id}/subjects`, { subject_ids }).then((r) => r.data),
-    assignSection: (id: string, section_id: string | null) =>
-      api.post(`/school/teachers/${id}/assign-section`, { section_id }).then((r) => r.data),
+    assignSection: (id: string, section_id: string | null, mode: "set" | "add" | "remove" = "set") =>
+      api.post(`/school/teachers/${id}/assign-section`, { section_id, mode }).then((r) => r.data),
     exportCsv: (section?: string) =>
       api.get("/school/teachers/export", { params: section ? { section } : {}, responseType: "blob" }).then((r) => r.data),
   },

@@ -128,15 +128,15 @@ class TeacherSection(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """Which school section (Educare's "Select School": Nursery/Junior/Secondary…)
     a teacher currently belongs to. Teachers are Users (job_title ~ teacher); this
     is the explicit assignment behind View-Teachers → Select-School filtering and
-    the Assign-To-School (transfer) flow. One current section per teacher."""
+    the Assign-To-School (transfer) flow. A teacher may hold several sections
+    (e.g. Primary and Secondary): one row per (teacher, section)."""
     __tablename__ = "teacher_sections"
 
     teacher_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     section_id = Column(String(36), ForeignKey("school_sections.id", ondelete="CASCADE"), nullable=False, index=True)
 
     __table_args__ = (
-        # One current section per teacher (per org). Re-assign = update this row.
-        UniqueConstraint("org_id", "teacher_id", name="uq_teacher_section_org_teacher"),
+        UniqueConstraint("org_id", "teacher_id", "section_id", name="uq_teacher_section_org_teacher_section"),
         Index("ix_teacher_sections_section", "section_id", "org_id"),
     )
 

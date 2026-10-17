@@ -239,6 +239,17 @@ async def login(
             SchoolClass.section_id != None,
         )
     )).scalars().all()
+    # Sections the admin assigned the teacher to count too, so a teacher who
+    # belongs to both Primary and Secondary sees both report menus even before
+    # they hold a class in each.
+    from app.models.modules.school import TeacherSection as _TS
+    assigned_ids = (await db.execute(
+        select(_TS.section_id).where(
+            _TS.teacher_id == user.id,
+            _TS.org_id == user.org_id,
+        )
+    )).scalars().all()
+    section_ids = list(dict.fromkeys([*section_ids, *assigned_ids]))
     if section_ids:
         sections = (await db.execute(
             select(SchoolSection).where(
@@ -445,6 +456,16 @@ async def get_me(
             SchoolClass.section_id != None,
         )
     )).scalars().all()
+    # Sections the admin assigned the teacher to count too, so a teacher who
+    # belongs to both Primary and Secondary sees both report menus even before
+    # they hold a class in each.
+    assigned_ids = (await db.execute(
+        select(TeacherSection.section_id).where(
+            TeacherSection.teacher_id == current_user.id,
+            TeacherSection.org_id == current_user.org_id,
+        )
+    )).scalars().all()
+    section_ids = list(dict.fromkeys([*section_ids, *assigned_ids]))
     if section_ids:
         sections = (await db.execute(
             select(SchoolSection).where(

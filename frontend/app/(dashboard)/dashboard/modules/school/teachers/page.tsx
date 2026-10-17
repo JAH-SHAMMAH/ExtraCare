@@ -194,14 +194,17 @@ function TeacherForm({ teacher, sections, onClose }: { teacher: Teacher | null; 
     first_name: teacher?.first_name ?? "", last_name: teacher?.last_name ?? "", other_names: teacher?.other_names ?? "",
     employee_id: teacher?.employee_id ?? "", email: teacher?.email ?? "", phone: teacher?.phone ?? "",
     department: teacher?.department ?? "", qualification: teacher?.qualification ?? "", hire_date: teacher?.hire_date ?? "",
-    section_id: teacher?.section_id ?? "",
   });
+  const [sectionIds, setSectionIds] = useState<string[]>(
+    teacher?.section_ids ?? (teacher?.section_id ? [teacher.section_id] : []));
+  const toggleSection = (id: string) =>
+    setSectionIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
   const busy = create.isPending || update.isPending;
 
   const submit = () => {
     if (!f.first_name.trim() || !f.last_name.trim() || !f.email.trim()) { toast.error("First name, last name and email are required."); return; }
-    const payload: any = { ...f, section_id: f.section_id || null };
+    const payload: any = { ...f, section_ids: sectionIds, section_id: sectionIds[0] ?? null };
     if (teacher) update.mutate({ id: teacher.id, data: payload }, { onSuccess: onClose });
     else create.mutate(payload, { onSuccess: onClose });
   };
@@ -218,11 +221,15 @@ function TeacherForm({ teacher, sections, onClose }: { teacher: Teacher | null; 
         <Field label="Department"><input value={f.department} onChange={(e) => set("department", e.target.value)} className="input" /></Field>
         <Field label="Qualification"><input value={f.qualification} onChange={(e) => set("qualification", e.target.value)} className="input" /></Field>
         <Field label="Hire Date"><input type="date" value={f.hire_date ?? ""} onChange={(e) => set("hire_date", e.target.value)} className="input" /></Field>
-        <Field label="School (Section)">
-          <select value={f.section_id} onChange={(e) => set("section_id", e.target.value)} className="input">
-            <option value="">— Unassigned —</option>
-            {sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+        <Field label="School(s) — tick every one this teacher belongs to">
+          <div className="flex flex-wrap gap-x-5 gap-y-2 pt-1">
+            {sections.map((s) => (
+              <label key={s.id} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={sectionIds.includes(s.id)} onChange={() => toggleSection(s.id)} />
+                {s.name}
+              </label>
+            ))}
+          </div>
         </Field>
       </div>
       <div className="flex justify-end gap-2 pt-4">
