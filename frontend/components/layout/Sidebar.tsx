@@ -7,7 +7,7 @@ import {
   LayoutDashboard, BarChart3, Users, Settings, LogOut,
   GraduationCap, Heart, Briefcase, Package, DollarSign,
   HelpCircle, ChevronDown, Building2, Stethoscope,
-  Calendar, ClipboardList, MessageSquareText, ClipboardCheck, Users2, BookOpen, Bell, Shield, ShieldCheck,
+  Calendar, ClipboardList, ListChecks, MessageSquareText, ClipboardCheck, Users2, BookOpen, Bell, Shield, ShieldCheck,
   FileText, Wallet, Clock, UserCheck, Award, PlusCircle, Upload,
   BookMarked, School, Microscope, Pill, BedDouble, Activity,
   Receipt, BadgeDollarSign, FolderOpen, BarChart, Star,
@@ -279,6 +279,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/teacher-comments", label: "Teacher Comments", icon: MessageSquareText },
       { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
+      { href: "/dashboard/modules/school/skills-behaviour", label: "Skills & Behaviour", icon: ListChecks },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/grade-analysis", label: "Grade Analysis", icon: BarChart3 },
       // One route, two views, resolved by permission inside the page: a class
@@ -307,6 +308,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/teacher-comments", label: "Teacher Comments", icon: MessageSquareText },
       { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
+      { href: "/dashboard/modules/school/skills-behaviour", label: "Skills & Behaviour", icon: ListChecks },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/grade-analysis", label: "Grade Analysis", icon: BarChart3 },
       // One route, two views, resolved by permission inside the page: a class
@@ -336,6 +338,7 @@ const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/teacher-comments", label: "Teacher Comments", icon: MessageSquareText },
       { href: "/dashboard/modules/school/reports-upload", label: "Reports Upload", icon: Upload },
       { href: "/dashboard/modules/school/report-entry", label: "Report Entry", icon: NotebookPen },
+      { href: "/dashboard/modules/school/skills-behaviour", label: "Learning Goals", icon: ListChecks },
       { href: "/dashboard/modules/school/report-workflow", label: "Approve / Process Reports", icon: UserCheck },
       { href: "/dashboard/modules/school/grade-analysis", label: "Grade Analysis", icon: BarChart3 },
       // One route, two views, resolved by permission inside the page: a class

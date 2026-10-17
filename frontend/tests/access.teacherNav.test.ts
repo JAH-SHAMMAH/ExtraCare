@@ -128,6 +128,7 @@ const HIDDEN = [
 const VISIBLE = [
   "/dashboard/modules/school/reports-view",
   "/dashboard/modules/school/make-report",
+  "/dashboard/modules/school/skills-behaviour",
   // Result Analysis — ONE route, two views. A class teacher gets their own
   // class's Performance Tracker / Booster List / Honours Roll; an admin gets the
   // whole-school reports. Gated on school:reports:read so the classroom tier can

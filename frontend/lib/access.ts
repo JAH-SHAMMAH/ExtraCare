@@ -284,6 +284,9 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // Report Entry = the ADMIN score-entry desk (any class/subject). Teachers use
   // Make Report (their own timetable subjects) instead.
   { prefix: "/dashboard/modules/school/report-entry", permission: "school_admin:read" },
+  // Skills & Behaviour / Learning Goals = the CLASS TEACHER's rating page (the API limits
+  // it to her own class). Report Entry above is admin-only, so teachers need their own.
+  { prefix: "/dashboard/modules/school/skills-behaviour", permission: "school:reports:write" },
   // Make Report = the TEACHER score-entry page — scoped server-side to the
   // teacher's Timetable (class, subject) assignments.
   { prefix: "/dashboard/modules/school/make-report", permission: "school:reports:write" },

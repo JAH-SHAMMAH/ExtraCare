@@ -89,6 +89,7 @@ describe("sidebar nav manifest", () => {
       "/dashboard/modules/school/reports-view",
       "/dashboard/modules/school/make-report",
       "/dashboard/modules/school/report-entry",
+      "/dashboard/modules/school/skills-behaviour",
       "/dashboard/modules/school/grade-analysis",
       RESULT_ANALYSIS,
     ];
