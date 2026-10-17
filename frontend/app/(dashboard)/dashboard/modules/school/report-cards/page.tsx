@@ -217,7 +217,13 @@ function ReportCardView({ card, term, studentId, canWrite }: { card: any; term: 
       <div className="text-center mb-5 pb-4 border-b border-slate-100">
         <h2 className="text-lg font-bold text-slate-900">{card.student?.first_name} {card.student?.last_name}</h2>
         <p className="text-sm text-slate-500">
-          {[card.class_name, card.level, card.section && `Section ${card.section}`].filter(Boolean).join(" · ") || "—"}
+          {/* The class NAME only. `card.section` is the ARM, not the school
+              section, and the name already carries it for 24 of 31 classes
+              ("Year 1 A") -- so this printed "Year 1 A · Year 1 · Section A" on
+              a parent's card, and gave the 6 Early Years classes an arm Educare
+              does not give them at all. The level is dropped with it: for a
+              class named "Year 1 A" it restates the name. */}
+          {card.class_name || "—"}
         </p>
         <p className="text-xs text-slate-400 mt-0.5">{card.term || term}{card.academic_year ? ` — ${card.academic_year}` : ""}</p>
       </div>
