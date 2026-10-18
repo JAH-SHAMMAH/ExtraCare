@@ -22,6 +22,8 @@ import { BrandMark } from "@/components/branding/Brand";
 import { useAuthStore, type ActiveRole } from "@/lib/store";
 import { effectiveModulesForOrg, moduleAllowedForOrg } from "@/lib/workspace";
 import { canAccessPath } from "@/lib/access";
+import { blockingFlag, isSuperUser } from "@/lib/superFlags";
+import { useSuperFlags } from "@/hooks/useSuperSettings";
 import { reportSectionVisible, visibleReportKeys } from "@/lib/reportSections";
 import { useLogout } from "@/hooks/useAuth";
 import { MyRolesMenu } from "@/components/role/MyRolesMenu";
@@ -56,6 +58,7 @@ const CORE_NAV = [
   { href: "/news-feed", label: "News Feed", icon: Newspaper },
   { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
   { href: "/dashboard/audit", label: "Audit Log", icon: Shield },
+  { href: "/dashboard/settings/super", label: "Super Settings", icon: Settings2, superOnly: true },
 ];
 
 
@@ -68,10 +71,13 @@ const CORE_NAV = [
 // direct URL. `hasPermission` honours the broad→fine scope hierarchy, so a
 // teacher's broad `school:read` reveals every core teaching item automatically.
 function navItemVisible(
-  item: { href: string; roleOnly?: ActiveRole },
+  item: { href: string; roleOnly?: ActiveRole; superOnly?: boolean },
   roleScope: ActiveRole | null,
   hasPermission: (permission: string) => boolean,
+  ctx: { superUser?: boolean; flags?: Record<string, boolean>; staff?: boolean } = {},
 ): boolean {
+  if (item.superOnly) return !!ctx.superUser;
+  if (blockingFlag(item.href.split("?")[0], ctx.flags, { staff: ctx.staff })) return false;
   if (item.roleOnly) return roleScope === item.roleOnly;
   // Real pages: the shared access map decides. A null requirement means the
   // route is open to any authenticated user. Strip any ?query (e.g. deep-linked
@@ -695,6 +701,11 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   const currentTab = searchParams.get("tab");
   const currentSection = searchParams.get("section");
   const { user, org, activeRole, hasPermission } = useAuthStore();
+  const { data: superFlags } = useSuperFlags();
+  const navCtx = {
+    superUser: isSuperUser(user as any), flags: superFlags,
+    staff: hasPermission("school:students:read"),
+  };
   const logout = useLogout();
   const roleScope = moduleAllowedForOrg(org, "school") ? activeRole : "admin";
 
@@ -743,7 +754,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   // active view-role for personal pages). Depends on `user`/`org` so it
   // recomputes when the signed-in identity or its permissions change.
   const visibleCoreNav = useMemo(
-    () => CORE_NAV.filter((item) => navItemVisible(item, roleScope ?? null, hasPermission)),
+    () => CORE_NAV.filter((item) => navItemVisible(item, roleScope ?? null, hasPermission, navCtx)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [roleScope, user, org],
   );
@@ -790,7 +801,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
       })
       .map((s) => ({
         ...s,
-        items: s.items.filter((it) => navItemVisible(it, roleScope ?? null, hasPermission)),
+        items: s.items.filter((it) => navItemVisible(it, roleScope ?? null, hasPermission, navCtx)),
       }))
       .filter((s) => s.items.length > 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps

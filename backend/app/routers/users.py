@@ -367,7 +367,8 @@ async def reset_user_password(
     assert_can_manage_user(current_user, user)
     temp = secrets.token_urlsafe(9)
     user.hashed_password = hash_password(temp)
-    user.force_password_change = True
+    from app.services.super_settings import flag as _sflag
+    user.force_password_change = await _sflag(db, current_user.org_id, "force_password_change_on_reset")
     user.password_reset_token = None
     user.password_reset_expires = None
     await db.flush()
@@ -376,7 +377,7 @@ async def reset_user_password(
         resource_type="User", resource_id=user.id, resource_label=user.full_name,
         severity="warning", request=request,
     )
-    return {"temporary_password": temp, "force_password_change": True}
+    return {"temporary_password": temp, "force_password_change": bool(user.force_password_change)}
 
 
 @router.delete("/{user_id}", status_code=204, dependencies=[_can_delete])

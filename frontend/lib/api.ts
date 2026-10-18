@@ -2124,3 +2124,11 @@ export const backupApi = {
   download: (password: string) =>
     api.post("/admin/backup/download", { password }, { responseType: "blob" }).then((r) => r.data as Blob),
 };
+
+// Super-User-only school switches + profile/school defaults.
+export interface SuperField { key: string; tab: string; section: string; label: string; kind: string; default: any; help?: string }
+export const superSettingsApi = {
+  flags: () => api.get("/super-settings/flags").then((r) => r.data as Record<string, boolean>),
+  read: () => api.get("/super-settings").then((r) => r.data as { fields: SuperField[]; values: Record<string, any> }),
+  save: (values: Record<string, any>) => api.put("/super-settings", { values }).then((r) => r.data),
+};

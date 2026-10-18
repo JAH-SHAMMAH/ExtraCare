@@ -16,6 +16,7 @@ from app.routers import auth, users, analytics, imports, me, organizations, admi
 from app.services.usage import start_flusher, stop_flusher, track, module_from_path
 from app.routers.modules import school, hospital, business
 from app.routers import support as support_router
+from app.routers import super_settings as super_settings_router
 from app.routers import remita as remita_router
 from app.routers import fee_payments as fee_payments_router
 from app.routers import hr_extended as hr_extended_router
@@ -314,6 +315,7 @@ API_V1 = "/api/v1"
 
 app.include_router(auth.router, prefix=API_V1)
 app.include_router(users.router, prefix=API_V1)
+app.include_router(super_settings_router.router, prefix=API_V1)
 app.include_router(analytics.router, prefix=API_V1)
 app.include_router(analytics.org_router, prefix=API_V1)
 app.include_router(school.router, prefix=API_V1)

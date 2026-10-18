@@ -52,6 +52,8 @@ from app.schemas.attendance import (
 )
 from app.services import attendance as attendance_service
 
+from app.services.super_settings import require_flag, flag as super_flag
+
 router = APIRouter(
     prefix="/attendance",
     tags=["Attendance"],
@@ -127,7 +129,7 @@ async def _assert_can_view_student(
 # ── Ingestion ────────────────────────────────────────────────────────────────
 
 
-@router.post("/events/ingest", response_model=IngestResultOut, dependencies=[_can_write])
+@router.post("/events/ingest", response_model=IngestResultOut, dependencies=[_can_write, Depends(require_flag("student_biometric"))])
 async def ingest_events(
     payload: AttendanceIngestRequest,
     db: AsyncSession = Depends(get_db),
@@ -151,6 +153,12 @@ async def record_manual(
     """Staff records a single check-in/out from the portal (triggers the same
     daily-record derivation + parent notification as a device punch)."""
     org = await _load_org(db, current_user)
+    # "Mark Previous Attendance": when the Super User has switched it off, only
+    # today can be recorded.
+    from datetime import date as _date
+    et = payload.event_time
+    if et is not None and et.date() < _date.today() and not await super_flag(db, current_user.org_id, "mark_previous_attendance"):
+        raise HTTPException(status_code=400, detail="Marking previous attendance has been switched off by the Super User.")
     event = AttendanceEventIn(
         student_id=payload.student_id,
         event_type=payload.event_type,

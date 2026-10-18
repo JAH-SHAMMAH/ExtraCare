@@ -48,6 +48,8 @@ from app.schemas.wallet import (
 from app.services import ledger
 from app.services.ledger import money
 
+from app.services.super_settings import require_flag
+
 router = APIRouter(
     prefix="/finance",
     tags=["Wallet & Cooperative"],
@@ -249,7 +251,7 @@ async def _post_wallet_move(db, current_user, w: StudentWallet, kind: str, amoun
     return we
 
 
-@router.post("/wallets/{wallet_id}/topup", response_model=WalletResponse, dependencies=[_fin_post])
+@router.post("/wallets/{wallet_id}/topup", response_model=WalletResponse, dependencies=[_fin_post, Depends(require_flag("wallet_manual_credit"))])
 async def topup_wallet(wallet_id: str, payload: TopUpRequest, request: Request = None,
                        db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     w = await _load_wallet(db, wallet_id, current_user.org_id)

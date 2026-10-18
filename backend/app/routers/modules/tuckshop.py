@@ -34,10 +34,12 @@ from app.core.permissions import PermissionChecker
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
 
+from app.services.super_settings import require_flag
+
 router = APIRouter(
     prefix="/tuckshop",
     tags=["Tuckshop"],
-    dependencies=[Depends(require_role_module("school"))],
+    dependencies=[Depends(require_role_module("school")), Depends(require_flag("open_store_for_parents", owners_only=True))],
 )
 
 _can_read = Depends(PermissionChecker("school_admin:read"))

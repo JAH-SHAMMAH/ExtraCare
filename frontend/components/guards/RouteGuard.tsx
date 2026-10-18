@@ -5,6 +5,8 @@ import Link from "next/link";
 import { ShieldAlert } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { permissionForPath, canAccessPath } from "@/lib/access";
+import { blockingFlag } from "@/lib/superFlags";
+import { useSuperFlags } from "@/hooks/useSuperSettings";
 
 /**
  * Authorization guard for the dashboard subtree (Phase 7 RBAC).
@@ -23,6 +25,22 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, hasPermission } = useAuthStore();
   const required = permissionForPath(pathname);
+  const { data: flags } = useSuperFlags();
+  const blocked = user ? blockingFlag(pathname, flags, { staff: hasPermission("school:students:read") }) : null;
+  if (blocked) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-slate-400 px-8">
+        <ShieldAlert size={44} className="mb-4 opacity-40" />
+        <p className="font-semibold text-slate-700 text-lg">Switched off</p>
+        <p className="text-sm mt-1 text-center max-w-md">
+          This page has been switched off by the Super User ({blocked.label}).
+        </p>
+        <Link href="/dashboard" className="mt-6 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors">
+          Back to Dashboard
+        </Link>
+      </div>
+    );
+  }
 
   // While the auth store is still hydrating, `user` is null — render children;
   // the layout is showing a splash anyway, and the check re-runs once the user

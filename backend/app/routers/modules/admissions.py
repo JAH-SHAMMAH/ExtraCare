@@ -61,6 +61,8 @@ from app.schemas.admissions import (
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
 
+from app.services.super_settings import require_flag
+
 router = APIRouter(
     prefix="/enrollment",
     tags=["Admissions & Enrollment"],
@@ -189,7 +191,7 @@ async def list_applications(
     )
 
 
-@router.post("/applications", response_model=AdmissionApplicationResponse, status_code=201, dependencies=[_adm_write])
+@router.post("/applications", response_model=AdmissionApplicationResponse, status_code=201, dependencies=[_adm_write, Depends(require_flag("admission_form_on_sale"))])
 async def create_application(
     payload: AdmissionApplicationCreate,
     request: Request = None,

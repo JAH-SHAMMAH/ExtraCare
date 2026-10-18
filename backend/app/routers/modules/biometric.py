@@ -48,7 +48,9 @@ from app.services import attendance as attendance_service
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
 
-router = APIRouter(prefix="/biometric", tags=["Biometric Devices"], dependencies=[Depends(require_module("school"))])
+from app.services.super_settings import require_flag
+
+router = APIRouter(prefix="/biometric", tags=["Biometric Devices"], dependencies=[Depends(require_module("school")), Depends(require_flag("school_biometric"))])
 
 # The device-facing ingest endpoint authenticates by DEVICE TOKEN, not a user
 # session, so it lives on a separate router WITHOUT the require_module (user)
