@@ -229,3 +229,10 @@ async def test_a_parent_cannot_read_another_childs_report_card(http, family):
     assert r.status_code in (403, 404), (
         f"a parent read another family's child ({r.status_code}): {r.text[:200]}"
     )
+
+
+async def test_a_parent_can_list_sessions_for_the_report_card_picker(http, family):
+    """The Session dropdown on the report card reads /sessions. It was staff-only,
+    so a parent's dropdown came back empty with nothing to pick."""
+    r = await http.get(f"{API}/sessions", headers=_bearer(family["parent"]))
+    assert r.status_code == 200, f"parent refused the session list ({r.status_code}): {r.text[:200]}"

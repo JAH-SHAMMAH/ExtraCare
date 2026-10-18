@@ -270,7 +270,7 @@ async def _gate_subject_comment_access(db: AsyncSession, org_id: str, user: User
 
 # ── School Setup ────────────────────────────────────────────────────────────────
 
-@router.get("/sessions", response_model=list[SessionResponse], dependencies=[_read])
+@router.get("/sessions", response_model=list[SessionResponse], dependencies=[_school_or_own_read])
 async def list_sessions(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     rows = (await db.execute(select(AcademicSession).where(AcademicSession.org_id == current_user.org_id).order_by(AcademicSession.start_date.desc()))).scalars().all()
     return [SessionResponse(id=s.id, name=s.name, term=s.term, start_date=s.start_date, end_date=s.end_date, is_current=s.is_current, created_at=s.created_at, org_id=s.org_id) for s in rows]
