@@ -23,11 +23,12 @@ function TeacherCard({ t }: { t: MyTeacher }) {
   const rate = useRateMyTeacher();
   const [stars, setStars] = useState(t.my_rating ?? 0);
   const [comment, setComment] = useState(t.my_comment ?? "");
-  const dirty = stars !== (t.my_rating ?? 0) || comment.trim() !== (t.my_comment ?? "");
+  const [anon, setAnon] = useState(!!t.my_anonymous);
+  const dirty = stars !== (t.my_rating ?? 0) || comment.trim() !== (t.my_comment ?? "") || anon !== !!t.my_anonymous;
 
   const save = () => {
     if (!stars) return;
-    rate.mutate({ teacher_id: t.teacher_id, rating: stars, comment: comment.trim() || undefined }, {
+    rate.mutate({ teacher_id: t.teacher_id, rating: stars, comment: comment.trim() || undefined, anonymous: anon }, {
       onSuccess: () => toast.success(t.my_rating ? "Rating updated." : "Thanks, your rating was sent."),
       onError: (e: any) => toast.error(e?.response?.data?.detail ?? "Could not save your rating."),
     });
@@ -48,6 +49,10 @@ function TeacherCard({ t }: { t: MyTeacher }) {
       <Stars value={stars} onChange={setStars} label={`Rate ${t.name}`} />
       <textarea value={comment} onChange={(e) => setComment(e.target.value)} maxLength={1000}
         placeholder="Say something about this teacher (optional)" className="input min-h-[70px] resize-none mt-3" />
+      <label className="flex items-center gap-2 mt-3 text-sm text-slate-600 cursor-pointer">
+        <input type="checkbox" checked={anon} onChange={(e) => setAnon(e.target.checked)} className="rounded border-slate-300" />
+        Send anonymously <span className="text-xs text-slate-400">(the school won't see your name)</span>
+      </label>
       <button onClick={save} disabled={!stars || !dirty || rate.isPending} className="btn-primary gap-2 mt-3">
         {rate.isPending && <Loader2 size={15} className="animate-spin" />}
         {t.my_rating ? "Update rating" : "Submit rating"}

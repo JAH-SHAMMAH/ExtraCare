@@ -19,7 +19,8 @@ describe("Rate My Teachers", () => {
     const submit = screen.getByRole("button", { name: /submit rating/i }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     fireEvent.click(screen.getByLabelText("4 stars"));
+    fireEvent.click(screen.getByLabelText(/anonymously/i));
     fireEvent.click(submit);
-    expect(mutate.mock.calls[0][0]).toMatchObject({ teacher_id: "t1", rating: 4 });
+    expect(mutate.mock.calls[0][0]).toMatchObject({ teacher_id: "t1", rating: 4, anonymous: true });
   });
 });

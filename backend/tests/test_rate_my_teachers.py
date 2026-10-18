@@ -82,3 +82,24 @@ async def test_rating_must_be_one_to_five(http, world):
     r = await http.put(f"{BASE}/my-teachers/{world['mine'].id}/rating", json={"rating": 9},
                        headers=_bearer(world["pupil"]))
     assert r.status_code == 422
+
+
+async def test_anonymous_rating_hides_the_pupil_from_admin(http, db, org, world):
+    h = _bearer(world["pupil"])
+    r = await http.put(f"{BASE}/my-teachers/{world['mine'].id}/rating",
+                       json={"rating": 3, "comment": "Fast", "anonymous": True}, headers=h)
+    assert r.status_code == 200 and r.json()["my_anonymous"] is True
+    admin = await _preset_user(db, org, "org_admin")
+    ra = await http.get(f"{BASE}/ratings", headers=_bearer(admin))
+    item = ra.json()["items"][0]
+    assert item["student_name"] == "Anonymous" and item["student_id"] is None and item["comment"] == "Fast"
+    s = (await http.get(f"{BASE}/ratings/summary", headers=_bearer(admin))).json()
+    assert s[0]["teacher_id"] == world["mine"].id and s[0]["average"] == 3 and s[0]["count"] == 1
+
+
+async def test_named_rating_shows_the_pupil_to_admin(http, db, org, world):
+    await http.put(f"{BASE}/my-teachers/{world['mine'].id}/rating", json={"rating": 5},
+                   headers=_bearer(world["pupil"]))
+    admin = await _preset_user(db, org, "org_admin")
+    item = (await http.get(f"{BASE}/ratings", headers=_bearer(admin))).json()["items"][0]
+    assert item["student_name"] == "Ada O" and item["is_anonymous"] is False

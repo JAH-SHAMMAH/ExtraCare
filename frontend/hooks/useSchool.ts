@@ -473,7 +473,12 @@ export function useCreateTimetableSlot() {
 
 export interface MyTeacher {
   teacher_id: string; name: string; avatar_url?: string | null; subjects: string[];
-  class_teacher: boolean; my_rating: number | null; my_comment: string | null;
+  class_teacher: boolean; my_rating: number | null; my_comment: string | null; my_anonymous?: boolean;
+}
+export function useRatingsSummary() {
+  return useQuery<{ teacher_id: string; name: string; average: number; count: number }[]>({
+    queryKey: ["teacher-ratings-summary"], queryFn: () => schoolApi.ratings.summary(),
+  });
 }
 export function useMyTeachers() {
   return useQuery<MyTeacher[]>({ queryKey: ["my-teachers"], queryFn: () => schoolApi.ratings.myTeachers() });
@@ -481,9 +486,9 @@ export function useMyTeachers() {
 export function useRateMyTeacher() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { teacher_id: string; rating: number; comment?: string }) =>
-      schoolApi.ratings.rateMine(v.teacher_id, { rating: v.rating, comment: v.comment }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-teachers"] }),
+    mutationFn: (v: { teacher_id: string; rating: number; comment?: string; anonymous?: boolean }) =>
+      schoolApi.ratings.rateMine(v.teacher_id, { rating: v.rating, comment: v.comment, anonymous: v.anonymous }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["my-teachers"] }); qc.invalidateQueries({ queryKey: ["teacher-ratings"] }); qc.invalidateQueries({ queryKey: ["teacher-ratings-summary"] }); },
   });
 }
 

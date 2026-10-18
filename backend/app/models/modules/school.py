@@ -1,3 +1,4 @@
+from sqlalchemy import false as sa_false
 from sqlalchemy import Column, String, Integer, Float, Date, DateTime, Time, Text, Boolean, Enum, ForeignKey, JSON, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.models.base import Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin, utc_now
@@ -1020,6 +1021,8 @@ class TeacherRating(Base, UUIDMixin, TimestampMixin, TenantMixin):
     comment = Column(Text, nullable=True)
     subject_id = Column(String(36), ForeignKey("subjects.id"), nullable=True)
     term = Column(String(50), nullable=True)
+    # The pupil chose to hide their name from the school (migration 145).
+    is_anonymous = Column(Boolean, default=False, nullable=False, server_default=sa_false())
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
     __table_args__ = (

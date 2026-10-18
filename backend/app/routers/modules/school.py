@@ -2463,11 +2463,14 @@ async def _rating_student_names(db: AsyncSession, org_id: str, ids: set[str]) ->
 
 
 def _rating_dict(r: TeacherRating, student_name: str | None) -> dict:
+    anon = bool(getattr(r, "is_anonymous", False))
     return {
         "id": r.id,
         "teacher_id": r.teacher_id,
-        "student_id": r.student_id,
-        "student_name": student_name,
+        # An anonymous rating never leaves the server with the pupil's identity.
+        "student_id": None if anon else r.student_id,
+        "student_name": "Anonymous" if anon else student_name,
+        "is_anonymous": anon,
         "rating": int(r.rating),
         "comment": r.comment,
         "subject_id": r.subject_id,
@@ -2549,6 +2552,22 @@ async def submit_rating(
     )
     name = " ".join(p for p in [student.first_name, student.last_name] if p) or student.student_id
     return _rating_dict(r, name)
+
+
+@router.get("/ratings/summary", dependencies=[_can_read])
+async def ratings_summary(db: AsyncSession = Depends(get_db),
+                          current_user: User = Depends(get_current_active_user)):
+    """Every rated teacher with their average and count, best first."""
+    org_id = current_user.org_id
+    rows = (await db.execute(
+        select(TeacherRating.teacher_id, func.avg(TeacherRating.rating), func.count(TeacherRating.id))
+        .where(TeacherRating.org_id == org_id).group_by(TeacherRating.teacher_id))).all()
+    names = {u.id: u.full_name for u in (await db.execute(select(User).where(
+        User.org_id == org_id, User.id.in_([r[0] for r in rows] or ["_none_"])))).scalars().all()}
+    out = [{"teacher_id": t, "name": names.get(t) or "Unknown teacher",
+            "average": round(float(a), 2), "count": int(c)} for t, a, c in rows]
+    out.sort(key=lambda x: (-x["average"], -x["count"]))
+    return out
 
 
 @router.get("/ratings/teacher/{teacher_id}", dependencies=[_can_read])
@@ -2640,6 +2659,7 @@ async def my_teachers(db: AsyncSession = Depends(get_db),
             "teacher_id": tid, "name": u.full_name, "avatar_url": getattr(u, "avatar_url", None),
             "subjects": sorted(info["subjects"]), "class_teacher": info["class_teacher"],
             "my_rating": int(r.rating) if r else None, "my_comment": r.comment if r else None,
+            "my_anonymous": bool(r.is_anonymous) if r else False,
         })
     out.sort(key=lambda x: (not x["class_teacher"], x["name"] or ""))
     return out
@@ -2648,6 +2668,7 @@ async def my_teachers(db: AsyncSession = Depends(get_db),
 class MyRatingIn(BaseModel):
     rating: int = Field(ge=1, le=5)
     comment: str | None = Field(default=None, max_length=1000)
+    anonymous: bool = False
 
 
 @router.put("/my-teachers/{teacher_id}/rating", dependencies=[_rate_teacher])
@@ -2666,16 +2687,17 @@ async def rate_my_teacher(teacher_id: str, data: MyRatingIn, request: Request = 
         TeacherRating.org_id == st.org_id))).scalar_one_or_none()
     comment = (data.comment or "").strip() or None
     if r:
-        r.rating, r.comment = data.rating, comment
+        r.rating, r.comment, r.is_anonymous = data.rating, comment, data.anonymous
     else:
         r = TeacherRating(teacher_id=teacher_id, student_id=st.id, rating=data.rating,
-                          comment=comment, org_id=st.org_id)
+                          comment=comment, is_anonymous=data.anonymous, org_id=st.org_id)
         db.add(r)
     await db.flush()
     await log_action(db, AuditAction.RECORD_CREATED, st.org_id, actor=current_user,
                      resource_type="TeacherRating", resource_id=r.id,
                      resource_label=f"{data.rating}★ for {teacher.full_name}", request=request)
-    return {"teacher_id": teacher_id, "my_rating": int(r.rating), "my_comment": r.comment}
+    return {"teacher_id": teacher_id, "my_rating": int(r.rating), "my_comment": r.comment,
+            "my_anonymous": bool(r.is_anonymous)}
 
 
 # ── Timetable ─────────────────────────────────────────────────────────────────
