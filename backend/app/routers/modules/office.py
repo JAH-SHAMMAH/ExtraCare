@@ -205,22 +205,43 @@ async def _before_save(db, module, resource, data: dict, org_id: str, existing=N
     if (module, resource) == ("procurement", "limits") and not is_super_user(user):
         _bad("Only the Super User sets approval limits.")
     if (module, resource) == ("procurement", "requests"):
-        data.pop("approved_by", None)  # stamped by the server, never typed
+        # server-stamped, never typed
+        for k in ("approved_by", "approvals", "awaiting"):
+            data.pop(k, None)
         new = data.get("status")
-        if new in ("approved", "ordered", "received") and (existing is None or existing.status != new):
-            total = float(data.get("total", getattr(existing, "total", 0)) or 0)
-            if existing is not None and existing.status in ("draft", "submitted", "rejected") and new != "approved":
-                _bad("A request must be approved before it is ordered.")
-            if new == "approved" and not is_super_user(user):
-                if existing is not None and (existing.requested_by or "") == (user.email or "") :
+        if new in ("ordered", "received") and existing is not None and existing.status in ("draft", "submitted", "rejected"):
+            _bad("A request must be approved before it is ordered.")
+        if new == "approved" and (existing is None or existing.status != "approved"):
+            if existing is None or existing.status != "submitted":
+                _bad("Submit the request first, then approve it.")
+            total = float(data.get("total", existing.total) or 0)
+            done = list(existing.approvals or [])
+            if is_super_user(user):
+                done.append({"by": user.email, "role": "super user", "level": len(done) + 1})
+            else:
+                if (existing.requested_by or "") == (user.email or ""):
                     _bad("You can't approve your own request.")
+                if any(a.get("by") == user.email for a in done):
+                    _bad("You have already approved this request. A different person must give the next approval.")
                 limits = {l.role: float(l.max_amount) for l in await _all(db, "procurement", "limits", org_id)}
                 if limits:
-                    mine = [limits[sl] for sl in _role_slugs(user) if sl in limits]
-                    if not mine or max(mine) < total:
-                        _bad(f"This request ({total:,.2f}) is above your approval limit"
-                             + (f" of {max(mine):,.2f}." if mine else ". You have no approval limit set."))
-            if new == "approved":
+                    tiers = sorted(set(limits.values()))
+                    mine = [tiers.index(limits[sl]) for sl in _role_slugs(user) if sl in limits]
+                    top = next((i for i, t in enumerate(tiers) if t >= total), None)
+                    if top is None:
+                        _bad(f"This request ({total:,.2f}) is above every approval limit. Only the Super User can approve it.")
+                    need = len(done)  # the tier the next sign-off must come from
+                    if not mine or max(mine) < need:
+                        _bad(f"Your approval limit isn't high enough for this step. Level {need + 1} of {top + 1} must come from someone with a limit of at least {tiers[need]:,.2f}.")
+                    done.append({"by": user.email, "role": "approver", "level": need + 1})
+                    if need < top:
+                        data["status"] = existing.status  # more sign-offs needed: stays submitted
+                        data["awaiting"] = f"Level {need + 2} of {top + 1}"
+                else:
+                    done.append({"by": user.email, "role": "approver", "level": 1})
+            data["approvals"] = done
+            if data["status"] == "approved":
+                data["awaiting"] = None
                 data["approved_by"] = user.email
     if (module, resource) == ("ledger", "accounts"):
         code = data.get("code")
@@ -422,8 +443,47 @@ async def sync_ledger(db: AsyncSession = Depends(get_db), user: User = Depends(g
         if f"PAYROLL:{r.id}" not in done and float(r.total_gross or 0) > 0:
             post(f"PAYROLL:{r.id}", r.run_date or date_type.today(), f"Payroll {r.period_label}",
                  [("5100", r.total_gross, 0), ("2100", 0, r.total_net), ("2200", 0, r.total_deductions)])
+    from app.models.modules.finance import PettyCashTxn
+    from app.models.modules.wallet import ParentWalletEntry, WalletEntry
+    extra = {"1010": ("Petty Cash", "asset"), "2300": ("Student Wallets", "liability"), "2400": ("Parent Wallets", "liability"),
+             "4200": ("Wallet Spending Income", "income"), "5200": ("Petty Cash Expenses", "expense")}
+    for code, (name, typ) in extra.items():
+        if code not in have:
+            have[code] = Acc(org_id=org, code=code, name=name, type=typ)
+            db.add(have[code])
+    await db.flush()
+    A.update({c: a.id for c, a in have.items()})
+    wallet_rows = 0
+    for e in (await db.execute(select(WalletEntry).where(WalletEntry.org_id == org))).scalars().all():
+        amt = abs(float(e.signed_amount or 0))
+        ref = f"WE:{e.id}"
+        if ref in done or not amt:
+            continue
+        d = e.created_at.date() if e.created_at else date_type.today()
+        lines = {"top_up": [("1000", amt, 0), ("2300", 0, amt)], "spend": [("2300", amt, 0), ("4200", 0, amt)],
+                 "withdrawal": [("2300", amt, 0), ("1000", 0, amt)]}.get(e.kind)
+        if lines:
+            post(ref, d, f"Student wallet {e.kind.replace('_', ' ')}", lines)
+            wallet_rows += 1
+    for e in (await db.execute(select(ParentWalletEntry).where(ParentWalletEntry.org_id == org))).scalars().all():
+        amt = abs(float(e.signed_amount or 0))
+        ref = f"PWE:{e.id}"
+        if ref in done or not amt:
+            continue
+        d = e.created_at.date() if e.created_at else date_type.today()
+        lines = {"credit": [("1000", amt, 0), ("2400", 0, amt)], "debit": [("2400", amt, 0), ("1100", 0, amt)]}.get(e.kind)
+        if lines:
+            post(ref, d, f"Parent wallet {e.kind}", lines)
+            wallet_rows += 1
+    petty = 0
+    for t in (await db.execute(select(PettyCashTxn).where(PettyCashTxn.org_id == org, PettyCashTxn.status == "posted"))).scalars().all():
+        ref = f"PC:{t.id}"
+        if ref not in done and float(t.amount or 0) > 0:
+            post(ref, t.txn_date or date_type.today(), f"Petty cash - {t.description or t.category or ''}".strip(" -"),
+                 [("5200", t.amount, 0), ("1010", 0, t.amount)])
+            petty += 1
     await db.commit()
-    return {"journals_added": added, "invoices_seen": len(inv), "payroll_runs_seen": len(runs)}
+    return {"journals_added": added, "invoices_seen": len(inv), "payroll_runs_seen": len(runs), "wallet_entries_added": wallet_rows, "petty_cash_added": petty}
 
 
 @router.post("/{module}/{resource}", status_code=201)

@@ -100,7 +100,7 @@ function Form({ module, resource, cols, initial, onDone }: { module: string; res
   };
   return (
     <form onSubmit={submit} className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 grid sm:grid-cols-2 gap-3">
-      {Object.entries(cols).filter(([c]) => !["total", "approved_by", "requested_by"].includes(c)).map(([c, m]) => (
+      {Object.entries(cols).filter(([c]) => !["total", "approved_by", "requested_by", "approvals", "awaiting"].includes(c)).map(([c, m]) => (
         <div key={c} className={cn(m.kind === "json" || m.kind === "text" ? "sm:col-span-2" : "")}>
           <label className="label">{title(c.replace(/_id$/, ""))}{m.required && " *"}</label>
           {m.kind === "json" ? <LinesEditor kind={c === "lines" ? "lines" : "items"} value={v[c] ?? []} onChange={(x) => set(c, x)} accounts={accounts.data?.items ?? []} />

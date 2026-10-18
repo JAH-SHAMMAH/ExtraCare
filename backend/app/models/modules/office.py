@@ -34,7 +34,7 @@ MODULES: dict[str, dict[str, dict[str, tuple[str, bool]]]] = {
     "procurement": {
         "suppliers": {"name": ("str", True), "category": ("str", False), "phone": ("str", False), "email": ("str", False), "address": ("text", False)},
         "requests": {"title": ("str", True), "supplier_id": ("ref:suppliers", False), "items": ("json", False), "total": ("float", False),
-                     "status": ("choice:draft|submitted|approved|rejected|ordered|received", False), "requested_by": ("str", False), "approved_by": ("str", False), "note": ("text", False)},
+                     "status": ("choice:draft|submitted|approved|rejected|ordered|received", False), "requested_by": ("str", False), "approved_by": ("str", False), "approvals": ("json", False), "awaiting": ("str", False), "note": ("text", False)},
         "limits": {"role": ("str", True), "max_amount": ("float", True)},
     },
     "livestock": {

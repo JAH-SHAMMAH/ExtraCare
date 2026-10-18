@@ -160,3 +160,29 @@ async def test_report_extras_smoke(http, db, org, school_class, student):
     b = await http.get("/api/v1/report-extras/backup", headers=h, params={"class_id": school_class.id, "term_id": "x", "sub_term_id": "y"})
     assert b.status_code in (200, 404, 422)
     assert (await http.get("/api/v1/report-extras/backup", headers=_bearer(await _preset_user(db, org, "parent")), params={"class_id": "a", "term_id": "b", "sub_term_id": "c"})).status_code == 403
+
+
+async def test_multi_level_approval_and_wallet_sync(http, db, org):
+    boss = await _setup(db, org)
+    hb = _bearer(boss)
+    a1 = await _preset_user(db, org, "accountant")
+    a2 = await _preset_user(db, org, "accountant")
+    maker = await _preset_user(db, org, "accountant")
+    admin = await _preset_user(db, org, "head_of_administration")
+    a2.roles, maker.roles = [a1.roles[0]], [a1.roles[0]]
+    await db.commit()
+    # two tiers on the same role is not possible, so use two roles: accountant=500, org_admin=5000
+    await http.post("/api/v1/office/procurement/limits", headers=hb, json={"role": a1.roles[0].slug, "max_amount": 500})
+    await http.post("/api/v1/office/procurement/limits", headers=hb, json={"role": admin.roles[0].slug, "max_amount": 5000})
+    r = (await http.post("/api/v1/office/procurement/requests", headers=_bearer(maker), json={"title": "Bus", "items": [{"name": "Bus", "qty": 1, "price": 3000}], "status": "submitted"})).json()
+    rid = r["id"]
+    # level 1: an accountant signs, the request stays open
+    s1 = (await http.put(f"/api/v1/office/procurement/requests/{rid}", headers=_bearer(a1), json={"status": "approved"})).json()
+    assert "status" in s1, s1
+    assert s1["status"] == "submitted" and s1["awaiting"] == "Level 2 of 2" and len(s1["approvals"]) == 1
+    # an accountant cannot give level 2
+    assert (await http.put(f"/api/v1/office/procurement/requests/{rid}", headers=_bearer(a2), json={"status": "approved"})).status_code == 422
+    # the same person cannot sign twice
+    assert (await http.put(f"/api/v1/office/procurement/requests/{rid}", headers=_bearer(a1), json={"status": "approved"})).status_code == 422
+    done = (await http.put(f"/api/v1/office/procurement/requests/{rid}", headers=_bearer(admin), json={"status": "approved"})).json()
+    assert done["status"] == "approved" and len(done["approvals"]) == 2 and done["awaiting"] is None
