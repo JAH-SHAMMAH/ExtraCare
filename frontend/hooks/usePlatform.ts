@@ -448,7 +448,7 @@ export function useBroadsheet(p: { class_id: string; term_id: string; sub_term_i
 }
 
 // ── S-4c: printable report card ──────────────────────────────────────────────
-export function useReportCard(p: { student_id: string; term_id: string; sub_term_id: string }) {
+export function useReportCard(p: { student_id: string; term_id: string; sub_term_id: string; session_id?: string }) {
   return useQuery<any>({
     queryKey: ["report-card-v2", p],
     queryFn: () => platformApi.reportCard(p),

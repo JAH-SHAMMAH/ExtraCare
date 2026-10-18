@@ -6,6 +6,7 @@ vi.mock("@/hooks/useMyContexts", () => ({ useMyContexts: () => ({ isLoading: fal
 vi.mock("@/hooks/usePlatform", () => ({
   useTerms: () => ({ data: [{ id: "t1", name: "Autumn", is_active: true }] }),
   useSubTerms: () => ({ data: [{ id: "s1", name: "Full-Term" }] }),
+  useSessions: () => ({ data: [{ id: "y1", name: "2025/2026", is_current: true }, { id: "y2", name: "2026/2027", is_current: false }] }),
   useReportCard: () => ({ data: state.card, isLoading: false, error: state.error }),
 }));
 vi.mock("@/components/reports/ReportCardPrint", () => ({ Card: () => <div>NEW-STYLE-REPORT-CARD</div> }));

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { FileText, Loader2, Printer, ShieldCheck } from "lucide-react";
-import { useTerms, useSubTerms, useReportCard } from "@/hooks/usePlatform";
+import { useTerms, useSubTerms, useSessions, useReportCard } from "@/hooks/usePlatform";
 import { defaultSubTermId } from "@/lib/reportEntry";
 import { Card } from "@/components/reports/ReportCardPrint";
 
@@ -18,10 +18,15 @@ export function ReportCardViewer({ people }: { people: ViewerPerson[] }) {
   const { data: terms = [] } = useTerms();
   const { data: subTerms = [] } = useSubTerms();
   const [personId, setPersonId] = useState("");
+  const { data: sessions = [] } = useSessions();
+  const [sessionId, setSessionId] = useState("");
   const [termId, setTermId] = useState("");
   const [subTermId, setSubTermId] = useState("");
 
   useEffect(() => { if (!personId && people.length) setPersonId(people[0].id); }, [people, personId]);
+  useEffect(() => {
+    if (!sessionId && sessions.length) setSessionId((sessions.find((x: any) => x.is_current) ?? sessions[0]).id);
+  }, [sessions, sessionId]);
   useEffect(() => {
     if (!termId && terms.length) setTermId((terms.find((t: any) => t.is_active) ?? terms[0]).id);
   }, [terms, termId]);
@@ -30,7 +35,7 @@ export function ReportCardViewer({ people }: { people: ViewerPerson[] }) {
   }, [subTerms, subTermId]);
 
   const person = people.find((p) => p.id === personId);
-  const { data: card, isLoading, error } = useReportCard({ student_id: personId, term_id: termId, sub_term_id: subTermId });
+  const { data: card, isLoading, error } = useReportCard({ student_id: personId, term_id: termId, sub_term_id: subTermId, session_id: sessionId || undefined });
   const num = (v: any) => (v == null ? "–" : Number(v));
   const ready = !!card && !(card as any).not_configured;
   const detail: string | undefined = (error as any)?.response?.data?.detail;
@@ -51,6 +56,12 @@ export function ReportCardViewer({ people }: { people: ViewerPerson[] }) {
             </select>
           </div>
         )}
+        <div className="min-w-[140px]">
+          <label className="label">Session</label>
+          <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="input">
+            {sessions.map((x: any) => (<option key={x.id} value={x.id}>{x.name}</option>))}
+          </select>
+        </div>
         <div className="min-w-[140px]">
           <label className="label">Term</label>
           <select value={termId} onChange={(e) => setTermId(e.target.value)} className="input">
@@ -77,6 +88,9 @@ export function ReportCardViewer({ people }: { people: ViewerPerson[] }) {
             {detail?.includes("not been published") ? `${person?.first_name ?? "This"} report isn't published yet` : "No report available for this term yet"}
           </p>
           <p className="text-sm mt-1">{detail ?? "Check back once the school has published it."}</p>
+          {detail?.includes("not been published") && (
+            <p className="text-xs mt-2">The school releases a class's report for each term separately, so another term may already be available.</p>
+          )}
         </div>
       ) : (
         <>
