@@ -17,13 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import get_current_active_user
-from app.models.modules.office import LABELS, MODELS, MODULES, NAMESPACE
+from app.models.modules.office import LABELS, MODELS, MODULES, NAMESPACE, PERMS
 from app.models.user import User
 from app.services.super_settings import _role_slugs, flag, is_super_user
 
 router = APIRouter(prefix="/office", tags=["Back office"])
 
-BOOL_DEFAULT_FALSE = {"paid"}
+BOOL_DEFAULT_FALSE = {"paid", "acknowledged"}
 
 
 def _bad(msg: str):
@@ -35,7 +35,7 @@ async def _gate(module: str, write: bool, db: AsyncSession, user: User):
         raise HTTPException(404, "Unknown module.")
     if not await flag(db, user.org_id, f"module_{module}"):
         raise HTTPException(403, f"'{LABELS[module]}' has not been switched on by the Super User.")
-    perm = f"{NAMESPACE[module]}:{'write' if write else 'read'}"
+    perm = PERMS[module][1 if write else 0] if module in PERMS else f"{NAMESPACE[module]}:{'write' if write else 'read'}"
     if not user.has_permission(perm):
         raise HTTPException(403, f"Permission required: {perm}")
 
@@ -114,11 +114,39 @@ async def _coerce(db, module, resource, body: dict, org_id: str, partial: bool) 
         elif k.startswith("choice:"):
             if v not in k.split(":", 1)[1].split("|"):
                 _bad(f"'{c}' must be one of: {', '.join(k.split(':', 1)[1].split('|'))}.")
+        elif k.startswith("ext:"):
+            await _ext_get(db, k.split(":", 1)[1], str(v), org_id)
         elif k.startswith("ref:"):
             parent = k.split(":", 1)[1]
             await _get(db, module, parent, org_id, str(v))  # 404 if not this school's row
         out[c] = v
     return out
+
+
+async def _ext_get(db, kind: str, rid: str, org_id: str):
+    """A row in the school's own tables (pupil, club) that a back-office record points at."""
+    from app.models.modules.school import Club, Student
+    M = {"student": Student, "club": Club}[kind]
+    row = (await db.execute(select(M).where(M.id == rid, M.org_id == org_id, M.is_deleted == False))).scalar_one_or_none()  # noqa: E712
+    if row is None:
+        _bad(f"That {kind} was not found.")
+    return row
+
+
+async def _ext_names(db, module, resource, items: list[dict], org_id: str):
+    from app.models.modules.school import Club, Student
+    for c, (k, _r) in MODULES[module][resource].items():
+        if not k.startswith("ext:"):
+            continue
+        kind = k.split(":", 1)[1]
+        ids = {i[c] for i in items if i.get(c)}
+        if not ids:
+            continue
+        M = {"student": Student, "club": Club}[kind]
+        rows = (await db.execute(select(M).where(M.id.in_(ids), M.org_id == org_id))).scalars().all()
+        names = {r.id: (f"{r.first_name} {r.last_name}".strip() if kind == "student" else r.name) for r in rows}
+        for i in items:
+            i[f"{c}_name"] = names.get(i.get(c))
 
 
 def _lines_total(items) -> float:
@@ -374,6 +402,29 @@ async def _before_save(db, module, resource, data: dict, org_id: str, existing=N
         cap = float(await _flag_number(db, org_id, "max_imprest_top_up"))
         if cap > 0 and float(data.get("amount", getattr(existing, "amount", 0))) > cap:
             _bad(f"A single top-up can't be more than {cap:,.2f} (set by the Super User).")
+    if (module, resource) == ("clubattendance", "marks"):
+        sid = data.get("session_id", getattr(existing, "session_id", None))
+        stu = data.get("student_id", getattr(existing, "student_id", None))
+        if any(m.session_id == sid and m.student_id == stu and (existing is None or m.id != existing.id) for m in await _all(db, module, "marks", org_id)):
+            _bad("That pupil is already marked for this session.")
+    if (module, resource) == ("commbook", "entries"):
+        data.pop("author", None)
+        if existing is None:
+            data["author"] = user.full_name or user.email
+            data["direction"] = "school_to_home"
+            data.pop("acknowledged", None)
+            data.pop("reply", None)
+    if (module, resource) == ("whatsapp", "messages"):
+        digits = "".join(ch for ch in str(data.get("phone", getattr(existing, "phone", "")) or "") if ch.isdigit())
+        if len(digits) < 8:
+            _bad("Enter the phone number with country code, for example 2348012345678.")
+        data["phone"] = digits
+        data.pop("sent_by", None)
+        if existing is None:
+            data["sent_by"] = user.email
+            data["status"] = "queued"
+    if (module, resource) == ("storeappointments", "appointments"):
+        data.pop("requested_by", None)
     if (module, resource) == ("ledger", "accounts"):
         code = data.get("code")
         if code and any(a.code == code and (existing is None or a.id != existing.id) for a in await _all(db, "ledger", "accounts", org_id)):
@@ -440,6 +491,110 @@ def _defaults(module, resource, data: dict):
 
 
 # ── routes ──────────────────────────────────────────────────────────────────
+# ── Parent / pupil side ─────────────────────────────────────────────────────
+async def _my_students(db, user):
+    from app.routers.modules.school import _owned_student_ids
+    ids = await _owned_student_ids(db, user)
+    if ids is None:
+        raise HTTPException(403, "This page is for parents and pupils.")
+    return ids
+
+
+async def _flag_or_403(db, user, module):
+    if not await flag(db, user.org_id, f"module_{module}"):
+        raise HTTPException(403, f"'{LABELS[module]}' has not been switched on by the Super User.")
+
+
+@router.get("/commbook/mine")
+async def my_commbook(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
+    await _flag_or_403(db, user, "commbook")
+    ids = set(await _my_students(db, user))
+    rows = [r for r in await _all(db, "commbook", "entries", user.org_id) if r.student_id in ids]
+    out = [_out("commbook", "entries", r) for r in sorted(rows, key=lambda r: r.created_at or 0, reverse=True)]
+    await _ext_names(db, "commbook", "entries", out, user.org_id)
+    return {"items": out, "total": len(out)}
+
+
+@router.post("/commbook/mine", status_code=201)
+async def my_commbook_write(body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
+    await _flag_or_403(db, user, "commbook")
+    ids = set(await _my_students(db, user))
+    sid, msg = str(body.get("student_id", "")), str(body.get("message", "")).strip()
+    if sid not in ids:
+        raise HTTPException(403, "That is not your child.")
+    if not msg:
+        _bad("Write a message first.")
+    M = _model("commbook", "entries")
+    row = M(org_id=user.org_id, student_id=sid, entry_date=date_type.today(), category=str(body.get("category") or "general")
+            if str(body.get("category") or "general") in ("general", "homework", "behaviour", "health", "achievement", "reminder") else "general",
+            message=msg[:4000], direction="home_to_school", author=user.full_name or user.email, acknowledged=False)
+    db.add(row)
+    await db.commit()
+    return _out("commbook", "entries", row)
+
+
+@router.put("/commbook/mine/{rid}/ack")
+async def my_commbook_ack(rid: str, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
+    await _flag_or_403(db, user, "commbook")
+    ids = set(await _my_students(db, user))
+    row = await _get(db, "commbook", "entries", user.org_id, rid)
+    if row.student_id not in ids:
+        raise HTTPException(403, "That is not your child's entry.")
+    row.acknowledged = True
+    if str(body.get("reply") or "").strip():
+        row.reply = str(body["reply"]).strip()[:4000]
+    await db.commit()
+    return _out("commbook", "entries", row)
+
+
+@router.get("/parent/bills")
+async def parent_bills(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
+    """Fee invoices and shop purchases for the signed-in parent's (or pupil's own) children."""
+    from app.models.modules.finance import Invoice, StoreSale
+    from app.models.modules.school import Student, TuckshopPurchase
+    ids = await _my_students(db, user)
+    org = user.org_id
+    kids = (await db.execute(select(Student).where(Student.id.in_(ids), Student.org_id == org))).scalars().all() if ids else []
+    out = []
+    for k in kids:
+        inv = (await db.execute(select(Invoice).where(Invoice.org_id == org, Invoice.student_id == k.id, Invoice.is_deleted == False,  # noqa: E712
+                                                      Invoice.status != "draft"))).scalars().all()
+        sales = (await db.execute(select(StoreSale).where(StoreSale.org_id == org, StoreSale.student_id == k.id, StoreSale.is_deleted == False,  # noqa: E712
+                                                          StoreSale.status == "completed"))).scalars().all()
+        tuck = (await db.execute(select(TuckshopPurchase).where(TuckshopPurchase.org_id == org, TuckshopPurchase.student_id == k.id))).scalars().all()
+        out.append({"id": k.id, "name": f"{k.first_name} {k.last_name}".strip(),
+                    "invoices": [{"number": i.number, "date": i.invoice_date.isoformat() if i.invoice_date else None, "total": float(i.total or 0), "status": i.status}
+                                 for i in sorted(inv, key=lambda i: i.invoice_date or date_type.min, reverse=True)],
+                    "store": [{"reference": s_.reference, "date": s_.created_at.date().isoformat() if s_.created_at else None, "total": float(s_.total or 0)} for s_ in sales]
+                             + [{"reference": "Tuckshop", "date": t.created_at.date().isoformat() if t.created_at else None, "total": float(t.total_price or 0)} for t in tuck]})
+    return {"children": out}
+
+
+@router.get("/parent/store-appointments")
+async def my_store_appointments(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
+    await _flag_or_403(db, user, "storeappointments")
+    await _my_students(db, user)
+    rows = [r for r in await _all(db, "storeappointments", "appointments", user.org_id) if r.requested_by == user.email]
+    return {"items": [_out("storeappointments", "appointments", r) for r in sorted(rows, key=lambda r: r.appt_date or date_type.min, reverse=True)]}
+
+
+@router.post("/parent/store-appointments", status_code=201)
+async def book_store_appointment(body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
+    await _flag_or_403(db, user, "storeappointments")
+    await _my_students(db, user)
+    data = await _coerce(db, "storeappointments", "appointments", {"visitor": user.full_name or user.email, "purpose": body.get("purpose"),
+                         "appt_date": body.get("appt_date"), "appt_time": body.get("appt_time"), "phone": body.get("phone")}, user.org_id, partial=False)
+    if data["appt_date"] < date_type.today():
+        _bad("Pick today or a later date.")
+    data = _defaults("storeappointments", "appointments", data)
+    data["status"] = "booked"
+    await _before_save(db, "storeappointments", "appointments", data, user.org_id, user=user)
+    row = _model("storeappointments", "appointments")(org_id=user.org_id, requested_by=user.email, **data)
+    db.add(row)
+    await db.commit()
+    return _out("storeappointments", "appointments", row)
+
+
 @router.get("/{module}/schema")
 async def schema(module: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
     await _gate(module, False, db, user)
@@ -538,10 +693,12 @@ async def list_rows(module: str, resource: str, q: str | None = None, db: AsyncS
     _model(module, resource)
     rows = await _all(db, module, resource, user.org_id)
     out = [_out(module, resource, r) for r in sorted(rows, key=lambda r: r.created_at or 0, reverse=True)]
+    out = out[:500]
+    await _ext_names(db, module, resource, out, user.org_id)
     if q:
         ql = q.lower()
         out = [o for o in out if any(ql in str(v).lower() for v in o.values())]
-    return {"items": out[:500], "total": len(out)}
+    return {"items": out, "total": len(out)}
 
 
 @router.get("/{module}/{resource}/export")

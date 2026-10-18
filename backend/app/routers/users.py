@@ -222,6 +222,30 @@ async def invite_new_user(
     return UserResponse.from_orm_with_roles(user, loaded_roles=list(user.roles))
 
 
+@router.get("/deleted", dependencies=[_can_delete])
+async def list_deleted_users(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    rows = (await db.execute(select(User).where(User.org_id == current_user.org_id, User.is_deleted == True)  # noqa: E712
+                             .order_by(User.deleted_at.desc()))).scalars().all()
+    return {"items": [{"id": u.id, "full_name": u.full_name, "email": u.email,
+                       "deleted_at": u.deleted_at.isoformat() if u.deleted_at else None} for u in rows], "total": len(rows)}
+
+
+@router.post("/{user_id}/restore", dependencies=[_can_delete])
+async def restore_user(user_id: str, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    user = (await db.execute(select(User).where(User.id == user_id, User.org_id == current_user.org_id, User.is_deleted == True))).scalar_one_or_none()  # noqa: E712
+    if not user:
+        raise HTTPException(status_code=404, detail="No deleted user with that id.")
+    clash = (await db.execute(select(User.id).where(User.org_id == current_user.org_id, User.email == user.email, User.is_deleted == False))).first()  # noqa: E712
+    if clash:
+        raise HTTPException(status_code=409, detail="Another active user already uses this email. Change or remove that one first.")
+    user.is_deleted = False
+    user.deleted_at = None
+    await log_action(db, AuditAction.USER_UPDATED, current_user.org_id, actor=current_user, resource_type="User", resource_id=user.id,
+                     resource_label=user.full_name, severity="warning", request=request)
+    await db.commit()
+    return {"id": user.id, "restored": True}
+
+
 @router.get("/{user_id}", response_model=UserResponse, dependencies=[_can_read])
 async def get_user(
     user_id: str,

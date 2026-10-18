@@ -266,6 +266,12 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/office/ledger", permission: "finance_admin:read" },
   { prefix: "/dashboard/modules/office/imprest", permission: "finance_admin:read" },
   { prefix: "/dashboard/modules/office/debtmemo", permission: "finance_admin:read" },
+  { prefix: "/dashboard/modules/office/customers", permission: "school_admin:read" },
+  { prefix: "/dashboard/modules/office/whatsapp", permission: "school_admin:read" },
+  { prefix: "/dashboard/modules/office/clubattendance", permission: "school:students:read" },
+  { prefix: "/dashboard/modules/office/commbook", permission: "school:students:read" },
+  { prefix: "/dashboard/modules/school/students/unassigned", permission: "school:students:write" },
+  { prefix: "/dashboard/users/deleted", permission: "users:delete" },
 
   // ── Batch 1: People & HR ───────────────────────────────────────────────
   // Parents Directory: guardian PII → staff-only. `school:parents:read` is

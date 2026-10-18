@@ -3,7 +3,7 @@
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { Download, Loader2, Lock, Pencil, Plus, Printer, RefreshCw, Trash2, X } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, downloadCsv } from "@/lib/api";
 import { toast } from "sonner";
 import { useOfficeDelete, useOfficeRows, useOfficeSave, useOfficeSchema, useOfficeSummary } from "@/hooks/useOffice";
@@ -84,6 +84,25 @@ function LinesEditor({ value, onChange, kind, accounts }: { value: any[]; onChan
   );
 }
 
+function ExtSelect({ kind, value, onChange }: { kind: "student" | "club"; value: string; onChange: (v: string) => void }) {
+  const [q, setQ] = useState("");
+  const { data } = useQuery({
+    queryKey: ["office-ext", kind, q],
+    queryFn: () => kind === "club" ? api.get("/clubs").then((r) => r.data) : api.get("/school/students", { params: { search: q || undefined, page_size: 30 } }).then((r) => r.data),
+  });
+  const items: any[] = Array.isArray(data) ? data : data?.items ?? [];
+  const label = (r: any) => r.name ?? (`${r.first_name ?? ""} ${r.last_name ?? ""}`.trim() || r.id.slice(0, 6));
+  return (
+    <div className="space-y-1">
+      {kind === "student" && <input className="input" placeholder="Search pupil by name" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search pupil" />}
+      <select className="input" value={value ?? ""} onChange={(e) => onChange(e.target.value)} aria-label={kind === "club" ? "Club" : "Pupil"}>
+        <option value="">Select…</option>
+        {items.map((r) => <option key={r.id} value={r.id}>{label(r)}</option>)}
+      </select>
+    </div>
+  );
+}
+
 function RefSelect({ module, resource, value, onChange }: { module: string; resource: string; value: string; onChange: (v: string) => void }) {
   const { data } = useOfficeRows(module, resource);
   return (
@@ -124,6 +143,7 @@ function Form({ module, resource, cols, initial, onDone }: { module: string; res
                 {m.kind.split(":")[1].split("|").map((o) => <option key={o} value={o}>{title(o)}</option>)}
               </select>
             )
+            : m.kind.startsWith("ext:") ? <ExtSelect kind={m.kind.split(":")[1] as "student" | "club"} value={v[c]} onChange={(x) => set(c, x)} />
             : m.kind.startsWith("ref:") ? <RefSelect module={module} resource={m.kind.split(":")[1]} value={v[c]} onChange={(x) => set(c, x)} />
             : <input className="input" value={v[c] ?? ""} onChange={(e) => set(c, e.target.value)} />}
         </div>
@@ -144,7 +164,8 @@ function Table({ module, resource, cols, canWrite }: { module: string; resource:
   const act = useOfficeSave(module, resource);
   const actions = ACTIONS[`${module}/${resource}`] ?? [];
   const immutable = module === "ledger" && resource === "journals";
-  const shown = Object.entries(cols).filter(([, m]) => m.kind !== "json" && m.kind !== "text" && !m.kind.startsWith("ref:")).map(([c]) => c);
+  const shown = Object.entries(cols).filter(([, m]) => m.kind !== "json" && m.kind !== "text" && !m.kind.startsWith("ref:")).map(([c, m]) => (m.kind.startsWith("ext:") ? `${c}_name` : c));
+  const waLink = (r: any) => `https://wa.me/${String(r.phone ?? "").replace(/\D/g, "")}?text=${encodeURIComponent(r.message ?? "")}`;
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-3 print:hidden">
@@ -163,6 +184,10 @@ function Table({ module, resource, cols, canWrite }: { module: string; resource:
                 <tr key={r.id} className="border-t">
                   {shown.map((c) => <td key={c} className="p-2">{typeof r[c] === "boolean" ? (r[c] ? "Yes" : "No") : MONEY_COLS.has(c) ? money(r[c]) : String(r[c] ?? "")}</td>)}
                   <td className="p-2 text-right whitespace-nowrap">
+                    {module === "whatsapp" && resource === "messages" && (
+                      <a href={waLink(r)} target="_blank" rel="noreferrer" onClick={() => canWrite && r.status === "queued" && act.mutate({ id: r.id, body: { status: "opened" } })}
+                        className="px-2 py-0.5 mr-1 rounded border text-xs font-semibold text-emerald-700 border-emerald-300">Open in WhatsApp</a>
+                    )}
                     {canWrite && actions.filter((a) => a.when === (r.status ?? "")).map((a) => (
                       <button key={a.label} onClick={() => act.mutate({ id: r.id, body: { status: a.to } }, { onSuccess: () => toast.success(`${a.label}: done.`), onError: (e: any) => toast.error(typeof e?.response?.data?.detail === "string" ? e.response.data.detail : "Not allowed.") })}
                         className="px-2 py-0.5 mr-1 rounded border text-xs font-semibold text-emerald-700 border-emerald-300">{a.label}</button>

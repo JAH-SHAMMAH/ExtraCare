@@ -247,3 +247,81 @@ async def test_empowerment_budget_and_imprest_topup_cap(http, db, org):
     big = {"fund_id": f, "kind": "replenish", "entry_date": "2026-10-02", "description": "Top up", "amount": 50000}
     assert (await http.post("/api/v1/office/imprest/entries", headers=h, json=big)).status_code == 422
     assert (await http.post("/api/v1/office/imprest/entries", headers=h, json={**big, "amount": 20000})).status_code == 201
+
+
+# ── Customers, WhatsApp, club attendance, communication book, parent side, users ──
+from tests.test_parent_report_access import family  # noqa: E402,F401
+
+
+async def _flags(db, org, *names):
+    org.settings = {**(org.settings or {}), "super": {f"module_{m}": True for m in names}}
+    flag_modified(org, "settings")
+    await db.commit()
+
+
+async def test_commbook_parent_side_is_scoped_to_own_child(http, db, org, family):
+    f = family
+    await _flags(db, org, "commbook")
+    staff = await _preset_user(db, org, "teacher")
+    r = await http.post("/api/v1/office/commbook/entries", headers=_bearer(staff),
+                        json={"student_id": f["mine"].id, "entry_date": "2026-10-01", "message": "Homework done", "direction": "home_to_school"})
+    assert r.status_code == 201 and r.json()["direction"] == "school_to_home"
+    p = _bearer(f["parent"])
+    mine = (await http.get("/api/v1/office/commbook/mine", headers=p)).json()
+    assert mine["total"] == 1 and mine["items"][0]["student_id_name"] == "Mine Child"
+    a = await http.put(f"/api/v1/office/commbook/mine/{mine['items'][0]['id']}/ack", headers=p, json={"reply": "Thanks"})
+    assert a.json()["acknowledged"] is True and a.json()["reply"] == "Thanks"
+    assert (await http.post("/api/v1/office/commbook/mine", headers=p, json={"student_id": f["theirs"].id, "message": "hi"})).status_code == 403
+    assert (await http.post("/api/v1/office/commbook/mine", headers=p, json={"student_id": f["mine"].id, "message": "hi"})).status_code == 201
+    assert (await http.get("/api/v1/office/commbook/mine", headers=_bearer(staff))).status_code == 403
+
+
+async def test_parent_bills_and_store_appointment_booking(http, db, org, family):
+    f = family
+    p = _bearer(f["parent"])
+    bills = await http.get("/api/v1/office/parent/bills", headers=p)
+    assert bills.status_code == 200 and [c["name"] for c in bills.json()["children"]] == ["Mine Child"]
+    assert (await http.get("/api/v1/office/parent/store-appointments", headers=p)).status_code == 403  # switched off
+    await _flags(db, org, "storeappointments")
+    body = {"purpose": "Uniform", "appt_date": "2099-01-05", "appt_time": "10:00", "phone": "0801"}
+    ok = await http.post("/api/v1/office/parent/store-appointments", headers=p, json=body)
+    assert ok.status_code == 201 and ok.json()["status"] == "booked"
+    assert (await http.get("/api/v1/office/parent/store-appointments", headers=p)).json()["items"][0]["purpose"] == "Uniform"
+    assert (await http.get("/api/v1/office/parent/bills", headers=_bearer(await _preset_user(db, org, "super_user")))).status_code == 403
+
+
+async def test_whatsapp_customers_and_club_attendance(http, db, org, family):
+    f = family
+    u = await _preset_user(db, org, "super_user")
+    await _flags(db, org, "whatsapp", "customers", "clubattendance")
+    h = _bearer(u)
+    bad = await http.post("/api/v1/office/whatsapp/messages", headers=h, json={"recipient": "A", "phone": "12", "message": "hi"})
+    assert bad.status_code == 422
+    ok = await http.post("/api/v1/office/whatsapp/messages", headers=h, json={"recipient": "A", "phone": "+234 801 234 5678", "message": "hi"})
+    assert ok.status_code == 201 and ok.json()["phone"] == "2348012345678" and ok.json()["status"] == "queued"
+    assert (await http.post("/api/v1/office/customers/directory", headers=h, json={"name": "Mr Bello"})).status_code == 201
+    from app.models.modules.school import Club
+    import uuid
+    club = Club(id=str(uuid.uuid4()), name="Chess", org_id=org.id)
+    db.add(club); await db.commit()
+    s = await http.post("/api/v1/office/clubattendance/sessions", headers=h, json={"club_id": club.id, "session_date": "2026-10-02"})
+    assert s.status_code == 201
+    m = {"session_id": s.json()["id"], "student_id": f["mine"].id, "present": True}
+    assert (await http.post("/api/v1/office/clubattendance/marks", headers=h, json=m)).status_code == 201
+    assert (await http.post("/api/v1/office/clubattendance/marks", headers=h, json=m)).status_code == 422  # no duplicate
+
+
+async def test_unassigned_students_and_deleted_users_restore(http, db, org, family):
+    f = family
+    u = await _preset_user(db, org, "super_user")
+    h = _bearer(u)
+    f["mine"].class_id = None
+    await db.commit()
+    r = await http.get("/api/v1/school/students", headers=h, params={"unassigned": True})
+    assert [s["first_name"] for s in r.json()["items"]] == ["Mine"]
+    victim = await _preset_user(db, org, "teacher")
+    assert (await http.delete(f"/api/v1/users/{victim.id}", headers=h)).status_code in (200, 204)
+    assert victim.id in [x["id"] for x in (await http.get("/api/v1/users/deleted", headers=h)).json()["items"]]
+    assert (await http.post(f"/api/v1/users/{victim.id}/restore", headers=h)).status_code == 200
+    assert (await http.get("/api/v1/users/deleted", headers=h)).json()["total"] == 0
+    assert (await http.get("/api/v1/users/deleted", headers=_bearer(f["parent"]))).status_code == 403

@@ -13,15 +13,18 @@ from app.models.base import Base, SoftDeleteMixin, TenantMixin, TimestampMixin, 
 # module -> permission namespace guarding it
 NAMESPACE = {
     "restaurant": "school_admin", "livestock": "school_admin", "rentals": "school_admin", "funfair": "school_admin",
-    "suppliers": "finance_admin", "empowerment": "school_admin", "serviceinvoices": "finance_admin", "offlineinvoices": "finance_admin",
+    "suppliers": "finance_admin", "empowerment": "school_admin", "customers": "school_admin", "whatsapp": "school_admin",
+    "clubattendance": "school_admin", "commbook": "school_admin", "serviceinvoices": "finance_admin", "offlineinvoices": "finance_admin",
     "spa": "school_admin", "storeappointments": "school_admin",
     "procurement": "finance_admin", "ledger": "finance_admin", "imprest": "finance_admin", "debtmemo": "finance_admin",
 }
+# modules whose staff need different permissions from their namespace (read, write)
+PERMS = {"commbook": ("school:students:read", "school:reports:write"), "clubattendance": ("school:students:read", "school:clubs:write")}
 LABELS = {
     "restaurant": "Restaurant", "procurement": "Procurement", "livestock": "Livestock", "rentals": "Rentals",
     "funfair": "Fun Fair", "ledger": "General Ledger", "imprest": "Imprest", "debtmemo": "Debt Memo",
     "suppliers": "Suppliers", "serviceinvoices": "Service Invoices", "offlineinvoices": "Offline Invoices",
-    "spa": "Spa Services", "empowerment": "Empowerment", "storeappointments": "Store Appointment Manager",
+    "spa": "Spa Services", "customers": "All Customers", "whatsapp": "WhatsApp", "clubattendance": "Club Attendance", "commbook": "Communication Book", "empowerment": "Empowerment", "storeappointments": "Store Appointment Manager",
 }
 
 # resource -> {col: (kind, required)}; first-listed order is the display order.
@@ -83,6 +86,25 @@ MODULES: dict[str, dict[str, dict[str, tuple[str, bool]]]] = {
         "support": {"beneficiary_id": ("ref:beneficiaries", True), "kind": ("choice:stipend|equipment|grant|materials|other", True), "support_date": ("date", True),
                     "amount": ("float", True), "note": ("text", False)},
     },
+    "customers": {
+        "directory": {"name": ("str", True), "type": ("choice:parent|staff|walk_in|company|other", False), "phone": ("str", False), "email": ("str", False),
+                      "address": ("text", False), "status": ("choice:active|inactive", False), "notes": ("text", False)},
+    },
+    "whatsapp": {
+        "templates": {"name": ("str", True), "body": ("text", True)},
+        "messages": {"recipient": ("str", True), "phone": ("str", True), "message": ("text", True),
+                     "status": ("choice:queued|opened|sent|failed", False), "sent_by": ("str", False)},
+    },
+    "clubattendance": {
+        "sessions": {"club_id": ("ext:club", True), "session_date": ("date", True), "topic": ("str", False), "note": ("text", False)},
+        "marks": {"session_id": ("ref:sessions", True), "student_id": ("ext:student", True), "present": ("bool", False), "note": ("str", False)},
+    },
+    "commbook": {
+        "entries": {"student_id": ("ext:student", True), "entry_date": ("date", True),
+                    "category": ("choice:general|homework|behaviour|health|achievement|reminder", False), "message": ("text", True),
+                    "direction": ("choice:school_to_home|home_to_school", False), "author": ("str", False),
+                    "acknowledged": ("bool", False), "reply": ("text", False)},
+    },
     "debtmemo": {
         "memos": {"debtor": ("str", True), "debtor_type": ("choice:parent|staff|supplier|other", False), "amount": ("float", True), "reason": ("str", True),
                   "memo_date": ("date", True), "due_date": ("date", False), "status": ("choice:open|partly_paid|settled|written_off", False)},
@@ -112,7 +134,8 @@ MODULES: dict[str, dict[str, dict[str, tuple[str, bool]]]] = {
     },
     "storeappointments": {
         "appointments": {"visitor": ("str", True), "phone": ("str", False), "purpose": ("str", False), "appt_date": ("date", True), "appt_time": ("str", True),
-                         "staff_member": ("str", False), "status": ("choice:booked|attended|cancelled|no_show", False), "note": ("text", False)},
+                         "staff_member": ("str", False), "status": ("choice:booked|attended|cancelled|no_show", False), "note": ("text", False),
+                         "requested_by": ("str", False)},
     },
 }
 
@@ -125,7 +148,7 @@ for _m, _res in MODULES.items():
     for _r, _cols in _res.items():
         attrs = {"__tablename__": f"off_{_m}_{_r}", "org_id": Column(String(36), nullable=False, index=True)}
         for _c, (_k, _req) in _cols.items():
-            if _k.startswith("ref:"):
+            if _k.startswith(("ref:", "ext:")):
                 attrs[_c] = Column(String(36), index=True)
             elif _k.startswith("choice:"):
                 attrs[_c] = Column(String(30))

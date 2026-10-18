@@ -21,6 +21,12 @@ export const FLAG_ROUTES: FlagRoute[] = [
   { prefix: "/dashboard/modules/office/ledger", flag: "module_ledger", when: true, label: "General Ledger module" },
   { prefix: "/dashboard/modules/office/imprest", flag: "module_imprest", when: true, label: "Imprest module" },
   { prefix: "/dashboard/modules/office/debtmemo", flag: "module_debtmemo", when: true, label: "Debt Memo module" },
+  { prefix: "/dashboard/modules/office/customers", flag: "module_customers", when: true, label: "All Customers module" },
+  { prefix: "/dashboard/modules/office/whatsapp", flag: "module_whatsapp", when: true, label: "WhatsApp module" },
+  { prefix: "/dashboard/modules/office/clubattendance", flag: "module_clubattendance", when: true, label: "Club Attendance module" },
+  { prefix: "/dashboard/modules/office/commbook", flag: "module_commbook", when: true, label: "Communication Book module" },
+  { prefix: "/dashboard/communication-book", flag: "module_commbook", when: true, label: "Communication Book module" },
+  { prefix: "/dashboard/my-children/store-appointments", flag: "module_storeappointments", when: true, label: "Store Appointment Manager module" },
 ];
 
 export function isSuperUser(user: { primary_role?: string; permissions?: string[] } | null | undefined): boolean {

@@ -38,6 +38,10 @@ export const CORE_NAV = [
   { href: "/dashboard/my-children", label: "My Children", icon: UserCircle, roleOnly: "parent" as ActiveRole },
   { href: "/dashboard/my-children/attendance", label: "Attendance", icon: ClipboardList, roleOnly: "parent" as ActiveRole },
   { href: "/dashboard/my-children/payments", label: "Pay Fees", icon: BadgeDollarSign, roleOnly: "parent" as ActiveRole },
+  { href: "/dashboard/my-children/bills", label: "Bills & Stores", icon: BadgeDollarSign, roleOnly: "parent" as ActiveRole },
+  { href: "/dashboard/my-children/store-appointments", label: "Store Appointments", icon: Calendar, roleOnly: "parent" as ActiveRole },
+  { href: "/dashboard/communication-book", label: "Communication Book", icon: ClipboardList, roleOnly: "parent" as ActiveRole },
+  { href: "/dashboard/communication-book", label: "Communication Book", icon: ClipboardList, roleOnly: "student" as ActiveRole },
   { href: "/dashboard/my-timetable", label: "My Timetable", icon: Calendar, roleOnly: "student" as ActiveRole },
   { href: "/dashboard/my-exams", label: "My Exams", icon: MonitorCheck, roleOnly: "student" as ActiveRole },
   { href: "/dashboard/my-live-classes", label: "My Live Classes", icon: Radio, roleOnly: "student" as ActiveRole },
@@ -372,6 +376,7 @@ export const MODULE_SECTIONS: ModuleSection[] = [
       // Batch 2 (Admissions & Enrollment) — shipped. Permissions from the access
       // map: admissions/entrance-exams → school:admissions:read; promotion/
       // transfer/pickup → school:students:write.
+      { href: "/dashboard/modules/school/students/unassigned", label: "Unassigned Students", icon: UserX },
       { href: "/dashboard/modules/school/students/pickup", label: "Manage Students Pickup", icon: ShieldCheck },
       { href: "/dashboard/modules/school/admissions", label: "Admissions & Enquiries", icon: Contact },
       { href: "/dashboard/modules/school/admissions/appointments", label: "Enquiry Appointment", icon: CalendarClock },
@@ -580,6 +585,10 @@ export const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/office/ledger", label: "General Ledger", icon: Package },
       { href: "/dashboard/modules/office/imprest", label: "Imprest", icon: Package },
       { href: "/dashboard/modules/office/debtmemo", label: "Debt Memo", icon: Package },
+      { href: "/dashboard/modules/office/customers", label: "All Customers", icon: Package },
+      { href: "/dashboard/modules/office/whatsapp", label: "WhatsApp", icon: Package },
+      { href: "/dashboard/modules/office/clubattendance", label: "Club Attendance", icon: Package },
+      { href: "/dashboard/modules/office/commbook", label: "Communication Book", icon: Package },
     ],
   },
   {
@@ -670,6 +679,8 @@ export const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/student-result-history", label: "Student Result History", icon: FileText },
       { href: "/dashboard/modules/school/result-backup", label: "Result Backup Helper", icon: FolderOpen },
       { href: "/dashboard/users", label: "Manage User Roles & Password", icon: KeyRound },
+      { href: "/dashboard/users/new", label: "Create Staff / Admin", icon: UserCog },
+      { href: "/dashboard/users/deleted", label: "Manage Deleted Users", icon: UserX },
       { href: "/dashboard/modules/school/biometric", label: "Manage Biometric", icon: Activity },
       { href: "/dashboard/modules/school/custom-fields", label: "Manage Custom Field", icon: FolderOpen },
     ],

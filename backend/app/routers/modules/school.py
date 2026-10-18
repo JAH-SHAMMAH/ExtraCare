@@ -210,6 +210,7 @@ async def list_students(
     class_id: str | None = None,
     section_id: str | None = None,  # managed report section (level) — filters via class
     status: str | None = None,  # active | inactive | (None/all)
+    unassigned: bool = False,  # pupils with no class yet
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -228,6 +229,8 @@ async def list_students(
     )
     if owned is not None:
         query = query.where(Student.id.in_(owned))
+    if unassigned:
+        query = query.where(Student.class_id.is_(None))
     if search:
         term = f"%{search}%"
         query = query.where(
