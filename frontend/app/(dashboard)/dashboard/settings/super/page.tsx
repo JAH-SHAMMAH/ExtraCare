@@ -13,6 +13,7 @@ import { ChecklistTab } from "@/components/super/ChecklistTab";
 import { DocCategoriesTab } from "@/components/super/DocCategoriesTab";
 import { PatternTab } from "@/components/super/PatternTab";
 import { NotificationsTab } from "@/components/super/NotificationsTab";
+import { ImagesTab } from "@/components/super/ImagesTab";
 import { RolePermsTab } from "@/components/super/RolePermsTab";
 import { ModuleAccessTab } from "@/components/super/ModuleAccessTab";
 
@@ -20,7 +21,7 @@ const GENERAL_TABS = ["General", "Themes", "Module Manager", "Module Permissions
 const SUB_TABS = [
   "School Settings", "School Information", "Module Re-order", "Password Reset Manager", "Payment Security",
   "Reg. Number Pattern", "Staff ID Pattern", "Email Pattern", "Student Email Pattern", "Student Documents",
-  "Entrance Exam Subject", "Full Name Format and Order", "Student Dashboard Settings", "Teacher Dashboard Settings",
+  "Entrance Exam Subject", "Full Name Format and Order", "Student Dashboard Settings", "Teacher Dashboard Settings", "School Images",
 ];
 
 // Tabs that are managed on pages the app already has.
@@ -125,6 +126,9 @@ export default function SuperSettingsPage() {
           </div>
           {sub === "Student Dashboard Settings" ? <ChecklistTab title="Student Dashboard Settings" structKey="student_dashboard" items={meta?.student_dashboard_items ?? []} server={sv?.student_dashboard} />
           : sub === "Teacher Dashboard Settings" ? <ChecklistTab title="Teacher Dashboard Settings" structKey="teacher_dashboard" items={meta?.teacher_dashboard_items ?? []} server={sv?.teacher_dashboard} />
+          : sub === "School Images" ? <ImagesTab fields={fields.filter((f) => f.tab === "School Images")} values={values} saved={data?.values ?? {}}
+              onChange={(k, v) => setEdits((e) => (v === data?.values?.[k] ? Object.fromEntries(Object.entries(e).filter(([x]) => x !== k)) : { ...e, [k]: v }))}
+              onSave={onSave} dirty={dirty} saving={save.isPending} />
           : sub === "Student Documents" ? <DocCategoriesTab server={sv?.doc_categories} />
           : sub === "Reg. Number Pattern" ? <PatternTab title="Reg. Number Pattern" patternKey="reg_number" server={sv?.patterns} />
           : sub === "Staff ID Pattern" ? <PatternTab title="Staff ID Pattern" patternKey="staff_id" server={sv?.patterns} />

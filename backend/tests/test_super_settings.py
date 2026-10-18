@@ -145,3 +145,26 @@ async def test_class_attendance_push_switch_stops_the_inbox_item(db, org):
     assert out is None
     out2 = await n.notify(org_id=org.id, user_id=None, type="system", title="y", session=db)
     assert out2 is not None
+
+
+def _png(w, h):
+    import io
+    from PIL import Image
+    b = io.BytesIO()
+    Image.new("RGB", (w, h), (20, 140, 60)).save(b, "PNG")
+    return b.getvalue()
+
+
+async def test_school_images_enforce_minimum_size_and_save(http, people, monkeypatch):
+    async def fake_save(org_id, kind, filename, content, content_type=""):
+        return "/uploads/x/branding/logo.png"
+    monkeypatch.setattr("app.services.storage.save_upload", fake_save)
+    h = _bearer(people["super"])
+    small = await http.post(f"{B}/images/main_logo", headers=h, files={"file": ("a.png", _png(50, 50), "image/png")})
+    assert small.status_code == 422 and "113x112" in small.json()["detail"]
+    ok = await http.post(f"{B}/images/main_logo", headers=h, files={"file": ("a.png", _png(120, 120), "image/png")})
+    assert ok.status_code == 200 and ok.json()["url"].startswith("/uploads/")
+    assert (await http.post(f"{B}/images/main_logo", headers=h, files={"file": ("a.txt", b"hi", "text/plain")})).status_code == 422
+    assert (await http.post(f"{B}/images/main_logo", headers=_bearer(people["admin"]), files={"file": ("a.png", _png(120, 120), "image/png")})).status_code == 403
+    assert (await http.put(B, json={"values": {"main_logo": ok.json()["url"]}}, headers=h)).json()["values"]["main_logo"] == ok.json()["url"]
+    assert (await http.put(B, json={"values": {"main_logo": "javascript:alert(1)"}}, headers=h)).status_code == 422

@@ -51,6 +51,17 @@ _f("school_motto", _I, "School Motto", "text", "", section=_I)
 _f("calendar_url", _I, "Calendar URL", "text", "", section=_I)
 _f("play_store_url", _I, "Google Play Store URL", "text", "", section=_I)
 
+# ── School Images (uploaded on the School Images tab; the value is the image address) ──
+IMAGE_SPECS = {  # key -> (min width, min height)
+    "login_image": (1389, 920),
+    "main_logo": (113, 112),
+    "general_logo": (200, 40),
+}
+_IM = "School Images"
+_f("login_image", _IM, "Login Page Image", "image", "", section=_IM)
+_f("main_logo", _IM, "Main Logo", "image", "", section=_IM)
+_f("general_logo", _IM, "General Logo", "image", "", section=_IM)
+
 # ── School Settings: profile defaults ────────────────────────────────────────
 _P = "Profile Defaults"
 _f("school_domain", "School Settings", "School Domain Name", "text", "",
@@ -157,6 +168,11 @@ def _coerce(field: dict, value: Any) -> Any:
         if value not in opts:
             raise HTTPException(422, detail=f"'{field['label']}' must be one of: {', '.join(opts)}.")
         return value
+    if kind == "image":
+        v = str(value or "").strip()
+        if v and not (v.startswith("/uploads/") or v.startswith("https://")):
+            raise HTTPException(422, detail=f"'{field['label']}' must be an uploaded image.")
+        return v[:500]
     # text / password
     return str(value if value is not None else "").strip()[:500]
 

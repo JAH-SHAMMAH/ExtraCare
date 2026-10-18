@@ -2,7 +2,9 @@
 flags are readable by any signed-in user so the UI can hide switched-off pages."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+import io
+
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -45,6 +47,30 @@ async def write(body: dict, request: Request, db: AsyncSession = Depends(get_db)
                      resource_type="SuperSettings", resource_id=user.org_id,
                      resource_label=f"Super settings: {changed or 'secret fields'}", request=request)
     return {"values": vals}
+
+
+@router.post("/images/{key}")
+async def upload_image(key: str, file: UploadFile = File(...), user: User = Depends(_must_be_super)):
+    """Check a logo/picture against the minimum size, store it, and return its address.
+    The address is saved with the rest of the settings (Save Change)."""
+    from PIL import Image
+    from app.services.storage import save_upload
+    if key not in ss.IMAGE_SPECS:
+        raise HTTPException(404, detail="Unknown image.")
+    if (file.content_type or "") not in ("image/png", "image/jpeg", "image/webp"):
+        raise HTTPException(422, detail="Use a PNG, JPG or WebP image.")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(422, detail="The image is bigger than 5 MB.")
+    try:
+        w, h = Image.open(io.BytesIO(data)).size
+    except Exception:
+        raise HTTPException(422, detail="That file is not a valid image.")
+    mw, mh = ss.IMAGE_SPECS[key]
+    if w < mw or h < mh:
+        raise HTTPException(422, detail=f"The image is {w}x{h}px. It should not be less than {mw}x{mh}px.")
+    url = await save_upload(user.org_id, "branding", file.filename, data, file.content_type or "")
+    return {"url": url, "width": w, "height": h}
 
 
 # ── Structured settings ──────────────────────────────────────────────────────
