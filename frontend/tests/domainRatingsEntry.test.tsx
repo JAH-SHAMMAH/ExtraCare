@@ -47,7 +47,7 @@ describe("DomainRatingsEntry", () => {
     };
     const { container } = render(<QueryClientProvider client={new QueryClient()}><DomainRatingsEntry classId="c" termId="t" canWrite /></QueryClientProvider>);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "s1" } });
-    fireEvent.change(screen.getByPlaceholderText(/What this child can do/), { target: { value: "Writes her name" } });
+    fireEvent.change(screen.getByPlaceholderText(/achievement for this goal/), { target: { value: "Writes her name" } });
     fireEvent.change(container.querySelector('input[type="file"]') as HTMLInputElement,
       { target: { files: [new File(["x"], "w.jpg", { type: "image/jpeg" })] } });
     await waitFor(() => expect(container.querySelector('img[src="https://cdn.example/p.jpg"]')).toBeTruthy());

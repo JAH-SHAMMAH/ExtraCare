@@ -128,10 +128,11 @@ export function DomainRatingsEntry({ classId, termId, canWrite }: { classId: str
                   <div key={d.domain_id} className="grid md:grid-cols-[1fr_160px] gap-3">
                     <div>
                       <label className="text-xs font-bold uppercase text-slate-600">ELG {n} · {d.name}</label>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-2">Achievement</p>
                       <textarea
                         value={c.comment ?? ""} disabled={!canWrite} rows={3}
                         onChange={(e) => edit(studentId, d.domain_id, { comment: e.target.value })}
-                        placeholder="What this child can do now…"
+                        placeholder="Write this child's achievement for this goal…"
                         className="input w-full mt-1" />
                       {d.options?.length > 0 && (
                         <select value={c.rating ?? ""} disabled={!canWrite}
