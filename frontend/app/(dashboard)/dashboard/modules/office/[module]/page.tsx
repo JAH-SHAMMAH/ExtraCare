@@ -2,7 +2,9 @@
 
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { Loader2, Lock, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Download, Loader2, Lock, Pencil, Plus, Printer, RefreshCw, Trash2, X } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { api, downloadCsv } from "@/lib/api";
 import { toast } from "sonner";
 import { useOfficeDelete, useOfficeRows, useOfficeSave, useOfficeSchema, useOfficeSummary } from "@/hooks/useOffice";
 import { cn } from "@/lib/utils";
@@ -98,7 +100,7 @@ function Form({ module, resource, cols, initial, onDone }: { module: string; res
   };
   return (
     <form onSubmit={submit} className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 grid sm:grid-cols-2 gap-3">
-      {Object.entries(cols).filter(([c]) => c !== "total").map(([c, m]) => (
+      {Object.entries(cols).filter(([c]) => !["total", "approved_by", "requested_by"].includes(c)).map(([c, m]) => (
         <div key={c} className={cn(m.kind === "json" || m.kind === "text" ? "sm:col-span-2" : "")}>
           <label className="label">{title(c.replace(/_id$/, ""))}{m.required && " *"}</label>
           {m.kind === "json" ? <LinesEditor kind={c === "lines" ? "lines" : "items"} value={v[c] ?? []} onChange={(x) => set(c, x)} accounts={accounts.data?.items ?? []} />
@@ -133,8 +135,10 @@ function Table({ module, resource, cols, canWrite }: { module: string; resource:
   const shown = Object.entries(cols).filter(([, m]) => m.kind !== "json" && m.kind !== "text" && !m.kind.startsWith("ref:")).map(([c]) => c);
   return (
     <div>
-      <div className="flex flex-wrap gap-2 mb-3">
+      <div className="flex flex-wrap gap-2 mb-3 print:hidden">
         <input className="input max-w-xs" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
+        <button onClick={() => downloadCsv(`/office/${module}/${resource}/export`, undefined, `${module}-${resource}.csv`).catch(() => toast.error("Could not export."))} className="btn-secondary gap-1"><Download size={15} /> Export CSV</button>
+        <button onClick={() => window.print()} className="btn-secondary gap-1"><Printer size={15} /> Print</button>
         {canWrite && <button onClick={() => setForm({})} className="btn-primary gap-1"><Plus size={15} /> Add {title(resource).replace(/s$/, "")}</button>}
       </div>
       {form && <Form module={module} resource={resource} cols={cols} initial={form.row} onDone={() => setForm(null)} />}
@@ -161,6 +165,20 @@ function Table({ module, resource, cols, canWrite }: { module: string; resource:
   );
 }
 
+function SyncButton() {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try {
+      const r = (await api.post("/office/ledger/sync")).data;
+      toast.success(r.journals_added ? `Added ${r.journals_added} journal(s) from fees and payroll.` : "Already up to date.");
+      qc.invalidateQueries({ queryKey: ["office", "ledger"] });
+    } catch { toast.error("Could not sync."); } finally { setBusy(false); }
+  };
+  return <button onClick={run} disabled={busy} className="btn-secondary gap-1 print:hidden"><RefreshCw size={15} className={busy ? "animate-spin" : ""} /> Sync from fees &amp; payroll</button>;
+}
+
 export default function OfficeModulePage() {
   const { module } = useParams<{ module: string }>();
   const { data: schema, isLoading, isError } = useOfficeSchema(module);
@@ -178,7 +196,10 @@ export default function OfficeModulePage() {
   const active = tab || names[0];
   return (
     <div className="p-4 sm:p-8 max-w-5xl mx-auto">
-      <h1 className="text-2xl font-black text-slate-900 tracking-tight mb-4">{schema.label}</h1>
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <h1 className="text-2xl font-black text-slate-900 tracking-tight">{schema.label}</h1>
+        {module === "ledger" && schema.can_write && <SyncButton />}
+      </div>
       <Summary module={module} />
       <div className="flex gap-5 border-b border-slate-200 mb-4">
         {names.map((n) => <button key={n} onClick={() => setTab(n)} className={cn("py-2 text-sm font-semibold border-b-2 -mb-px", active === n ? "border-emerald-500 text-emerald-600" : "border-transparent text-slate-600")}>{title(n)}</button>)}

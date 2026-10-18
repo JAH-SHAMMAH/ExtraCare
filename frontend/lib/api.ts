@@ -2164,3 +2164,20 @@ export const officeApi = {
   update: (m: string, r: string, id: string, body: object) => api.put(`/office/${m}/${r}/${id}`, body).then((x) => x.data),
   remove: (m: string, r: string, id: string) => api.delete(`/office/${m}/${r}/${id}`).then((x) => x.data),
 };
+
+export const reportExtrasApi = {
+  history: (studentId: string) => api.get(`/report-extras/student-history/${studentId}`).then((r) => r.data as {
+    student: { id: string; name: string | null; admission_no: string | null }; hidden: number;
+    items: { session: string | null; term: string | null; sub_term: string | null; class_name: string | null; average: number; total: number; grade: string | null; position: number; class_size: number; subjects: { name: string; grade: string | null }[] }[];
+  }),
+};
+/** Download a CSV the server builds, using the signed-in session. */
+export async function downloadCsv(path: string, params?: object, fallbackName = "export.csv") {
+  const r = await api.get(path, { params, responseType: "blob" });
+  const cd = String(r.headers["content-disposition"] ?? "");
+  const name = /filename="?([^";]+)"?/.exec(cd)?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(r.data);
+  const a = document.createElement("a");
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}

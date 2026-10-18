@@ -90,3 +90,73 @@ async def test_rentals_clash_and_livestock_sale(http, db, org):
     await http.post("/api/v1/office/livestock/events", headers=h, json={"animal_id": cow, "kind": "sale", "event_date": "2026-10-05"})
     items = (await http.get("/api/v1/office/livestock/animals", headers=h)).json()["items"]
     assert items[0]["status"] == "sold"
+
+
+async def test_new_modules_invoices_slots_and_bills(http, db, org):
+    u = await _setup(db, org)
+    org.settings = {**org.settings, "super": {**org.settings["super"], **{f"module_{m}": True for m in ["suppliers", "serviceinvoices", "offlineinvoices", "spa", "storeappointments"]}}}
+    flag_modified(org, "settings")
+    await db.commit()
+    h = _bearer(u)
+    c = (await http.post("/api/v1/office/serviceinvoices/clients", headers=h, json={"name": "Acme"})).json()["id"]
+    inv = {"client_id": c, "invoice_date": "2026-10-01", "items": [{"name": "Hall", "qty": 2, "price": 1000}]}
+    r = (await http.post("/api/v1/office/serviceinvoices/invoices", headers=h, json=inv)).json()
+    assert r["total"] == 2000 and r["status"] == "sent"
+    r2 = await http.put(f"/api/v1/office/serviceinvoices/invoices/{r['id']}", headers=h, json={"paid": 2500})
+    assert r2.status_code == 422
+    r3 = (await http.put(f"/api/v1/office/serviceinvoices/invoices/{r['id']}", headers=h, json={"paid": 2000})).json()
+    assert r3["status"] == "paid"
+    off = (await http.post("/api/v1/office/offlineinvoices/invoices", headers=h, json={"payer": "Mr X", "invoice_date": "2026-10-01", "items": [{"name": "Uniform", "qty": 1, "price": 5000}], "paid": 1000})).json()
+    assert off["status"] == "part_paid"
+    s = (await http.post("/api/v1/office/spa/services", headers=h, json={"name": "Massage", "price": 3000})).json()["id"]
+    a = {"service_id": s, "client": "A", "appt_date": "2026-10-20", "appt_time": "10:00"}
+    assert (await http.post("/api/v1/office/spa/appointments", headers=h, json=a)).status_code == 201
+    assert (await http.post("/api/v1/office/spa/appointments", headers=h, json={**a, "client": "B"})).status_code == 422
+    sup = (await http.post("/api/v1/office/suppliers/directory", headers=h, json={"name": "Bakery"})).json()["id"]
+    assert (await http.post("/api/v1/office/suppliers/bills", headers=h, json={"supplier_id": sup, "bill_date": "2026-10-01", "amount": 100, "paid": 500})).status_code == 422
+    assert (await http.get("/api/v1/office/suppliers/summary", headers=h)).status_code == 200
+
+
+async def test_procurement_limits_and_self_approval(http, db, org):
+    from app.models.role import SCHOOL_PERMISSION_PRESETS  # noqa: F401
+    boss = await _setup(db, org)
+    acct = await _preset_user(db, org, "accountant")
+    hb, ha = _bearer(boss), _bearer(acct)
+    req = (await http.post("/api/v1/office/procurement/requests", headers=ha, json={"title": "Laptops", "items": [{"name": "L", "qty": 2, "price": 500}], "status": "approved"})).json()
+    assert req["status"] == "submitted" and req["requested_by"] == acct.email
+    # a non-super user may not set limits
+    assert (await http.post("/api/v1/office/procurement/limits", headers=ha, json={"role": "accountant", "max_amount": 100})).status_code == 422
+    await http.post("/api/v1/office/procurement/limits", headers=hb, json={"role": "accountant", "max_amount": 500})
+    other = await _preset_user(db, org, "accountant")
+    r = await http.put(f"/api/v1/office/procurement/requests/{req['id']}", headers=_bearer(other), json={"status": "approved"})
+    assert r.status_code == 422 and "limit" in r.json()["detail"]
+    own = await http.put(f"/api/v1/office/procurement/requests/{req['id']}", headers=ha, json={"status": "approved"})
+    assert own.status_code == 422
+    ok = await http.put(f"/api/v1/office/procurement/requests/{req['id']}", headers=hb, json={"status": "approved"})
+    assert ok.status_code == 200 and ok.json()["approved_by"] == boss.email
+
+
+async def test_ledger_sync_is_idempotent_and_export_works(http, db, org):
+    from datetime import date
+    from app.models.modules.finance import Invoice
+    u = await _setup(db, org)
+    h = _bearer(u)
+    db.add(Invoice(org_id=org.id, number="INV-1", customer_name="Mr A", invoice_date=date(2026, 10, 1), status="paid", total=1000))
+    await db.commit()
+    first = (await http.post("/api/v1/office/ledger/sync", headers=h)).json()
+    again = (await http.post("/api/v1/office/ledger/sync", headers=h)).json()
+    assert first["journals_added"] == 2 and again["journals_added"] == 0
+    tb = (await http.get("/api/v1/office/ledger/summary", headers=h)).json()
+    assert tb["total_debit"] == tb["total_credit"] == 2000
+    csv_ = await http.get("/api/v1/office/ledger/accounts/export", headers=h)
+    assert csv_.status_code == 200 and "Fee Income" in csv_.text and csv_.headers["content-type"].startswith("text/csv")
+
+
+async def test_report_extras_smoke(http, db, org, school_class, student):
+    u = await _setup(db, org)
+    h = _bearer(u)
+    r = await http.get(f"/api/v1/report-extras/student-history/{student.id}", headers=h)
+    assert r.status_code == 200 and r.json()["items"] == [] and r.json()["student"]["id"] == student.id
+    b = await http.get("/api/v1/report-extras/backup", headers=h, params={"class_id": school_class.id, "term_id": "x", "sub_term_id": "y"})
+    assert b.status_code in (200, 404, 422)
+    assert (await http.get("/api/v1/report-extras/backup", headers=_bearer(await _preset_user(db, org, "parent")), params={"class_id": "a", "term_id": "b", "sub_term_id": "c"})).status_code == 403

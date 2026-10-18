@@ -13,11 +13,15 @@ from app.models.base import Base, SoftDeleteMixin, TenantMixin, TimestampMixin, 
 # module -> permission namespace guarding it
 NAMESPACE = {
     "restaurant": "school_admin", "livestock": "school_admin", "rentals": "school_admin", "funfair": "school_admin",
+    "suppliers": "finance_admin", "serviceinvoices": "finance_admin", "offlineinvoices": "finance_admin",
+    "spa": "school_admin", "storeappointments": "school_admin",
     "procurement": "finance_admin", "ledger": "finance_admin", "imprest": "finance_admin", "debtmemo": "finance_admin",
 }
 LABELS = {
     "restaurant": "Restaurant", "procurement": "Procurement", "livestock": "Livestock", "rentals": "Rentals",
     "funfair": "Fun Fair", "ledger": "General Ledger", "imprest": "Imprest", "debtmemo": "Debt Memo",
+    "suppliers": "Suppliers", "serviceinvoices": "Service Invoices", "offlineinvoices": "Offline Invoices",
+    "spa": "Spa Services", "storeappointments": "Store Appointment Manager",
 }
 
 # resource -> {col: (kind, required)}; first-listed order is the display order.
@@ -30,7 +34,8 @@ MODULES: dict[str, dict[str, dict[str, tuple[str, bool]]]] = {
     "procurement": {
         "suppliers": {"name": ("str", True), "category": ("str", False), "phone": ("str", False), "email": ("str", False), "address": ("text", False)},
         "requests": {"title": ("str", True), "supplier_id": ("ref:suppliers", False), "items": ("json", False), "total": ("float", False),
-                     "status": ("choice:draft|submitted|approved|rejected|ordered|received", False), "requested_by": ("str", False), "note": ("text", False)},
+                     "status": ("choice:draft|submitted|approved|rejected|ordered|received", False), "requested_by": ("str", False), "approved_by": ("str", False), "note": ("text", False)},
+        "limits": {"role": ("str", True), "max_amount": ("float", True)},
     },
     "livestock": {
         "animals": {"tag": ("str", True), "species": ("str", True), "breed": ("str", False), "sex": ("choice:male|female", False),
@@ -61,6 +66,32 @@ MODULES: dict[str, dict[str, dict[str, tuple[str, bool]]]] = {
         "memos": {"debtor": ("str", True), "debtor_type": ("choice:parent|staff|supplier|other", False), "amount": ("float", True), "reason": ("str", True),
                   "memo_date": ("date", True), "due_date": ("date", False), "status": ("choice:open|partly_paid|settled|written_off", False)},
         "payments": {"memo_id": ("ref:memos", True), "amount": ("float", True), "paid_on": ("date", True), "note": ("text", False)},
+    },
+    "suppliers": {
+        "directory": {"name": ("str", True), "category": ("str", False), "contact_person": ("str", False), "phone": ("str", False),
+                      "email": ("str", False), "address": ("text", False), "status": ("choice:active|inactive", False)},
+        "bills": {"supplier_id": ("ref:directory", True), "reference": ("str", False), "bill_date": ("date", True), "due_date": ("date", False),
+                  "amount": ("float", True), "paid": ("float", False), "description": ("text", False)},
+    },
+    "serviceinvoices": {
+        "clients": {"name": ("str", True), "phone": ("str", False), "email": ("str", False), "address": ("text", False)},
+        "invoices": {"client_id": ("ref:clients", True), "invoice_date": ("date", True), "due_date": ("date", False), "items": ("json", True),
+                     "total": ("float", False), "paid": ("float", False), "status": ("choice:sent|draft|part_paid|paid|cancelled", False), "note": ("text", False)},
+    },
+    "offlineinvoices": {
+        "invoices": {"payer": ("str", True), "student_ref": ("str", False), "invoice_date": ("date", True), "items": ("json", True), "total": ("float", False),
+                     "method": ("choice:cash|bank_transfer|pos|cheque", False), "receipt_no": ("str", False), "paid": ("float", False),
+                     "status": ("choice:unpaid|part_paid|paid|cancelled", False), "note": ("text", False)},
+    },
+    "spa": {
+        "services": {"name": ("str", True), "price": ("float", True), "duration_minutes": ("int", False), "available": ("bool", False), "description": ("text", False)},
+        "appointments": {"service_id": ("ref:services", True), "client": ("str", True), "phone": ("str", False), "appt_date": ("date", True),
+                         "appt_time": ("str", True), "amount": ("float", False), "paid": ("bool", False),
+                         "status": ("choice:booked|done|cancelled|no_show", False)},
+    },
+    "storeappointments": {
+        "appointments": {"visitor": ("str", True), "phone": ("str", False), "purpose": ("str", False), "appt_date": ("date", True), "appt_time": ("str", True),
+                         "staff_member": ("str", False), "status": ("choice:booked|attended|cancelled|no_show", False), "note": ("text", False)},
     },
 }
 

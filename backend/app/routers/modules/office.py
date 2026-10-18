@@ -6,8 +6,12 @@ Every module is closed until the Super User switches it on in Super Settings
 ``<namespace>:write``. Module-specific rules (balanced journals, imprest balance,
 debt settlement, booking clashes) live in the hooks below.
 """
+import csv
+import io
+import json
 from datetime import date as date_type
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +19,7 @@ from app.database import get_db
 from app.deps import get_current_active_user
 from app.models.modules.office import LABELS, MODELS, MODULES, NAMESPACE
 from app.models.user import User
-from app.services.super_settings import flag
+from app.services.super_settings import _role_slugs, flag, is_super_user
 
 router = APIRouter(prefix="/office", tags=["Back office"])
 
@@ -141,9 +145,29 @@ async def debt_paid(db, org_id, memo_id) -> float:
 
 
 # ── module hooks ────────────────────────────────────────────────────────────
-async def _before_save(db, module, resource, data: dict, org_id: str, existing=None):
-    if (module, resource) in (("restaurant", "orders"), ("procurement", "requests")) and "items" in data:
+async def _before_save(db, module, resource, data: dict, org_id: str, existing=None, user=None):
+    if (module, resource) in (("restaurant", "orders"), ("procurement", "requests"), ("serviceinvoices", "invoices"), ("offlineinvoices", "invoices")) and "items" in data:
         data["total"] = _lines_total(data["items"])
+    if (module, resource) in (("serviceinvoices", "invoices"), ("offlineinvoices", "invoices")):
+        total = float(data.get("total", getattr(existing, "total", 0)) or 0)
+        paid = float(data.get("paid", getattr(existing, "paid", 0)) or 0)
+        if paid > total + 0.001:
+            _bad(f"Amount paid ({paid:,.2f}) is more than the invoice total ({total:,.2f}).")
+        status = data.get("status", getattr(existing, "status", None))
+        if status not in ("cancelled", "draft"):
+            data["status"] = ("paid" if paid >= total - 0.001 and total > 0 else "part_paid" if paid > 0
+                              else ("unpaid" if module == "offlineinvoices" else "sent"))
+    if (module, resource) == ("suppliers", "bills"):
+        if float(data.get("paid", getattr(existing, "paid", 0)) or 0) > float(data.get("amount", getattr(existing, "amount", 0)) or 0) + 0.001:
+            _bad("Amount paid is more than the bill.")
+    if (module, resource) in (("spa", "appointments"), ("storeappointments", "appointments")):
+        get = lambda k: data.get(k, getattr(existing, k, None))  # noqa: E731
+        if (get("status") or "booked") == "booked":
+            for b in await _all(db, module, resource, org_id):
+                if (existing is None or b.id != existing.id) and (b.status or "booked") == "booked" and b.appt_date == get("appt_date") \
+                        and b.appt_time == get("appt_time") and (module == "storeappointments" and (b.staff_member or "") == (get("staff_member") or "")
+                                                                 or module == "spa" and b.service_id == get("service_id")):
+                    _bad("That time slot is already booked.")
     if (module, resource) == ("restaurant", "orders") and "items" not in data and existing is None:
         data["total"] = 0.0
     if (module, resource) == ("rentals", "bookings"):
@@ -178,6 +202,26 @@ async def _before_save(db, module, resource, data: dict, org_id: str, existing=N
         outstanding = float(memo.amount) - await debt_paid(db, org_id, memo.id) + (float(existing.amount) if existing is not None else 0)
         if float(data.get("amount", 0)) > outstanding + 0.001:
             _bad(f"That is more than the outstanding {outstanding:,.2f}.")
+    if (module, resource) == ("procurement", "limits") and not is_super_user(user):
+        _bad("Only the Super User sets approval limits.")
+    if (module, resource) == ("procurement", "requests"):
+        data.pop("approved_by", None)  # stamped by the server, never typed
+        new = data.get("status")
+        if new in ("approved", "ordered", "received") and (existing is None or existing.status != new):
+            total = float(data.get("total", getattr(existing, "total", 0)) or 0)
+            if existing is not None and existing.status in ("draft", "submitted", "rejected") and new != "approved":
+                _bad("A request must be approved before it is ordered.")
+            if new == "approved" and not is_super_user(user):
+                if existing is not None and (existing.requested_by or "") == (user.email or "") :
+                    _bad("You can't approve your own request.")
+                limits = {l.role: float(l.max_amount) for l in await _all(db, "procurement", "limits", org_id)}
+                if limits:
+                    mine = [limits[sl] for sl in _role_slugs(user) if sl in limits]
+                    if not mine or max(mine) < total:
+                        _bad(f"This request ({total:,.2f}) is above your approval limit"
+                             + (f" of {max(mine):,.2f}." if mine else ". You have no approval limit set."))
+            if new == "approved":
+                data["approved_by"] = user.email
     if (module, resource) == ("ledger", "accounts"):
         code = data.get("code")
         if code and any(a.code == code and (existing is None or a.id != existing.id) for a in await _all(db, "ledger", "accounts", org_id)):
@@ -287,6 +331,21 @@ async def summary(module: str, db: AsyncSession = Depends(get_db), user: User = 
             paid = await debt_paid(db, org, m.id)
             rows.append({"id": m.id, "debtor": m.debtor, "amount": m.amount, "paid": paid, "outstanding": 0 if m.status == "written_off" else round(m.amount - paid, 2), "status": m.status})
         return {"outstanding": round(sum(r["outstanding"] for r in rows), 2), "memos": rows}
+    if module == "suppliers":
+        bills = await A("bills")
+        return {"suppliers": len(await A("directory")), "billed": round(sum(b.amount or 0 for b in bills), 2),
+                "owing": round(sum((b.amount or 0) - (b.paid or 0) for b in bills), 2)}
+    if module in ("serviceinvoices", "offlineinvoices"):
+        inv = [i for i in await A("invoices") if i.status != "cancelled"]
+        return {"invoiced": round(sum(i.total or 0 for i in inv), 2), "collected": round(sum(i.paid or 0 for i in inv), 2),
+                "outstanding": round(sum((i.total or 0) - (i.paid or 0) for i in inv), 2), "invoices": len(inv)}
+    if module == "spa":
+        ap = await A("appointments")
+        return {"booked": sum(a.status == "booked" for a in ap), "completed": sum(a.status == "done" for a in ap),
+                "income": round(sum(a.amount or 0 for a in ap if a.status == "done" and a.paid), 2)}
+    if module == "storeappointments":
+        ap = await A("appointments")
+        return {"booked": sum(a.status == "booked" for a in ap), "attended": sum(a.status == "attended" for a in ap), "no_shows": sum(a.status == "no_show" for a in ap)}
     raise HTTPException(404)
 
 
@@ -302,13 +361,82 @@ async def list_rows(module: str, resource: str, q: str | None = None, db: AsyncS
     return {"items": out[:500], "total": len(out)}
 
 
+@router.get("/{module}/{resource}/export")
+async def export_rows(module: str, resource: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
+    """Everything in one table as a spreadsheet (CSV) file."""
+    await _gate(module, False, db, user)
+    _model(module, resource)
+    cols = list(MODULES[module][resource])
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([c.replace("_", " ").title() for c in cols])
+    for r in sorted(await _all(db, module, resource, user.org_id), key=lambda r: r.created_at or 0):
+        d = _out(module, resource, r)
+        w.writerow([json.dumps(d[c]) if isinstance(d[c], (list, dict)) else ("" if d[c] is None else
+                    # a cell starting with = + - @ would run as a formula in Excel
+                    ("'" + d[c] if isinstance(d[c], str) and d[c][:1] in "=+-@" else d[c])) for c in cols])
+    return Response(buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{module}-{resource}.csv"'})
+
+
+@router.post("/ledger/sync")
+async def sync_ledger(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
+    """Copy the school's posted fee invoices and payroll runs into this ledger.
+
+    Safe to run again: each source record becomes ONE journal (tagged in
+    ``reference``) and is skipped if it is already there.
+    """
+    from app.models.modules.finance import Invoice, PayrollRun
+    await _gate("ledger", True, db, user)
+    org = user.org_id
+    Acc, Jnl = MODELS[("ledger", "accounts")], MODELS[("ledger", "journals")]
+    have = {a.code: a for a in await _all(db, "ledger", "accounts", org)}
+    wanted = [("1000", "Cash and Bank", "asset"), ("1100", "Fees Receivable", "asset"), ("2100", "Salaries Payable", "liability"),
+              ("2200", "Deductions Payable", "liability"), ("4100", "Fee Income", "income"), ("5100", "Salaries Expense", "expense")]
+    for code, name, typ in wanted:
+        if code not in have:
+            have[code] = Acc(org_id=org, code=code, name=name, type=typ)
+            db.add(have[code])
+    await db.flush()
+    A = {c: a.id for c, a in have.items()}
+    done = {j.reference for j in await _all(db, "ledger", "journals", org) if j.reference}
+    added = 0
+
+    def post(ref, d, memo, lines):
+        nonlocal added
+        db.add(Jnl(org_id=org, entry_date=d, memo=memo, reference=ref,
+                   lines=[{"account_id": A[c], "debit": round(float(dr), 2), "credit": round(float(cr), 2)} for c, dr, cr in lines if dr or cr]))
+        added += 1
+
+    inv = (await db.execute(select(Invoice).where(Invoice.org_id == org, Invoice.is_deleted == False,  # noqa: E712
+                                                  Invoice.status.in_(("posted", "paid"))))).scalars().all()
+    for i in inv:
+        d = i.invoice_date or date_type.today()
+        if f"INV:{i.number}" not in done and float(i.total or 0) > 0:
+            post(f"INV:{i.number}", d, f"Invoice {i.number} - {i.customer_name}", [("1100", i.total, 0), ("4100", 0, i.total)])
+        if i.status == "paid" and f"INVPAY:{i.number}" not in done and float(i.total or 0) > 0:
+            post(f"INVPAY:{i.number}", d, f"Payment for invoice {i.number}", [("1000", i.total, 0), ("1100", 0, i.total)])
+    runs = (await db.execute(select(PayrollRun).where(PayrollRun.org_id == org, PayrollRun.is_deleted == False,  # noqa: E712
+                                                      PayrollRun.status == "posted"))).scalars().all()
+    for r in runs:
+        if f"PAYROLL:{r.id}" not in done and float(r.total_gross or 0) > 0:
+            post(f"PAYROLL:{r.id}", r.run_date or date_type.today(), f"Payroll {r.period_label}",
+                 [("5100", r.total_gross, 0), ("2100", 0, r.total_net), ("2200", 0, r.total_deductions)])
+    await db.commit()
+    return {"journals_added": added, "invoices_seen": len(inv), "payroll_runs_seen": len(runs)}
+
+
 @router.post("/{module}/{resource}", status_code=201)
 async def create_row(module: str, resource: str, body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
     await _gate(module, True, db, user)
     M = _model(module, resource)
     data = await _coerce(db, module, resource, body, user.org_id, partial=False)
     data = _defaults(module, resource, data)
-    await _before_save(db, module, resource, data, user.org_id)
+    if (module, resource) == ("procurement", "requests"):
+        data["requested_by"] = user.email
+        if data.get("status") in ("approved", "ordered", "received"):
+            data["status"] = "submitted"  # a request is approved by someone else, after it exists
+    await _before_save(db, module, resource, data, user.org_id, user=user)
     row = M(org_id=user.org_id, **data)
     db.add(row)
     await db.flush()
@@ -324,7 +452,7 @@ async def update_row(module: str, resource: str, rid: str, body: dict, db: Async
         raise HTTPException(405, "Posted journals can't be edited. Post a correcting journal instead.")
     row = await _get(db, module, resource, user.org_id, rid)
     data = await _coerce(db, module, resource, body, user.org_id, partial=True)
-    await _before_save(db, module, resource, data, user.org_id, existing=row)
+    await _before_save(db, module, resource, data, user.org_id, existing=row, user=user)
     for k, v in data.items():
         setattr(row, k, v)
     await db.flush()

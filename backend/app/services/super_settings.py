@@ -88,7 +88,8 @@ _f("result_pay_lock", "School Settings", "Result Pay Lock", "bool", False, secti
 # ── Optional back-office modules: built, but closed until the Super User opens them ──
 _M = "Optional Modules"
 for _k, _l in [("restaurant", "Restaurant"), ("procurement", "Procurement"), ("livestock", "Livestock"), ("rentals", "Rentals"),
-               ("funfair", "Fun Fair"), ("ledger", "General Ledger"), ("imprest", "Imprest"), ("debtmemo", "Debt Memo")]:
+               ("funfair", "Fun Fair"), ("suppliers", "Suppliers"), ("serviceinvoices", "Service Invoices"), ("offlineinvoices", "Offline Invoices"),
+               ("spa", "Spa Services"), ("storeappointments", "Store Appointment Manager"), ("ledger", "General Ledger"), ("imprest", "Imprest"), ("debtmemo", "Debt Memo")]:
     _f(f"module_{_k}", "School Settings", f"Enable {_l} Module", "bool", False, f"OFF: {_l} is hidden and its API is closed.", section=_M)
 _f("one_time_admission_form", "School Settings", "One Time Admission Form", "bool", False, section=_S)
 _f("duplicate_admission_message", "School Settings", "Duplicate One Time Admission Form Error Message", "text", "", section=_S)

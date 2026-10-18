@@ -39,6 +39,7 @@ from app.routers.modules import (
     journals,
     tuckshop,
     office,
+    report_extras,
     library,
     sms as sms_router,
     transport as transport_router,
@@ -416,6 +417,7 @@ app.include_router(clubs.router, prefix=API_V1)
 app.include_router(journals.router, prefix=API_V1)
 app.include_router(tuckshop.router, prefix=API_V1)
 app.include_router(office.router, prefix=API_V1)
+app.include_router(report_extras.router, prefix=API_V1)
 app.include_router(library.router, prefix=API_V1)
 app.include_router(sms_router.router, prefix=API_V1)
 app.include_router(transport_router.router, prefix=API_V1)
