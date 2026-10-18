@@ -5,6 +5,7 @@ is a DELIBERATE opt-in that requires BOTH SEED_DATABASE_URL (pointing at prod) a
 SEED_ALLOW_PRODUCTION=yes-i-mean-it. The default safety never changes.
 """
 from __future__ import annotations
+import secrets
 
 import os
 
@@ -19,7 +20,7 @@ FORBIDDEN = ("onyz", "prod", "render.com", "amazonaws")
 SEED_EMAIL_DOMAIN = "fairviewschoolng.com"
 SEED_PREFIX = "seed-"
 LEGACY_SEED_DOMAIN = "fairview.seed"      # the earlier run's fake domain (still purge-able)
-SEED_PASSWORD = "FairviewSeed#2026"
+SEED_PASSWORD = os.environ.get("SEED_PASSWORD") or secrets.token_urlsafe(12)   # never hard-code: set the env var, or one is generated and printed
 SEED_EMAILS = (
     f"{SEED_PREFIX}superuser@{SEED_EMAIL_DOMAIN}",
     f"{SEED_PREFIX}classteacher@{SEED_EMAIL_DOMAIN}",

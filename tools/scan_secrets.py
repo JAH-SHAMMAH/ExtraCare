@@ -81,6 +81,11 @@ ASSIGNED = re.compile(
     rb"(?i)\b([a-z0-9_]*(?:password|passwd|pwd|secret|token|api_?key|private_?key)"
     rb"[a-z0-9_]*)\s*[:=]\s*([\"'])([^\"'\n]{8,})\2")
 
+#: The literal "passwords" docs and templates use inside a DSN, e.g.
+#: postgresql://user:pass@host/db. Matched against the whole connection string.
+CONN_PLACEHOLDER_PW = re.compile(
+    rb"(?i)://[^:/@]+:(?:pass|password|passwd|pwd|secret|changeme|change_me|postgres|root|admin)@")
+
 PLACEHOLDER = re.compile(
     rb"(?i)\A(?:your[-_ ]|changeme|change_me|example|placeholder|dummy|replace|"
     rb"redacted|xxx+|\*{3,}|none|null|true|false|\$\{|\$[A-Z_]+|<|\{\{|"
@@ -136,6 +141,8 @@ def findings(path: str, blob: bytes):
 
     for name, rx in HIGH:
         for m in rx.finditer(blob):
+            if name.startswith("connection string") and CONN_PLACEHOLDER_PW.search(m.group(0)):
+                continue    # user:password@host in a doc or template, not a credential
             ln = blob[:m.start()].count(b"\n") + 1
             if not allowed(ln):
                 out.append((name, ln, True))

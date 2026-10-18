@@ -16,6 +16,8 @@ Usage:
 """
 
 from __future__ import annotations
+import os
+import secrets
 
 import asyncio
 import random
@@ -85,7 +87,7 @@ async def _section_id(db, org_id: str, prefer: str) -> str:
 
 
 
-DEMO_PASSWORD = "DemoPass123!"
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD") or secrets.token_urlsafe(12)   # never hard-code: set the env var, or one is generated and printed
 
 
 @dataclass
