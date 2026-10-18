@@ -7,7 +7,7 @@
  * enforced by the API and covered in backend/tests/test_own_report_card_scope.py.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 
 type Child = { id: string; first_name: string; last_name: string };
 
@@ -37,17 +37,18 @@ vi.mock("@/hooks/usePlatform", () => ({
   useTerms: () => ({ data: [] }),
 }));
 
+// The shared designed-report viewer is covered by parentReportCard.test.tsx; here we
+// only check that the own view hands it the right people.
+vi.mock("@/components/reports/ReportCardViewer", () => ({
+  ReportCardViewer: ({ people }: { people: { id: string; name: string }[] }) => (
+    <div data-testid="viewer">{people.map((p) => p.name).join(" | ")}</div>
+  ),
+}));
+
 const mutation = { mutate: vi.fn(), isPending: false };
 vi.mock("@/hooks/useSchool", () => ({
   useStudents: () => ({ data: { items: state.children }, isLoading: false }),
-  // A card exists for every real child; the card names the child it was asked for.
-  useReportCard: (studentId: string) => {
-    const child = state.children.find((c) => c.id === studentId);
-    return {
-      data: child ? { student: child, subjects: [], domains: [], term: "First Term" } : undefined,
-      isLoading: false,
-    };
-  },
+  useReportCard: () => ({ data: undefined, isLoading: false }),
   useClasses: () => ({ data: { items: [] } }),
   useSaveReportMeta: () => mutation,
   useSaveDomainRatings: () => mutation,
@@ -58,7 +59,7 @@ import ReportCardsPage from "@/app/(dashboard)/dashboard/modules/school/report-c
 const ADA: Child = { id: "stu-ada", first_name: "Ada", last_name: "Obi" };
 const TOBI: Child = { id: "stu-tobi", first_name: "Tobi", last_name: "Obi" };
 
-const cardHeading = () => screen.getByRole("heading", { level: 2 });
+const viewer = () => screen.getByTestId("viewer");
 
 beforeEach(() => {
   state.children = [];
@@ -67,37 +68,29 @@ beforeEach(() => {
 });
 
 describe("Report Cards — own view (pupil / parent)", () => {
-  it("one child: shows that child's card and no child dropdown", () => {
+  it("one child: hands that child to the designed-report viewer", () => {
     state.children = [ADA];
     render(<ReportCardsPage />);
 
-    expect(screen.queryByLabelText("Child")).not.toBeInTheDocument();
-    expect(cardHeading()).toHaveTextContent("Ada Obi");
+    expect(viewer()).toHaveTextContent("Ada Obi");
     // Parent wording, not the pupil's "My Report Card", and not the teacher desk.
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Report Cards");
     expect(screen.queryByPlaceholderText("Search students...")).not.toBeInTheDocument();
   });
 
-  it("two children: the dropdown lists both and switches the card", () => {
+  it("two children: both are handed to the viewer, which offers the picker", () => {
     state.children = [ADA, TOBI];
     render(<ReportCardsPage />);
 
-    const picker = screen.getByLabelText("Child") as HTMLSelectElement;
-    expect(Array.from(picker.options).map((o) => o.value)).toEqual([ADA.id, TOBI.id]);
-    expect(cardHeading()).toHaveTextContent("Ada Obi");
-
-    fireEvent.change(picker, { target: { value: TOBI.id } });
-    expect(cardHeading()).toHaveTextContent("Tobi Obi");
+    expect(viewer()).toHaveTextContent("Ada Obi | Tobi Obi");
   });
 
-  it("zero children: the empty message, and no card is requested for anyone", () => {
+  it("zero children: the empty message, and no viewer", () => {
     state.children = [];
     render(<ReportCardsPage />);
 
-    expect(screen.getByText("No report card available")).toBeInTheDocument();
-    expect(screen.getByText(/the report is not published/)).toBeInTheDocument();
-    expect(screen.queryByLabelText("Child")).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { level: 2 })).not.toBeInTheDocument();
+    expect(screen.getByText("No student record found")).toBeInTheDocument();
+    expect(screen.queryByTestId("viewer")).not.toBeInTheDocument();
   });
 
   it("a pupil keeps the pupil wording", () => {
