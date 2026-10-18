@@ -9,10 +9,20 @@ import { toast } from "sonner";
 import { useOfficeDelete, useOfficeRows, useOfficeSave, useOfficeSchema, useOfficeSummary } from "@/hooks/useOffice";
 import { cn } from "@/lib/utils";
 
-const title = (s: string) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+const TITLES: Record<string, string> = { orders: "Purchase Orders", grns: "GRN Records", rfqs: "RFQs", requests: "Requests", limits: "Approval Limits" };
+const title = (s: string) => TITLES[s] ?? s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const money = (n: any) => Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MONEY_COLS = new Set(["price", "total", "amount", "rate", "cost", "float_amount", "debit", "credit", "balance", "outstanding", "paid", "raised"]);
 type Cols = Record<string, { kind: string; required: boolean }>;
+
+// One-click workflow buttons: [module/resource] -> [{ when: current status, label, to: new status }]
+const ACTIONS: Record<string, { when: string; label: string; to: string }[]> = {
+  "procurement/requests": [{ when: "draft", label: "Submit", to: "submitted" }, { when: "submitted", label: "Approve", to: "approved" }, { when: "submitted", label: "Reject", to: "rejected" }, { when: "approved", label: "Mark ordered", to: "ordered" }],
+  "procurement/orders": [{ when: "draft", label: "Submit", to: "pending_approval" }, { when: "pending_approval", label: "Approve", to: "approved" }, { when: "approved", label: "Mark sent", to: "sent" }, { when: "draft", label: "Cancel", to: "cancelled" }],
+  "procurement/grns": [{ when: "draft", label: "Submit", to: "pending_approval" }, { when: "pending_approval", label: "Approve", to: "approved" }, { when: "pending_approval", label: "Reject", to: "rejected" }],
+  "procurement/quotes": [{ when: "submitted", label: "Select", to: "selected" }],
+  "procurement/rfqs": [{ when: "open", label: "Close", to: "closed" }],
+};
 
 function Summary({ module }: { module: string }) {
   const { data } = useOfficeSummary(module);
@@ -131,6 +141,8 @@ function Table({ module, resource, cols, canWrite }: { module: string; resource:
   const [form, setForm] = useState<{ row?: any } | null>(null);
   const { data, isLoading } = useOfficeRows(module, resource, q || undefined);
   const del = useOfficeDelete(module, resource);
+  const act = useOfficeSave(module, resource);
+  const actions = ACTIONS[`${module}/${resource}`] ?? [];
   const immutable = module === "ledger" && resource === "journals";
   const shown = Object.entries(cols).filter(([, m]) => m.kind !== "json" && m.kind !== "text" && !m.kind.startsWith("ref:")).map(([c]) => c);
   return (
@@ -151,6 +163,10 @@ function Table({ module, resource, cols, canWrite }: { module: string; resource:
                 <tr key={r.id} className="border-t">
                   {shown.map((c) => <td key={c} className="p-2">{typeof r[c] === "boolean" ? (r[c] ? "Yes" : "No") : MONEY_COLS.has(c) ? money(r[c]) : String(r[c] ?? "")}</td>)}
                   <td className="p-2 text-right whitespace-nowrap">
+                    {canWrite && actions.filter((a) => a.when === (r.status ?? "")).map((a) => (
+                      <button key={a.label} onClick={() => act.mutate({ id: r.id, body: { status: a.to } }, { onSuccess: () => toast.success(`${a.label}: done.`), onError: (e: any) => toast.error(typeof e?.response?.data?.detail === "string" ? e.response.data.detail : "Not allowed.") })}
+                        className="px-2 py-0.5 mr-1 rounded border text-xs font-semibold text-emerald-700 border-emerald-300">{a.label}</button>
+                    ))}
                     {canWrite && !immutable && <button aria-label="Edit" onClick={() => setForm({ row: r })} className="p-1 text-slate-500"><Pencil size={15} /></button>}
                     {canWrite && !immutable && <button aria-label="Delete" onClick={() => confirm("Delete this record?") && del.mutate(r.id, { onError: (e: any) => toast.error(e?.response?.data?.detail ?? "Could not delete.") })} className="p-1 text-red-500"><Trash2 size={15} /></button>}
                   </td>

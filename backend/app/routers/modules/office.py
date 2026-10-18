@@ -144,6 +144,131 @@ async def debt_paid(db, org_id, memo_id) -> float:
     return round(sum(float(p.amount) for p in await _all(db, "debtmemo", "payments", org_id) if p.memo_id == memo_id), 2)
 
 
+
+async def _flag_number(db, org_id, key) -> float:
+    from app.services.super_settings import get_values
+    try:
+        return float((await get_values(db, org_id)).get(key) or 0)
+    except Exception:
+        return 0.0
+
+
+async def _approve(db, org_id, user, existing, data, pending: str, creator_field: str):
+    """One sign-off on a request or purchase order, with the multi-level limits chain."""
+    if existing is None or existing.status != pending:
+        _bad(f"It must be submitted for approval first (status '{pending}').")
+    total = float(data.get("total", existing.total) or 0)
+    done = list(existing.approvals or [])
+    if is_super_user(user):
+        done.append({"by": user.email, "role": "super user", "level": len(done) + 1})
+    else:
+        if (getattr(existing, creator_field) or "") == (user.email or ""):
+            _bad("You can't approve your own request.")
+        if any(a.get("by") == user.email for a in done):
+            _bad("You have already approved this. A different person must give the next approval.")
+        limits = {l.role: float(l.max_amount) for l in await _all(db, "procurement", "limits", org_id)}
+        if limits:
+            tiers = sorted(set(limits.values()))
+            mine = [tiers.index(limits[sl]) for sl in _role_slugs(user) if sl in limits]
+            top = next((i for i, t in enumerate(tiers) if t >= total), None)
+            if top is None:
+                _bad(f"This ({total:,.2f}) is above every approval limit. Only the Super User can approve it.")
+            need = len(done)
+            if not mine or max(mine) < need:
+                _bad(f"Your approval limit isn't high enough for this step. Level {need + 1} of {top + 1} must come from someone with a limit of at least {tiers[need]:,.2f}.")
+            done.append({"by": user.email, "role": "approver", "level": need + 1})
+            if need < top:
+                data["status"] = existing.status
+                data["awaiting"] = f"Level {need + 2} of {top + 1}"
+        else:
+            done.append({"by": user.email, "role": "approver", "level": 1})
+    data["approvals"] = done
+    if data["status"] == "approved":
+        data["awaiting"] = None
+        data["approved_by"] = user.email
+
+
+async def _proc_settings(db, org_id):
+    rows = await _all(db, "procurement", "settings", org_id)
+    return rows[0] if rows else None
+
+
+async def _order_rules(db, org_id, user, data, existing):
+    for k in ("approved_by", "approvals", "awaiting", "created_by", "po_number"):
+        data.pop(k, None)
+    cfg = await _proc_settings(db, org_id)
+    if existing is None:
+        used = [int("".join(ch for ch in (o.po_number or "") if ch.isdigit()) or 0) for o in await _all(db, "procurement", "orders", org_id)]
+        data["po_number"] = f"{(cfg.po_prefix if cfg and cfg.po_prefix else 'PO-')}{(max(used) if used else 0) + 1:04d}"
+        data["created_by"] = user.email
+        data["status"] = "draft"
+        data["total"] = _lines_total(data["items"])
+    else:
+        if "items" in data:
+            if existing.status != "draft":
+                _bad("Only a draft order can have its items changed.")
+            data["total"] = _lines_total(data["items"])
+    new = data.get("status", getattr(existing, "status", "draft"))
+    if existing is not None and new in ("part_received", "received") and new != existing.status:
+        _bad("Receiving is recorded by approving a goods-received note (GRN).")
+    if existing is not None and existing.status in ("received", "cancelled") and new != existing.status:
+        _bad(f"This order is already {existing.status}.")
+    if new == "sent" and (existing is None or existing.status not in ("approved", "sent")):
+        _bad("Only an approved order can be sent to the supplier.")
+    total = float(data.get("total", getattr(existing, "total", 0)) or 0)
+    if existing is not None and existing.status == "draft" and new == "approved":
+        _bad("Submit the order for approval first.")
+    # large orders need a competitive quote before they go for approval
+    if existing is not None and existing.status == "draft" and new == "pending_approval" and cfg and float(cfg.rfq_threshold or 0) > 0 \
+            and total >= float(cfg.rfq_threshold):
+        qid = data.get("quote_id", existing.quote_id)
+        if not qid:
+            _bad(f"Orders of {float(cfg.rfq_threshold):,.2f} or more need a selected quote from an RFQ.")
+        q = await _get(db, "procurement", "quotes", org_id, qid)
+        if q.status != "selected" or q.supplier_id != data.get("supplier_id", existing.supplier_id):
+            _bad("The quote must be the selected one, from the same supplier as the order.")
+        n = sum(1 for x in await _all(db, "procurement", "quotes", org_id) if x.rfq_id == q.rfq_id)
+        if n < int(cfg.min_quotes or 1):
+            _bad(f"This RFQ has {n} quote(s); at least {int(cfg.min_quotes)} are needed.")
+    if existing is not None and new == "approved" and existing.status != "approved":
+        await _approve(db, org_id, user, existing, data, "pending_approval", "created_by")
+
+
+async def _grn_rules(db, org_id, user, data, existing):
+    for k in ("approved_by", "received_by"):
+        data.pop(k, None)
+    order = await _get(db, "procurement", "orders", org_id, data.get("order_id", getattr(existing, "order_id", None)))
+    if order.status not in ("approved", "sent", "part_received"):
+        _bad("Goods can only be received against an approved order.")
+    if existing is None:
+        data["received_by"] = user.email
+        if data.get("status") in ("approved", "rejected"):
+            data["status"] = "pending_approval"
+    elif existing.status == "approved" and "items" in data:
+        _bad("An approved GRN can't be changed.")
+    new = data.get("status", getattr(existing, "status", "draft"))
+    if existing is not None and new == "approved" and existing.status != "approved":
+        if existing.status != "pending_approval":
+            _bad("Submit the GRN for approval first.")
+        if not is_super_user(user) and (existing.received_by or "") == (user.email or ""):
+            _bad("The person who received the goods can't approve their own GRN.")
+        data["approved_by"] = user.email
+        ordered = {}
+        for it in order.items or []:
+            ordered[it.get("name")] = ordered.get(it.get("name"), 0) + float(it.get("qty", 0))
+        got = {}
+        for g in await _all(db, "procurement", "grns", org_id):
+            if g.order_id == order.id and g.status == "approved" and (existing is None or g.id != existing.id):
+                for it in g.items or []:
+                    got[it.get("name")] = got.get(it.get("name"), 0) + float(it.get("qty_received", it.get("qty", 0)))
+        for it in data.get("items", existing.items) or []:
+            n, q = it.get("name"), float(it.get("qty_received", it.get("qty", 0)))
+            if n not in ordered:
+                _bad(f"'{n}' is not on this order.")
+            if got.get(n, 0) + q > ordered[n] + 0.001:
+                _bad(f"'{n}': receiving {q:g} would be more than the {ordered[n]:g} ordered ({got.get(n, 0):g} already received).")
+
+
 # ── module hooks ────────────────────────────────────────────────────────────
 async def _before_save(db, module, resource, data: dict, org_id: str, existing=None, user=None):
     if (module, resource) in (("restaurant", "orders"), ("procurement", "requests"), ("serviceinvoices", "invoices"), ("offlineinvoices", "invoices")) and "items" in data:
@@ -205,44 +330,50 @@ async def _before_save(db, module, resource, data: dict, org_id: str, existing=N
     if (module, resource) == ("procurement", "limits") and not is_super_user(user):
         _bad("Only the Super User sets approval limits.")
     if (module, resource) == ("procurement", "requests"):
-        # server-stamped, never typed
         for k in ("approved_by", "approvals", "awaiting"):
-            data.pop(k, None)
+            data.pop(k, None)  # server-stamped, never typed
         new = data.get("status")
         if new in ("ordered", "received") and existing is not None and existing.status in ("draft", "submitted", "rejected"):
             _bad("A request must be approved before it is ordered.")
         if new == "approved" and (existing is None or existing.status != "approved"):
-            if existing is None or existing.status != "submitted":
-                _bad("Submit the request first, then approve it.")
-            total = float(data.get("total", existing.total) or 0)
-            done = list(existing.approvals or [])
-            if is_super_user(user):
-                done.append({"by": user.email, "role": "super user", "level": len(done) + 1})
-            else:
-                if (existing.requested_by or "") == (user.email or ""):
-                    _bad("You can't approve your own request.")
-                if any(a.get("by") == user.email for a in done):
-                    _bad("You have already approved this request. A different person must give the next approval.")
-                limits = {l.role: float(l.max_amount) for l in await _all(db, "procurement", "limits", org_id)}
-                if limits:
-                    tiers = sorted(set(limits.values()))
-                    mine = [tiers.index(limits[sl]) for sl in _role_slugs(user) if sl in limits]
-                    top = next((i for i, t in enumerate(tiers) if t >= total), None)
-                    if top is None:
-                        _bad(f"This request ({total:,.2f}) is above every approval limit. Only the Super User can approve it.")
-                    need = len(done)  # the tier the next sign-off must come from
-                    if not mine or max(mine) < need:
-                        _bad(f"Your approval limit isn't high enough for this step. Level {need + 1} of {top + 1} must come from someone with a limit of at least {tiers[need]:,.2f}.")
-                    done.append({"by": user.email, "role": "approver", "level": need + 1})
-                    if need < top:
-                        data["status"] = existing.status  # more sign-offs needed: stays submitted
-                        data["awaiting"] = f"Level {need + 2} of {top + 1}"
-                else:
-                    done.append({"by": user.email, "role": "approver", "level": 1})
-            data["approvals"] = done
-            if data["status"] == "approved":
-                data["awaiting"] = None
-                data["approved_by"] = user.email
+            await _approve(db, org_id, user, existing, data, "submitted", "requested_by")
+    if (module, resource) == ("procurement", "orders"):
+        await _order_rules(db, org_id, user, data, existing)
+    if (module, resource) == ("procurement", "grns"):
+        await _grn_rules(db, org_id, user, data, existing)
+    if (module, resource) == ("procurement", "rfqs"):
+        a, b = data.get("issued_date", getattr(existing, "issued_date", None)), data.get("closing_date", getattr(existing, "closing_date", None))
+        if a and b and b < a:
+            _bad("The closing date can't be before the issue date.")
+    if (module, resource) == ("procurement", "quotes") and data.get("status") == "selected":
+        rfq = data.get("rfq_id", getattr(existing, "rfq_id", None))
+        for q in await _all(db, "procurement", "quotes", org_id):
+            if q.rfq_id == rfq and q.status == "selected" and (existing is None or q.id != existing.id):
+                _bad("Another quote is already selected for this RFQ.")
+    if (module, resource) == ("procurement", "settings"):
+        if not is_super_user(user):
+            _bad("Only the Super User changes procurement settings.")
+        if existing is None and await _all(db, "procurement", "settings", org_id):
+            _bad("Procurement settings already exist. Edit them instead.")
+    if (module, resource) == ("empowerment", "beneficiaries") and existing is None:
+        prog = await _get(db, "empowerment", "programmes", org_id, data["programme_id"])
+        if prog.status in ("completed", "cancelled"):
+            _bad("That programme is closed to new beneficiaries.")
+    if (module, resource) == ("empowerment", "support"):
+        ben = await _get(db, "empowerment", "beneficiaries", org_id, data.get("beneficiary_id", getattr(existing, "beneficiary_id", None)))
+        if ben.status != "active":
+            _bad("Support can only be recorded for active beneficiaries.")
+        prog = await _get(db, "empowerment", "programmes", org_id, ben.programme_id)
+        if float(prog.budget or 0) > 0:
+            members = {b.id for b in await _all(db, "empowerment", "beneficiaries", org_id) if b.programme_id == prog.id}
+            spent = sum(float(x.amount or 0) for x in await _all(db, "empowerment", "support", org_id)
+                        if x.beneficiary_id in members and (existing is None or x.id != existing.id))
+            if spent + float(data.get("amount", getattr(existing, "amount", 0)) or 0) > float(prog.budget) + 0.001:
+                _bad(f"That is over the programme budget of {float(prog.budget):,.2f} ({spent:,.2f} already given).")
+    if (module, resource) == ("imprest", "entries") and data.get("kind", getattr(existing, "kind", None)) == "replenish":
+        cap = float(await _flag_number(db, org_id, "max_imprest_top_up"))
+        if cap > 0 and float(data.get("amount", getattr(existing, "amount", 0))) > cap:
+            _bad(f"A single top-up can't be more than {cap:,.2f} (set by the Super User).")
     if (module, resource) == ("ledger", "accounts"):
         code = data.get("code")
         if code and any(a.code == code and (existing is None or a.id != existing.id) for a in await _all(db, "ledger", "accounts", org_id)):
@@ -270,6 +401,22 @@ async def _before_save(db, module, resource, data: dict, org_id: str, existing=N
 
 
 async def _after_save(db, module, resource, row, org_id: str):
+    if (module, resource) == ("procurement", "quotes") and row.status == "selected":
+        for q in await _all(db, "procurement", "quotes", org_id):
+            if q.rfq_id == row.rfq_id and q.id != row.id and q.status == "submitted":
+                q.status = "rejected"
+        (await _get(db, "procurement", "rfqs", org_id, row.rfq_id)).status = "awarded"
+    if (module, resource) == ("procurement", "grns") and row.status == "approved":
+        order = await _get(db, "procurement", "orders", org_id, row.order_id)
+        await db.flush()
+        ordered, got = {}, {}
+        for it in order.items or []:
+            ordered[it.get("name")] = ordered.get(it.get("name"), 0) + float(it.get("qty", 0))
+        for g in await _all(db, "procurement", "grns", org_id):
+            if g.order_id == order.id and g.status == "approved":
+                for it in g.items or []:
+                    got[it.get("name")] = got.get(it.get("name"), 0) + float(it.get("qty_received", it.get("qty", 0)))
+        order.status = "received" if all(got.get(n, 0) >= q - 0.001 for n, q in ordered.items()) else "part_received"
     if (module, resource) == ("livestock", "events") and row.kind in ("sale", "death"):
         animal = await _get(db, "livestock", "animals", org_id, row.animal_id)
         animal.status = "sold" if row.kind == "sale" else "deceased"
@@ -310,10 +457,25 @@ async def summary(module: str, db: AsyncSession = Depends(get_db), user: User = 
         return {"orders": len(orders), "open": sum(o.status == "open" for o in orders),
                 "revenue": round(sum(o.total or 0 for o in orders if o.status == "paid"), 2)}
     if module == "procurement":
-        reqs = await A("requests")
-        return {"awaiting_approval": sum(r.status == "submitted" for r in reqs),
-                "approved_value": round(sum(r.total or 0 for r in reqs if r.status in ("approved", "ordered", "received")), 2),
-                "suppliers": len(await A("suppliers"))}
+        reqs, orders = await A("requests"), await A("orders")
+        sup = {x.id: x.name for x in await A("suppliers")}
+        per: dict = {}
+        for o in orders:
+            if o.status in ("approved", "sent", "part_received", "received"):
+                per[o.supplier_id] = per.get(o.supplier_id, 0) + float(o.total or 0)
+        return {"requests_awaiting_approval": sum(r.status == "submitted" for r in reqs),
+                "orders_awaiting_approval": sum(o.status == "pending_approval" for o in orders),
+                "open_rfqs": sum(r.status == "open" for r in await A("rfqs")),
+                "open_orders_value": round(sum(o.total or 0 for o in orders if o.status in ("approved", "sent", "part_received")), 2),
+                "grns_awaiting_approval": sum(g.status == "pending_approval" for g in await A("grns")),
+                "suppliers": len(sup),
+                "spend_by_supplier": [{"supplier": sup.get(k, "?"), "ordered": round(v, 2)} for k, v in sorted(per.items(), key=lambda kv: -kv[1])]}
+    if module == "empowerment":
+        progs, bens, sup = await A("programmes"), await A("beneficiaries"), await A("support")
+        return {"active_programmes": sum(p.status == "active" for p in progs), "active_beneficiaries": sum(b.status == "active" for b in bens),
+                "graduated": sum(b.status == "graduated" for b in bens), "support_given": round(sum(x.amount or 0 for x in sup), 2),
+                "by_programme": [{"programme": p.name, "beneficiaries": sum(b.programme_id == p.id for b in bens), "budget": p.budget or 0,
+                                  "given": round(sum(x.amount or 0 for x in sup if x.beneficiary_id in {b.id for b in bens if b.programme_id == p.id}), 2)} for p in progs]}
     if module == "livestock":
         animals = await A("animals")
         events = await A("events")

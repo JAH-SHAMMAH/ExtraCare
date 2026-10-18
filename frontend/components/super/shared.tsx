@@ -36,6 +36,7 @@ export function Panel({ title, children }: { title?: string; children: React.Rea
   );
 }
 
-export function Check({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
-  return <input type="checkbox" aria-label={label} checked={on} onChange={(e) => onChange(e.target.checked)} className="h-5 w-5 rounded border-slate-300 accent-emerald-600" />;
+export function Check({ on, onChange, label, partial = false }: { on: boolean; onChange: (v: boolean) => void; label: string; partial?: boolean }) {
+  return <input type="checkbox" aria-label={label} checked={on} ref={(el) => { if (el) el.indeterminate = partial && !on; }}
+    onChange={(e) => onChange(e.target.checked)} className="h-5 w-5 rounded border-slate-300 accent-emerald-600" />;
 }

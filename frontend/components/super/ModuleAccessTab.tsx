@@ -43,10 +43,11 @@ export function ModuleAccessTab({ server }: { server: Record<string, string[]> |
             const items = g.items.filter((i) => match(i.label) || match(g.label));
             if (!items.length) return null;
             const all = items.every((i) => !hidden.has(i.href));
+            const some = items.some((i) => !hidden.has(i.href));
             return (
               <div key={g.key} className="border border-slate-200 rounded-lg">
                 <label className="flex items-center gap-2 px-3 py-2 bg-slate-50 font-bold text-sm">
-                  <Check on={all} label={g.label} onChange={(v) => toggle(items.map((i) => i.href), v)} />{g.label}
+                  <Check on={all} partial={some} label={g.label} onChange={(v) => toggle(items.map((i) => i.href), v)} />{g.label}
                 </label>
                 <div className="grid sm:grid-cols-2 gap-x-4 px-3 py-2">
                   {items.map((i) => (

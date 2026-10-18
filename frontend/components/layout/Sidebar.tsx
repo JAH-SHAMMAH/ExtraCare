@@ -567,6 +567,7 @@ export const MODULE_SECTIONS: ModuleSection[] = [
     icon: Package,
     items: [
       { href: "/dashboard/modules/office/restaurant", label: "Restaurant", icon: Package },
+      { href: "/dashboard/modules/office/empowerment", label: "Empowerment", icon: Package },
       { href: "/dashboard/modules/office/suppliers", label: "Suppliers", icon: Package },
       { href: "/dashboard/modules/office/serviceinvoices", label: "Service Invoices", icon: Package },
       { href: "/dashboard/modules/office/offlineinvoices", label: "Offline Invoices", icon: Package },

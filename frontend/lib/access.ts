@@ -251,6 +251,7 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/remarks", permission: "school:journals:write" },
   { prefix: "/dashboard/modules/school/tuckshop", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/office/restaurant", permission: "school_admin:read" },
+  { prefix: "/dashboard/modules/office/empowerment", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/office/suppliers", permission: "finance_admin:read" },
   { prefix: "/dashboard/modules/office/serviceinvoices", permission: "finance_admin:read" },
   { prefix: "/dashboard/modules/office/offlineinvoices", permission: "finance_admin:read" },

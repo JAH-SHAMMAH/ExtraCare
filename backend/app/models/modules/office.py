@@ -13,7 +13,7 @@ from app.models.base import Base, SoftDeleteMixin, TenantMixin, TimestampMixin, 
 # module -> permission namespace guarding it
 NAMESPACE = {
     "restaurant": "school_admin", "livestock": "school_admin", "rentals": "school_admin", "funfair": "school_admin",
-    "suppliers": "finance_admin", "serviceinvoices": "finance_admin", "offlineinvoices": "finance_admin",
+    "suppliers": "finance_admin", "empowerment": "school_admin", "serviceinvoices": "finance_admin", "offlineinvoices": "finance_admin",
     "spa": "school_admin", "storeappointments": "school_admin",
     "procurement": "finance_admin", "ledger": "finance_admin", "imprest": "finance_admin", "debtmemo": "finance_admin",
 }
@@ -21,7 +21,7 @@ LABELS = {
     "restaurant": "Restaurant", "procurement": "Procurement", "livestock": "Livestock", "rentals": "Rentals",
     "funfair": "Fun Fair", "ledger": "General Ledger", "imprest": "Imprest", "debtmemo": "Debt Memo",
     "suppliers": "Suppliers", "serviceinvoices": "Service Invoices", "offlineinvoices": "Offline Invoices",
-    "spa": "Spa Services", "storeappointments": "Store Appointment Manager",
+    "spa": "Spa Services", "empowerment": "Empowerment", "storeappointments": "Store Appointment Manager",
 }
 
 # resource -> {col: (kind, required)}; first-listed order is the display order.
@@ -36,6 +36,17 @@ MODULES: dict[str, dict[str, dict[str, tuple[str, bool]]]] = {
         "requests": {"title": ("str", True), "supplier_id": ("ref:suppliers", False), "items": ("json", False), "total": ("float", False),
                      "status": ("choice:draft|submitted|approved|rejected|ordered|received", False), "requested_by": ("str", False), "approved_by": ("str", False), "approvals": ("json", False), "awaiting": ("str", False), "note": ("text", False)},
         "limits": {"role": ("str", True), "max_amount": ("float", True)},
+        "rfqs": {"request_id": ("ref:requests", False), "title": ("str", True), "issued_date": ("date", True), "closing_date": ("date", False),
+                 "status": ("choice:open|closed|awarded", False), "note": ("text", False)},
+        "quotes": {"rfq_id": ("ref:rfqs", True), "supplier_id": ("ref:suppliers", True), "amount": ("float", True), "delivery_days": ("int", False),
+                   "valid_until": ("date", False), "status": ("choice:submitted|selected|rejected", False), "note": ("text", False)},
+        "orders": {"po_number": ("str", False), "request_id": ("ref:requests", False), "supplier_id": ("ref:suppliers", True), "quote_id": ("ref:quotes", False),
+                   "order_date": ("date", True), "expected_date": ("date", False), "items": ("json", True), "total": ("float", False),
+                   "status": ("choice:draft|pending_approval|approved|sent|part_received|received|cancelled", False),
+                   "created_by": ("str", False), "approved_by": ("str", False), "approvals": ("json", False), "awaiting": ("str", False), "note": ("text", False)},
+        "grns": {"order_id": ("ref:orders", True), "received_date": ("date", True), "items": ("json", True),
+                 "status": ("choice:draft|pending_approval|approved|rejected", False), "received_by": ("str", False), "approved_by": ("str", False), "note": ("text", False)},
+        "settings": {"po_prefix": ("str", False), "rfq_threshold": ("float", False), "min_quotes": ("int", False)},
     },
     "livestock": {
         "animals": {"tag": ("str", True), "species": ("str", True), "breed": ("str", False), "sex": ("choice:male|female", False),
@@ -61,6 +72,16 @@ MODULES: dict[str, dict[str, dict[str, tuple[str, bool]]]] = {
         "funds": {"holder": ("str", True), "purpose": ("str", False), "float_amount": ("float", True), "status": ("choice:open|closed", False)},
         "entries": {"fund_id": ("ref:funds", True), "kind": ("choice:expense|replenish", True), "entry_date": ("date", True),
                     "description": ("str", True), "amount": ("float", True)},
+    },
+    "empowerment": {
+        "programmes": {"name": ("str", True), "category": ("choice:skills|business|education|health|agriculture|other", False), "start_date": ("date", False),
+                       "end_date": ("date", False), "budget": ("float", False), "status": ("choice:planned|active|completed|cancelled", False), "description": ("text", False)},
+        "beneficiaries": {"name": ("str", True), "programme_id": ("ref:programmes", True), "phone": ("str", False), "enrolled_on": ("date", False),
+                          "status": ("choice:active|graduated|dropped", False), "note": ("text", False)},
+        "trainings": {"programme_id": ("ref:programmes", True), "topic": ("str", True), "training_date": ("date", True), "trainer": ("str", False),
+                      "attendees": ("int", False), "note": ("text", False)},
+        "support": {"beneficiary_id": ("ref:beneficiaries", True), "kind": ("choice:stipend|equipment|grant|materials|other", True), "support_date": ("date", True),
+                    "amount": ("float", True), "note": ("text", False)},
     },
     "debtmemo": {
         "memos": {"debtor": ("str", True), "debtor_type": ("choice:parent|staff|supplier|other", False), "amount": ("float", True), "reason": ("str", True),

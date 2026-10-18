@@ -88,7 +88,7 @@ _f("result_pay_lock", "School Settings", "Result Pay Lock", "bool", False, secti
 # ── Optional back-office modules: built, but closed until the Super User opens them ──
 _M = "Optional Modules"
 for _k, _l in [("restaurant", "Restaurant"), ("procurement", "Procurement"), ("livestock", "Livestock"), ("rentals", "Rentals"),
-               ("funfair", "Fun Fair"), ("suppliers", "Suppliers"), ("serviceinvoices", "Service Invoices"), ("offlineinvoices", "Offline Invoices"),
+               ("funfair", "Fun Fair"), ("empowerment", "Empowerment"), ("suppliers", "Suppliers"), ("serviceinvoices", "Service Invoices"), ("offlineinvoices", "Offline Invoices"),
                ("spa", "Spa Services"), ("storeappointments", "Store Appointment Manager"), ("ledger", "General Ledger"), ("imprest", "Imprest"), ("debtmemo", "Debt Memo")]:
     _f(f"module_{_k}", "School Settings", f"Enable {_l} Module", "bool", False, f"OFF: {_l} is hidden and its API is closed.", section=_M)
 _f("one_time_admission_form", "School Settings", "One Time Admission Form", "bool", False, section=_S)
@@ -114,7 +114,7 @@ _f("exam_practice_link", "School Settings", "Enable Dashboard Exam Practice Link
 _f("auto_instalment", "School Settings", "Auto Instalment (maximum instalments)", "number", 0,
    "Maximum instalment for automatically converted invoices. 0 = off.", section=_M)
 _f("max_imprest_top_up", "School Settings", "Maximum Imprest Top Up (NGN)", "number", 30000,
-   "Maximum imprest amount per child.", section=_M)
+   "The most a single Imprest top-up may be. 0 = no limit.", section=_M)
 
 # ── Patterns & formats ───────────────────────────────────────────────────────
 _f("full_name_format", "Full Name Format and Order", "Full name order", "select:first_last|last_first|last_first_middle|first_middle_last",

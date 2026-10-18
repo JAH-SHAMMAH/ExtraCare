@@ -8,6 +8,7 @@ export const FLAG_ROUTES: FlagRoute[] = [
   { prefix: "/dashboard/modules/school/timetable/subject-attendance", flag: "subject_attendance", when: true, label: "Subject Attendance" },
   { prefix: "/dashboard/modules/school/tuckshop", flag: "open_store_for_parents", when: true, label: "Open Store For Parents" },
   { prefix: "/dashboard/modules/office/restaurant", flag: "module_restaurant", when: true, label: "Restaurant module" },
+  { prefix: "/dashboard/modules/office/empowerment", flag: "module_empowerment", when: true, label: "Empowerment module" },
   { prefix: "/dashboard/modules/office/suppliers", flag: "module_suppliers", when: true, label: "Suppliers module" },
   { prefix: "/dashboard/modules/office/serviceinvoices", flag: "module_serviceinvoices", when: true, label: "Service Invoices module" },
   { prefix: "/dashboard/modules/office/offlineinvoices", flag: "module_offlineinvoices", when: true, label: "Offline Invoices module" },

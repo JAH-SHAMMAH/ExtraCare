@@ -186,3 +186,64 @@ async def test_multi_level_approval_and_wallet_sync(http, db, org):
     assert (await http.put(f"/api/v1/office/procurement/requests/{rid}", headers=_bearer(a1), json={"status": "approved"})).status_code == 422
     done = (await http.put(f"/api/v1/office/procurement/requests/{rid}", headers=_bearer(admin), json={"status": "approved"})).json()
     assert done["status"] == "approved" and len(done["approvals"]) == 2 and done["awaiting"] is None
+
+
+async def _enable(db, org, *mods):
+    org.settings = {**(org.settings or {}), "super": {**(org.settings or {}).get("super", {}), **{f"module_{m}": True for m in mods}}}
+    flag_modified(org, "settings")
+    await db.commit()
+
+
+async def test_procurement_rfq_po_grn_flow(http, db, org):
+    boss = await _setup(db, org)
+    h = _bearer(boss)
+    clerk = await _preset_user(db, org, "accountant")
+    hc = _bearer(clerk)
+    P = "/api/v1/office/procurement"
+    assert (await http.post(f"{P}/settings", headers=hc, json={"rfq_threshold": 1000})).status_code == 422  # super user only
+    await http.post(f"{P}/settings", headers=h, json={"rfq_threshold": 1000, "min_quotes": 2, "po_prefix": "FV-"})
+    s1 = (await http.post(f"{P}/suppliers", headers=h, json={"name": "A Ltd"})).json()["id"]
+    s2 = (await http.post(f"{P}/suppliers", headers=h, json={"name": "B Ltd"})).json()["id"]
+    po = (await http.post(f"{P}/orders", headers=hc, json={"supplier_id": s1, "order_date": "2026-10-01", "items": [{"name": "Desk", "qty": 10, "price": 200}], "status": "approved"})).json()
+    assert po["status"] == "draft" and po["po_number"] == "FV-0001" and po["total"] == 2000
+    # over the threshold, so it needs a selected quote with at least 2 quotes on the RFQ
+    r = await http.put(f"{P}/orders/{po['id']}", headers=hc, json={"status": "pending_approval"})
+    assert r.status_code == 422 and "quote" in r.json()["detail"]
+    rfq = (await http.post(f"{P}/rfqs", headers=h, json={"title": "Desks", "issued_date": "2026-10-01"})).json()["id"]
+    q1 = (await http.post(f"{P}/quotes", headers=h, json={"rfq_id": rfq, "supplier_id": s1, "amount": 1900})).json()["id"]
+    q2 = (await http.post(f"{P}/quotes", headers=h, json={"rfq_id": rfq, "supplier_id": s2, "amount": 2100})).json()["id"]
+    await http.put(f"{P}/quotes/{q1}", headers=h, json={"status": "selected"})
+    assert (await http.put(f"{P}/quotes/{q2}", headers=h, json={"status": "selected"})).status_code == 422
+    quotes = {q["id"]: q["status"] for q in (await http.get(f"{P}/quotes", headers=h)).json()["items"]}
+    assert quotes[q1] == "selected" and quotes[q2] == "rejected"
+    assert (await http.put(f"{P}/orders/{po['id']}", headers=hc, json={"quote_id": q1, "status": "pending_approval"})).status_code == 200
+    assert (await http.put(f"{P}/orders/{po['id']}", headers=hc, json={"status": "approved"})).status_code == 422  # own order
+    ok = (await http.put(f"{P}/orders/{po['id']}", headers=h, json={"status": "approved"})).json()
+    assert ok["status"] == "approved"
+    assert (await http.put(f"{P}/orders/{po['id']}", headers=h, json={"status": "received"})).status_code == 422
+    g = (await http.post(f"{P}/grns", headers=hc, json={"order_id": po["id"], "received_date": "2026-10-05", "items": [{"name": "Desk", "qty_received": 6}], "status": "pending_approval"})).json()
+    assert (await http.put(f"{P}/grns/{g['id']}", headers=hc, json={"status": "approved"})).status_code == 422  # receiver can't approve
+    assert (await http.put(f"{P}/grns/{g['id']}", headers=h, json={"status": "approved"})).status_code == 200
+    assert (await http.get(f"{P}/orders", headers=h)).json()["items"][0]["status"] == "part_received"
+    g2 = (await http.post(f"{P}/grns", headers=hc, json={"order_id": po["id"], "received_date": "2026-10-06", "items": [{"name": "Desk", "qty_received": 6}], "status": "pending_approval"})).json()
+    assert (await http.put(f"{P}/grns/{g2['id']}", headers=h, json={"status": "approved"})).status_code == 422  # over-receipt
+    g3 = (await http.post(f"{P}/grns", headers=hc, json={"order_id": po["id"], "received_date": "2026-10-06", "items": [{"name": "Desk", "qty_received": 4}], "status": "pending_approval"})).json()
+    await http.put(f"{P}/grns/{g3['id']}", headers=h, json={"status": "approved"})
+    assert (await http.get(f"{P}/orders", headers=h)).json()["items"][0]["status"] == "received"
+    assert (await http.get(f"{P}/summary", headers=h)).json()["spend_by_supplier"][0]["supplier"] == "A Ltd"
+
+
+async def test_empowerment_budget_and_imprest_topup_cap(http, db, org):
+    u = await _setup(db, org)
+    await _enable(db, org, "empowerment")
+    h = _bearer(u)
+    E_ = "/api/v1/office/empowerment"
+    prog = (await http.post(f"{E_}/programmes", headers=h, json={"name": "Tailoring", "budget": 1000, "status": "active"})).json()["id"]
+    ben = (await http.post(f"{E_}/beneficiaries", headers=h, json={"name": "Ada", "programme_id": prog})).json()["id"]
+    assert (await http.post(f"{E_}/support", headers=h, json={"beneficiary_id": ben, "kind": "grant", "support_date": "2026-10-02", "amount": 800})).status_code == 201
+    assert (await http.post(f"{E_}/support", headers=h, json={"beneficiary_id": ben, "kind": "grant", "support_date": "2026-10-03", "amount": 300})).status_code == 422
+    assert (await http.get(f"{E_}/summary", headers=h)).json()["support_given"] == 800
+    f = (await http.post("/api/v1/office/imprest/funds", headers=h, json={"holder": "Bursar", "float_amount": 100})).json()["id"]
+    big = {"fund_id": f, "kind": "replenish", "entry_date": "2026-10-02", "description": "Top up", "amount": 50000}
+    assert (await http.post("/api/v1/office/imprest/entries", headers=h, json=big)).status_code == 422
+    assert (await http.post("/api/v1/office/imprest/entries", headers=h, json={**big, "amount": 20000})).status_code == 201
