@@ -33,3 +33,55 @@ export function blockingFlag(
   if (v === undefined) return null;
   return v === best.when ? null : best;
 }
+
+// ── Student / teacher dashboard switches and per-role hidden pages ──────────
+// Only the pages that exist in the app are listed; the other dashboard switches
+// are stored and shown in Super Settings.
+export const STUDENT_FLAG_ROUTES: { flag: string; label: string; prefixes: string[] }[] = [
+  { flag: "show_ctb_link", label: "Show CTB Link", prefixes: ["/dashboard/my-exams"] },
+  { flag: "show_eclassroom_link", label: "Show eClassroom Link", prefixes: ["/dashboard/my-live-classes", "/dashboard/modules/eclassroom"] },
+  { flag: "show_teacher_rating_tab", label: "Show Teacher Rating Tab", prefixes: ["/dashboard/my-teachers"] },
+  { flag: "show_results", label: "Show Results", prefixes: ["/dashboard/modules/school/report-cards"] },
+  { flag: "show_assignment", label: "Show Assignment", prefixes: ["/dashboard/modules/school/eclassroom"] },
+  { flag: "show_timetable", label: "Show Timetable", prefixes: ["/dashboard/my-timetable"] },
+  { flag: "show_chat", label: "Show Chat", prefixes: ["/messenger"] },
+  { flag: "show_calendar", label: "Show Calendar", prefixes: ["/dashboard/modules/school/calendar"] },
+  { flag: "show_medical_reports", label: "Show Medical Reports", prefixes: ["/dashboard/modules/school/medicals"] },
+  { flag: "show_tuckshop_record", label: "Show Tuck Shop Record", prefixes: ["/dashboard/modules/school/tuckshop"] },
+];
+export const TEACHER_FLAG_ROUTES = [
+  { flag: "show_house_point_entry_link", label: "Show House Point Entry Link", prefixes: ["/dashboard/modules/school/point-entry"] },
+];
+
+const under = (path: string, prefix: string) => path === prefix || path.startsWith(prefix + "/");
+
+export interface UiShape {
+  flags?: Record<string, boolean>; student_dashboard?: Record<string, boolean>;
+  teacher_dashboard?: Record<string, boolean>; hidden_hrefs?: string[];
+}
+
+/** Why `pathname` is switched off for this viewer, or null. One rule for the sidebar and the URL guard. */
+export function blockingUi(
+  pathname: string,
+  ui: UiShape | undefined,
+  view: { staff?: boolean; student?: boolean; teacher?: boolean } = {},
+): { label: string } | null {
+  if (!ui) return null;
+  const f = blockingFlag(pathname, ui.flags, { staff: view.staff });
+  if (f) return { label: f.label };
+  if (view.student) {
+    for (const r of STUDENT_FLAG_ROUTES) {
+      if (ui.student_dashboard?.[r.flag] === false && r.prefixes.some((p) => under(pathname, p))) return { label: r.label };
+    }
+  }
+  if (view.teacher) {
+    for (const r of TEACHER_FLAG_ROUTES) {
+      if (ui.teacher_dashboard?.[r.flag] === false && r.prefixes.some((p) => under(pathname, p))) return { label: r.label };
+    }
+  }
+  for (const h of ui.hidden_hrefs ?? []) {
+    const base = h.split("?")[0];
+    if (under(pathname, base)) return { label: "Module Permissions Manager" };
+  }
+  return null;
+}

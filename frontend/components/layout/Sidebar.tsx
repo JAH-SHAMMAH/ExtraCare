@@ -22,14 +22,14 @@ import { BrandMark } from "@/components/branding/Brand";
 import { useAuthStore, type ActiveRole } from "@/lib/store";
 import { effectiveModulesForOrg, moduleAllowedForOrg } from "@/lib/workspace";
 import { canAccessPath } from "@/lib/access";
-import { blockingFlag, isSuperUser } from "@/lib/superFlags";
-import { useSuperFlags } from "@/hooks/useSuperSettings";
+import { blockingUi, isSuperUser } from "@/lib/superFlags";
+import { useSuperUi } from "@/hooks/useSuperSettings";
 import { reportSectionVisible, visibleReportKeys } from "@/lib/reportSections";
 import { useLogout } from "@/hooks/useAuth";
 import { MyRolesMenu } from "@/components/role/MyRolesMenu";
 import { markNavClick } from "@/lib/perf";
 
-const CORE_NAV = [
+export const CORE_NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   // Phase 6.3 role-specific shortcuts. These are personal pages with no module
   // permission — their data is resolved + ownership-scoped server-side from the
@@ -74,10 +74,10 @@ function navItemVisible(
   item: { href: string; roleOnly?: ActiveRole; superOnly?: boolean },
   roleScope: ActiveRole | null,
   hasPermission: (permission: string) => boolean,
-  ctx: { superUser?: boolean; flags?: Record<string, boolean>; staff?: boolean } = {},
+  ctx: { superUser?: boolean; ui?: any; staff?: boolean; student?: boolean; teacher?: boolean } = {},
 ): boolean {
   if (item.superOnly) return !!ctx.superUser;
-  if (blockingFlag(item.href.split("?")[0], ctx.flags, { staff: ctx.staff })) return false;
+  if (!ctx.superUser && blockingUi(item.href.split("?")[0], ctx.ui, { staff: ctx.staff, student: ctx.student, teacher: ctx.teacher })) return false;
   if (item.roleOnly) return roleScope === item.roleOnly;
   // Real pages: the shared access map decides. A null requirement means the
   // route is open to any authenticated user. Strip any ?query (e.g. deep-linked
@@ -104,7 +104,7 @@ interface ModuleSection {
 // permission-gated via the shared access map — the build-out is complete and
 // no "Coming soon" placeholders remain. Non-admins only ever see the real
 // items their permissions allow.
-const MODULE_SECTIONS: ModuleSection[] = [
+export const MODULE_SECTIONS: ModuleSection[] = [
   {
     // Classes/YearGroups — its own top-level module (Educare parity). Manage
     // YearGroups is the ordered level taxonomy; Manage Class is the existing
@@ -701,10 +701,11 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   const currentTab = searchParams.get("tab");
   const currentSection = searchParams.get("section");
   const { user, org, activeRole, hasPermission } = useAuthStore();
-  const { data: superFlags } = useSuperFlags();
+  const { data: superUi } = useSuperUi();
   const navCtx = {
-    superUser: isSuperUser(user as any), flags: superFlags,
+    superUser: isSuperUser(user as any), ui: superUi,
     staff: hasPermission("school:students:read"),
+    student: activeRole === "student", teacher: activeRole === "teacher",
   };
   const logout = useLogout();
   const roleScope = moduleAllowedForOrg(org, "school") ? activeRole : "admin";
@@ -756,7 +757,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   const visibleCoreNav = useMemo(
     () => CORE_NAV.filter((item) => navItemVisible(item, roleScope ?? null, hasPermission, navCtx)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [roleScope, user, org],
+    [roleScope, user, org, superUi],
   );
 
   // Pre-filter module sections by module AND by permission. A teacher's broad

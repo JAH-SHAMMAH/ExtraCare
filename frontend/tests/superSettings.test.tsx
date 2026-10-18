@@ -10,7 +10,14 @@ vi.mock("@/hooks/useSuperSettings", () => ({
     fields: [{ key: "wallet_manual_credit", tab: "School Settings", section: "Payments", label: "Toggle Wallet Manual Credit", kind: "bool", default: true }],
     values: { wallet_manual_credit: true } } }),
   useSaveSuperSettings: () => ({ mutate: save, isPending: false }),
+  useSuperStruct: () => ({ data: { values: {
+    student_dashboard: {}, teacher_dashboard: {}, doc_categories: [], notification_prefs: {}, role_perms: {},
+    module_access: { teacher: [] },
+    patterns: { email: { items: [{ type: "first_name", length: "full" }, { type: "surname", length: "full" }], separator: ".", suffix: "@x.com" } },
+  }, meta: { student_dashboard_items: [], teacher_dashboard_items: [], notification_events: [], role_perm_items: [] } } }),
+  useSaveSuperStruct: () => ({ mutate: save, isPending: false }),
 }));
+vi.mock("@/hooks/useUsers", () => ({ useAvailableRoles: () => ({ data: { items: [{ slug: "teacher", name: "Teacher" }] } }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import Page from "@/app/(dashboard)/dashboard/settings/super/page";
 
@@ -25,6 +32,21 @@ describe("Super Settings", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Toggle Wallet Manual Credit" }));
     fireEvent.click(screen.getByText("Save Change"));
     expect(save.mock.calls[0][0]).toEqual({ wallet_manual_credit: false });
+  });
+});
+
+describe("Super Settings structured tabs", () => {
+  it("shows a live email example and saves the module tree as hidden pages", () => {
+    user.current = { primary_role: "super_user", permissions: ["*"] };
+    render(<Page />);
+    fireEvent.click(screen.getByText("Email Pattern"));
+    expect(screen.getByTestId("pattern-preview").textContent).toBe("chidiebere.ugwu@x.com");
+    fireEvent.click(screen.getByText("Module Permissions Manager"));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Core Dashboard" }));
+    fireEvent.click(screen.getByText("Update"));
+    const call = save.mock.calls.at(-1)![0];
+    expect(call.key).toBe("module_access");
+    expect(call.value.teacher).toContain("/dashboard");
   });
 });
 

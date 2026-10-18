@@ -6,9 +6,15 @@ import { Loader2, ShieldAlert, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/lib/store";
 import { isSuperUser } from "@/lib/superFlags";
-import { useSuperSettings, useSaveSuperSettings } from "@/hooks/useSuperSettings";
+import { useSuperSettings, useSaveSuperSettings, useSuperStruct } from "@/hooks/useSuperSettings";
 import type { SuperField } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { ChecklistTab } from "@/components/super/ChecklistTab";
+import { DocCategoriesTab } from "@/components/super/DocCategoriesTab";
+import { PatternTab } from "@/components/super/PatternTab";
+import { NotificationsTab } from "@/components/super/NotificationsTab";
+import { RolePermsTab } from "@/components/super/RolePermsTab";
+import { ModuleAccessTab } from "@/components/super/ModuleAccessTab";
 
 const GENERAL_TABS = ["General", "Themes", "Module Manager", "Module Permissions Manager", "User Role Permissions", "Notifications", "Other Settings"];
 const SUB_TABS = [
@@ -21,9 +27,6 @@ const SUB_TABS = [
 const LINKS: Record<string, { href: string; text: string; cta: string }> = {
   "Themes": { href: "/dashboard/settings", text: "School colours, logo and look are set under Settings.", cta: "Open Settings" },
   "Module Manager": { href: "/dashboard/billing", text: "Which modules the school uses follows its plan.", cta: "Open Plan & Billing" },
-  "Module Permissions Manager": { href: "/dashboard/users", text: "Choose what each role can open from Users → Roles.", cta: "Open Users & Roles" },
-  "User Role Permissions": { href: "/dashboard/users", text: "Create roles and set their permissions from Users → Roles.", cta: "Open Users & Roles" },
-  "Notifications": { href: "/dashboard/notifications", text: "Your inbox. Parent arrival/departure alerts are automatic.", cta: "Open Notifications" },
   "Other Settings": { href: "/dashboard/settings", text: "Backups, profile and the rest of the organisation settings.", cta: "Open Settings" },
 };
 
@@ -63,6 +66,8 @@ export default function SuperSettingsPage() {
   const allowed = isSuperUser(user as any);
   const { data, isLoading } = useSuperSettings(allowed);
   const save = useSaveSuperSettings();
+  const struct = useSuperStruct(allowed);
+  const sv = struct.data?.values; const meta = struct.data?.meta;
   const [general, setGeneral] = useState("General");
   const [sub, setSub] = useState("School Settings");
   const [edits, setEdits] = useState<Record<string, any>>({});
@@ -103,7 +108,10 @@ export default function SuperSettingsPage() {
         ))}
       </div>
 
-      {general !== "General" ? (
+      {general === "Module Permissions Manager" ? <ModuleAccessTab server={sv?.module_access} />
+      : general === "User Role Permissions" ? <RolePermsTab server={sv?.role_perms} items={meta?.role_perm_items ?? []} />
+      : general === "Notifications" ? <NotificationsTab server={sv?.notification_prefs} events={meta?.notification_events ?? []} />
+      : general !== "General" ? (
         <div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-600">
           <p>{LINKS[general]?.text}</p>
           {LINKS[general] && <Link href={LINKS[general].href} className="btn-primary inline-flex mt-4">{LINKS[general].cta}</Link>}
@@ -115,7 +123,14 @@ export default function SuperSettingsPage() {
               <button key={t} onClick={() => setSub(t)} className={cn("py-2 text-sm font-semibold border-b-2 -mb-px", sub === t ? "border-emerald-500 text-emerald-600" : "border-transparent text-slate-600 hover:text-slate-900")}>{t}</button>
             ))}
           </div>
-          {isLoading ? (
+          {sub === "Student Dashboard Settings" ? <ChecklistTab title="Student Dashboard Settings" structKey="student_dashboard" items={meta?.student_dashboard_items ?? []} server={sv?.student_dashboard} />
+          : sub === "Teacher Dashboard Settings" ? <ChecklistTab title="Teacher Dashboard Settings" structKey="teacher_dashboard" items={meta?.teacher_dashboard_items ?? []} server={sv?.teacher_dashboard} />
+          : sub === "Student Documents" ? <DocCategoriesTab server={sv?.doc_categories} />
+          : sub === "Reg. Number Pattern" ? <PatternTab title="Reg. Number Pattern" patternKey="reg_number" server={sv?.patterns} />
+          : sub === "Staff ID Pattern" ? <PatternTab title="Staff ID Pattern" patternKey="staff_id" server={sv?.patterns} />
+          : sub === "Email Pattern" ? <PatternTab title="Email Pattern" patternKey="email" server={sv?.patterns} lower />
+          : sub === "Student Email Pattern" ? <PatternTab title="Student Email Pattern" patternKey="student_email" server={sv?.patterns} lower />
+          : isLoading ? (
             <div className="py-16 text-center"><Loader2 className="animate-spin text-slate-400 mx-auto" /></div>
           ) : (
             <div className="space-y-4">

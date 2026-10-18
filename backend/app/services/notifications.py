@@ -38,6 +38,22 @@ def set_session_factory_override(factory) -> None:
     _session_factory_override = factory
 
 
+# notification `type` -> Super Settings event key (only types that have a switch).
+_TYPE_EVENT = {"attendance": "class_attendance"}
+
+
+async def _push_enabled(session: AsyncSession, org_id: str, type: str) -> bool:
+    ev = _TYPE_EVENT.get(type)
+    if not ev:
+        return True
+    try:
+        from app.services import super_settings as _ss
+        prefs = (await _ss.get_struct(session, org_id)).get("notification_prefs", {})
+        return bool(prefs.get(ev, {}).get("push", True))
+    except Exception:
+        return True
+
+
 async def notify(
     *,
     org_id: str,
@@ -50,6 +66,8 @@ async def notify(
 ) -> Notification | None:
     """Inline notification. Caller owns the commit."""
     try:
+        if not await _push_enabled(session, org_id, type):
+            return None
         row = Notification(
             org_id=org_id,
             user_id=user_id,

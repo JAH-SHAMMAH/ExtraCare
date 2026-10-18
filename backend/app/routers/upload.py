@@ -17,6 +17,8 @@ from app.models.user import User
 from app.services.storage import save_upload
 
 _logger = logging.getLogger("extracare.upload")
+from app.services.super_settings import require_role_perm
+
 router = APIRouter(prefix="/upload", tags=["Upload"])
 
 _IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
@@ -44,7 +46,7 @@ async def _read_validated(file: UploadFile, allowed: set[str], max_size: int) ->
     return content
 
 
-@router.post("/avatar")
+@router.post("/avatar", dependencies=[Depends(require_role_perm("avatar", "Changing your profile picture"))])
 async def upload_avatar(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),

@@ -37,6 +37,8 @@ from app.schemas.feed import (
 )
 
 logger = logging.getLogger("extracare.feed")
+from app.services.super_settings import require_role_perm
+
 router = APIRouter(prefix="/feed", tags=["News Feed"])
 
 
@@ -142,7 +144,7 @@ def _to_comment_response(c: PostComment) -> CommentResponse:
 
 # ── Posts ──────────────────────────────────────────────────────────────────
 
-@router.post("/posts", response_model=PostResponse, status_code=201, dependencies=[Depends(rate_limit_auth("feed_post"))])
+@router.post("/posts", response_model=PostResponse, status_code=201, dependencies=[Depends(rate_limit_auth("feed_post")), Depends(require_role_perm("direct_post", "Posting on the news feed"))])
 async def create_post(
     data: PostCreate,
     db: AsyncSession = Depends(get_db),
@@ -349,7 +351,7 @@ async def list_comments(
     return [_to_comment_response(c) for c in rows]
 
 
-@router.post("/posts/{post_id}/comments", response_model=CommentResponse, status_code=201, dependencies=[Depends(rate_limit_auth("feed_post"))])
+@router.post("/posts/{post_id}/comments", response_model=CommentResponse, status_code=201, dependencies=[Depends(rate_limit_auth("feed_post")), Depends(require_role_perm("direct_comment", "Commenting"))])
 async def create_comment(
     post_id: str,
     data: CommentCreate,

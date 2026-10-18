@@ -5,8 +5,8 @@ import Link from "next/link";
 import { ShieldAlert } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { permissionForPath, canAccessPath } from "@/lib/access";
-import { blockingFlag } from "@/lib/superFlags";
-import { useSuperFlags } from "@/hooks/useSuperSettings";
+import { blockingUi, isSuperUser } from "@/lib/superFlags";
+import { useSuperUi } from "@/hooks/useSuperSettings";
 
 /**
  * Authorization guard for the dashboard subtree (Phase 7 RBAC).
@@ -25,8 +25,11 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, hasPermission } = useAuthStore();
   const required = permissionForPath(pathname);
-  const { data: flags } = useSuperFlags();
-  const blocked = user ? blockingFlag(pathname, flags, { staff: hasPermission("school:students:read") }) : null;
+  const { data: ui } = useSuperUi();
+  const activeRole = useAuthStore((s) => s.activeRole);
+  const blocked = user && !isSuperUser(user as any)
+    ? blockingUi(pathname, ui, { staff: hasPermission("school:students:read"), student: activeRole === "student", teacher: activeRole === "teacher" })
+    : null;
   if (blocked) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-slate-400 px-8">

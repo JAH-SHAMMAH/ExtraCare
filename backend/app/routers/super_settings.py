@@ -45,3 +45,35 @@ async def write(body: dict, request: Request, db: AsyncSession = Depends(get_db)
                      resource_type="SuperSettings", resource_id=user.org_id,
                      resource_label=f"Super settings: {changed or 'secret fields'}", request=request)
     return {"values": vals}
+
+
+# ── Structured settings ──────────────────────────────────────────────────────
+@router.get("/ui")
+async def ui(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
+    """Everything the shell needs to hide switched-off pages for THIS user. Booleans
+    and page lists only: no text fields, no passwords."""
+    vals = await ss.get_values(db, user.org_id)
+    st = await ss.get_struct(db, user.org_id)
+    return {
+        "flags": {f["key"]: bool(vals[f["key"]]) for f in ss.FIELDS if f["kind"] == "bool"},
+        "student_dashboard": st["student_dashboard"],
+        "teacher_dashboard": st["teacher_dashboard"],
+        "hidden_hrefs": ss.hidden_hrefs_for(st, user),
+    }
+
+
+@router.get("/structured")
+async def read_struct(db: AsyncSession = Depends(get_db), user: User = Depends(_must_be_super)):
+    return {"values": await ss.get_struct(db, user.org_id), "meta": ss.struct_meta()}
+
+
+@router.put("/structured/{key}")
+async def write_struct(key: str, body: dict, request: Request, db: AsyncSession = Depends(get_db),
+                       user: User = Depends(_must_be_super)):
+    if "value" not in body:
+        raise HTTPException(422, detail="Send {\"value\": ...}.")
+    out = await ss.set_struct(db, user.org_id, key, body["value"])
+    await log_action(db, AuditAction.RECORD_UPDATED, user.org_id, actor=user,
+                     resource_type="SuperSettings", resource_id=user.org_id,
+                     resource_label=f"Super settings: {key}", request=request)
+    return {"value": out}

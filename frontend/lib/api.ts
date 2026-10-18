@@ -2127,8 +2127,29 @@ export const backupApi = {
 
 // Super-User-only school switches + profile/school defaults.
 export interface SuperField { key: string; tab: string; section: string; label: string; kind: string; default: any; help?: string }
+export interface SuperUi {
+  flags: Record<string, boolean>; student_dashboard: Record<string, boolean>;
+  teacher_dashboard: Record<string, boolean>; hidden_hrefs: string[];
+}
+export interface PatternItem { type: string; length?: number | "full"; text?: string }
+export interface PatternDef { items: PatternItem[]; separator: string; suffix: string }
+export interface DocCategory { name: string; admission_status: "required" | "not_required"; required: boolean; active: boolean; medical: boolean }
+export interface RolePerm { message: boolean; avatar: boolean; news_feed: boolean; direct_post: boolean; direct_comment: boolean; birthday: boolean; contact_info: boolean; can_create_group: boolean; message_roles: string[] }
+export interface SuperStruct {
+  student_dashboard: Record<string, boolean>; teacher_dashboard: Record<string, boolean>;
+  doc_categories: DocCategory[]; patterns: Record<string, PatternDef>;
+  notification_prefs: Record<string, { email: boolean; push: boolean }>;
+  role_perms: Record<string, RolePerm>; module_access: Record<string, string[]>;
+}
+export interface SuperStructMeta {
+  student_dashboard_items: { key: string; label: string }[]; teacher_dashboard_items: { key: string; label: string }[];
+  notification_events: { key: string; label: string }[]; role_perm_items: { key: string; label: string; help: string }[];
+}
 export const superSettingsApi = {
   flags: () => api.get("/super-settings/flags").then((r) => r.data as Record<string, boolean>),
+  ui: () => api.get("/super-settings/ui").then((r) => r.data as SuperUi),
+  readStruct: () => api.get("/super-settings/structured").then((r) => r.data as { values: SuperStruct; meta: SuperStructMeta }),
+  saveStruct: (key: string, value: any) => api.put(`/super-settings/structured/${key}`, { value }).then((r) => r.data),
   read: () => api.get("/super-settings").then((r) => r.data as { fields: SuperField[]; values: Record<string, any> }),
   save: (values: Record<string, any>) => api.put("/super-settings", { values }).then((r) => r.data),
 };

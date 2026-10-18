@@ -325,6 +325,16 @@ async def create_conversation(
     if data.kind == ConversationKind.GLOBAL:
         raise HTTPException(status_code=400, detail="Global conversations are auto-provisioned; do not create manually.")
 
+    # Super Settings -> User Role Permissions: who may message whom / start groups.
+    from app.services import super_settings as _ss
+    _st = await _ss.get_struct(db, current_user.org_id)
+    if not _ss.role_perm_allows(_st, current_user, "message"):
+        raise HTTPException(status_code=403, detail="Messaging has been switched off for your role by the Super User.")
+    if data.kind != ConversationKind.DIRECT and not _ss.is_super_user(current_user):
+        _rp = _st.get("role_perms", {})
+        if not any(_rp.get(sl, {}).get("can_create_group", True) for sl in _ss._role_slugs(current_user) or [""]):
+            raise HTTPException(status_code=403, detail="Creating groups has been switched off for your role by the Super User.")
+
     if data.kind == ConversationKind.DIRECT:
         if not data.peer_id or data.peer_id == current_user.id:
             raise HTTPException(status_code=422, detail="peer_id: required and must be a different user")
@@ -337,6 +347,14 @@ async def create_conversation(
         )).scalar_one_or_none()
         if not peer:
             raise HTTPException(status_code=404, detail="peer_id: user not found in your organisation")
+
+        if not _ss.is_super_user(current_user):
+            _rp = _st.get("role_perms", {})
+            _allowed = [set(_rp.get(sl, {}).get("message_roles") or []) for sl in _ss._role_slugs(current_user) or [""]]
+            if all(_allowed):  # every role of the sender has a restricted audience
+                _peer_slugs = {r.slug for r in (await db.execute(select(User).options(selectinload(User.roles)).where(User.id == peer.id))).scalar_one().roles}
+                if not any(a & _peer_slugs for a in _allowed):
+                    raise HTTPException(status_code=403, detail="Your role is not allowed to message this person.")
 
         pair = _dm_pair_key(current_user.id, peer.id)
         existing = (await db.execute(

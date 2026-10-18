@@ -1,5 +1,7 @@
 "use client";
 
+import { useSuperUi } from "@/hooks/useSuperSettings";
+import { blockingUi } from "@/lib/superFlags";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
@@ -210,6 +212,9 @@ function QuickTile({
   label: string;
   color: string;
 }) {
+  // Super Settings -> Student Dashboard Settings: a switched-off page loses its tile too.
+  const { data: ui } = useSuperUi();
+  if (blockingUi(href, ui, { student: true })) return null;
   return (
     <Link
       href={href}
