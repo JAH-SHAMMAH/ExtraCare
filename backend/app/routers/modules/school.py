@@ -1,6 +1,7 @@
 import csv
 import io
 import logging
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -2564,6 +2565,117 @@ async def teacher_rating_average(
     average = round(sum(r.rating for r in rows) / count, 2) if count else 0
     distribution = {n: sum(1 for r in rows if r.rating == n) for n in range(1, 6)}
     return {"teacher_id": teacher_id, "average": average, "count": count, "distribution": distribution}
+
+
+# ── Rate My Teachers (student-facing) ─────────────────────────────────────────
+# The staff-side /ratings routes above need school:read/write and a typed student
+# id, so a pupil could never reach them. These two answer for the signed-in pupil
+# only: who teaches me, and my rating of each. Gated on `school:voting:submit`,
+# the scope the student preset already carries for exactly this ("vote/rate for
+# teacher"), so it needs no new grant on existing student roles.
+_rate_teacher = Depends(PermissionChecker("school:voting:submit"))
+
+
+async def _my_student(db: AsyncSession, user: User) -> Student:
+    st = (await db.execute(select(Student).where(
+        Student.org_id == user.org_id, Student.is_deleted == False,  # noqa: E712
+        or_(Student.user_id == user.id, Student.email == user.email),
+    ))).scalars().first()
+    if not st:
+        raise HTTPException(status_code=404, detail="No pupil record is linked to your account.")
+    return st
+
+
+async def _my_teacher_ids(db: AsyncSession, st: Student) -> dict[str, dict]:
+    """teacher_id -> {"subjects": set[str], "class_teacher": bool} for this pupil's class."""
+    org = st.org_id
+    found: dict[str, dict] = {}
+    if not st.class_id:
+        return found
+
+    def add(tid, subject=None, class_teacher=False):
+        if not tid:
+            return
+        e = found.setdefault(tid, {"subjects": set(), "class_teacher": False})
+        if subject:
+            e["subjects"].add(subject)
+        if class_teacher:
+            e["class_teacher"] = True
+
+    cls = (await db.execute(select(SchoolClass).where(
+        SchoolClass.id == st.class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+    if cls:
+        add(cls.teacher_id, class_teacher=True)
+    rows = (await db.execute(
+        select(Timetable.teacher_id, Subject.name).join(Subject, Subject.id == Timetable.subject_id).where(
+            Timetable.org_id == org, Timetable.class_id == st.class_id, Timetable.teacher_id.isnot(None)))).all()
+    for tid, sname in rows:
+        add(tid, sname)
+    if not rows:
+        # No timetable yet: fall back to the subjects' own teachers.
+        for tid, sname in (await db.execute(select(Subject.teacher_id, Subject.name).where(
+                Subject.org_id == org, Subject.teacher_id.isnot(None), Subject.is_active == True))).all():  # noqa: E712
+            add(tid, sname)
+    return found
+
+
+@router.get("/my-teachers", dependencies=[_rate_teacher])
+async def my_teachers(db: AsyncSession = Depends(get_db),
+                      current_user: User = Depends(get_current_active_user)):
+    st = await _my_student(db, current_user)
+    teachers = await _my_teacher_ids(db, st)
+    if not teachers:
+        return []
+    users = {u.id: u for u in (await db.execute(select(User).where(
+        User.org_id == st.org_id, User.id.in_(list(teachers))))).scalars().all()}
+    mine = {r.teacher_id: r for r in (await db.execute(select(TeacherRating).where(
+        TeacherRating.org_id == st.org_id, TeacherRating.student_id == st.id))).scalars().all()}
+    out = []
+    for tid, info in teachers.items():
+        u = users.get(tid)
+        if not u:
+            continue
+        r = mine.get(tid)
+        out.append({
+            "teacher_id": tid, "name": u.full_name, "avatar_url": getattr(u, "avatar_url", None),
+            "subjects": sorted(info["subjects"]), "class_teacher": info["class_teacher"],
+            "my_rating": int(r.rating) if r else None, "my_comment": r.comment if r else None,
+        })
+    out.sort(key=lambda x: (not x["class_teacher"], x["name"] or ""))
+    return out
+
+
+class MyRatingIn(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=1000)
+
+
+@router.put("/my-teachers/{teacher_id}/rating", dependencies=[_rate_teacher])
+async def rate_my_teacher(teacher_id: str, data: MyRatingIn, request: Request = None,
+                          db: AsyncSession = Depends(get_db),
+                          current_user: User = Depends(get_current_active_user)):
+    st = await _my_student(db, current_user)
+    if teacher_id not in await _my_teacher_ids(db, st):
+        raise HTTPException(status_code=403, detail="You can only rate teachers who teach your class.")
+    teacher = (await db.execute(select(User).where(
+        User.id == teacher_id, User.org_id == st.org_id))).scalar_one_or_none()
+    if not teacher:
+        raise HTTPException(status_code=404, detail="Teacher not found.")
+    r = (await db.execute(select(TeacherRating).where(
+        TeacherRating.teacher_id == teacher_id, TeacherRating.student_id == st.id,
+        TeacherRating.org_id == st.org_id))).scalar_one_or_none()
+    comment = (data.comment or "").strip() or None
+    if r:
+        r.rating, r.comment = data.rating, comment
+    else:
+        r = TeacherRating(teacher_id=teacher_id, student_id=st.id, rating=data.rating,
+                          comment=comment, org_id=st.org_id)
+        db.add(r)
+    await db.flush()
+    await log_action(db, AuditAction.RECORD_CREATED, st.org_id, actor=current_user,
+                     resource_type="TeacherRating", resource_id=r.id,
+                     resource_label=f"{data.rating}★ for {teacher.full_name}", request=request)
+    return {"teacher_id": teacher_id, "my_rating": int(r.rating), "my_comment": r.comment}
 
 
 # ── Timetable ─────────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   Clock, BookOpen, Calendar, CheckSquare, ArrowRight, GraduationCap,
-  FileText, MonitorCheck, Library, Newspaper,
+  FileText, MonitorCheck, Library, Star, Newspaper,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { useMyContexts, type ContextSlot } from "@/hooks/useMyContexts";
@@ -147,6 +147,7 @@ export function StudentHome() {
             narrowing that 697a543 fixed on the API side. */}
         <QuickTile href="/dashboard/my-exams" icon={MonitorCheck} label="My Exams" color="bg-indigo-500" />
         <QuickTile href="/dashboard/my-library" icon={Library} label="My Library" color="bg-rose-500" />
+        <QuickTile href="/dashboard/my-teachers" icon={Star} label="Rate My Teachers" color="bg-violet-500" />
         <QuickTile href="/dashboard/my-timetable" icon={Calendar} label="My Timetable" color="bg-emerald-500" />
       </div>
 

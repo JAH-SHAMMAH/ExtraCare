@@ -304,6 +304,10 @@ export const schoolApi = {
     list: (p?: object) => api.get("/school/ratings", { params: p }).then((r) => r.data),
     submit: (data: object) => api.post("/school/ratings", data).then((r) => r.data),
     teacherAverage: (teacher_id: string) => api.get(`/school/ratings/teacher/${teacher_id}`).then((r) => r.data),
+    // Student-facing: the signed-in pupil's own teachers, and rating one of them.
+    myTeachers: () => api.get("/school/my-teachers").then((r) => r.data),
+    rateMine: (teacher_id: string, data: { rating: number; comment?: string }) =>
+      api.put(`/school/my-teachers/${teacher_id}/rating`, data).then((r) => r.data),
   },
   grades: {
     submit: (grades: object[]) => api.post("/school/grades", grades).then((r) => r.data),

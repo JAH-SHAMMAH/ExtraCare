@@ -471,6 +471,22 @@ export function useCreateTimetableSlot() {
 
 // ── Ratings ──────────────────────────────────────────────────────────────────
 
+export interface MyTeacher {
+  teacher_id: string; name: string; avatar_url?: string | null; subjects: string[];
+  class_teacher: boolean; my_rating: number | null; my_comment: string | null;
+}
+export function useMyTeachers() {
+  return useQuery<MyTeacher[]>({ queryKey: ["my-teachers"], queryFn: () => schoolApi.ratings.myTeachers() });
+}
+export function useRateMyTeacher() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { teacher_id: string; rating: number; comment?: string }) =>
+      schoolApi.ratings.rateMine(v.teacher_id, { rating: v.rating, comment: v.comment }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-teachers"] }),
+  });
+}
+
 export function useTeacherRatings(params?: { teacher_id?: string; page?: number }) {
   return useQuery({
     queryKey: ["teacher-ratings", params],
