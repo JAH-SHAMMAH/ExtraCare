@@ -7,6 +7,14 @@ export const FLAG_ROUTES: FlagRoute[] = [
   { prefix: "/dashboard/modules/school/biometric", flag: "school_biometric", when: true, label: "School Biometric Attendance" },
   { prefix: "/dashboard/modules/school/timetable/subject-attendance", flag: "subject_attendance", when: true, label: "Subject Attendance" },
   { prefix: "/dashboard/modules/school/tuckshop", flag: "open_store_for_parents", when: true, label: "Open Store For Parents" },
+  { prefix: "/dashboard/modules/office/restaurant", flag: "module_restaurant", when: true, label: "Restaurant module" },
+  { prefix: "/dashboard/modules/office/procurement", flag: "module_procurement", when: true, label: "Procurement module" },
+  { prefix: "/dashboard/modules/office/livestock", flag: "module_livestock", when: true, label: "Livestock module" },
+  { prefix: "/dashboard/modules/office/rentals", flag: "module_rentals", when: true, label: "Rentals module" },
+  { prefix: "/dashboard/modules/office/funfair", flag: "module_funfair", when: true, label: "Fun Fair module" },
+  { prefix: "/dashboard/modules/office/ledger", flag: "module_ledger", when: true, label: "General Ledger module" },
+  { prefix: "/dashboard/modules/office/imprest", flag: "module_imprest", when: true, label: "Imprest module" },
+  { prefix: "/dashboard/modules/office/debtmemo", flag: "module_debtmemo", when: true, label: "Debt Memo module" },
 ];
 
 export function isSuperUser(user: { primary_role?: string; permissions?: string[] } | null | undefined): boolean {

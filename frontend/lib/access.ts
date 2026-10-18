@@ -250,6 +250,14 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/modules/school/journals", permission: "school:journals:read" },
   { prefix: "/dashboard/modules/school/remarks", permission: "school:journals:write" },
   { prefix: "/dashboard/modules/school/tuckshop", permission: "school_admin:read" },
+  { prefix: "/dashboard/modules/office/restaurant", permission: "school_admin:read" },
+  { prefix: "/dashboard/modules/office/procurement", permission: "finance_admin:read" },
+  { prefix: "/dashboard/modules/office/livestock", permission: "school_admin:read" },
+  { prefix: "/dashboard/modules/office/rentals", permission: "school_admin:read" },
+  { prefix: "/dashboard/modules/office/funfair", permission: "school_admin:read" },
+  { prefix: "/dashboard/modules/office/ledger", permission: "finance_admin:read" },
+  { prefix: "/dashboard/modules/office/imprest", permission: "finance_admin:read" },
+  { prefix: "/dashboard/modules/office/debtmemo", permission: "finance_admin:read" },
 
   // ── Batch 1: People & HR ───────────────────────────────────────────────
   // Parents Directory: guardian PII → staff-only. `school:parents:read` is

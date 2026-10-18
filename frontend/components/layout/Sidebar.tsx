@@ -559,6 +559,24 @@ export const MODULE_SECTIONS: ModuleSection[] = [
     ],
   },
   {
+    // Optional back-office modules. Each is closed until the Super User switches
+    // it on (Super Settings → Optional Modules), then it appears here.
+    key: "back-office",
+    requiredModule: "school",
+    label: "Back Office",
+    icon: Package,
+    items: [
+      { href: "/dashboard/modules/office/restaurant", label: "Restaurant", icon: Package },
+      { href: "/dashboard/modules/office/procurement", label: "Procurement", icon: Package },
+      { href: "/dashboard/modules/office/livestock", label: "Livestock", icon: Package },
+      { href: "/dashboard/modules/office/rentals", label: "Rentals", icon: Package },
+      { href: "/dashboard/modules/office/funfair", label: "Fun Fair", icon: Package },
+      { href: "/dashboard/modules/office/ledger", label: "General Ledger", icon: Package },
+      { href: "/dashboard/modules/office/imprest", label: "Imprest", icon: Package },
+      { href: "/dashboard/modules/office/debtmemo", label: "Debt Memo", icon: Package },
+    ],
+  },
+  {
     key: "operations",
     requiredModule: "school",
     label: "Operations",

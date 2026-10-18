@@ -2153,3 +2153,14 @@ export const superSettingsApi = {
   read: () => api.get("/super-settings").then((r) => r.data as { fields: SuperField[]; values: Record<string, any> }),
   save: (values: Record<string, any>) => api.put("/super-settings", { values }).then((r) => r.data),
 };
+
+// ── Back-office modules (Restaurant, Procurement, Livestock, Rentals, Fun Fair, Ledger, Imprest, Debt Memo)
+export interface OfficeSchema { module: string; label: string; can_write: boolean; resources: Record<string, Record<string, { kind: string; required: boolean }>> }
+export const officeApi = {
+  schema: (m: string) => api.get(`/office/${m}/schema`).then((r) => r.data as OfficeSchema),
+  summary: (m: string) => api.get(`/office/${m}/summary`).then((r) => r.data as Record<string, any>),
+  list: (m: string, r: string, q?: string) => api.get(`/office/${m}/${r}`, { params: { q } }).then((x) => x.data as { items: any[]; total: number }),
+  create: (m: string, r: string, body: object) => api.post(`/office/${m}/${r}`, body).then((x) => x.data),
+  update: (m: string, r: string, id: string, body: object) => api.put(`/office/${m}/${r}/${id}`, body).then((x) => x.data),
+  remove: (m: string, r: string, id: string) => api.delete(`/office/${m}/${r}/${id}`).then((x) => x.data),
+};

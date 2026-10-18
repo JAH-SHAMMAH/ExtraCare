@@ -70,3 +70,5 @@ __all__ = [
     "StudentRouteAssignment", "TransportTrip", "TripBoarding",
     "VehicleStatus", "TripDirection", "TripStatus", "BoardingStatus",
 ]
+
+from app.models.modules import office as _office  # noqa: F401,E402  (back-office tables)
