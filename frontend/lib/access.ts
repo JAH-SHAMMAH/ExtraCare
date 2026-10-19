@@ -352,13 +352,13 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // A form/pastoral teacher's OWN-GROUP surfaces ride the non-boarding
   // `school:pastoral:read` slice; Pastoral Setup (org-wide config) and the whole
   // boarding cluster stay on school:hostel:read, which the classroom tier lacks.
-  { prefix: "/dashboard/modules/school/pastoral-dashboard", permission: "school:pastoral:read" },
-  { prefix: "/dashboard/modules/school/pastoral-report", permission: "school:pastoral:read" },
-  { prefix: "/dashboard/modules/school/pastoral-students", permission: "school:pastoral:read" },
+  { prefix: "/dashboard/modules/school/pastoral-dashboard", permission: "school:hostel:read" },
+  { prefix: "/dashboard/modules/school/pastoral-report", permission: "school:hostel:read" },
+  { prefix: "/dashboard/modules/school/pastoral-students", permission: "school:hostel:read" },
   { prefix: "/dashboard/modules/school/pastoral-setup", permission: "school:hostel:read" },
   // Point Entry + Points Analysis ride the Recognition ledger → school:behaviour.
-  { prefix: "/dashboard/modules/school/point-entry", permission: "school:behaviour:read" },
-  { prefix: "/dashboard/modules/school/points-analysis", permission: "school:behaviour:read" },
+  { prefix: "/dashboard/modules/school/point-entry", permission: "school:hostel:read" },
+  { prefix: "/dashboard/modules/school/points-analysis", permission: "school:hostel:read" },
   { prefix: "/dashboard/modules/school/hostel-students", permission: "school:hostel:read" },
   { prefix: "/dashboard/modules/school/hostel-life", permission: "school:hostel:read" },
   { prefix: "/dashboard/modules/school/hostel-reports", permission: "school:hostel:read" },

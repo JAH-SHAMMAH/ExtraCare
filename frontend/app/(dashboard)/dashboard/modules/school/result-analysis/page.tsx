@@ -10,7 +10,8 @@ import {
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { MeritTab, SummaryTab, SubjectsTab, DepartmentsTab, AcrossSessionsTab, AcrossTermsTab, AlertTab } from "@/components/reports/ResultAnalysisAdminTabs";
 import { cn } from "@/lib/utils";
-import { Download, Loader2, AlertCircle } from "lucide-react";
+import Link from "next/link";
+import { Download, Loader2, AlertCircle, Eye, Pencil, FileText, FileDown, X } from "lucide-react";
 
 type Tab = "tracker" | "booster" | "honours" | "merit" | "summary" | "subjects"
   | "departments" | "across-terms" | "across-sessions" | "alert";
@@ -215,6 +216,18 @@ function TrackerTab({ classId, subjectId, setSubjectId, subjects, query, average
   query: { data: any; isLoading: boolean; isError: boolean; error?: any };
 }) {
   const data = query.data;
+  const [viewRow, setViewRow] = useState<any | null>(null);
+
+  const exportPdf = () => {
+    if (!data) return;
+    const esc = (v: unknown) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const head = ["SN", "Student Name", ...data.columns.flatMap((c: any) => { const n = `${c.group ? c.group + " " : ""}${c.label}`; return [`${n} Score`, `${n} Grade`]; }), "Sessional Score", "Sessional Grade"];
+    const body = data.rows.map((r: any) => [r.sn, r.student_name, ...data.columns.flatMap((c: any) => [fmt(r.cells?.[c.key]?.score), fmt(r.cells?.[c.key]?.grade)]), fmt(r.sessional_score), fmt(r.sessional_grade)]);
+    const html = `<html><head><title>Performance Tracker</title><style>body{font-family:Arial,sans-serif;font-size:11px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:3px 5px;text-align:center}td:nth-child(2){text-align:left}</style></head><body><h3>${esc(data.class_name ?? "")} · ${esc(data.subject_name ?? "")} ${esc(data.session_name ?? "")}</h3><table><thead><tr>${head.map((h: string) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${body.map((row: any[]) => `<tr>${row.map((v) => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(html); w.document.close(); w.focus(); w.print();
+  };
 
   const exportExcel = () => {
     if (!data) return;
@@ -265,6 +278,10 @@ function TrackerTab({ classId, subjectId, setSubjectId, subjects, query, average
                 className="btn-secondary gap-2">
           <Download size={15} /> Export Excel
         </button>
+        <button onClick={exportPdf} disabled={!data || !data.rows?.length}
+                className="btn-secondary gap-2">
+          <FileDown size={15} /> Export as PDF
+        </button>
       </div>
 
       {!classId || !subjectId ? (
@@ -314,6 +331,7 @@ function TrackerTab({ classId, subjectId, setSubjectId, subjects, query, average
                 <th colSpan={2} className="px-3 py-2 text-center font-medium border-l border-slate-200">
                   Sessional Score
                 </th>
+                <th rowSpan={2} className="px-3 py-2 text-center font-medium border-l border-slate-200">Actions</th>
               </tr>
               <tr className="text-[11px]">
                 <th /><th />
@@ -351,6 +369,13 @@ function TrackerTab({ classId, subjectId, setSubjectId, subjects, query, average
                     {fmt(r.sessional_score)}
                   </td>
                   <td className="px-2 py-2 text-center">{fmt(r.sessional_grade)}</td>
+                  <td className="px-2 py-2 border-l border-slate-100">
+                    <div className="flex items-center justify-center gap-1">
+                      <button aria-label="Preview results" title="Preview" onClick={() => setViewRow(r)} className="p-1.5 rounded hover:bg-brand-50 text-slate-400 hover:text-brand-600"><Eye size={14} /></button>
+                      <Link aria-label="Edit scores" title="Edit scores" href="/dashboard/modules/school/report-entry" className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"><Pencil size={14} /></Link>
+                      <Link aria-label="View full report" title="View full report" href={`/dashboard/modules/school/report-cards?student=${r.student_id}`} className="p-1.5 rounded hover:bg-emerald-50 text-slate-400 hover:text-emerald-600"><FileText size={14} /></Link>
+                    </div>
+                  </td>
                 </tr>
               ))}
               {!data.rows.length && (

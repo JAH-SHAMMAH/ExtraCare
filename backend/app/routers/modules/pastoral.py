@@ -94,7 +94,8 @@ _hostel_write = Depends(PermissionChecker("school:hostel:write"))
 # students, report, remarks). Split out of school:hostel:read so the classroom tier
 # can reach it WITHOUT gaining the boarding cluster (hostels, allocations, exeats,
 # roll-call, house masters). Admin/manager still reach both via school:read.
-_pastoral_read = Depends(PermissionChecker("school:pastoral:read"))
+# Pastoral dashboard/students/report/remarks are admin-only (teachers keep Pastoral Discipline = behaviour scope).
+_pastoral_read = Depends(PermissionChecker("school:hostel:read"))
 _approve = Depends(PermissionChecker("school_admin:write"))  # explicit exeat approver tier
 _beh_read = Depends(PermissionChecker("school:behaviour:read"))
 _beh_write = Depends(PermissionChecker("school:behaviour:write"))

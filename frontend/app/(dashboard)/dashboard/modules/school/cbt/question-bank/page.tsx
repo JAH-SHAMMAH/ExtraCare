@@ -13,7 +13,7 @@ import {
 import { useSubjects } from "@/hooks/useSchool";
 import { cn } from "@/lib/utils";
 import {
-  FileQuestion, Plus, Search, Upload, X, Loader2, Edit2, Trash2, ArrowLeft,
+  FileQuestion, Eye, ChevronLeft, ChevronRight, Plus, Search, Upload, X, Loader2, Edit2, Trash2, ArrowLeft,
   Bold, Italic, Underline, List, ListOrdered, Link as LinkIcon, AlignLeft, AlignCenter, AlignRight, Undo2, Redo2,
 } from "lucide-react";
 import type { Subject } from "@/types";
@@ -53,6 +53,7 @@ export default function QuestionBankPage() {
   const [difficulty, setDifficulty] = useState("");
   const [editing, setEditing] = useState<BankItem | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [previewIdx, setPreviewIdx] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useBankItems({
@@ -123,15 +124,16 @@ export default function QuestionBankPage() {
                   <div className="text-sm font-medium text-slate-800 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeHTML(q.question_text) }} />
                   <div className="flex flex-wrap items-center gap-2 mt-1.5">
                     <span className={cn("badge capitalize", DIFF_STYLE[q.difficulty] || "bg-slate-50 text-slate-600 border-slate-200")}>{q.difficulty}</span>
-                    <span className="badge bg-slate-50 text-slate-500 border-slate-200">{TYPES.find((t) => t.value === q.question_type)?.label || q.question_type}</span>
+                    <span className="badge bg-slate-50 text-slate-500 border-slate-200">{TYPES.find((t) => t.value === q.question_type)?.label || q.question_type}{(q.question_type === "short_answer" || q.question_type === "long_answer") ? " (Subjective Question)" : ""}</span>
                     {q.subject_name && <span className="text-[11px] text-slate-400">{q.subject_name}</span>}
                     {q.topic && <span className="text-[11px] text-slate-400">· {q.topic}</span>}
                     <span className="text-[11px] text-slate-400">· {q.points} pt{q.points === 1 ? "" : "s"}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => { setEditing(q); setShowForm(true); }} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"><Edit2 size={14} /></button>
-                  <button onClick={() => { if (confirm("Delete this question from the bank?")) del.mutate(q.id); }} className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
+                <div className="flex items-center gap-1">
+                  <button aria-label="Preview question" title="Preview" onClick={() => setPreviewIdx(items.indexOf(q))} className="p-1.5 rounded hover:bg-brand-50 text-slate-400 hover:text-brand-600"><Eye size={14} /></button>
+                  <button aria-label="Edit question" title="Edit" onClick={() => { setEditing(q); setShowForm(true); }} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"><Edit2 size={14} /></button>
+                  <button aria-label="Delete question" title="Delete" onClick={() => { if (confirm("Delete this question from the bank?")) del.mutate(q.id); }} className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
                 </div>
               </li>
             ))}
@@ -139,6 +141,13 @@ export default function QuestionBankPage() {
         )}
       </div>
 
+      {previewIdx !== null && items[previewIdx] && (
+        <PreviewModal
+          items={items} index={previewIdx} onIndex={setPreviewIdx}
+          onClose={() => setPreviewIdx(null)}
+          onEdit={(q) => { setPreviewIdx(null); setEditing(q); setShowForm(true); }}
+        />
+      )}
       {showForm && <BankForm item={editing} subjects={subjects} onClose={() => setShowForm(false)} />}
     </div>
   );
@@ -418,6 +427,60 @@ function QuestionEditor({ value, onChange }: { value: string; onChange: (html: s
           editor={editor}
           className="p-3 min-h-[80px] bg-white text-slate-700 focus:outline-none"
         />
+      </div>
+    </div>
+  );
+}
+
+function PreviewModal({ items, index, onIndex, onClose, onEdit }: {
+  items: BankItem[]; index: number; onIndex: (i: number) => void; onClose: () => void; onEdit: (q: BankItem) => void;
+}) {
+  const q = items[index];
+  const [picked, setPicked] = useState<Record<string, string>>({});
+  const [seen, setSeen] = useState<Record<number, boolean>>({ [index]: true });
+  const go = (i: number) => { setSeen((s) => ({ ...s, [i]: true })); onIndex(i); };
+  const opts = q.options || [];
+  const subjective = q.question_type === "short_answer" || q.question_type === "long_answer";
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4" onClick={onClose} role="dialog" aria-label="Question preview">
+      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-bold text-slate-900">Question {index + 1} of {items.length}</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="Close preview"><X size={18} /></button>
+        </div>
+        <div className="flex flex-wrap gap-1.5 mb-4" aria-label="Question numbers">
+          {items.map((_, i) => (
+            <button key={i} onClick={() => go(i)} className={cn("w-7 h-7 rounded text-[11px] font-bold border",
+              i === index ? "bg-brand-600 text-white border-brand-600" : picked[items[i].id] ? "bg-emerald-50 text-emerald-700 border-emerald-200" : seen[i] ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-slate-50 text-slate-500 border-slate-200")}>{i + 1}</button>
+          ))}
+        </div>
+        <div className="flex gap-3 text-[10px] text-slate-400 mb-4">
+          <span>■ Not attended</span><span className="text-amber-600">■ Viewed</span><span className="text-emerald-600">■ Attended</span><span className="text-brand-600">■ Selected</span>
+        </div>
+        <div className="text-sm text-slate-800 prose prose-sm max-w-none mb-4" dangerouslySetInnerHTML={{ __html: sanitizeHTML(q.question_text) }} />
+        {subjective ? (
+          <textarea className="input w-full min-h-[90px]" placeholder="Student's answer appears here" value={picked[q.id] || ""} onChange={(e) => setPicked({ ...picked, [q.id]: e.target.value })} />
+        ) : (
+          <div className="space-y-2">
+            {(q.question_type === "true_false" && opts.length === 0 ? [{ key: "true", text: "True" }, { key: "false", text: "False" }] : opts).map((o) => (
+              <label key={o.key} className={cn("flex items-center gap-3 border rounded-lg px-3 py-2 cursor-pointer text-sm", picked[q.id] === o.key ? "border-brand-500 bg-brand-50" : "border-slate-200 hover:bg-slate-50")}>
+                <input type="radio" name="preview-opt" checked={picked[q.id] === o.key} onChange={() => setPicked({ ...picked, [q.id]: o.key })} />
+                <span className="font-bold uppercase text-slate-400 w-4">{o.key}</span><span>{o.text}</span>
+              </label>
+            ))}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-2 mt-6">
+          <div className="flex gap-2">
+            <button disabled={index === 0} onClick={() => go(index - 1)} className="btn-secondary gap-1"><ChevronLeft size={14} /> Previous</button>
+            <button disabled={index >= items.length - 1} onClick={() => go(index + 1)} className="btn-secondary gap-1">Next <ChevronRight size={14} /></button>
+            <button onClick={() => { const { [q.id]: _x, ...rest } = picked; setPicked(rest); }} className="btn-secondary">Reset Answer</button>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => onEdit(q)} className="btn-secondary gap-1"><Edit2 size={14} /> Edit Question</button>
+            <button onClick={onClose} className="btn-primary">Stop Preview</button>
+          </div>
+        </div>
       </div>
     </div>
   );

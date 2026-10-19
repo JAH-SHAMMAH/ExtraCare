@@ -79,7 +79,7 @@ export const CORE_NAV = [
 const PARENT_HIDDEN = new Set(["/dashboard/hrm/leave", "/dashboard/hrm/my-info", "/dashboard/hrm/attendance/my", "/dashboard/hrm/disciplinary/my-actions"]);
 
 function navItemVisible(
-  item: { href: string; roleOnly?: ActiveRole; superOnly?: boolean },
+  item: { href: string; roleOnly?: ActiveRole; superOnly?: boolean; needs?: string },
   roleScope: ActiveRole | null,
   hasPermission: (permission: string) => boolean,
   ctx: { superUser?: boolean; ui?: any; staff?: boolean; student?: boolean; teacher?: boolean } = {},
@@ -87,6 +87,7 @@ function navItemVisible(
   if (item.superOnly) return !!ctx.superUser;
   if (!ctx.superUser && blockingUi(item.href.split("?")[0], ctx.ui, { staff: ctx.staff, student: ctx.student, teacher: ctx.teacher })) return false;
   if (item.roleOnly) return roleScope === item.roleOnly;
+  if (item.needs && !hasPermission(item.needs)) return false;
   // Parents are not staff: the personal HR pages are not offered to them.
   if (roleScope === "parent" && PARENT_HIDDEN.has(item.href.split("?")[0])) return false;
   // Real pages: the shared access map decides. A null requirement means the
@@ -99,6 +100,8 @@ interface NavItem {
   href: string;
   label: string;
   icon: any;
+  /** Extra permission required on top of the route's own (admin-only items). */
+  needs?: string;
 }
 
 interface ModuleSection {
@@ -406,9 +409,9 @@ export const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/pastoral-dashboard", label: "Pastoral Dashboard", icon: LayoutDashboard },
       { href: "/dashboard/modules/school/pastoral-students", label: "Pastoral Students", icon: Users2 },
       { href: "/dashboard/modules/school/pastoral-report", label: "Pastoral Report", icon: FileText },
-      { href: "/dashboard/modules/school/remarks", label: "Pastoral Remarks", icon: MessageCircle },
+      { href: "/dashboard/modules/school/remarks", label: "Pastoral Remarks", icon: MessageCircle, needs: "school:hostel:read" },
       { href: "/dashboard/modules/school/behaviour-sanction", label: "Pastoral Discipline", icon: Gavel },
-      { href: "/dashboard/modules/school/point-entry", label: "Activity Point", icon: PlusCircle },
+      { href: "/dashboard/modules/school/point-entry", label: "Activity Point", icon: PlusCircle, needs: "school:hostel:read" },
     ],
   },
   {
