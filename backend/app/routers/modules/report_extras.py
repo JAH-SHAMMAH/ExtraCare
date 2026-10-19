@@ -28,6 +28,10 @@ router = APIRouter(prefix="/report-extras", tags=["Report extras"])
 async def student_history(student_id: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
     """One pupil's results across every session, term and sub-term that has a report set up."""
     org = user.org_id
+    from app.routers.modules.school import _owned_student_ids
+    owned = await _owned_student_ids(db, user)  # None for staff; a parent or pupil gets only their own
+    if owned is not None and student_id not in owned:
+        raise HTTPException(status_code=403, detail="You can only view your own child's results.")
     combos = {(c.session_id, c.term_id, c.sub_term_id) for c in
               (await db.execute(select(Cumulative).where(Cumulative.org_id == org))).scalars().all()}
     sessions = {s.id: s for s in (await db.execute(select(AcademicSession).where(AcademicSession.org_id == org))).scalars().all()}

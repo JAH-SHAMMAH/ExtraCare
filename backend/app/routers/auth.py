@@ -13,6 +13,7 @@ from app.models.modules.platform import SchoolSection
 from app.schemas.auth import SectionBrief
 from app.core.workspace import effective_modules_for_org, get_default_modules_for_industry
 from app.core.single_school import get_school_org
+from app.core.security import hash_password as _hash_password_for_dummy
 from app.core.security import (
     verify_password, hash_password, create_access_token,
     create_refresh_token, decode_token, generate_secure_token,
@@ -29,6 +30,8 @@ from app.models.audit import AuditAction
 from app.core.ratelimit import rate_limit_ip
 from app.deps import get_current_user, get_current_active_user
 from app.config import get_settings
+
+_DUMMY_HASH = _hash_password_for_dummy("not-a-real-password")
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 settings = get_settings()
@@ -206,17 +209,23 @@ async def login(
     user = user_result.scalar_one_or_none()
 
     if not user or not user.hashed_password:
+        # Do the same slow password work as a real attempt, so response time does not
+        # reveal whether this email has an account.
+        verify_password(data.password, _DUMMY_HASH)
         await log_action(db, AuditAction.LOGIN_FAILED, org.id, request=request,
                          metadata={"email": email})
         raise HTTPException(status_code=401, detail="Invalid credentials.")
 
-    if user.status == UserStatus.SUSPENDED:
+    password_ok = verify_password(data.password, user.hashed_password)
+
+    # Only someone who knows the password is told the account is suspended.
+    if user.status == UserStatus.SUSPENDED and password_ok:
         raise HTTPException(status_code=403, detail="Account suspended.")
 
-    if not verify_password(data.password, user.hashed_password):
+    if user.status == UserStatus.SUSPENDED or not password_ok:
         failed = int(user.failed_login_attempts or 0) + 1
         user.failed_login_attempts = str(failed)
-        if failed >= 5:
+        if failed >= 5 and user.status != UserStatus.SUSPENDED:
             user.status = UserStatus.LOCKED
         await log_action(db, AuditAction.LOGIN_FAILED, org.id, actor=user, request=request)
         raise HTTPException(status_code=401, detail="Invalid credentials.")
