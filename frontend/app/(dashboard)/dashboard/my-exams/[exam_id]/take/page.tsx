@@ -1,4 +1,5 @@
 "use client";
+import { renderQuestionHtml } from "@/components/inputs/MathTools";
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -272,7 +273,7 @@ export default function TakeExamPage() {
       {/* Question card */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6">
         <h2 className="text-lg font-bold text-slate-900 mb-4">
-          {currentQuestion.question_text}
+          <span dangerouslySetInnerHTML={{ __html: renderQuestionHtml(currentQuestion.question_text) }} />
         </h2>
 
         {/* Options */}

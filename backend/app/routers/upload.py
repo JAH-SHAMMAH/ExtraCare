@@ -117,6 +117,18 @@ async def upload_report_photo(
     return {"url": url, "filename": file.filename}
 
 
+@router.post("/question-image", dependencies=[Depends(PermissionChecker("school:cbt:write"))])
+async def upload_question_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_active_user),
+):
+    """An image placed inside a CBT question (diagram, figure). Verified image only."""
+    content = await _read_validated(file, _IMAGE_TYPES, _MAX_AVATAR)
+    url = await save_upload(current_user.org_id, "question-images", file.filename, content, file.content_type)
+    _logger.info("upload.question_image user=%s url=%s", current_user.id, url)
+    return {"url": url, "filename": file.filename}
+
+
 @router.post("/student-photo", dependencies=[Depends(PermissionChecker("school:write"))])
 async def upload_student_photo(
     file: UploadFile = File(...),

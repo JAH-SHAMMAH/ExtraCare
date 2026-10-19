@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { renderQuestionHtml } from "@/components/inputs/MathTools";
 import { useClasses, useSubjects } from "@/hooks/useSchool";
 import { useTerms } from "@/hooks/usePlatform";
 import Link from "next/link";
@@ -339,7 +340,7 @@ function GradeModal({ attemptId, onClose }: { attemptId: string; onClose: () => 
           ) : answers.map((a, i) => (
             <div key={a.answer_id} className={cn("rounded-xl border p-4", a.needs_grading ? "border-amber-200 bg-amber-50/40" : "border-slate-200")}>
               <div className="flex items-start justify-between gap-3 mb-2">
-                <p className="text-sm font-semibold text-slate-800">{i + 1}. {a.question_text || "—"}</p>
+                <p className="text-sm font-semibold text-slate-800">{i + 1}. <span dangerouslySetInnerHTML={{ __html: a.question_text ? renderQuestionHtml(a.question_text) : "—" }} /></p>
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 shrink-0 capitalize">{a.question_type.replace("_", " ")}</span>
               </div>
               <p className="text-xs text-slate-500 mb-1"><span className="font-semibold text-slate-600">Answer:</span> {a.answer_text || <span className="italic text-slate-400">(blank)</span>}</p>

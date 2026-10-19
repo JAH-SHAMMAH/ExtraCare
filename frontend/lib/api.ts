@@ -864,6 +864,11 @@ export const uploadApi = {
       headers: { "Content-Type": "multipart/form-data" },
     }).then((r) => r.data);
   },
+  questionImage: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return api.post("/upload/question-image", formData, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data as { url: string });
+  },
   // Admin-set another user's photo (users:write). Powers photo-rich directories
   // + the feed Select-Users modal for people who never uploaded their own.
   avatarForUser: (userId: string, file: File) => {

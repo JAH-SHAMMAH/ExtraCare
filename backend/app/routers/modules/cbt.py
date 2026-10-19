@@ -24,6 +24,7 @@ RBAC:
     the bank/results/attempts, WITHOUT broad school:read/write.
 """
 
+import re
 import csv
 import io
 import random
@@ -811,14 +812,71 @@ _DIFFICULTY = ("easy", "medium", "hard")
 _QTYPES = ("mcq", "true_false", "short_answer", "long_answer")
 
 # HTML sanitization config for rich-text fields (question_text, etc.)
-_SANITIZE_TAGS = {"p", "br", "strong", "em", "u", "ol", "ul", "li", "a", "table", "tr", "td", "th", "thead", "tbody"}
-_SANITIZE_ATTRS = {"a": ["href", "target"]}
+_SANITIZE_TAGS = {
+    "p", "br", "strong", "em", "u", "ol", "ul", "li", "a", "span", "sub", "sup", "blockquote", "pre", "code",
+    "h1", "h2", "h3", "img", "hr",
+    "table", "colgroup", "col", "tr", "td", "th", "thead", "tbody",
+}
+
+# Inline style is allowed ONLY for the formatting the editor produces, and only with
+# values that match a strict pattern — nothing that can load a URL or break layout.
+_FONTS = {"arial", "comic sans ms", "courier new", "georgia", "times new roman", "verdana", "tahoma", "trebuchet ms"}
+_COLOR_RE = re.compile(r"^(#[0-9a-fA-F]{3,8}|rgba?\(\s*\d{1,3}\s*(,\s*\d{1,3}\s*){2}(,\s*[0-9.]+\s*)?\)|[a-zA-Z]{3,20})$")
+_SIZE_RE = re.compile(r"^\d{1,3}(\.\d+)?(px|pt|em|rem|%)$")
+
+
+from bleach.css_sanitizer import CSSSanitizer  # noqa: E402  (needs tinycss2 → bleach[css])
+_CSS = CSSSanitizer(allowed_css_properties=["color", "background-color", "font-size", "font-family", "text-align", "width", "min-width"])
+
+
+def _style_ok(value: str) -> bool:
+    for decl in filter(None, (d.strip() for d in (value or "").split(";"))):
+        if ":" not in decl:
+            return False
+        prop, _, val = decl.partition(":")
+        prop, val = prop.strip().lower(), val.strip().strip("\"'")
+        if prop in ("color", "background-color"):
+            ok = bool(_COLOR_RE.match(val))
+        elif prop == "font-size":
+            ok = bool(_SIZE_RE.match(val))
+        elif prop == "font-family":
+            ok = all(f.strip().strip("\"'").lower() in _FONTS | {"sans-serif", "serif", "monospace", "cursive"}
+                     for f in val.split(","))
+        elif prop == "text-align":
+            ok = val in ("left", "right", "center", "justify")
+        elif prop in ("width", "min-width"):
+            ok = bool(_SIZE_RE.match(val))
+        else:
+            ok = False
+        if not ok:
+            return False
+    return True
+
+
+def _attr_ok(tag: str, name: str, value: str) -> bool:
+    if name == "style":
+        return _style_ok(value)
+    if tag == "a":
+        return name in ("href", "target") and (name != "href" or value.lower().startswith(("http://", "https://", "mailto:", "/")))
+    if tag == "span":
+        return name in ("data-latex", "class") and (name != "class" or value == "math-tex") and (name != "data-latex" or len(value) <= 2000)
+    if tag == "img":
+        if name == "src":
+            return value.startswith(("https://", "/"))
+        return name in ("alt", "width", "height")
+    if tag in ("td", "th"):
+        return name in ("colspan", "rowspan", "colwidth")
+    if tag == "col":
+        return False
+    return False
+
 
 def _sanitize_html(html: str) -> str:
-    """Sanitize HTML to allow only safe formatting tags. Matches frontend DOMPurify config."""
+    """Sanitize rich question HTML: formatting tags, whitelisted inline styles, formula
+    spans (LaTeX source only), uploaded images and tables. Mirrors the frontend config."""
     if not html:
         return html
-    return bleach.clean(html, tags=_SANITIZE_TAGS, attributes=_SANITIZE_ATTRS, strip=True)
+    return bleach.clean(html, tags=_SANITIZE_TAGS, attributes=_attr_ok, strip=True, css_sanitizer=_CSS)
 
 
 async def _bank_subject_names(db: AsyncSession, org_id: str, ids: set) -> dict:

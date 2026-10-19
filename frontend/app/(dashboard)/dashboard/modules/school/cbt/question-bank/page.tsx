@@ -18,6 +18,8 @@ import {
   Bold, Italic, Underline, List, ListOrdered, Link as LinkIcon, AlignLeft, AlignCenter, AlignRight, Undo2, Redo2,
 } from "lucide-react";
 import type { Subject } from "@/types";
+import { renderQuestionHtml, sanitizeQuestionHtml } from "@/components/inputs/MathTools";
+import { RichQuestionEditor } from "@/components/inputs/RichQuestionEditor";
 
 const DIFFICULTIES = ["easy", "medium", "hard"];
 const TYPES = [
@@ -33,8 +35,8 @@ const DIFF_STYLE: Record<string, string> = {
 };
 
 const SANITIZE_CONFIG = {
-  ALLOWED_TAGS: ["p", "br", "strong", "em", "u", "ol", "ul", "li", "a", "table", "tr", "td", "th", "thead", "tbody"],
-  ALLOWED_ATTR: ["href", "target"],
+  ALLOWED_TAGS: ["p", "br", "strong", "em", "u", "ol", "ul", "li", "a", "table", "tr", "td", "th", "thead", "tbody", "span"],
+  ALLOWED_ATTR: ["href", "target", "data-latex", "class"],
   KEEP_CONTENT: true,
 };
 
@@ -136,7 +138,7 @@ export default function QuestionBankPage() {
             {items.map((q) => (
               <li key={q.id} className="px-5 py-3.5 flex items-start gap-3 hover:bg-slate-50/70 group">
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-slate-800 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeHTML(q.question_text) }} />
+                  <div className="text-sm font-medium text-slate-800 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderQuestionHtml(q.question_text) }} />
                   <div className="flex flex-wrap items-center gap-2 mt-1.5">
                     <span className={cn("badge capitalize", DIFF_STYLE[q.difficulty] || "bg-slate-50 text-slate-600 border-slate-200")}>{q.difficulty}</span>
                     <span className="badge bg-slate-50 text-slate-500 border-slate-200">{TYPES.find((t) => t.value === q.question_type)?.label || q.question_type}{(q.question_type === "short_answer" || q.question_type === "long_answer") ? " (Subjective Question)" : ""}</span>
@@ -237,7 +239,7 @@ function BankForm({ item, subjects, topics: existing, onClose }: { item: BankIte
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
         <div className="space-y-3">
-          <QuestionEditor value={f.question_text} onChange={(html) => setF({ ...f, question_text: html })} />
+          <RichQuestionEditor value={f.question_text} onChange={(html) => setF({ ...f, question_text: html })} />
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Type</label><select value={f.question_type} onChange={(e) => setF({ ...f, question_type: e.target.value })} className="input">{TYPES.map((t) => (<option key={t.value} value={t.value}>{t.label}</option>))}</select></div>
             <div><label className="label">Difficulty</label><select value={f.difficulty} onChange={(e) => setF({ ...f, difficulty: e.target.value })} className="input capitalize">{DIFFICULTIES.map((d) => (<option key={d} value={d}>{d}</option>))}</select></div>
@@ -339,135 +341,6 @@ function BankForm({ item, subjects, topics: existing, onClose }: { item: BankIte
   );
 }
 
-function QuestionEditor({ value, onChange }: { value: string; onChange: (html: string) => void }) {
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      TiptapLink.configure({ openOnClick: false }),
-      TextAlign.configure({ types: ["heading", "paragraph"] }),
-    ],
-    content: value,
-    onUpdate: ({ editor }) => {
-      const html = editor.getHTML();
-      const sanitized = sanitizeHTML(html);
-      onChange(sanitized);
-    },
-  });
-
-  if (!editor) return null;
-
-  return (
-    <div>
-      <label className="label">Question *</label>
-      {/* Toolbar */}
-      <div className="border border-b-0 border-slate-200 rounded-t-lg bg-slate-50 p-2 flex flex-wrap gap-1">
-        <button
-          onClick={() => editor.chain().focus().toggleBold().run()}
-          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("bold") && "bg-slate-200")}
-          title="Bold"
-        >
-          <Bold size={14} />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("italic") && "bg-slate-200")}
-          title="Italic"
-        >
-          <Italic size={14} />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
-          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("underline") && "bg-slate-200")}
-          title="Underline"
-        >
-          <Underline size={14} />
-        </button>
-
-        <div className="w-px bg-slate-300 mx-1" />
-
-        <button
-          onClick={() => editor.chain().focus().setTextAlign("left").run()}
-          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive({ textAlign: "left" }) && "bg-slate-200")}
-          title="Align left"
-        >
-          <AlignLeft size={14} />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().setTextAlign("center").run()}
-          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive({ textAlign: "center" }) && "bg-slate-200")}
-          title="Align center"
-        >
-          <AlignCenter size={14} />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().setTextAlign("right").run()}
-          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive({ textAlign: "right" }) && "bg-slate-200")}
-          title="Align right"
-        >
-          <AlignRight size={14} />
-        </button>
-
-        <div className="w-px bg-slate-300 mx-1" />
-
-        <button
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("bulletList") && "bg-slate-200")}
-          title="Bullet list"
-        >
-          <List size={14} />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("orderedList") && "bg-slate-200")}
-          title="Numbered list"
-        >
-          <ListOrdered size={14} />
-        </button>
-
-        <div className="w-px bg-slate-300 mx-1" />
-
-        <button
-          onClick={() => {
-            const url = window.prompt("Enter URL:");
-            if (url) editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
-          }}
-          className={cn("p-2 rounded hover:bg-slate-200 transition", editor.isActive("link") && "bg-slate-200")}
-          title="Link"
-        >
-          <LinkIcon size={14} />
-        </button>
-
-        <div className="w-px bg-slate-300 mx-1" />
-
-        <button
-          onClick={() => editor.chain().focus().undo().run()}
-          disabled={!editor.can().undo()}
-          className="p-2 rounded hover:bg-slate-200 disabled:opacity-50 transition"
-          title="Undo"
-        >
-          <Undo2 size={14} />
-        </button>
-        <button
-          onClick={() => editor.chain().focus().redo().run()}
-          disabled={!editor.can().redo()}
-          className="p-2 rounded hover:bg-slate-200 disabled:opacity-50 transition"
-          title="Redo"
-        >
-          <Redo2 size={14} />
-        </button>
-      </div>
-
-      {/* Editor */}
-      <div className="border border-slate-200 rounded-b-lg overflow-hidden prose prose-sm max-w-none">
-        <EditorContent
-          editor={editor}
-          className="p-3 min-h-[80px] bg-white text-slate-700 focus:outline-none"
-        />
-      </div>
-    </div>
-  );
-}
-
 function PreviewModal({ items, index, onIndex, onClose, onEdit }: {
   items: BankItem[]; index: number; onIndex: (i: number) => void; onClose: () => void; onEdit: (q: BankItem) => void;
 }) {
@@ -497,7 +370,7 @@ function PreviewModal({ items, index, onIndex, onClose, onEdit }: {
         <div className="flex gap-3 text-[10px] text-slate-400 mb-4">
           <span>■ Not attended</span><span className="text-amber-600">■ Viewed</span><span className="text-emerald-600">■ Attended</span><span className="text-brand-600">■ Selected</span>
         </div>
-        <div className="text-sm text-slate-800 prose prose-sm max-w-none mb-4" dangerouslySetInnerHTML={{ __html: sanitizeHTML(q.question_text) }} />
+        <div className="text-sm text-slate-800 prose prose-sm max-w-none mb-4" dangerouslySetInnerHTML={{ __html: renderQuestionHtml(q.question_text) }} />
         {subjective ? (
           <textarea className="input w-full min-h-[90px]" placeholder="Student's answer appears here" value={picked[q.id] || ""} onChange={(e) => setPicked({ ...picked, [q.id]: e.target.value })} />
         ) : (
@@ -510,6 +383,7 @@ function PreviewModal({ items, index, onIndex, onClose, onEdit }: {
             ))}
           </div>
         )}
+        {q.explanation && <p className="mt-4 text-xs text-slate-500"><span className="font-semibold">Explanation: </span>{q.explanation}</p>}
         <div className="flex flex-wrap items-center justify-between gap-2 mt-6">
           <div className="flex gap-2">
             <button disabled={index === 0} onClick={() => go(index - 1)} className="btn-secondary gap-1"><ChevronLeft size={14} /> Previous</button>

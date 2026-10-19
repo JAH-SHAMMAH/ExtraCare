@@ -17,6 +17,7 @@ import {
   useCBTSettings,
 } from "@/hooks/useSchoolExperience";
 import { useClasses, useSubjects } from "@/hooks/useSchool";
+import { renderQuestionHtml } from "@/components/inputs/MathTools";
 import { useMineFilter } from "@/hooks/useMineFilter";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { useAuthStore } from "@/lib/store";
@@ -35,7 +36,7 @@ const EXAM_STATUS_STYLES: Record<CBTExamStatus, string> = {
 };
 
 const SANITIZE_CONFIG = {
-  ALLOWED_TAGS: ["p", "br", "strong", "em", "u", "ol", "ul", "li", "a", "table", "tr", "td", "th", "thead", "tbody"],
+  ALLOWED_TAGS: ["span", "p", "br", "strong", "em", "u", "ol", "ul", "li", "a", "table", "tr", "td", "th", "thead", "tbody"],
   ALLOWED_ATTR: ["href", "target"],
   KEEP_CONTENT: true,
 };
@@ -612,7 +613,7 @@ function ExamBuilder({ examId, onBack, canWrite }: { examId: string; onBack: () 
                     <span className="badge bg-slate-50 text-slate-600 border-slate-200 text-[10px]">{q.question_type}</span>
                     <span className="text-xs text-slate-500">· {q.points} pts</span>
                   </div>
-                  <div className="text-sm text-slate-900 mb-2 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeHTML(q.question_text) }} />
+                  <div className="text-sm text-slate-900 mb-2 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderQuestionHtml(q.question_text) }} />
                   {q.options && q.options.length > 0 && (
                     <ul className="space-y-1 mt-2">
                       {q.options.map((opt) => (
@@ -694,7 +695,7 @@ function BankPicker({ examId, onClose }: { examId: string; onClose: () => void }
             <label key={q.id} className="flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 cursor-pointer">
               <input type="checkbox" checked={selected.has(q.id)} onChange={() => toggle(q.id)} className="mt-1" />
               <div className="min-w-0 flex-1">
-                <div className="text-sm text-slate-800 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeHTML(q.question_text) }} />
+                <div className="text-sm text-slate-800 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderQuestionHtml(q.question_text) }} />
                 <p className="text-[11px] text-slate-400 mt-0.5 capitalize">{q.difficulty}{q.subject_name ? ` · ${q.subject_name}` : ""}{q.topic ? ` · ${q.topic}` : ""} · {q.points} pt{q.points === 1 ? "" : "s"}</p>
               </div>
             </label>

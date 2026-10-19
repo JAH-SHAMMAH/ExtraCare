@@ -106,3 +106,11 @@
   body { background: #fff !important; }
   @page { margin: 16mm; }
 }
+
+/* Rich question content (editor + every place a question is shown) */
+.rich-question table, .prose table { border-collapse: collapse; width: auto; max-width: 100%; }
+.rich-question td, .rich-question th, .prose td, .prose th { border: 1px solid #cbd5e1; padding: 4px 8px; min-width: 40px; }
+.rich-question th, .prose th { background: #f1f5f9; font-weight: 700; }
+.rich-question img, .prose img { max-width: 100%; height: auto; display: inline-block; }
+.rich-question .math-tex, .prose .math-tex { display: inline-block; }
+.rich-question pre, .prose pre { background: #f1f5f9; color: #0f172a; padding: 8px; border-radius: 6px; overflow-x: auto; }

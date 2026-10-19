@@ -181,3 +181,24 @@ async def test_tags_explanation_and_mine_filter(db, org, teacher):
     none = await list_bank(page=1, page_size=50, subject_id=None, topic=None, difficulty=None, question_type=None,
                            search=None, mine=False, tag="nope", db=db, current_user=teacher)
     assert none["total"] == 0
+
+
+def test_sanitizer_keeps_formula_span_drops_handlers():
+    from app.routers.modules.cbt import _sanitize_html
+    out = _sanitize_html('<p>x <span class="math-tex" data-latex="\\frac{a}{b}" onclick="evil()">f</span><script>1</script></p>')
+    assert 'data-latex="\\frac{a}{b}"' in out and "onclick" not in out and "<script" not in out
+    big = _sanitize_html('<span data-latex="' + "a" * 2500 + '">x</span>')
+    assert "data-latex" not in big
+
+
+def test_sanitizer_formatting_formula_and_attacks():
+    from app.routers.modules.cbt import _sanitize_html as c
+    ok = c('<h2 style="text-align:center">T</h2><span style="color:#f00;font-family:Georgia;font-size:14pt">a</span>'
+           '<sub>2</sub><span class="math-tex" data-latex="\\frac{a}{b}" onclick="evil()">f</span>'
+           '<img src="https://cdn/x.png" onerror="z"><table><tr><td colspan="2">c</td></tr></table>')
+    assert "text-align:center" in ok and "font-family:Georgia" in ok and "<sub>2</sub>" in ok
+    assert 'data-latex="\\frac{a}{b}"' in ok and "onclick" not in ok and "onerror" not in ok
+    assert 'src="https://cdn/x.png"' in ok and 'colspan="2"' in ok
+    bad = c('<span style="background:url(http://e);position:fixed">x</span><img src="javascript:1"><a href="javascript:alert(1)">l</a><script>1</script>')
+    assert "url(" not in bad and "position" not in bad and "javascript" not in bad and "<script" not in bad
+    assert "data-latex" not in c('<span data-latex="' + "a" * 2500 + '">x</span>')

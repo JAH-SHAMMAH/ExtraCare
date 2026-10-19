@@ -10,7 +10,7 @@ pdfplumber==0.11.10
 cloudinary==1.41.0   # durable upload storage (used only when CLOUDINARY_URL is set)
 
 # HTML sanitization (for rich-text fields: lesson plans, CBT questions, etc.)
-bleach==6.4.0
+bleach[css]==6.4.0
 
 # Database (async SQLite — swap URL for MySQL/TiDB in prod)
 sqlalchemy[asyncio]==2.0.36
