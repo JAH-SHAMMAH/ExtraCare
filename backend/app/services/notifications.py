@@ -78,10 +78,31 @@ async def notify(
         )
         session.add(row)
         await session.flush()
+        _push_later(org_id, user_id, title, message)
         return row
     except Exception as exc:
         _logger.warning("notify(inline) failed: %s", exc)
         return None
+
+
+def _push_later(org_id: str, user_id: str | None, title: str, message: str | None) -> None:
+    """Also pop the alert up on the person's phone, without making the caller wait."""
+    if not user_id:
+        return
+    import asyncio
+
+    async def _go():
+        try:
+            from app.services import webpush
+            factory = _session_factory_override or AsyncSessionLocal
+            async with factory() as db:
+                await webpush.send_to_user(db, org_id, user_id, title=title, body=message or "")
+        except Exception as exc:
+            _logger.debug("push skipped: %s", exc)
+    try:
+        asyncio.get_running_loop().create_task(_go())
+    except RuntimeError:
+        pass
 
 
 async def notify_fire_and_forget(

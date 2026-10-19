@@ -335,6 +335,8 @@ app.include_router(organizations.router, prefix=API_V1)
 app.include_router(admin.router, prefix=API_V1)
 app.include_router(usage_router.router, prefix=API_V1)
 app.include_router(notifications.router, prefix=API_V1)
+from app.routers import push as push_router  # noqa: E402
+app.include_router(push_router.router, prefix=API_V1)
 app.include_router(ai.router, prefix=API_V1)
 app.include_router(payments.router, prefix=API_V1)
 app.include_router(hr.router, prefix=API_V1)

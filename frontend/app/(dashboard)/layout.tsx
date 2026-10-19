@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { PushPrompt } from "@/components/layout/PushPrompt";
 import { RouteGuard } from "@/components/guards/RouteGuard";
 import { Splash } from "@/components/loading/Splash";
 import { TopProgress } from "@/components/loading/TopProgress";
@@ -79,6 +80,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <TopBar onMenu={() => setSidebarOpen(true)} />
       <main className="ml-0 lg:ml-60 mt-16 min-h-[calc(100vh-64px)] animate-fade-in">
         <ErrorBoundary>
+          <PushPrompt />
           <RouteGuard>{children}</RouteGuard>
         </ErrorBoundary>
       </main>
