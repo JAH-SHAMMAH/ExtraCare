@@ -74,6 +74,8 @@ export const CORE_NAV = [
 // The same access map backs RouteGuard, so a hidden link is also unreachable by
 // direct URL. `hasPermission` honours the broad→fine scope hierarchy, so a
 // teacher's broad `school:read` reveals every core teaching item automatically.
+const PARENT_HIDDEN = new Set(["/dashboard/hrm/leave", "/dashboard/hrm/my-info", "/dashboard/hrm/attendance/my", "/dashboard/hrm/disciplinary/my-actions"]);
+
 function navItemVisible(
   item: { href: string; roleOnly?: ActiveRole; superOnly?: boolean },
   roleScope: ActiveRole | null,
@@ -83,8 +85,8 @@ function navItemVisible(
   if (item.superOnly) return !!ctx.superUser;
   if (!ctx.superUser && blockingUi(item.href.split("?")[0], ctx.ui, { staff: ctx.staff, student: ctx.student, teacher: ctx.teacher })) return false;
   if (item.roleOnly) return roleScope === item.roleOnly;
-  // Parents don't take staff leave, so My Leave is not offered to them.
-  if (roleScope === "parent" && item.href.split("?")[0] === "/dashboard/hrm/leave") return false;
+  // Parents are not staff: the personal HR pages are not offered to them.
+  if (roleScope === "parent" && PARENT_HIDDEN.has(item.href.split("?")[0])) return false;
   // Real pages: the shared access map decides. A null requirement means the
   // route is open to any authenticated user. Strip any ?query (e.g. deep-linked
   // School Setup tabs) so the access map matches on the base path, not the full URL.
