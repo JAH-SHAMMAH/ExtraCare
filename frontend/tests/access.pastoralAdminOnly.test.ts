@@ -17,3 +17,11 @@ describe("pastoral is admin-only except Pastoral Discipline", () => {
     expect(canAccessPath(base + "behaviour-sanction", teacher)).toBe(true);
   });
 });
+
+describe("subjects module access", () => {
+  it("Student Enrolment is admin-only; Class List stays open to teachers", () => {
+    expect(canAccessPath(base + "student-enrolment", teacher)).toBe(false);
+    expect(canAccessPath(base + "student-enrolment", admin)).toBe(true);
+    expect(canAccessPath(base + "class-list", (p) => p === "school:students:read")).toBe(true);
+  });
+});

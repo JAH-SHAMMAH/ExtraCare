@@ -67,7 +67,13 @@ export default function ClassListPage() {
           ))}
         </div>
       )}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3 mb-5">
+      <div className="bg-white rounded-xl border border-slate-200 p-4 mb-5">
+        <h2 className="text-base font-bold text-slate-800 mb-2 flex items-center gap-2">Select Teaching Group</h2>
+        <div className="flex flex-wrap gap-2 mb-3 min-h-[28px]" aria-label="Selected teaching group">
+          {classId && <span className="px-3 py-1 rounded-full bg-sky-50 text-sky-800 text-xs font-semibold">{myClasses.find((c) => c.id === classId)?.name}</span>}
+          {subjectId && <span className="px-3 py-1 rounded-full bg-sky-50 text-sky-800 text-xs font-semibold">{mySubjects.find((x) => x.id === subjectId)?.name}</span>}
+        </div>
+      <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-[200px]"><label className="label">Class</label>
           <select value={classId} onChange={(e) => { setClassId(e.target.value); setSubjectId(""); setPicked(new Set()); }} className="input">
             <option value="">— Select —</option>
@@ -89,6 +95,7 @@ export default function ClassListPage() {
             </div>
           </div>
         )}
+      </div>
       </div>
 
       {loadingAssignments ? (

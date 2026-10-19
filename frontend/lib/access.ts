@@ -117,6 +117,8 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // `school:classes:read` so its class pickers resolve, but gets no nav item.
   { prefix: "/dashboard/modules/school/classes", permission: "school_admin:read" },
   { prefix: "/dashboard/modules/school/subjects", permission: "school:subjects:read" },
+  // Student Enrolment (who takes which subject) is the admin register; the write endpoint needs settings:write.
+  { prefix: "/dashboard/modules/school/student-enrolment", permission: "settings:write" },
   // Insights dashboard is admin-only; the marking page needs write.
   { prefix: "/dashboard/modules/school/attendance/dashboard", permission: "school_admin:read" },
   // Live monitor is a STAFF read view over the check-in/out events. Gated on

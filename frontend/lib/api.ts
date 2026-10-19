@@ -1706,6 +1706,10 @@ export const biometricApi = {
 };
 
 export const platformApi = {
+  subjectEnrollments: {
+    grid: (class_id: string, academic_year?: string) => api.get("/platform/subject-enrollments", { params: { class_id, academic_year } }).then((r) => r.data),
+    save: (d: { class_id: string; academic_year?: string; items: { student_id: string; subject_ids: string[] }[] }) => api.put("/platform/subject-enrollments", d).then((r) => r.data),
+  },
   sessions: { list: () => api.get("/platform/sessions").then((r) => r.data), current: () => api.get("/platform/sessions/current").then((r) => r.data), create: (d: object) => api.post("/platform/sessions", d).then((r) => r.data), update: (id: string, d: object) => api.patch(`/platform/sessions/${id}`, d).then((r) => r.data), remove: (id: string) => api.delete(`/platform/sessions/${id}`) },
   weeks: {
     list: (params?: { academic_year?: string; term?: string }) => api.get("/platform/weeks", { params }).then((r) => r.data),

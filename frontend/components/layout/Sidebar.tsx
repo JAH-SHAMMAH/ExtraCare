@@ -8,7 +8,7 @@ import {
   GraduationCap, Heart, Briefcase, Package, DollarSign,
   HelpCircle, ChevronDown, Building2, Stethoscope,
   Calendar, ClipboardList, ListChecks, MessageSquareText, ClipboardCheck, Users2, BookOpen, Bell, Shield, ShieldCheck,
-  FileText, Wallet, Clock, UserCheck, Award, PlusCircle, Upload,
+  FileText, Wallet, Clock, UserCheck, Award, PlusCircle, Plus, Upload,
   BookMarked, School, Microscope, Pill, BedDouble, Activity,
   Receipt, BadgeDollarSign, FolderOpen, BarChart, Star,
   UserCog, ShoppingCart, Truck, Contact, HandshakeIcon, UserPlus, Palette, CalendarRange,
@@ -137,11 +137,6 @@ export const MODULE_SECTIONS: ModuleSection[] = [
     label: "Academics",
     icon: GraduationCap,
     items: [
-      { href: "/dashboard/modules/school/subjects", label: "Subjects", icon: BookMarked },
-      // Class List: the roster for a (class, subject) the teacher teaches. Sits
-      // with the other subject tools rather than in a section of its own -
-      // Educare groups these under "Subjects", we group them under Academics.
-      { href: "/dashboard/modules/school/class-list", label: "Class List", icon: Users2 },
       { href: "/dashboard/modules/school/exams", label: "Exams & Results", icon: Award },
       { href: "/dashboard/modules/school/grades", label: "Gradebook", icon: BookOpen },
       { href: "/dashboard/modules/school/report-cards", label: "Report Cards", icon: FileText },
@@ -151,6 +146,20 @@ export const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/subject-selection", label: "Subject Selection", icon: BookMarked },
       { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: FileText },
       { href: "/dashboard/modules/school/report-workflow", label: "Report Workflow", icon: FolderOpen },
+    ],
+  },
+  {
+    // Subjects — its own top-level module (Educare parity): Student Enrolment is
+    // the admin register of who takes which subject; Class List is the teacher's
+    // roster for a class + subject they teach. Manage Subjects is the admin list.
+    key: "subjects",
+    requiredModule: "school",
+    label: "Subjects",
+    icon: BookMarked,
+    items: [
+      { href: "/dashboard/modules/school/subjects", label: "Manage Subjects", icon: BookMarked },
+      { href: "/dashboard/modules/school/student-enrolment", label: "Student Enrolment", icon: UserCheck },
+      { href: "/dashboard/modules/school/class-list", label: "Class List", icon: Users2 },
     ],
   },
   {
@@ -216,7 +225,8 @@ export const MODULE_SECTIONS: ModuleSection[] = [
     label: "Lesson Planner",
     icon: NotebookPen,
     items: [
-      { href: "/dashboard/modules/school/lessons", label: "Lesson Planner", icon: NotebookPen },
+      { href: "/dashboard/modules/school/lessons", label: "Manage Lesson Plan", icon: NotebookPen },
+      { href: "/dashboard/modules/school/lessons/create", label: "Create Lesson Plan", icon: Plus },
       { href: "/dashboard/modules/school/lessons/setup", label: "Lesson Planner Setup", icon: Settings2 },
       { href: "/dashboard/modules/school/lessons/approve", label: "Approve Lesson Plans", icon: ClipboardCheck },
     ],
