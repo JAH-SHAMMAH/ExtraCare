@@ -379,7 +379,7 @@ export function useUpdateCBTSettings() {
 
 // ── CBT: Question Bank ───────────────────────────────────────────────────────
 
-export function useBankItems(params?: { subject_id?: string; topic?: string; difficulty?: string; question_type?: string; search?: string; page?: number; page_size?: number }) {
+export function useBankItems(params?: { mine?: boolean; tag?: string; subject_id?: string; topic?: string; difficulty?: string; question_type?: string; search?: string; page?: number; page_size?: number }) {
   return useQuery({
     queryKey: ["cbt-bank", params],
     queryFn: () => cbtApi.bank.list(params),

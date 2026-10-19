@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useClasses, useSubjects } from "@/hooks/useSchool";
+import { useTerms } from "@/hooks/usePlatform";
 import Link from "next/link";
 import { useCBTExams, useExamResults, useAttemptReview, useRemarkAttempt, useResetAttempt, useCreateIntervention, usePublishResults, useFeedGradebook, useSyncAssessment } from "@/hooks/useSchoolExperience";
 import { cbtApi } from "@/lib/api";
@@ -26,7 +28,17 @@ export default function CBTResultsPage() {
   const [exporting, setExporting] = useState(false);
 
   const { data: examsData } = useCBTExams({ page_size: 100 });
-  const exams: any[] = examsData?.items || [];
+  const { data: classData } = useClasses({ page_size: 200 });
+  const { data: subjectData } = useSubjects({ page_size: 200 });
+  const { data: terms } = useTerms();
+  const [fTerm, setFTerm] = useState("");
+  const [fClass, setFClass] = useState("");
+  const [fSubject, setFSubject] = useState("");
+  const [fType, setFType] = useState("");
+  const allExams: any[] = examsData?.items || [];
+  const exams: any[] = allExams.filter((e) =>
+    (!fTerm || e.term_id === fTerm) && (!fClass || e.class_id === fClass) && (!fSubject || e.subject_id === fSubject) &&
+    (!fType || (fType === "held" ? e.hold_results && !e.results_published_at : fType === "published" ? !!e.results_published_at : e.status === fType)));
   const { data, isLoading } = useExamResults(examId || null);
   const resetAttempt = useResetAttempt();
   const createIntervention = useCreateIntervention();
@@ -73,6 +85,12 @@ export default function CBTResultsPage() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+          <div><label className="label">Session</label><select aria-label="Session" value={fTerm} onChange={(e) => { setFTerm(e.target.value); setExamId(""); }} className="input"><option value="">All</option>{(terms as any[] | undefined)?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+          <div><label className="label">Class</label><select aria-label="Class" value={fClass} onChange={(e) => { setFClass(e.target.value); setExamId(""); }} className="input"><option value="">All</option>{((classData as any)?.items || []).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+          <div><label className="label">Subject</label><select aria-label="Subject" value={fSubject} onChange={(e) => { setFSubject(e.target.value); setExamId(""); }} className="input"><option value="">All</option>{((subjectData as any)?.items || []).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+          <div><label className="label">Selection Type</label><select aria-label="Selection Type" value={fType} onChange={(e) => { setFType(e.target.value); setExamId(""); }} className="input"><option value="">All tests</option><option value="published">Results published</option><option value="held">Results held</option><option value="active">Active</option><option value="closed">Closed</option></select></div>
+        </div>
         <label className="label">Exam</label>
         <select value={examId} onChange={(e) => setExamId(e.target.value)} className="input">
           <option value="">— Select an exam —</option>

@@ -30,7 +30,7 @@ import random
 from datetime import datetime, timezone, timedelta
 import bleach
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File
-from sqlalchemy import select, func, or_, update as sa_update
+from sqlalchemy import select, func, or_, cast, String, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -843,6 +843,10 @@ def _bank_dict(q: QuestionBankItem, subject_name) -> dict:
         "options": q.options,
         "correct_answer": q.correct_answer,
         "points": float(q.points or 0),
+        "tags": q.tags or [],
+        "explanation": q.explanation,
+        "is_examination": bool(q.is_examination),
+        "created_by": q.created_by,
         "created_at": q.created_at.isoformat() if q.created_at else None,
     }
 
@@ -865,11 +869,17 @@ async def list_bank(
     difficulty: str | None = None,
     question_type: str | None = None,
     search: str | None = None,
+    mine: bool = False,
+    tag: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     org_id = current_user.org_id
     query = select(QuestionBankItem).where(QuestionBankItem.org_id == org_id)
+    if mine:
+        query = query.where(QuestionBankItem.created_by == current_user.id)
+    if tag:
+        query = query.where(cast(QuestionBankItem.tags, String).ilike(f'%"{tag}"%'))
     if subject_id:
         query = query.where(QuestionBankItem.subject_id == subject_id)
     if topic:

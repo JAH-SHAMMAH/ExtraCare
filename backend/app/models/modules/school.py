@@ -854,6 +854,9 @@ class QuestionBankItem(Base, UUIDMixin, TimestampMixin, TenantMixin):
     options = Column(JSON, nullable=True)          # [{"key": "a", "text": "..."}, ...]
     correct_answer = Column(Text, nullable=True)
     points = Column(Float, default=1.0, nullable=False)
+    tags = Column(JSON, nullable=True)             # ["algebra", "wassce"]
+    explanation = Column(Text, nullable=True)      # shown with the answer
+    is_examination = Column(Boolean, default=False, nullable=False, server_default=sa_false())
     created_by = Column(String(36), ForeignKey("users.id"), nullable=True)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 

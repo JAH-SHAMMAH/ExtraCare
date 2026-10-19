@@ -18,6 +18,9 @@ class BankItemCreate(BaseModel):
     options: Optional[list[dict[str, Any]]] = None
     correct_answer: Optional[str] = None
     points: float = Field(default=1.0, ge=0)
+    tags: Optional[list[str]] = Field(default=None, max_length=20)
+    explanation: Optional[str] = None
+    is_examination: bool = False
 
 
 class BankItemUpdate(BaseModel):
@@ -29,6 +32,9 @@ class BankItemUpdate(BaseModel):
     options: Optional[list[dict[str, Any]]] = None
     correct_answer: Optional[str] = None
     points: Optional[float] = Field(default=None, ge=0)
+    tags: Optional[list[str]] = Field(default=None, max_length=20)
+    explanation: Optional[str] = None
+    is_examination: Optional[bool] = None
 
 
 class ComposeFromBank(BaseModel):

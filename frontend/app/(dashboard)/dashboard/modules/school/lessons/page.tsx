@@ -58,7 +58,17 @@ export default function LessonPlannerPage() {
     end_date: formatISO(weekEnd),
   });
   const showSkeleton = useDelayedFlag(isLoading);
-  const plans = data?.items ?? [];
+  const [fClass, setFClass] = useState("");
+  const [fSubject, setFSubject] = useState("");
+  const [fStatus, setFStatus] = useState("");
+  const [fSearch, setFSearch] = useState("");
+  const allPlans = data?.items ?? [];
+  const classOpts = Array.from(new Map(allPlans.map((p: any) => [p.class_id, p.class_name || p.class_id])).entries());
+  const subjectOpts = Array.from(new Map(allPlans.map((p: any) => [p.subject_id, p.subject_name || p.subject_id])).entries());
+  const plans = allPlans.filter((p: any) =>
+    (!fClass || p.class_id === fClass) && (!fSubject || p.subject_id === fSubject) &&
+    (!fStatus || (p.status || "") === fStatus) &&
+    (!fSearch.trim() || (p.title || "").toLowerCase().includes(fSearch.trim().toLowerCase())));
 
   const plansByDay = useMemo(() => {
     const grouped: Record<number, LessonPlanRow[]> = {};
@@ -138,6 +148,14 @@ export default function LessonPlannerPage() {
         <div className="text-sm font-semibold text-slate-700">
           {formatNice(weekStart)} – {formatNice(addDays(weekStart, 4))}
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 p-3 mb-5 flex flex-wrap items-end gap-3" aria-label="Lesson plan filters">
+        <div><label className="label">Class</label><select aria-label="Filter class" value={fClass} onChange={(e) => setFClass(e.target.value)} className="input w-auto"><option value="">All</option>{classOpts.map(([id, n]) => <option key={String(id)} value={String(id)}>{String(n)}</option>)}</select></div>
+        <div><label className="label">Subject</label><select aria-label="Filter subject" value={fSubject} onChange={(e) => setFSubject(e.target.value)} className="input w-auto"><option value="">All</option>{subjectOpts.map(([id, n]) => <option key={String(id)} value={String(id)}>{String(n)}</option>)}</select></div>
+        <div><label className="label">Status</label><select aria-label="Filter status" value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="input w-auto"><option value="">All</option><option value="draft">Draft</option><option value="published">Published</option></select></div>
+        <div className="flex-1 min-w-[160px]"><label className="label">Search</label><input value={fSearch} onChange={(e) => setFSearch(e.target.value)} placeholder="Title" className="input w-full" /></div>
+        {(fClass || fSubject || fStatus || fSearch) && <button onClick={() => { setFClass(""); setFSubject(""); setFStatus(""); setFSearch(""); }} className="btn-secondary">Reset</button>}
       </div>
 
       {/* Grid */}

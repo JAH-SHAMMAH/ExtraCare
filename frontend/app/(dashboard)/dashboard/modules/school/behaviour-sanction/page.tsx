@@ -5,10 +5,12 @@ import {
   useDisciplinaryCases, useCreateDisciplinaryCase, useUpdateDisciplinaryCase, useDeleteDisciplinaryCase,
   useDisciplinaryActions, useCommittees, useSanctionGroups,
 } from "@/hooks/usePastoral";
+import { useSessions, useSections } from "@/hooks/usePlatform";
+import { useClasses, useYearGroups } from "@/hooks/useSchool";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
 import { cn } from "@/lib/utils";
-import { Loader2, Gavel, Trash2, Plus, X } from "lucide-react";
+import { Loader2, Gavel, Trash2, Plus, X, Download, Search } from "lucide-react";
 
 const STATUSES = ["pending", "resolved", "dismissed"];
 const STATUS_STYLE: Record<string, string> = {
@@ -20,7 +22,39 @@ const STATUS_STYLE: Record<string, string> = {
 export default function BehaviourSanctionPage() {
   const canWrite = useHasPermission("school:behaviour:write");
   const [statusFilter, setStatusFilter] = useState("");
-  const { data: cases = [], isLoading } = useDisciplinaryCases(statusFilter ? { status: statusFilter } : undefined);
+  // Educare-style filter bar: Session / School / Year Group / Class + Filter button.
+  const [draft, setDraft] = useState({ session: "", section: "", yearGroup: "", classId: "" });
+  const [applied, setApplied] = useState(draft);
+  const [search, setSearch] = useState("");
+  const [perPage, setPerPage] = useState(25);
+  const { data: sessions = [] } = useSessions();
+  const { data: sections = [] } = useSections();
+  const { data: yearGroups = [] } = useYearGroups();
+  const { data: classData } = useClasses({ page_size: 200 } as any);
+  const classList: any[] = (classData as any)?.items || [];
+  const { data: rawCases = [], isLoading } = useDisciplinaryCases({
+    ...(statusFilter ? { status: statusFilter } : {}),
+    ...(applied.classId ? { class_id: applied.classId } : {}),
+    ...(applied.section ? { section_id: applied.section } : {}),
+  });
+  const sess: any = (sessions as any[]).find((x) => x.id === applied.session);
+  const cases = (rawCases as any[]).filter((c) => {
+    if (sess?.start_date && c.case_date && c.case_date < sess.start_date) return false;
+    if (sess?.end_date && c.case_date && c.case_date > sess.end_date) return false;
+    if (applied.yearGroup) {
+      const yg = ((yearGroups as any[]).find((y) => y.id === applied.yearGroup)?.name || "").toLowerCase();
+      if (yg && !(c.class_name || "").toLowerCase().startsWith(yg)) return false;
+    }
+    const q = search.trim().toLowerCase();
+    return !q || [c.student_name, c.offence, c.sanction, c.class_name, c.action_name].some((v: any) => (v || "").toLowerCase().includes(q));
+  }).slice(0, perPage);
+  const exportCsv = () => {
+    const rows = [["Student", "Class", "Date", "Action", "Committee", "Offence", "Sanction", "Status"],
+      ...cases.map((c: any) => [c.student_name, c.class_name, c.case_date, c.action_name, c.committee_name, c.offence, c.sanction, c.status])];
+    const csv = rows.map((r) => r.map((v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" }));
+    const a = document.createElement("a"); a.href = url; a.download = "disciplinary-cases.csv"; a.click(); URL.revokeObjectURL(url);
+  };
   const { data: actions = [] } = useDisciplinaryActions();
   const { data: committees = [] } = useCommittees();
   const { data: groups = [] } = useSanctionGroups();
@@ -46,13 +80,13 @@ export default function BehaviourSanctionPage() {
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
-      <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Pastoral</span><span>/</span><span className="text-brand-600 font-semibold">Behaviour &amp; Sanction</span></nav>
+      <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>Pastoral</span><span>/</span><span className="text-brand-600 font-semibold">Pastoral Discipline</span></nav>
       <div className="flex items-start justify-between gap-4 mb-5">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight mb-1 flex items-center gap-2"><Gavel size={22} className="text-brand-600" /> Behaviour &amp; Sanction</h1>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight mb-1 flex items-center gap-2"><Gavel size={22} className="text-brand-600" /> Pastoral Discipline</h1>
           <p className="text-slate-500 text-sm">Disciplinary cases: the offence, the sanction applied, the handling committee, and status.</p>
         </div>
-        {canWrite && <button onClick={() => setShow((s) => !s)} className="btn-primary gap-2 shrink-0"><Plus size={15} /> New Case</button>}
+        {canWrite && <button onClick={() => setShow((s) => !s)} className="btn-primary gap-2 shrink-0"><Plus size={15} /> Register New Case</button>}
       </div>
 
       {show && canWrite && (
@@ -72,25 +106,36 @@ export default function BehaviourSanctionPage() {
         </div>
       )}
 
-      <div className="flex gap-3 mb-5">
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input w-auto capitalize">
-          <option value="">All statuses</option>
-          {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
+      <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex flex-wrap items-end gap-3">
+        <div><label className="label">Session</label><select aria-label="Session" value={draft.session} onChange={(e) => setDraft({ ...draft, session: e.target.value })} className="input w-auto"><option value="">All</option>{(sessions as any[]).map((x) => <option key={x.id} value={x.id}>{x.name}{x.term ? ` · ${x.term}` : ""}</option>)}</select></div>
+        <div><label className="label">School</label><select aria-label="School" value={draft.section} onChange={(e) => setDraft({ ...draft, section: e.target.value })} className="input w-auto"><option value="">All</option>{(sections as any[]).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
+        <div><label className="label">Year Group</label><select aria-label="Year Group" value={draft.yearGroup} onChange={(e) => setDraft({ ...draft, yearGroup: e.target.value })} className="input w-auto"><option value="">All</option>{(yearGroups as any[]).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
+        <div><label className="label">Class</label><select aria-label="Class" value={draft.classId} onChange={(e) => setDraft({ ...draft, classId: e.target.value })} className="input w-auto"><option value="">All</option>{classList.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
+        <div><label className="label">Status</label><select aria-label="Status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input w-auto capitalize"><option value="">All</option>{STATUSES.map((x) => <option key={x} value={x}>{x}</option>)}</select></div>
+        <button onClick={() => setApplied(draft)} className="btn-primary">Filter</button>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <h2 className="text-sm font-bold text-slate-800">Disciplinary Cases</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={exportCsv} disabled={!cases.length} className="btn-secondary gap-2"><Download size={14} /> Export</button>
+          <select aria-label="Records per page" value={perPage} onChange={(e) => setPerPage(Number(e.target.value))} className="input w-auto">{[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n} records</option>)}</select>
+          <div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search" className="input pl-9 w-44" /></div>
+        </div>
       </div>
 
       {isLoading ? (
         <div className="py-16 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
-      ) : (cases as any[]).length === 0 ? (
+      ) : cases.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 py-14 text-center text-slate-400"><Gavel size={30} className="mx-auto mb-3 opacity-40" /><p className="text-sm">No disciplinary cases.</p></div>
       ) : (
         <div className="space-y-3">
-          {(cases as any[]).map((c) => (
+          {cases.map((c: any) => (
             <div key={c.id} className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h3 className="text-sm font-bold text-slate-900">{c.student_name}</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">{[c.action_name, c.committee_name, c.case_date].filter(Boolean).join(" · ") || "—"}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{[c.class_name, c.action_name, c.committee_name, c.case_date].filter(Boolean).join(" · ") || "—"}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {canWrite ? (

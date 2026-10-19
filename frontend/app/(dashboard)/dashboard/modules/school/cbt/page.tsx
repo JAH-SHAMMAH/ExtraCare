@@ -16,6 +16,7 @@ import {
   useBankItems,
   useCBTSettings,
 } from "@/hooks/useSchoolExperience";
+import { useClasses, useSubjects } from "@/hooks/useSchool";
 import { useMineFilter } from "@/hooks/useMineFilter";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { useAuthStore } from "@/lib/store";
@@ -60,6 +61,12 @@ function TeacherCBTView() {
   const [editing, setEditing] = useState<CBTExam | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [openExamId, setOpenExamId] = useState<string | null>(null);
+  const [fTerm, setFTerm] = useState("");
+  const [fClass, setFClass] = useState("");
+  const [fSubject, setFSubject] = useState("");
+  const [fSearch, setFSearch] = useState("");
+  const { data: classData } = useClasses({ page_size: 200 });
+  const { data: subjectData } = useSubjects({ page_size: 200 });
 
   const { data, isLoading } = useCBTExams({
     status: statusFilter || undefined,
@@ -166,7 +173,11 @@ function TeacherCBTView() {
     return <ExamBuilder examId={openExamId} onBack={() => setOpenExamId(null)} canWrite={canWrite} />;
   }
 
-  const exams = data?.items as CBTExam[] | undefined;
+  const classOpts: any[] = (classData as any)?.items || [];
+  const subjectOpts: any[] = (subjectData as any)?.items || [];
+  const exams = (data?.items as CBTExam[] | undefined)?.filter((e) =>
+    (!fTerm || e.term_id === fTerm) && (!fClass || e.class_id === fClass) && (!fSubject || e.subject_id === fSubject) &&
+    (!fSearch.trim() || e.title.toLowerCase().includes(fSearch.trim().toLowerCase())));
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -304,7 +315,7 @@ function TeacherCBTView() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex items-center gap-3">
+      <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex flex-wrap items-center gap-3">
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input max-w-48">
           <option value="">All statuses</option>
           <option value="draft">Draft</option>
@@ -312,6 +323,10 @@ function TeacherCBTView() {
           <option value="active">Active</option>
           <option value="closed">Closed</option>
         </select>
+        <select aria-label="Filter session" value={fTerm} onChange={(e) => setFTerm(e.target.value)} className="input max-w-44"><option value="">All sessions</option>{(terms as any[] | undefined)?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+        <select aria-label="Filter class" value={fClass} onChange={(e) => setFClass(e.target.value)} className="input max-w-44"><option value="">All classes</option>{classOpts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        <select aria-label="Filter subject" value={fSubject} onChange={(e) => setFSubject(e.target.value)} className="input max-w-44"><option value="">All subjects</option>{subjectOpts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        <input aria-label="Search tests" value={fSearch} onChange={(e) => setFSearch(e.target.value)} placeholder="Search tests" className="input max-w-44" />
         {mine && (
           <button
             onClick={() => setMine(false)}

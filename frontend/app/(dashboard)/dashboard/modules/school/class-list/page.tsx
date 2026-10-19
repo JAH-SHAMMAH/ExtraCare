@@ -13,6 +13,7 @@ export default function ClassListPage() {
   const [classId, setClassId] = useState("");
   const [subjectId, setSubjectId] = useState("");
   const [search, setSearch] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
 
   // Same derivation Make Report uses: the pickers offer only pairs this teacher
   // actually teaches, so a selection the API would refuse cannot be made here.
@@ -51,9 +52,24 @@ export default function ClassListPage() {
         The pupils you teach, for one class and subject. Read-only.
       </p>
 
+      {ready && students.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4" aria-label="Class counters">
+          {[
+            ["Total", students.length],
+            ["Male", students.filter((x) => /^m/i.test(x.gender || "")).length],
+            ["Female", students.filter((x) => /^f/i.test(x.gender || "")).length],
+            ["Selected", picked.size],
+          ].map(([k, v]) => (
+            <div key={String(k)} className="bg-white rounded-xl border border-slate-200 px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{k}</p>
+              <p className="text-xl font-black text-slate-900 tabular-nums">{v}</p>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3 mb-5">
         <div className="min-w-[200px]"><label className="label">Class</label>
-          <select value={classId} onChange={(e) => { setClassId(e.target.value); setSubjectId(""); }} className="input">
+          <select value={classId} onChange={(e) => { setClassId(e.target.value); setSubjectId(""); setPicked(new Set()); }} className="input">
             <option value="">— Select —</option>
             {myClasses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
@@ -115,6 +131,11 @@ export default function ClassListPage() {
         </p>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="px-4 py-2 border-b border-slate-100 flex flex-wrap gap-2 text-xs">
+            <button onClick={() => setPicked(new Set([...picked, ...rows.map((r) => r.id)]))} className="btn-secondary">Select visible</button>
+            <button onClick={() => { const n = new Set(picked); rows.forEach((r) => n.delete(r.id)); setPicked(n); }} className="btn-secondary">Clear visible</button>
+            <button onClick={() => setPicked(new Set())} className="btn-secondary">Reset</button>
+          </div>
           <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
             <p className="text-sm font-bold text-slate-800">
               {data.class_name} · {data.subject_name}
@@ -128,6 +149,7 @@ export default function ClassListPage() {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50/80 border-b border-slate-100">
+                <th className="px-4 py-3 w-8" />
                 {["#", "Pupil", "Student ID", "Gender"].map((h) => (
                   <th key={h} className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>
                 ))}
@@ -136,6 +158,7 @@ export default function ClassListPage() {
             <tbody className="divide-y divide-slate-50">
               {rows.map((s, i) => (
                 <tr key={s.id} className="hover:bg-slate-50/50">
+                  <td className="px-4 py-2.5"><input type="checkbox" aria-label={`Select ${s.name}`} checked={picked.has(s.id)} onChange={() => { const n = new Set(picked); n.has(s.id) ? n.delete(s.id) : n.add(s.id); setPicked(n); }} /></td>
                   <td className="px-4 py-2.5 text-xs text-slate-400 tabular-nums">{i + 1}</td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2.5">

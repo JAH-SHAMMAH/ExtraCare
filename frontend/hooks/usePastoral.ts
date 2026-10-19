@@ -421,7 +421,7 @@ export function useDeleteCommittee() { return committeeMut((id: string) => pasto
 export function useAddCommitteeMember() { return committeeMut((v: { id: string; data: { user_id: string; role_label?: string | null } }) => pastoralApi.committees.addMember(v.id, v.data), "Member added."); }
 export function useRemoveCommitteeMember() { return committeeMut((memberId: string) => pastoralApi.committees.removeMember(memberId), "Removed."); }
 
-export function useDisciplinaryCases(params?: { student_id?: string; status?: string }) {
+export function useDisciplinaryCases(params?: { student_id?: string; status?: string; class_id?: string; section_id?: string }) {
   return useQuery({ queryKey: ["disciplinary-cases", params], queryFn: () => pastoralApi.disciplinaryCases.list(params) });
 }
 function caseMut<TArgs>(fn: (a: TArgs) => Promise<any>, msg: string) {

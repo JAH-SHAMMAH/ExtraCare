@@ -18,3 +18,8 @@ def test_teacher_lacks_pastoral_admin_scope_but_keeps_discipline():
 
 def test_admin_keeps_pastoral():
     assert _has(set(P["org_admin"]), "school:hostel:read")
+
+
+def test_bank_extras_columns_exist():
+    from app.models.modules.school import QuestionBankItem as Q
+    assert {"tags", "explanation", "is_examination"} <= set(Q.__table__.c.keys())

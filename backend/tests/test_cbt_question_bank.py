@@ -168,3 +168,16 @@ async def test_bank_rbac_excludes_students(db, org):
     assert student.has_permission("school:cbt:sit")
     assert not student.has_permission("school:cbt:read") and not student.has_permission("school:cbt:write")
     assert not student.has_permission("school:read") and not student.has_permission("school:write")
+
+
+async def test_tags_explanation_and_mine_filter(db, org, teacher):
+    r = await create_bank_item(
+        BankItemCreate(question_text="Tagged", tags=["algebra", "wassce"], explanation="Because.", is_examination=True),
+        request=None, db=db, current_user=teacher)
+    assert r["tags"] == ["algebra", "wassce"] and r["explanation"] == "Because." and r["is_examination"] is True
+    res = await list_bank(page=1, page_size=50, subject_id=None, topic=None, difficulty=None, question_type=None,
+                          search=None, mine=True, tag="wassce", db=db, current_user=teacher)
+    assert res["total"] == 1
+    none = await list_bank(page=1, page_size=50, subject_id=None, topic=None, difficulty=None, question_type=None,
+                           search=None, mine=False, tag="nope", db=db, current_user=teacher)
+    assert none["total"] == 0

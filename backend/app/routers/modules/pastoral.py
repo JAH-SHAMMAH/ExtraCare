@@ -1589,18 +1589,36 @@ async def _case_response(db: AsyncSession, org_id: str, c: StudentDisciplinaryCa
 
 @router.get("/disciplinary-cases", response_model=list[DisciplinaryCaseResponse], dependencies=[_beh_read])
 async def list_disciplinary_cases(student_id: str | None = None, status: str | None = None,
+                                  class_id: str | None = None, section_id: str | None = None,
                                   db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     q = select(StudentDisciplinaryCase).where(StudentDisciplinaryCase.org_id == current_user.org_id)
     if student_id:
         q = q.where(StudentDisciplinaryCase.student_id == student_id)
     if status:
         q = q.where(StudentDisciplinaryCase.status == status)
+    if class_id or section_id:
+        cq = select(Student.id).where(Student.org_id == current_user.org_id)
+        if class_id:
+            cq = cq.where(Student.class_id == class_id)
+        if section_id:
+            cq = cq.where(Student.class_id.in_(select(SchoolClass.id).where(
+                SchoolClass.org_id == current_user.org_id, SchoolClass.section_id == section_id)))
+        q = q.where(StudentDisciplinaryCase.student_id.in_(cq))
     rows = (await db.execute(q.order_by(StudentDisciplinaryCase.case_date.desc().nullslast(), StudentDisciplinaryCase.created_at.desc()).limit(1000))).scalars().all()
     snames = await _student_names(db, current_user.org_id, {r.student_id for r in rows})
     cnames = {c.id: c.name for c in (await db.execute(select(DisciplinaryCommittee).where(DisciplinaryCommittee.org_id == current_user.org_id))).scalars().all()}
     anames = {a.id: a.name for a in (await db.execute(select(DisciplinaryAction).where(DisciplinaryAction.org_id == current_user.org_id))).scalars().all()}
     unames = await _user_names(db, current_user.org_id, {r.recorded_by for r in rows})
-    return [await _case_response(db, current_user.org_id, r, snames, cnames, anames, unames) for r in rows]
+    out = [await _case_response(db, current_user.org_id, r, snames, cnames, anames, unames) for r in rows]
+    cls_of = {sid: cid for sid, cid in (await db.execute(
+        select(Student.id, Student.class_id).where(Student.id.in_({r.student_id for r in rows}))
+    )).all()} if rows else {}
+    cls_names = {c.id: c.name for c in (await db.execute(
+        select(SchoolClass).where(SchoolClass.org_id == current_user.org_id))).scalars().all()}
+    for o in out:
+        o.class_id = cls_of.get(o.student_id)
+        o.class_name = cls_names.get(o.class_id) if o.class_id else None
+    return out
 
 
 @router.post("/disciplinary-cases", response_model=DisciplinaryCaseResponse, status_code=201, dependencies=[_beh_write])

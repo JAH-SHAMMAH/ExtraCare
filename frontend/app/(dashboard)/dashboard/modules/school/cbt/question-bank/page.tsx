@@ -12,6 +12,7 @@ import {
 } from "@/hooks/useSchoolExperience";
 import { useSubjects } from "@/hooks/useSchool";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/lib/store";
 import {
   FileQuestion, Eye, ChevronLeft, ChevronRight, Plus, Search, Upload, X, Loader2, Edit2, Trash2, ArrowLeft,
   Bold, Italic, Underline, List, ListOrdered, Link as LinkIcon, AlignLeft, AlignCenter, AlignRight, Undo2, Redo2,
@@ -45,6 +46,7 @@ interface BankItem {
   id: string; subject_id: string | null; subject_name: string | null; topic: string | null;
   difficulty: string; question_text: string; question_type: string;
   options: { key: string; text: string }[] | null; correct_answer: string | null; points: number;
+  tags?: string[]; explanation?: string | null; is_examination?: boolean; created_by?: string | null;
 }
 
 export default function QuestionBankPage() {
@@ -54,10 +56,15 @@ export default function QuestionBankPage() {
   const [editing, setEditing] = useState<BankItem | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [previewIdx, setPreviewIdx] = useState<number | null>(null);
+  const [scope, setScope] = useState<"all" | "mine">("all");
+  const [tag, setTag] = useState("");
+  const [pageSize, setPageSize] = useState(50);
+  const myId = (useAuthStore((st: any) => st.user) as any)?.id;
   const fileRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useBankItems({
-    search: search || undefined, subject_id: subjectId || undefined, difficulty: difficulty || undefined, page_size: 100,
+    search: search || undefined, subject_id: subjectId || undefined, difficulty: difficulty || undefined, page_size: pageSize,
+    mine: scope === "mine" || undefined, tag: tag.trim() || undefined,
   });
   const { data: subjectsData } = useSubjects();
   const subjects: Subject[] = subjectsData?.items || [];
@@ -86,7 +93,7 @@ export default function QuestionBankPage() {
           <button onClick={() => fileRef.current?.click()} disabled={importBank.isPending} className="btn-secondary gap-2">
             {importBank.isPending ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />} Import CSV
           </button>
-          <button onClick={() => { setEditing(null); setShowForm(true); }} className="btn-primary gap-2"><Plus size={15} /> Add Question</button>
+          <button onClick={() => { setEditing(null); setShowForm(true); }} className="btn-primary gap-2"><Plus size={15} /> New Questions</button>
         </div>
       </div>
 
@@ -99,6 +106,14 @@ export default function QuestionBankPage() {
         <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className="input w-auto">
           <option value="">All subjects</option>
           {subjects.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+        </select>
+        <select aria-label="Question scope" value={scope} onChange={(e) => setScope(e.target.value as "all" | "mine")} className="input w-auto">
+          <option value="all">All Questions</option>
+          <option value="mine">My Questions</option>
+        </select>
+        <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Tag" aria-label="Filter by tag" className="input w-28" />
+        <select aria-label="Records per page" value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="input w-auto">
+          {[10, 25, 50, 100].map((n) => (<option key={n} value={n}>{n} / page</option>))}
         </select>
         <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="input w-auto capitalize">
           <option value="">All difficulty</option>
@@ -125,6 +140,9 @@ export default function QuestionBankPage() {
                   <div className="flex flex-wrap items-center gap-2 mt-1.5">
                     <span className={cn("badge capitalize", DIFF_STYLE[q.difficulty] || "bg-slate-50 text-slate-600 border-slate-200")}>{q.difficulty}</span>
                     <span className="badge bg-slate-50 text-slate-500 border-slate-200">{TYPES.find((t) => t.value === q.question_type)?.label || q.question_type}{(q.question_type === "short_answer" || q.question_type === "long_answer") ? " (Subjective Question)" : ""}</span>
+                    {myId && q.created_by === myId && <span className="badge bg-brand-50 text-brand-700 border-brand-200">My Questions</span>}
+                    {q.is_examination && <span className="badge bg-purple-50 text-purple-700 border-purple-200">Examination</span>}
+                    {(q.tags || []).map((t) => (<span key={t} className="badge bg-slate-50 text-slate-500 border-slate-200">#{t}</span>))}
                     {q.subject_name && <span className="text-[11px] text-slate-400">{q.subject_name}</span>}
                     {q.topic && <span className="text-[11px] text-slate-400">· {q.topic}</span>}
                     <span className="text-[11px] text-slate-400">· {q.points} pt{q.points === 1 ? "" : "s"}</span>
@@ -172,6 +190,9 @@ function BankForm({ item, subjects, onClose }: { item: BankItem | null; subjects
       { index: 3, text: "" },
     ]) as any,
     correct_answer: item?.correct_answer || "",
+    tags: (item?.tags || []).join(", "),
+    explanation: item?.explanation || "",
+    is_examination: !!item?.is_examination,
   });
 
   const isMcq = f.question_type === "mcq";
@@ -195,6 +216,9 @@ function BankForm({ item, subjects, onClose }: { item: BankItem | null; subjects
       points: parseFloat(f.points) || 1,
       options,
       correct_answer: f.correct_answer.trim() || undefined,
+      tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean).slice(0, 20),
+      explanation: f.explanation.trim() || undefined,
+      is_examination: f.is_examination,
     };
     const done = { onSuccess: onClose };
     if (item) update.mutate({ id: item.id, data: payload }, done);
@@ -293,10 +317,13 @@ function BankForm({ item, subjects, onClose }: { item: BankItem | null; subjects
             </div>
             <div><label className="label">Points</label><input type="number" min="0" step="0.5" value={f.points} onChange={(e) => setF({ ...f, points: e.target.value })} className="input" /></div>
           </div>
+          <div><label className="label">Tags (comma separated)</label><input value={f.tags} onChange={(e) => setF({ ...f, tags: e.target.value })} className="input" placeholder="algebra, wassce" /></div>
+          <div><label className="label">Answer explanation</label><textarea value={f.explanation} onChange={(e) => setF({ ...f, explanation: e.target.value })} className="input min-h-[60px]" /></div>
+          <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={f.is_examination} onChange={(e) => setF({ ...f, is_examination: e.target.checked })} /> Is Examination question</label>
         </div>
         <div className="flex justify-end gap-3 mt-5">
-          <button onClick={onClose} className="btn-secondary">Cancel</button>
-          <button onClick={submit} disabled={pending || !f.question_text.trim()} className="btn-primary gap-2">{pending && <Loader2 size={15} className="animate-spin" />}{item ? "Save" : "Add"}</button>
+          <button onClick={onClose} className="btn-secondary">Go Back</button>
+          <button onClick={submit} disabled={pending || !f.question_text.trim()} className="btn-primary gap-2">{pending && <Loader2 size={15} className="animate-spin" />}{item ? "UPDATE" : "Add"}</button>
         </div>
       </div>
     </div>

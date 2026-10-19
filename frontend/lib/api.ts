@@ -472,7 +472,7 @@ export const cbtApi = {
       api.post(`/cbt/exams/${exam_id}/questions/from-bank`, { question_ids }).then((r) => r.data),
   },
   bank: {
-    list: (p?: { subject_id?: string; topic?: string; difficulty?: string; question_type?: string; search?: string; page?: number; page_size?: number }) =>
+    list: (p?: { mine?: boolean; tag?: string; subject_id?: string; topic?: string; difficulty?: string; question_type?: string; search?: string; page?: number; page_size?: number }) =>
       api.get("/cbt/question-bank", { params: p }).then((r) => r.data),
     create: (data: object) => api.post("/cbt/question-bank", data).then((r) => r.data),
     update: (id: string, data: object) => api.patch(`/cbt/question-bank/${id}`, data).then((r) => r.data),
@@ -1241,7 +1241,7 @@ export const pastoralApi = {
     removeMember: (memberId: string) => api.delete(`/pastoral/committee-members/${memberId}`),
   },
   disciplinaryCases: {
-    list: (p?: { student_id?: string; status?: string }) => api.get("/pastoral/disciplinary-cases", { params: p }).then((r) => r.data),
+    list: (p?: { student_id?: string; status?: string; class_id?: string; section_id?: string }) => api.get("/pastoral/disciplinary-cases", { params: p }).then((r) => r.data),
     create: (d: object) => api.post("/pastoral/disciplinary-cases", d).then((r) => r.data),
     update: (id: string, d: object) => api.patch(`/pastoral/disciplinary-cases/${id}`, d).then((r) => r.data),
     remove: (id: string) => api.delete(`/pastoral/disciplinary-cases/${id}`),

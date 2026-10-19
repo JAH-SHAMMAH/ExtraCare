@@ -599,6 +599,8 @@ class DisciplinaryCaseResponse(BaseModel):
     status: str = "pending"
     case_date: Optional[date] = None
     recorded_by_name: Optional[str] = None
+    class_id: Optional[str] = None
+    class_name: Optional[str] = None
     created_at: Optional[datetime] = None
 
 
