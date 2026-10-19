@@ -45,10 +45,30 @@ def _resource_type(content_type: str) -> str:
     return "raw"
 
 
-def _local_save(org_id: str, kind: str, filename: str | None, content: bytes) -> str:
+# Extensions we are willing to store, by declared type. The file NAME is never trusted:
+# a page called "photo.png" or an image called "x.html" must not end up with the wrong ending.
+_SAFE_EXT = {
+    "image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/webp": ".webp", "image/gif": ".gif",
+    "application/pdf": ".pdf", "text/plain": ".txt", "text/csv": ".csv",
+    "application/msword": ".doc", "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "audio/mpeg": ".mp3", "audio/webm": ".webm", "video/mp4": ".mp4", "video/webm": ".webm",
+}
+_NAME_EXT_OK = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf", ".txt", ".csv", ".doc", ".docx", ".xls", ".xlsx", ".mp3", ".mp4", ".webm", ".m4a", ".wav", ".ogg", ".ppt", ".pptx", ".zip"}
+
+
+def _safe_ext(filename: str | None, content_type: str = "") -> str:
+    if content_type in _SAFE_EXT:
+        return _SAFE_EXT[content_type]
+    ext = os.path.splitext(filename or "")[1].lower()
+    return ext if ext in _NAME_EXT_OK else ".bin"
+
+
+def _local_save(org_id: str, kind: str, filename: str | None, content: bytes, content_type: str = "") -> str:
     org_dir = Path(get_settings().UPLOAD_DIR) / org_id / kind
     org_dir.mkdir(parents=True, exist_ok=True)
-    ext = os.path.splitext(filename or "")[1].lower()[:10]
+    ext = _safe_ext(filename, content_type)
     safe = f"{uuid.uuid4().hex}{ext}"
     with open(org_dir / safe, "wb") as fh:
         fh.write(content)
@@ -83,4 +103,4 @@ async def save_upload(org_id: str, kind: str, filename: str | None, content: byt
         url = await asyncio.to_thread(_cloudinary_upload_sync, org_id, kind, filename, content, content_type)
         logger.info("storage.cloudinary org=%s kind=%s bytes=%s", org_id, kind, len(content))
         return url
-    return _local_save(org_id, kind, filename, content)
+    return _local_save(org_id, kind, filename, content, content_type)

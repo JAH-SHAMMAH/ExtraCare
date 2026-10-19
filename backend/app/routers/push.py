@@ -13,6 +13,16 @@ from app.services import webpush
 
 router = APIRouter(prefix="/push", tags=["Push"])
 
+# Only the real browser push services. The server posts to the address it is given,
+# so anything else could be used to make us call internal or arbitrary hosts.
+_PUSH_HOSTS = ("fcm.googleapis.com", "push.services.mozilla.com", "notify.windows.com", "push.apple.com", "web.push.apple.com")
+
+
+def _is_push_service(endpoint: str) -> bool:
+    from urllib.parse import urlparse
+    host = (urlparse(endpoint).hostname or "").lower()
+    return endpoint.startswith("https://") and any(host == h or host.endswith("." + h) for h in _PUSH_HOSTS)
+
 
 @router.get("/public-key")
 async def public_key(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
@@ -25,7 +35,7 @@ async def public_key(db: AsyncSession = Depends(get_db), user: User = Depends(ge
 async def subscribe(body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
     ep, keys = str(body.get("endpoint") or ""), body.get("keys") or {}
     p256dh, auth = str(keys.get("p256dh") or ""), str(keys.get("auth") or "")
-    if not ep.startswith("https://") or not p256dh or not auth:
+    if not _is_push_service(ep) or not p256dh or not auth:
         raise HTTPException(422, "That is not a valid push subscription.")
     h = webpush.endpoint_hash(ep)
     row = (await db.execute(select(PushSubscription).where(PushSubscription.endpoint_hash == h))).scalar_one_or_none()

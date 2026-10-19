@@ -20,8 +20,11 @@ pytestmark = pytest.mark.asyncio
 
 
 def _png() -> UploadFile:
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), (0, 120, 60)).save(buf, "PNG")
     return UploadFile(
-        file=io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"x" * 64),
+        file=io.BytesIO(buf.getvalue()),
         filename="a.png",
         headers=Headers({"content-type": "image/png"}),
     )

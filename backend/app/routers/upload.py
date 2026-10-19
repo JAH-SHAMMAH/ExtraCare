@@ -43,6 +43,14 @@ async def _read_validated(file: UploadFile, allowed: set[str], max_size: int) ->
     content = await file.read()
     if len(content) > max_size:
         raise HTTPException(status_code=413, detail=f"File exceeds the {max_size // 1024 // 1024} MB limit.")
+    if (file.content_type or "").startswith("image/"):
+        # The declared type is only a claim: make sure the bytes really are a picture.
+        try:
+            import io
+            from PIL import Image
+            Image.open(io.BytesIO(content)).verify()
+        except Exception:
+            raise HTTPException(status_code=415, detail="That file is not a valid image.")
     return content
 
 

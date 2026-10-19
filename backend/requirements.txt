@@ -1,7 +1,7 @@
 # Core
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
-python-multipart==0.0.18
+python-multipart==0.0.32
 
 # Multi-format bulk import (CSV native; Excel / Word / PDF tables)
 openpyxl==3.1.5
@@ -10,7 +10,7 @@ pdfplumber==0.11.10
 cloudinary==1.41.0   # durable upload storage (used only when CLOUDINARY_URL is set)
 
 # HTML sanitization (for rich-text fields: lesson plans, CBT questions, etc.)
-bleach==6.1.0
+bleach==6.4.0
 
 # Database (async SQLite — swap URL for MySQL/TiDB in prod)
 sqlalchemy[asyncio]==2.0.36
@@ -19,15 +19,15 @@ alembic==1.14.0
 # Production async driver. MySQL / TiDB use aiomysql (DATABASE_URL
 # mysql+aiomysql://...). For PostgreSQL instead, replace with asyncpg==0.30.0
 # (DATABASE_URL postgresql+asyncpg://...). Not used by the SQLite dev/test path.
-aiomysql==0.2.0
+aiomysql==0.3.2
 
 # Auth
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 # Encryption-at-rest for stored secrets (gateway API keys). Pinned explicitly —
 # previously only present transitively via python-jose[cryptography]. Provides
 # AES-256-GCM (app/services/crypto.py). See ENCRYPTION_SERVICE_SPEC.md.
-cryptography==46.0.7
+cryptography==50.0.2
 
 # Settings
 pydantic==2.10.3

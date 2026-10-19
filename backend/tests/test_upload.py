@@ -28,7 +28,9 @@ def _file(filename: str, content_type: str, data: bytes = b"payload-bytes") -> U
 
 async def test_avatar_upload_persists_url(db, org, teacher, tmp_path, monkeypatch):
     monkeypatch.setattr(get_settings(), "UPLOAD_DIR", str(tmp_path))
-    res = await upload_avatar(file=_file("me.png", "image/png"), db=db, current_user=teacher)
+    from PIL import Image
+    buf = BytesIO(); Image.new("RGB", (8, 8)).save(buf, "PNG")
+    res = await upload_avatar(file=_file("me.png", "image/png", buf.getvalue()), db=db, current_user=teacher)
     assert res["url"].startswith(f"/uploads/{org.id}/avatars/")
     # the file was actually written
     assert os.path.exists(os.path.join(str(tmp_path), org.id, "avatars", res["url"].split("/")[-1]))

@@ -60,7 +60,9 @@ async def test_subscribe_send_and_forget_dead_phone(http, db, org, family, monke
     assert (await http.get("/api/v1/push/public-key", headers=h)).json()["key"] == key  # stable
     assert (await http.post("/api/v1/push/subscribe", headers=h, json={"endpoint": "http://x", "keys": {}})).status_code == 422
     k, pub, auth = _browser()
-    sub = {"endpoint": "https://push.example/abc", "keys": {"p256dh": webpush.b64u(pub), "auth": webpush.b64u(auth)}}
+    evil = {"endpoint": "https://internal.example/x", "keys": {"p256dh": webpush.b64u(pub), "auth": webpush.b64u(auth)}}
+    assert (await http.post("/api/v1/push/subscribe", headers=h, json=evil)).status_code == 422  # only real push services
+    sub = {"endpoint": "https://fcm.googleapis.com/fcm/send/abc", "keys": {"p256dh": webpush.b64u(pub), "auth": webpush.b64u(auth)}}
     assert (await http.post("/api/v1/push/subscribe", headers=h, json=sub)).status_code == 201
 
     sent = []
@@ -105,3 +107,17 @@ async def test_parents_are_told_when_their_childs_report_is_released(http, db, o
     rows = (await db.execute(select(Notification).where(Notification.user_id == family["parent"].id))).scalars().all()
     assert len(rows) == 1 and rows[0].title == "Mine's Autumn report is ready" and rows[0].payload["url"].endswith("/report-card")
     assert await notify_report_released(db, org.id, None) == 0
+
+
+async def test_security_headers_on_api_and_risky_uploads(http):
+    r = await http.get("/api/v1/push/public-key")  # refused, but headers still apply
+    assert r.headers["x-content-type-options"] == "nosniff" and r.headers["x-frame-options"] == "DENY"
+    assert r.headers["cache-control"] == "no-store" and "referrer-policy" in r.headers
+
+
+async def test_uploads_ignore_a_dishonest_file_name(monkeypatch, tmp_path):
+    from app.services import storage
+    monkeypatch.setattr(storage, "get_settings", lambda: type("S", (), {"UPLOAD_DIR": str(tmp_path)})())
+    url = storage._local_save("org1", "avatars", "evil.html", b"x", "image/png")
+    assert url.endswith(".png") and "evil" not in url
+    assert storage._local_save("org1", "documents", "run.exe", b"x", "application/x-msdownload").endswith(".bin")

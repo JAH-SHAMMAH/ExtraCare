@@ -130,7 +130,7 @@ app.add_middleware(
     allow_origins=settings.ALLOWED_ORIGINS,
     # Also allow the dev frontend served from any private-LAN IP on :3000, so the
     # app can be opened on a phone over Wi-Fi without hardcoding the machine's IP.
-    allow_origin_regex=r"http://(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}):3000",
+    allow_origin_regex=None if settings.ENVIRONMENT == "production" else r"http://(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}):3000",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -195,6 +195,34 @@ async def csrf_protect_middleware(request: Request, call_next):
                     content={"detail": "CSRF token missing or invalid."},
                 )
     return await call_next(request)
+
+
+_RISKY_UPLOAD_EXT = (".html", ".htm", ".svg", ".xml", ".xhtml", ".js", ".mjs")
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """Browser-side protections on every response from the API and the uploads mount."""
+    response = await call_next(request)
+    h = response.headers
+    path = request.url.path
+    h["X-Content-Type-Options"] = "nosniff"
+    h["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+    h["Cross-Origin-Resource-Policy"] = "cross-origin"  # the app and its media live on different hosts
+    if settings.ENVIRONMENT in ("production", "staging"):
+        h["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    if path.startswith("/uploads/"):
+        # Anyone can upload a file: never let one run as a page on our domain.
+        if path.lower().endswith(_RISKY_UPLOAD_EXT):
+            h["Content-Security-Policy"] = "default-src 'none'; sandbox"
+            h["Content-Disposition"] = "attachment"
+    elif path.startswith("/api/"):
+        h["X-Frame-Options"] = "DENY"
+        # Personal data on shared phones and school computers must not linger in caches.
+        if "cache-control" not in h and not path.startswith(("/api/docs", "/api/redoc", "/api/openapi")):
+            h["Cache-Control"] = "no-store"
+    return response
 
 
 @app.middleware("http")
