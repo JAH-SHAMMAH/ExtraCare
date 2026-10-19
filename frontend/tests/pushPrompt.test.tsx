@@ -32,3 +32,28 @@ describe("PushPrompt", () => {
     expect(screen.queryByRole("region", { name: /phone alerts/i })).toBeNull();
   });
 });
+
+import { PhoneAlertsCard } from "@/components/settings/PhoneAlertsCard";
+
+describe("PhoneAlertsCard", () => {
+  it("shows the switch off, turns alerts on, and the switch reads on", async () => {
+    fakeBrowser("default");
+    const reg = (await navigator.serviceWorker.ready) as any;
+    (navigator.serviceWorker as any).getRegistration = vi.fn().mockResolvedValue(reg);
+    render(<PhoneAlertsCard />);
+    const sw = await screen.findByRole("switch", { name: /phone alerts/i });
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    (window as any).Notification.permission = "granted";
+    reg.pushManager.getSubscription.mockResolvedValueOnce(null).mockResolvedValue({ endpoint: "https://push.example/1" });
+    fireEvent.click(sw);
+    await waitFor(() => expect(screen.getByRole("switch", { name: /phone alerts/i }).getAttribute("aria-checked")).toBe("true"));
+  });
+
+  it("explains the iPhone Home Screen step instead of showing a dead switch", async () => {
+    fakeBrowser("default");
+    Object.defineProperty(navigator, "userAgent", { value: "Mozilla/5.0 (iPhone)", configurable: true });
+    render(<PhoneAlertsCard />);
+    expect(await screen.findByText(/Add to Home Screen/i)).toBeTruthy();
+    expect(screen.queryByRole("switch")).toBeNull();
+  });
+});

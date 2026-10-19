@@ -3,15 +3,9 @@
 import { useEffect, useState } from "react";
 import { BellRing, X } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { enablePush } from "@/lib/push";
 
 const KEY = "push-prompt-dismissed";
-
-function keyToBytes(b64: string) {
-  const pad = "=".repeat((4 - (b64.length % 4)) % 4);
-  const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
-  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
-}
 
 /** Asks once whether this phone may show school alerts (a child arriving or leaving, etc.) outside the app. */
 export function PushPrompt() {
@@ -35,13 +29,7 @@ export function PushPrompt() {
   const allow = async () => {
     setState("busy");
     try {
-      const perm = await Notification.requestPermission();
-      if (perm !== "granted") { dismiss(); return; }
-      const reg = await navigator.serviceWorker.register("/sw.js");
-      await navigator.serviceWorker.ready;
-      const { key } = (await api.get("/push/public-key")).data;
-      const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyToBytes(key) }));
-      await api.post("/push/subscribe", { ...sub.toJSON(), user_agent: navigator.userAgent });
+      if (!(await enablePush())) { dismiss(); return; }
       toast.success("Done. You will get school alerts on this phone.");
       dismiss();
     } catch {
