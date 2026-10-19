@@ -48,7 +48,7 @@ interface BankItem {
   id: string; subject_id: string | null; subject_name: string | null; topic: string | null;
   difficulty: string; question_text: string; question_type: string;
   options: { key: string; text: string }[] | null; correct_answer: string | null; points: number;
-  tags?: string[]; explanation?: string | null; is_examination?: boolean; created_by?: string | null;
+  answer_type?: string; tags?: string[]; explanation?: string | null; is_examination?: boolean; created_by?: string | null;
 }
 
 export default function QuestionBankPage() {
@@ -141,7 +141,7 @@ export default function QuestionBankPage() {
                   <div className="text-sm font-medium text-slate-800 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderQuestionHtml(q.question_text) }} />
                   <div className="flex flex-wrap items-center gap-2 mt-1.5">
                     <span className={cn("badge capitalize", DIFF_STYLE[q.difficulty] || "bg-slate-50 text-slate-600 border-slate-200")}>{q.difficulty}</span>
-                    <span className="badge bg-slate-50 text-slate-500 border-slate-200">{TYPES.find((t) => t.value === q.question_type)?.label || q.question_type}{(q.question_type === "short_answer" || q.question_type === "long_answer") ? " (Subjective Question)" : ""}</span>
+                    <span className="badge bg-slate-50 text-slate-500 border-slate-200">{TYPES.find((t) => t.value === q.question_type)?.label || q.question_type}{(q.question_type === "short_answer" || q.question_type === "long_answer") ? " (Subjective Question)" : ""}{q.answer_type === "file" ? " · File Upload" : ""}</span>
                     {myId && q.created_by === myId && <span className="badge bg-brand-50 text-brand-700 border-brand-200">My Questions</span>}
                     {q.is_examination && <span className="badge bg-purple-50 text-purple-700 border-purple-200">Examination</span>}
                     {(q.tags || []).map((t) => (<span key={t} className="badge bg-slate-50 text-slate-500 border-slate-200">#{t}</span>))}
@@ -193,7 +193,9 @@ function BankForm({ item, subjects, topics: existing, onClose }: { item: BankIte
       { index: 2, text: "" },
       { index: 3, text: "" },
     ]) as any,
-    correct_answer: item?.correct_answer || "",
+    correct_answer: /^\d+$/.test(item?.correct_answer || "") ? String.fromCharCode(97 + Number(item?.correct_answer)) : item?.correct_answer || "",
+    answer_type: item?.answer_type || "text",
+    showExplanation: !!item?.explanation,
     tags: (item?.tags || []).join(", "),
     explanation: item?.explanation || "",
     is_examination: !!item?.is_examination,
@@ -221,7 +223,8 @@ function BankForm({ item, subjects, topics: existing, onClose }: { item: BankIte
       options,
       correct_answer: f.correct_answer.trim() || undefined,
       tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean).slice(0, 20),
-      explanation: f.explanation.trim() || undefined,
+      explanation: f.showExplanation ? (f.explanation.trim() || undefined) : "",
+      answer_type: f.question_type === "short_answer" || f.question_type === "long_answer" ? f.answer_type : "text",
       is_examination: f.is_examination,
     };
     const done = { onSuccess: onClose };
@@ -289,7 +292,7 @@ function BankForm({ item, subjects, topics: existing, onClose }: { item: BankIte
                     <button
                       type="button"
                       onClick={() => {
-                        if (String(idx) === f.correct_answer) {
+                        if (String.fromCharCode(97 + idx) === f.correct_answer) {
                           alert("Can't remove the correct answer option.");
                           return;
                         }
@@ -315,7 +318,7 @@ function BankForm({ item, subjects, topics: existing, onClose }: { item: BankIte
                 <select value={f.correct_answer} onChange={(e) => setF({ ...f, correct_answer: e.target.value })} className="input">
                   <option value="">—</option>
                   {f.options.map((opt, idx) => (
-                    <option key={opt.index} value={String(idx)}>
+                    <option key={opt.index} value={String.fromCharCode(97 + idx)}>
                       {String.fromCharCode(65 + idx)}
                     </option>
                   ))}
@@ -329,7 +332,22 @@ function BankForm({ item, subjects, topics: existing, onClose }: { item: BankIte
             <div><label className="label">Points</label><input type="number" min="0" step="0.5" value={f.points} onChange={(e) => setF({ ...f, points: e.target.value })} className="input" /></div>
           </div>
           <div><label className="label">Tags (comma separated)</label><input value={f.tags} onChange={(e) => setF({ ...f, tags: e.target.value })} className="input" placeholder="algebra, wassce" /></div>
-          <div><label className="label">Answer explanation</label><textarea value={f.explanation} onChange={(e) => setF({ ...f, explanation: e.target.value })} className="input min-h-[60px]" /></div>
+          {(f.question_type === "short_answer" || f.question_type === "long_answer") && (
+            <div><label className="label">Answer Option Type *</label>
+              <select aria-label="Answer Option Type" value={f.answer_type} onChange={(e) => setF({ ...f, answer_type: e.target.value })} className="input">
+                <option value="text">Text Box</option><option value="file">File Upload</option>
+              </select>
+              <p className="text-[11px] text-slate-400 mt-1">How the student answers: type into a box, or upload a file (PDF, Word, photo).</p>
+            </div>
+          )}
+          {!f.showExplanation ? (
+            <button type="button" onClick={() => setF({ ...f, showExplanation: true })} className="inline-flex items-center gap-2 text-sm font-semibold text-amber-700 hover:underline"><Plus size={16} /> Add answer explanation</button>
+          ) : (
+            <div className="relative">
+              <RichQuestionEditor label="Answer Explanation" value={f.explanation} onChange={(html) => setF((cur) => ({ ...cur, explanation: html }))} />
+              <button type="button" aria-label="Remove answer explanation" title="Remove" onClick={() => setF({ ...f, showExplanation: false, explanation: "" })} className="absolute -top-1 right-0 text-red-600 hover:text-red-700"><X size={16} /></button>
+            </div>
+          )}
           <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={f.is_examination} onChange={(e) => setF({ ...f, is_examination: e.target.checked })} /> Is Examination question</label>
         </div>
         <div className="flex justify-end gap-3 mt-5">
@@ -383,7 +401,7 @@ function PreviewModal({ items, index, onIndex, onClose, onEdit }: {
             ))}
           </div>
         )}
-        {q.explanation && <p className="mt-4 text-xs text-slate-500"><span className="font-semibold">Explanation: </span>{q.explanation}</p>}
+        {q.explanation && <div className="mt-4 text-xs text-slate-500 prose prose-sm max-w-none"><span className="font-semibold">Explanation: </span><span dangerouslySetInnerHTML={{ __html: renderQuestionHtml(q.explanation) }} /></div>}
         <div className="flex flex-wrap items-center justify-between gap-2 mt-6">
           <div className="flex gap-2">
             <button disabled={index === 0} onClick={() => go(index - 1)} className="btn-secondary gap-1"><ChevronLeft size={14} /> Previous</button>

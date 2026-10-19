@@ -9,14 +9,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { cbtApi } from "@/lib/api";
+import { cbtApi, uploadApi } from "@/lib/api";
 import type { CBTExam } from "@/types";
 
 interface Question {
   id: string;
   question_text: string;
   question_type: string;
-  options?: string[];
+  options?: ({ key: string; text: string } | string)[];
+  answer_type?: string;
   correct_answer?: string;
   points?: number;
 }
@@ -49,6 +50,17 @@ export default function TakeExamPage() {
   // UI state
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [uploadingFor, setUploadingFor] = useState<string | null>(null);
+  const uploadAnswerFile = async (qid: string, f?: File) => {
+    if (!f) return;
+    setUploadingFor(qid);
+    try {
+      const { url } = await uploadApi.examAnswer(f);
+      setAnswers((prev) => ({ ...prev, [qid]: url }));
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Upload failed.");
+    } finally { setUploadingFor(null); }
+  };
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -145,6 +157,7 @@ export default function TakeExamPage() {
   };
 
   const currentQuestion = questions[currentQuestionIndex];
+  const qType = String(currentQuestion?.question_type || "").toLowerCase();
   const isFirstQuestion = currentQuestionIndex === 0;
   const isLastQuestion = currentQuestionIndex === questions.length - 1;
   const isTimeUp = timeRemaining === 0;
@@ -277,40 +290,52 @@ export default function TakeExamPage() {
         </h2>
 
         {/* Options */}
-        {currentQuestion.question_type === "MCQ" && currentQuestion.options && (
+        {qType === "mcq" && currentQuestion.options && (
           <div className="space-y-2">
-            {currentQuestion.options.map((option, idx) => (
-              <label key={idx} className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
-                <input
-                  type="radio"
-                  name={`question-${currentQuestion.id}`}
-                  value={option}
-                  checked={answers[currentQuestion.id] === option}
-                  onChange={(e) => setAnswers((prev) => ({ ...prev, [currentQuestion.id]: e.target.value }))}
-                  className="w-4 h-4"
-                />
+            {currentQuestion.options.map((raw, idx) => {
+              const key = typeof raw === "string" ? raw : raw.key;
+              const text = typeof raw === "string" ? raw : raw.text;
+              return (
+                <label key={idx} className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
+                  <input type="radio" name={`question-${currentQuestion.id}`} value={key}
+                    checked={answers[currentQuestion.id] === key}
+                    onChange={(e) => setAnswers((prev) => ({ ...prev, [currentQuestion.id]: e.target.value }))} className="w-4 h-4" />
+                  <span className="text-sm text-slate-700"><span className="font-bold uppercase text-slate-400 mr-2">{key}</span>{text}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+
+        {/* True/False */}
+        {qType === "true_false" && (
+          <div className="space-y-2">
+            {["True", "False"].map((option) => (
+              <label key={option} className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
+                <input type="radio" name={`question-${currentQuestion.id}`} value={option.toLowerCase()}
+                  checked={answers[currentQuestion.id] === option.toLowerCase()}
+                  onChange={(e) => setAnswers((prev) => ({ ...prev, [currentQuestion.id]: e.target.value }))} className="w-4 h-4" />
                 <span className="text-sm text-slate-700">{option}</span>
               </label>
             ))}
           </div>
         )}
 
-        {/* True/False */}
-        {currentQuestion.question_type === "TRUE_FALSE" && (
-          <div className="space-y-2">
-            {["True", "False"].map((option) => (
-              <label key={option} className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
-                <input
-                  type="radio"
-                  name={`question-${currentQuestion.id}`}
-                  value={option.toLowerCase()}
-                  checked={answers[currentQuestion.id] === option.toLowerCase()}
-                  onChange={(e) => setAnswers((prev) => ({ ...prev, [currentQuestion.id]: e.target.value }))}
-                  className="w-4 h-4"
-                />
-                <span className="text-sm text-slate-700">{option}</span>
-              </label>
-            ))}
+        {/* Subjective: text box or file upload (set per question by the teacher) */}
+        {(qType === "short_answer" || qType === "long_answer") && currentQuestion.answer_type !== "file" && (
+          <textarea aria-label="Your answer" value={answers[currentQuestion.id] || ""}
+            onChange={(e) => setAnswers((prev) => ({ ...prev, [currentQuestion.id]: e.target.value }))}
+            rows={qType === "long_answer" ? 10 : 3} className="input w-full" placeholder="Type your answer here" />
+        )}
+        {(qType === "short_answer" || qType === "long_answer") && currentQuestion.answer_type === "file" && (
+          <div>
+            <label className="flex items-center gap-2 px-4 py-3 rounded-lg border border-dashed border-slate-300 hover:bg-slate-50 cursor-pointer text-sm text-slate-600 w-fit">
+              {uploadingFor === currentQuestion.id ? "Uploading…" : answers[currentQuestion.id] ? "Replace file" : "Choose file to upload"}
+              <input type="file" className="hidden" accept=".pdf,.doc,.docx,.txt,image/png,image/jpeg,image/webp,image/gif"
+                onChange={(e) => uploadAnswerFile(currentQuestion.id, e.target.files?.[0])} />
+            </label>
+            {answers[currentQuestion.id] && <p className="text-xs text-emerald-700 mt-2">File attached ✓</p>}
+            <p className="text-[11px] text-slate-400 mt-1">PDF, Word, text or photo — up to 15 MB.</p>
           </div>
         )}
       </div>

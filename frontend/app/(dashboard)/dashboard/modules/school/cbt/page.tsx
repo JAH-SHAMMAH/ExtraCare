@@ -428,6 +428,7 @@ function ExamBuilder({ examId, onBack, canWrite }: { examId: string; onBack: () 
       { key: "D", text: "" },
     ],
     correct_answer: "",
+    answer_type: "text",
     points: 1,
     position: 0,
   });
@@ -443,6 +444,7 @@ function ExamBuilder({ examId, onBack, canWrite }: { examId: string; onBack: () 
         { key: "D", text: "" },
       ],
       correct_answer: "",
+      answer_type: "text",
       points: 1,
       position: 0,
     });
@@ -466,6 +468,7 @@ function ExamBuilder({ examId, onBack, canWrite }: { examId: string; onBack: () 
     } else {
       payload.options = null;
       payload.correct_answer = qform.correct_answer || null;
+      payload.answer_type = qform.answer_type;
     }
     addQuestion.mutate({ exam_id: examId, data: payload }, { onSuccess: resetQForm });
   };
@@ -576,6 +579,10 @@ function ExamBuilder({ examId, onBack, canWrite }: { examId: string; onBack: () 
 
             {(qform.question_type === "short_answer" || qform.question_type === "long_answer") && (
               <div>
+                <label className="label">Answer Option Type *</label>
+                <select aria-label="Answer Option Type" value={qform.answer_type} onChange={(e) => setQform({ ...qform, answer_type: e.target.value })} className="input mb-3">
+                  <option value="text">Text Box</option><option value="file">File Upload</option>
+                </select>
                 <label className="label">Expected Answer (optional, for reference)</label>
                 <textarea
                   value={qform.correct_answer}

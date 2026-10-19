@@ -387,9 +387,11 @@ async def add_question(
 ):
     exam = await _get_exam_or_404(db, exam_id, current_user.org_id)
 
+    qdata = payload.model_dump()
+    qdata["question_text"] = _sanitize_html(qdata["question_text"])
     question = CBTQuestion(
         exam_id=exam.id,
-        **payload.model_dump(),
+        **qdata,
         org_id=current_user.org_id,
     )
     db.add(question)
@@ -689,6 +691,12 @@ async def submit_attempt(
 
         is_correct = None
         points_awarded = None
+        # A file-upload answer must be a link returned by our own upload endpoint,
+        # never arbitrary text/URLs the teacher would be tempted to click.
+        if getattr(question, "answer_type", "text") == "file" and (ans.answer_text or ""):
+            at = ans.answer_text
+            if len(at) > 500 or not at.startswith(("/", "https://")) or "exam-answers" not in at or current_user.org_id not in at:
+                raise HTTPException(status_code=422, detail="Upload your answer file again; the attached file link is invalid.")
         # Auto-grade objective types only
         if question.question_type in (QuestionType.MCQ, QuestionType.TRUE_FALSE):
             is_correct = (ans.answer_text or "").strip().lower() == (question.correct_answer or "").strip().lower()
@@ -904,6 +912,7 @@ def _bank_dict(q: QuestionBankItem, subject_name) -> dict:
         "tags": q.tags or [],
         "explanation": q.explanation,
         "is_examination": bool(q.is_examination),
+        "answer_type": q.answer_type or "text",
         "created_by": q.created_by,
         "created_at": q.created_at.isoformat() if q.created_at else None,
     }
@@ -980,6 +989,7 @@ async def create_bank_item(
     data["question_type"] = QuestionType(data["question_type"])  # "mcq" -> QuestionType.MCQ
     # Sanitize question_text to allow only safe HTML formatting
     data["question_text"] = _sanitize_html(data.get("question_text", ""))
+    data["explanation"] = _sanitize_html(data.get("explanation") or "") or None
     q = QuestionBankItem(**data, created_by=current_user.id, org_id=org_id)
     db.add(q)
     await db.flush()
@@ -1011,6 +1021,8 @@ async def update_bank_item(
     # Sanitize question_text if being updated
     if "question_text" in updates:
         updates["question_text"] = _sanitize_html(updates["question_text"])
+    if "explanation" in updates:
+        updates["explanation"] = _sanitize_html(updates["explanation"] or "") or None
     for k, v in updates.items():
         setattr(q, k, v)
     await db.flush()
@@ -1137,6 +1149,7 @@ async def add_questions_from_bank(
         db.add(CBTQuestion(
             exam_id=exam.id, question_text=it.question_text, question_type=it.question_type,
             options=it.options, correct_answer=it.correct_answer, points=it.points,
+            answer_type=getattr(it, 'answer_type', None) or 'text',
             position=max_pos + added, org_id=org_id,
         ))
         pts += float(it.points or 0)

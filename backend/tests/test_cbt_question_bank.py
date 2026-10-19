@@ -202,3 +202,18 @@ def test_sanitizer_formatting_formula_and_attacks():
     bad = c('<span style="background:url(http://e);position:fixed">x</span><img src="javascript:1"><a href="javascript:alert(1)">l</a><script>1</script>')
     assert "url(" not in bad and "position" not in bad and "javascript" not in bad and "<script" not in bad
     assert "data-latex" not in c('<span data-latex="' + "a" * 2500 + '">x</span>')
+
+
+async def test_answer_type_roundtrip_and_copy_to_exam(db, org, teacher):
+    from app.models.modules.school import CBTQuestion
+    r = await create_bank_item(
+        BankItemCreate(question_text="Draw the heart", question_type="long_answer", answer_type="file",
+                       explanation='<p>See <strong>fig</strong><script>1</script></p>'),
+        request=None, db=db, current_user=teacher)
+    assert r["answer_type"] == "file" and "<script" not in r["explanation"] and "<strong>" in r["explanation"]
+    exam = await _exam(db, org, teacher)
+    from app.routers.modules.cbt import add_questions_from_bank as compose_from_bank
+    from app.schemas.question_bank import ComposeFromBank
+    await compose_from_bank(exam.id, ComposeFromBank(question_ids=[r["id"]]), request=None, db=db, current_user=teacher)
+    q = (await db.execute(select(CBTQuestion).where(CBTQuestion.exam_id == exam.id))).scalar_one()
+    assert q.answer_type == "file"

@@ -21,6 +21,7 @@ class BankItemCreate(BaseModel):
     tags: Optional[list[str]] = Field(default=None, max_length=20)
     explanation: Optional[str] = None
     is_examination: bool = False
+    answer_type: str = Field(default="text", pattern="^(text|file)$")
 
 
 class BankItemUpdate(BaseModel):
@@ -35,6 +36,7 @@ class BankItemUpdate(BaseModel):
     tags: Optional[list[str]] = Field(default=None, max_length=20)
     explanation: Optional[str] = None
     is_examination: Optional[bool] = None
+    answer_type: Optional[str] = Field(default=None, pattern="^(text|file)$")
 
 
 class ComposeFromBank(BaseModel):

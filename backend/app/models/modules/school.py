@@ -802,6 +802,7 @@ class CBTQuestion(Base, UUIDMixin, TimestampMixin, TenantMixin):
     correct_answer = Column(Text, nullable=True)  # "a" or free text
     points = Column(Float, default=1.0)
     position = Column(Integer, default=0)
+    answer_type = Column(String(10), default="text", nullable=False, server_default="text")  # text | file (subjective only)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 
@@ -857,6 +858,7 @@ class QuestionBankItem(Base, UUIDMixin, TimestampMixin, TenantMixin):
     tags = Column(JSON, nullable=True)             # ["algebra", "wassce"]
     explanation = Column(Text, nullable=True)      # shown with the answer
     is_examination = Column(Boolean, default=False, nullable=False, server_default=sa_false())
+    answer_type = Column(String(10), default="text", nullable=False, server_default="text")  # text | file
     created_by = Column(String(36), ForeignKey("users.id"), nullable=True)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 

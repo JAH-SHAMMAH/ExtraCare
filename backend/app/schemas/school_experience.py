@@ -180,6 +180,7 @@ class QuestionCreate(BaseModel):
     correct_answer: Optional[str] = None
     points: float = 1.0
     position: int = 0
+    answer_type: str = Field(default="text", pattern="^(text|file)$")
 
 
 class QuestionResponse(_OrmBase):
@@ -192,6 +193,7 @@ class QuestionResponse(_OrmBase):
     # endpoint; teachers get a separate endpoint that includes it.
     points: float
     position: int
+    answer_type: str = "text"
 
 
 class QuestionWithAnswer(QuestionResponse):

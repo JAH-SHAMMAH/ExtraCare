@@ -864,6 +864,11 @@ export const uploadApi = {
       headers: { "Content-Type": "multipart/form-data" },
     }).then((r) => r.data);
   },
+  examAnswer: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return api.post("/upload/exam-answer", formData, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data as { url: string });
+  },
   questionImage: (file: File) => {
     const formData = new FormData();
     formData.append("file", file);

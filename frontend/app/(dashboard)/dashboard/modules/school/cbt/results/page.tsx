@@ -343,7 +343,7 @@ function GradeModal({ attemptId, onClose }: { attemptId: string; onClose: () => 
                 <p className="text-sm font-semibold text-slate-800">{i + 1}. <span dangerouslySetInnerHTML={{ __html: a.question_text ? renderQuestionHtml(a.question_text) : "—" }} /></p>
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 shrink-0 capitalize">{a.question_type.replace("_", " ")}</span>
               </div>
-              <p className="text-xs text-slate-500 mb-1"><span className="font-semibold text-slate-600">Answer:</span> {a.answer_text || <span className="italic text-slate-400">(blank)</span>}</p>
+              <p className="text-xs text-slate-500 mb-1"><span className="font-semibold text-slate-600">Answer:</span> {!a.answer_text ? <span className="italic text-slate-400">(blank)</span> : /^(\/|https:\/\/)\S+$/.test(a.answer_text) && a.answer_text.includes("exam-answers") ? <a href={a.answer_text} target="_blank" rel="noopener noreferrer" className="text-brand-600 underline">Open uploaded file</a> : a.answer_text}</p>
               {a.correct_answer && a.question_type !== "long_answer" && a.question_type !== "short_answer" && (
                 <p className="text-xs text-emerald-600 mb-2 inline-flex items-center gap-1"><CheckCircle2 size={12} /> Correct: {a.correct_answer}</p>
               )}

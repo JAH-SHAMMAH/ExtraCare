@@ -129,6 +129,18 @@ async def upload_question_image(
     return {"url": url, "filename": file.filename}
 
 
+@router.post("/exam-answer", dependencies=[Depends(PermissionChecker("school:cbt:sit"))])
+async def upload_exam_answer(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_active_user),
+):
+    """A student's file answer for a 'File Upload' CBT question (PDF, Word, text or photo)."""
+    content = await _read_validated(file, _DOC_TYPES - {"application/vnd.ms-excel", "text/csv"}, _MAX_DOC)
+    url = await save_upload(current_user.org_id, "exam-answers", file.filename, content, file.content_type)
+    _logger.info("upload.exam_answer user=%s url=%s", current_user.id, url)
+    return {"url": url, "filename": file.filename}
+
+
 @router.post("/student-photo", dependencies=[Depends(PermissionChecker("school:write"))])
 async def upload_student_photo(
     file: UploadFile = File(...),
