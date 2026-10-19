@@ -78,14 +78,14 @@ async def notify(
         )
         session.add(row)
         await session.flush()
-        _push_later(org_id, user_id, title, message)
+        _push_later(org_id, user_id, title, message, (payload or {}).get("url"))
         return row
     except Exception as exc:
         _logger.warning("notify(inline) failed: %s", exc)
         return None
 
 
-def _push_later(org_id: str, user_id: str | None, title: str, message: str | None) -> None:
+def _push_later(org_id: str, user_id: str | None, title: str, message: str | None, url: str | None = None) -> None:
     """Also pop the alert up on the person's phone, without making the caller wait."""
     if not user_id:
         return
@@ -96,7 +96,7 @@ def _push_later(org_id: str, user_id: str | None, title: str, message: str | Non
             from app.services import webpush
             factory = _session_factory_override or AsyncSessionLocal
             async with factory() as db:
-                await webpush.send_to_user(db, org_id, user_id, title=title, body=message or "")
+                await webpush.send_to_user(db, org_id, user_id, title=title, body=message or "", url=url or "/dashboard/notifications")
         except Exception as exc:
             _logger.debug("push skipped: %s", exc)
     try:

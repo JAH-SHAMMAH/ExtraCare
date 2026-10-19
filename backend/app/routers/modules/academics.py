@@ -1354,6 +1354,9 @@ async def update_report_workflow(
     for field, value in data.items():
         setattr(r, field, value)
     await db.flush()
+    if data.get("stage") == "published" and old_stage != "published":
+        from app.services.report_alerts import notify_report_released
+        await notify_report_released(db, current_user.org_id, r.class_id, r.term_id)
     return (await _report_responses(db, current_user.org_id, [r]))[0]
 
 

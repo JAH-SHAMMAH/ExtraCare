@@ -89,3 +89,19 @@ async def test_subscribe_send_and_forget_dead_phone(http, db, org, family, monke
     assert (await http.post("/api/v1/push/test", headers=h)).json() == {"sent": 0}
     assert (await http.post("/api/v1/push/test", headers=h)).json() == {"sent": 0}
     assert len(sent) == 2  # second call found nothing left to send to
+
+
+async def test_parents_are_told_when_their_childs_report_is_released(http, db, org, family):  # noqa: F811
+    from sqlalchemy import select
+    from app.models.modules.platform import AcademicTerm
+    from app.models.notification import Notification
+    from app.services.report_alerts import notify_report_released
+    import uuid
+    t = AcademicTerm(id=str(uuid.uuid4()), name="Autumn", org_id=org.id)
+    db.add(t); await db.commit()
+    n = await notify_report_released(db, org.id, family["class"].id, t.id)
+    await db.commit()
+    assert n == 1  # the other child in the class has no guardian linked
+    rows = (await db.execute(select(Notification).where(Notification.user_id == family["parent"].id))).scalars().all()
+    assert len(rows) == 1 and rows[0].title == "Mine's Autumn report is ready" and rows[0].payload["url"].endswith("/report-card")
+    assert await notify_report_released(db, org.id, None) == 0

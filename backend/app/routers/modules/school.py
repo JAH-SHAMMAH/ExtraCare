@@ -2125,6 +2125,9 @@ async def publish_grades(
         advanced = True
     await db.flush()
     if advanced:
+        from app.services.report_alerts import notify_report_released
+        await notify_report_released(db, current_user.org_id, approval.class_id, approval.term_id)
+    if advanced:
         await log_action(
             db, AuditAction.RECORD_UPDATED, current_user.org_id, actor=current_user,
             resource_type="ReportApproval", resource_id=approval.id,
