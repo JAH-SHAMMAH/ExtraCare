@@ -83,6 +83,8 @@ function navItemVisible(
   if (item.superOnly) return !!ctx.superUser;
   if (!ctx.superUser && blockingUi(item.href.split("?")[0], ctx.ui, { staff: ctx.staff, student: ctx.student, teacher: ctx.teacher })) return false;
   if (item.roleOnly) return roleScope === item.roleOnly;
+  // Parents don't take staff leave, so My Leave is not offered to them.
+  if (roleScope === "parent" && item.href.split("?")[0] === "/dashboard/hrm/leave") return false;
   // Real pages: the shared access map decides. A null requirement means the
   // route is open to any authenticated user. Strip any ?query (e.g. deep-linked
   // School Setup tabs) so the access map matches on the base path, not the full URL.
