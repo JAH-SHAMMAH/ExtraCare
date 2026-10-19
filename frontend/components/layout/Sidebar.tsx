@@ -50,6 +50,7 @@ export const CORE_NAV = [
   { href: "/dashboard/my-teachers", label: "Rate My Teachers", icon: Star, roleOnly: "student" as ActiveRole },
   { href: "/dashboard/my-classes", label: "My Classes", icon: School, roleOnly: "teacher" as ActiveRole },
   { href: "/dashboard/my-classes/attendance", label: "Class Attendance", icon: ClipboardList, roleOnly: "teacher" as ActiveRole },
+  { href: "/dashboard/teacher-guide", label: "Teacher Guide", icon: BookOpen, roleOnly: "teacher" as ActiveRole },
   // Everything below is permission-gated via the shared access map (lib/access).
   { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/dashboard/users", label: "Users", icon: Users },
