@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import DOMPurify from "dompurify";
 import { useEditor, EditorContent } from "@tiptap/react";
@@ -166,12 +166,14 @@ export default function QuestionBankPage() {
           onEdit={(q) => { setPreviewIdx(null); setEditing(q); setShowForm(true); }}
         />
       )}
-      {showForm && <BankForm item={editing} subjects={subjects} onClose={() => setShowForm(false)} />}
+      {showForm && <BankForm item={editing} subjects={subjects} topics={Array.from(new Set(items.map((q) => q.topic).filter(Boolean) as string[]))} onClose={() => setShowForm(false)} />}
     </div>
   );
 }
 
-function BankForm({ item, subjects, onClose }: { item: BankItem | null; subjects: Subject[]; onClose: () => void }) {
+function BankForm({ item, subjects, topics: existing, onClose }: { item: BankItem | null; subjects: Subject[]; topics: string[]; onClose: () => void }) {
+  const [newTopics, setNewTopics] = useState<string[]>([]);
+  const topics = Array.from(new Set([...existing, ...newTopics]));
   const create = useCreateBankItem();
   const update = useUpdateBankItem();
   const opt = (k: string) => item?.options?.find((o) => o.key === k)?.text || "";
@@ -240,7 +242,14 @@ function BankForm({ item, subjects, onClose }: { item: BankItem | null; subjects
             <div><label className="label">Type</label><select value={f.question_type} onChange={(e) => setF({ ...f, question_type: e.target.value })} className="input">{TYPES.map((t) => (<option key={t.value} value={t.value}>{t.label}</option>))}</select></div>
             <div><label className="label">Difficulty</label><select value={f.difficulty} onChange={(e) => setF({ ...f, difficulty: e.target.value })} className="input capitalize">{DIFFICULTIES.map((d) => (<option key={d} value={d}>{d}</option>))}</select></div>
             <div><label className="label">Subject</label><select value={f.subject_id} onChange={(e) => setF({ ...f, subject_id: e.target.value })} className="input"><option value="">—</option>{subjects.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}</select></div>
-            <div><label className="label">Topic</label><input value={f.topic} onChange={(e) => setF({ ...f, topic: e.target.value })} className="input" /></div>
+            <div>
+              <label className="label">Topic</label>
+              <div className="flex gap-1">
+                <input list="bank-topics" value={f.topic} onChange={(e) => setF({ ...f, topic: e.target.value })} className="input flex-1" placeholder="Pick or type a topic" />
+                <datalist id="bank-topics">{topics.map((t) => (<option key={t} value={t} />))}</datalist>
+                <button type="button" title="Add topic" aria-label="Add topic" onClick={() => { const t = f.topic.trim(); if (t) setNewTopics((x) => (x.includes(t) ? x : [...x, t])); }} className="btn-secondary px-2"><Plus size={14} /></button>
+              </div>
+            </div>
           </div>
 
           {isMcq && (
@@ -465,6 +474,9 @@ function PreviewModal({ items, index, onIndex, onClose, onEdit }: {
   const q = items[index];
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [seen, setSeen] = useState<Record<number, boolean>>({ [index]: true });
+  const [secs, setSecs] = useState(0);
+  useEffect(() => { const t = setInterval(() => setSecs((x) => x + 1), 1000); return () => clearInterval(t); }, []);
+  const clock = `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`;
   const go = (i: number) => { setSeen((s) => ({ ...s, [i]: true })); onIndex(i); };
   const opts = q.options || [];
   const subjective = q.question_type === "short_answer" || q.question_type === "long_answer";
@@ -473,6 +485,7 @@ function PreviewModal({ items, index, onIndex, onClose, onEdit }: {
       <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-bold text-slate-900">Question {index + 1} of {items.length}</h2>
+          <span className="ml-auto mr-3 text-sm font-mono text-slate-500" aria-label="Preview timer">{clock}</span>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="Close preview"><X size={18} /></button>
         </div>
         <div className="flex flex-wrap gap-1.5 mb-4" aria-label="Question numbers">
