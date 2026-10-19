@@ -75,7 +75,7 @@ export default function ProfilePage() {
       <div className="space-y-6">
         {/* Avatar & Basic Info */}
         <div className="bg-white rounded-xl border border-slate-200 p-6">
-          <div className="flex items-start gap-6">
+          <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-6">
             {/* Avatar */}
             <div className="relative group">
               <div className="w-24 h-24 rounded-2xl bg-brand-600 flex items-center justify-center text-white text-2xl font-bold overflow-hidden border-4 border-white shadow-lg">
@@ -105,10 +105,10 @@ export default function ProfilePage() {
             </div>
 
             {/* Info */}
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <h2 className="text-lg font-bold text-slate-900">{user?.full_name}</h2>
-              <p className="text-sm text-slate-500 mt-0.5">{user?.email}</p>
-              <div className="flex items-center gap-3 mt-3">
+              <p className="text-sm text-slate-500 mt-0.5 break-all">{user?.email}</p>
+              <div className="flex flex-wrap items-center gap-2 mt-3">
                 <span className="badge bg-brand-50 text-brand-700 border-brand-200 capitalize">
                   {user?.primary_role?.replace("_", " ")}
                 </span>
@@ -126,7 +126,7 @@ export default function ProfilePage() {
                 if (!editMode) setForm({ full_name: user?.full_name || "", phone: user?.phone || "", department: user?.department || "", job_title: user?.job_title || "" });
                 setEditMode(!editMode);
               }}
-              className={editMode ? "btn-secondary" : "btn-primary"}
+              className={(editMode ? "btn-secondary" : "btn-primary") + " shrink-0 self-start whitespace-nowrap"}
             >
               {editMode ? "Cancel" : "Edit Profile"}
             </button>

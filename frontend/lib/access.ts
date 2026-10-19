@@ -61,7 +61,10 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   { prefix: "/dashboard/analytics", permission: "analytics:read" },
   { prefix: "/dashboard/users", permission: "users:write" },
   { prefix: "/dashboard/audit", permission: "audit_logs:read" },
-  { prefix: "/dashboard/settings", permission: "settings:read" },
+  // Settings opens for everyone: it holds each person's own phone-alert switches.
+  // The school-wide parts of the page are shown only to those holding settings:read.
+  { prefix: "/dashboard/settings", permission: "settings:read", anyAuthenticated: true },
+  { prefix: "/dashboard/settings/super", permission: "settings:read" },
   { prefix: "/dashboard/billing", permission: "settings:read" },
   // HR — self-service vs admin. Order doesn't matter (longest-prefix wins).
   { prefix: "/dashboard/hrm/my-info", permission: "hr:read" },

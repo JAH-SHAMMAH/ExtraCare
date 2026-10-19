@@ -78,14 +78,14 @@ async def notify(
         )
         session.add(row)
         await session.flush()
-        _push_later(org_id, user_id, title, message, (payload or {}).get("url"))
+        _push_later(org_id, user_id, title, message, (payload or {}).get("url"), type)
         return row
     except Exception as exc:
         _logger.warning("notify(inline) failed: %s", exc)
         return None
 
 
-def _push_later(org_id: str, user_id: str | None, title: str, message: str | None, url: str | None = None) -> None:
+def _push_later(org_id: str, user_id: str | None, title: str, message: str | None, url: str | None = None, kind: str = "other") -> None:
     """Also pop the alert up on the person's phone, without making the caller wait."""
     if not user_id:
         return
@@ -96,6 +96,11 @@ def _push_later(org_id: str, user_id: str | None, title: str, message: str | Non
             from app.services import webpush
             factory = _session_factory_override or AsyncSessionLocal
             async with factory() as db:
+                from app.models.user import User
+                u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+                chosen = ((u.preferences or {}).get("push_alerts") or {}) if u else {}
+                if chosen.get(kind if kind in ("attendance", "report") else "other", True) is False:
+                    return  # this person switched this kind of alert off
                 await webpush.send_to_user(db, org_id, user_id, title=title, body=message or "", url=url or "/dashboard/notifications")
         except Exception as exc:
             _logger.debug("push skipped: %s", exc)

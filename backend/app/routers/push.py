@@ -60,3 +60,35 @@ async def unsubscribe(body: dict, db: AsyncSession = Depends(get_db), user: User
 async def test_push(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
     n = await webpush.send_to_user(db, user.org_id, user.id, title="Alerts are on", body="You will get school alerts on this phone.")
     return {"sent": n}
+
+
+# The kinds of alert a person can choose between. Anything not listed counts as "other".
+ALERT_KINDS = {
+    "attendance": "My child arrives at or leaves school",
+    "report": "My child's report is published",
+    "other": "Everything else (messages, notices, fees)",
+}
+
+
+def alert_choices(user: User) -> dict:
+    saved = (user.preferences or {}).get("push_alerts") or {}
+    return {k: bool(saved.get(k, True)) for k in ALERT_KINDS}
+
+
+@router.get("/prefs")
+async def get_prefs(user: User = Depends(get_current_active_user)):
+    return {"kinds": ALERT_KINDS, "values": alert_choices(user)}
+
+
+@router.put("/prefs")
+async def put_prefs(body: dict, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
+    from sqlalchemy.orm.attributes import flag_modified
+    vals = body.get("values")
+    if not isinstance(vals, dict) or not all(k in ALERT_KINDS and isinstance(v, bool) for k, v in vals.items()):
+        raise HTTPException(422, "Send {\"values\": {kind: true/false}}.")
+    prefs = dict(user.preferences or {})
+    prefs["push_alerts"] = {**alert_choices(user), **vals}
+    user.preferences = prefs
+    flag_modified(user, "preferences")
+    await db.commit()
+    return {"kinds": ALERT_KINDS, "values": alert_choices(user)}

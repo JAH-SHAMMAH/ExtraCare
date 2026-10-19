@@ -121,3 +121,35 @@ async def test_uploads_ignore_a_dishonest_file_name(monkeypatch, tmp_path):
     url = storage._local_save("org1", "avatars", "evil.html", b"x", "image/png")
     assert url.endswith(".png") and "evil" not in url
     assert storage._local_save("org1", "documents", "run.exe", b"x", "application/x-msdownload").endswith(".bin")
+
+
+async def test_each_person_chooses_which_alerts_they_get(http, db, org, family, monkeypatch):  # noqa: F811
+    from app.services import notifications
+    h = _bearer(family["parent"])
+    got = (await http.get("/api/v1/push/prefs", headers=h)).json()
+    assert got["values"] == {"attendance": True, "report": True, "other": True}
+    assert (await http.put("/api/v1/push/prefs", headers=h, json={"values": {"bogus": True}})).status_code == 422
+    r = await http.put("/api/v1/push/prefs", headers=h, json={"values": {"report": False}})
+    assert r.json()["values"] == {"attendance": True, "report": False, "other": True}
+    # the switch is honoured when an alert is about to be sent
+    sent = []
+
+    async def fake_send(db_, org_id, user_id, **kw):
+        sent.append(kw["title"])
+        return 1
+    monkeypatch.setattr(webpush, "send_to_user", fake_send)
+    notifications.set_session_factory_override(lambda: _Ctx(db))
+    try:
+        notifications._push_later(org.id, family["parent"].id, "Report ready", "x", None, "report")
+        notifications._push_later(org.id, family["parent"].id, "Arrived", "x", None, "attendance")
+        import asyncio
+        await asyncio.sleep(0.2)
+    finally:
+        notifications.set_session_factory_override(None)
+    assert sent == ["Arrived"]
+
+
+class _Ctx:
+    def __init__(self, db): self.db = db
+    async def __aenter__(self): return self.db
+    async def __aexit__(self, *a): return False

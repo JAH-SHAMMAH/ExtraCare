@@ -9,6 +9,8 @@ import { Settings, Building2, User, Shield, Bell, LogOut } from "lucide-react";
 export default function SettingsPage() {
   const { user, org } = useAuthStore();
   const logout = useLogout();
+  const hasPermission = useAuthStore((st) => st.hasPermission);
+  const schoolAdmin = hasPermission("settings:read");
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
@@ -49,7 +51,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Organization */}
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
+        {schoolAdmin && <div className="bg-white rounded-xl border border-slate-200 p-6">
           <h2 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
             <Building2 size={15} /> Organization
           </h2>
@@ -77,7 +79,7 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Security */}
         <div className="bg-white rounded-xl border border-slate-200 p-6">
@@ -111,7 +113,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {(user?.primary_role === "super_admin" || user?.permissions?.includes("*")) && <BackupCard />}
+        {schoolAdmin && (user?.primary_role === "super_admin" || user?.permissions?.includes("*")) && <BackupCard />}
 
         {/* Danger zone */}
         <div className="bg-white rounded-xl border border-red-200 p-6">
