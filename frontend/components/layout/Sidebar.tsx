@@ -185,8 +185,8 @@ export const MODULE_SECTIONS: ModuleSection[] = [
     items: [
       { href: "/dashboard/modules/eclassroom/setup", label: "eClassroom Setup", icon: Settings2 },
       { href: "/dashboard/modules/eclassroom/programs", label: "Programs", icon: BookOpen },
-      { href: "/dashboard/modules/eclassroom/manage", label: "Admin Manage eClassrooms", icon: Calendar },
-      { href: "/dashboard/modules/eclassroom/broadcast", label: "Admin Live Broadcast", icon: Radio },
+      { href: "/dashboard/modules/eclassroom/manage", label: "Manage eClassrooms", icon: Calendar },
+      { href: "/dashboard/modules/eclassroom/broadcast", label: "Live Broadcast", icon: Radio },
     ],
   },
   {
@@ -671,6 +671,18 @@ export const MODULE_SECTIONS: ModuleSection[] = [
     ],
   },
   {
+    // Result lookup tools teachers use too — kept out of "Admin Management" so
+    // teachers are not shown an admin-titled menu for their own tools.
+    key: "result-tools",
+    requiredModule: "school",
+    label: "Result Tools",
+    icon: ClipboardList,
+    items: [
+      { href: "/dashboard/modules/school/student-result-history", label: "Student Result History", icon: FileText },
+      { href: "/dashboard/modules/school/result-backup", label: "Result Backup Helper", icon: FolderOpen },
+    ],
+  },
+  {
     // Educare "Admin Management" — all 7 reference children. Audit Trail surfaces
     // the existing Core Audit Log; Biometric + Custom Field reuse the platform
     // pages; "Manage User Roles & Password" points at the canonical Users page
@@ -685,8 +697,6 @@ export const MODULE_SECTIONS: ModuleSection[] = [
       { href: "/dashboard/modules/school/deactivated-users", label: "Manage Deactivated Users", icon: UserCog },
       { href: "/dashboard/modules/school/week-entries", label: "Manage Week Entries", icon: CalendarClock },
       { href: "/dashboard/modules/school/result-publish", label: "Result Publish Helper", icon: ClipboardList },
-      { href: "/dashboard/modules/school/student-result-history", label: "Student Result History", icon: FileText },
-      { href: "/dashboard/modules/school/result-backup", label: "Result Backup Helper", icon: FolderOpen },
       { href: "/dashboard/users", label: "Manage User Roles & Password", icon: KeyRound },
       { href: "/dashboard/users/new", label: "Create Staff / Admin", icon: UserCog },
       { href: "/dashboard/users/deleted", label: "Manage Deleted Users", icon: UserX },
