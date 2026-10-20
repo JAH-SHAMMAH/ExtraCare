@@ -101,7 +101,7 @@ function BookCard({ book, onIssue, onDelete, manage }: { book: LibraryBookRow; o
         <div className="flex gap-2 mt-3">
           <button onClick={onIssue} disabled={!available} className={cn("flex-1 btn-primary text-xs py-1.5", !available && "opacity-50 cursor-not-allowed")}>Issue</button>
           {manage && (
-            <button onClick={onDelete} className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 opacity-0 group-hover:opacity-100 transition-opacity" title="Remove from catalogue"><Trash2 size={14} /></button>
+            <button onClick={onDelete} className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 opacity-0 [@media(hover:none)]:opacity-100 group-hover:opacity-100 transition-opacity" title="Remove from catalogue"><Trash2 size={14} /></button>
           )}
         </div>
       </div>

@@ -23,7 +23,7 @@ def _empty_to_none(v):
 
 class TeacherCreate(BaseModel):
     first_name: str
-    last_name: str
+    last_name: str = ""          # optional: Bulk Add creates teachers by first name only
     other_names: Optional[str] = None
     employee_id: Optional[str] = None
     email: EmailStr
@@ -41,12 +41,17 @@ class TeacherCreate(BaseModel):
     def _blank_str_to_none(cls, v):
         return _empty_to_none(v)
 
-    @field_validator("first_name", "last_name", mode="before")
+    @field_validator("first_name", mode="before")
     @classmethod
     def _required_not_blank(cls, v):
         if isinstance(v, str) and v.strip() == "":
             raise ValueError("must not be blank")
         return v
+
+    @field_validator("last_name", mode="before")
+    @classmethod
+    def _last_name_text(cls, v):
+        return v.strip() if isinstance(v, str) else ""
 
     @field_validator("subjects", mode="before")
     @classmethod

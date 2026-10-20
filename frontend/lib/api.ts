@@ -194,6 +194,8 @@ export const usersApi = {
   create: (data: object) => api.post("/users", data).then((r) => r.data),
   update: (id: string, data: object) => api.patch(`/users/${id}`, data).then((r) => r.data),
   updateStatus: (id: string, status: string) => api.patch(`/users/${id}/status`, { status }).then((r) => r.data),
+  /** Make these exactly the user's school sections (teachers must keep at least one). */
+  setSections: (id: string, section_ids: string[]) => api.put(`/users/${id}/sections`, section_ids).then((r) => r.data),
   assignRoles: (id: string, role_ids: string[]) => api.patch(`/users/${id}/roles`, role_ids).then((r) => r.data),
   invite: (data: object) => api.post("/users/invite", data).then((r) => r.data),
   resetPassword: (id: string) => api.post(`/users/${id}/reset-password`).then((r) => r.data),

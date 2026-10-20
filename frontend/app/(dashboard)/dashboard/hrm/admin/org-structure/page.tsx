@@ -146,7 +146,7 @@ function Row({ node, depth, collapsed, toggle, onAddChild, onEdit, onDelete }: {
           </div>
           {node.head_name && <p className="text-xs text-slate-400 flex items-center gap-1"><UserRound size={11} /> {node.head_name}</p>}
         </div>
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-0.5 opacity-0 [@media(hover:none)]:opacity-100 group-hover:opacity-100 transition-opacity">
           <button onClick={() => onAddChild(node.id)} className="text-slate-400 hover:text-brand-600 p-1.5" title="Add sub-unit"><Plus size={14} /></button>
           <button onClick={() => onEdit(node)} className="text-slate-400 hover:text-brand-600 p-1.5" title="Edit"><Pencil size={14} /></button>
           <button onClick={() => onDelete(node.id)} className="text-slate-400 hover:text-red-600 p-1.5" title="Remove"><Trash2 size={14} /></button>

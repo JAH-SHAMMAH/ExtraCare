@@ -130,7 +130,7 @@ function VehicleCard({ vehicle, onRemove }: { vehicle: VehicleRow; onRemove: () 
             <span className={cn("badge text-[9px]", meta.cls)}>{meta.label}</span>
             <button
               onClick={onRemove}
-              className="p-1.5 rounded text-slate-300 hover:text-rose-600 hover:bg-rose-50 opacity-0 group-hover:opacity-100"
+              className="p-1.5 rounded text-slate-300 hover:text-rose-600 hover:bg-rose-50 opacity-0 [@media(hover:none)]:opacity-100 group-hover:opacity-100"
               title="Remove vehicle"
             >
               <Trash2 size={12} />
@@ -224,7 +224,7 @@ function DriverCard({ driver, onRemove }: { driver: DriverRow; onRemove: () => v
             )}
             <button
               onClick={onRemove}
-              className="p-1.5 rounded text-slate-300 hover:text-rose-600 hover:bg-rose-50 opacity-0 group-hover:opacity-100"
+              className="p-1.5 rounded text-slate-300 hover:text-rose-600 hover:bg-rose-50 opacity-0 [@media(hover:none)]:opacity-100 group-hover:opacity-100"
               title="Remove driver"
             >
               <Trash2 size={12} />

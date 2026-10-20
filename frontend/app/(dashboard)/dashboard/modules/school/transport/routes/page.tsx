@@ -382,7 +382,7 @@ function StopsSection({ routeId, stops }: { routeId: string; stops: StopRow[] })
                 onClick={() => {
                   if (confirm(`Remove stop "${s.name}"?`)) deleteStop.mutate(s.id);
                 }}
-                className="p-1 rounded text-slate-300 hover:text-rose-600 hover:bg-rose-50 opacity-0 group-hover:opacity-100"
+                className="p-1 rounded text-slate-300 hover:text-rose-600 hover:bg-rose-50 opacity-0 [@media(hover:none)]:opacity-100 group-hover:opacity-100"
                 title="Remove stop"
               >
                 <Trash2 size={12} />
@@ -546,7 +546,7 @@ function RosterSection({
                     unassign.mutate(r.student_id);
                   }
                 }}
-                className="p-1 rounded text-slate-300 hover:text-rose-600 hover:bg-rose-50 opacity-0 group-hover:opacity-100"
+                className="p-1 rounded text-slate-300 hover:text-rose-600 hover:bg-rose-50 opacity-0 [@media(hover:none)]:opacity-100 group-hover:opacity-100"
                 title="Remove from roster"
               >
                 <Trash2 size={12} />

@@ -127,6 +127,11 @@ async def test_switch_role_end_to_end(client: AsyncClient):
     roles = (await client.get("/api/v1/users/roles/available", headers=_auth(tok))).json()["items"]
     by_slug = {r["slug"]: r["id"] for r in roles}
     su_id, tch_id = by_slug["super_user"], by_slug["teacher"]
+    # A teaching role needs a school section on file (the Edit user form sets it first).
+    sec = await client.post("/api/v1/platform/sections", headers=_auth(tok), json={"name": "Secondary"})
+    assert sec.status_code in (200, 201), sec.text
+    st = await client.put(f"/api/v1/users/{owner_id}/sections", headers=_auth(tok), json=[sec.json()["id"]])
+    assert st.status_code == 200, st.text
     r = await client.patch(f"/api/v1/users/{owner_id}/roles", headers=_auth(tok), json=[su_id, tch_id])
     assert r.status_code == 200, r.text
 

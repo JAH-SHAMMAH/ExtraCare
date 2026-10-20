@@ -524,7 +524,7 @@ function CampaignRow({
           <button
             onClick={(e) => { e.stopPropagation(); onResend(); }}
             disabled={resending}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-100"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-colors opacity-0 [@media(hover:none)]:opacity-100 group-hover:opacity-100 disabled:opacity-100"
             title="Resend to current recipients"
           >
             {resending ? <Loader2 size={14} className="animate-spin text-brand-600" /> : <RefreshCw size={14} />}

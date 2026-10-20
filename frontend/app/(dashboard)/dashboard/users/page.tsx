@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { useUsers, useUpdateUserStatus, useDeleteUser, useAvailableRoles, useResetPassword, useSetUserAvatar } from "@/hooks/useUsers";
 import { UserCreateModal } from "@/components/users/UserCreateModal";
+import { UserEditModal } from "@/components/users/UserEditModal";
 import { cn, timeAgo, STATUS_COLORS, getInitials, resolveMediaUrl } from "@/lib/utils";
 import { Search, Download, UserPlus, MoreVertical, Shield, Ban, Trash2, Edit, KeyRound, Copy, X, Check, Camera, Loader2 } from "lucide-react";
 import { downloadCsv } from "@/lib/csv";
@@ -22,6 +23,7 @@ export default function UsersPage() {
   const { mutate: deleteUser } = useDeleteUser();
   const resetPassword = useResetPassword();
   const [resetResult, setResetResult] = useState<{ name: string; temp: string } | null>(null);
+  const [editing, setEditing] = useState<{ user: User; focus: "profile" | "roles" } | null>(null);
 
   const handleReset = (u: User) =>
     resetPassword.mutate(u.id, { onSuccess: (r: any) => setResetResult({ name: u.full_name, temp: r.temporary_password }) });
@@ -129,6 +131,8 @@ export default function UsersPage() {
                     onActivate={() => updateStatus({ id: user.id, status: "active" })}
                     onDelete={() => deleteUser(user.id)}
                     onResetPassword={() => handleReset(user)}
+                    onEdit={() => setEditing({ user, focus: "profile" })}
+                    onChangeRole={() => setEditing({ user, focus: "roles" })}
                   />
                 ))}
             </tbody>
@@ -181,6 +185,13 @@ export default function UsersPage() {
         onSuccess={() => setPage(1)}
       />
 
+      <UserEditModal
+        key={editing?.user.id ?? "none"}
+        user={editing?.user ?? null}
+        focus={editing?.focus}
+        availableRoles={Array.isArray(rolesData) ? rolesData : rolesData?.items ?? []}
+        onClose={() => setEditing(null)}
+      />
       {resetResult && <TempPasswordDialog name={resetResult.name} temp={resetResult.temp} onClose={() => setResetResult(null)} />}
     </div>
   );
@@ -217,7 +228,7 @@ function TempPasswordDialog({ name, temp, onClose }: { name: string; temp: strin
   );
 }
 
-function UserRow({ user, canWrite, canDelete, onSuspend, onActivate, onDelete, onResetPassword }: {
+function UserRow({ user, canWrite, canDelete, onSuspend, onActivate, onDelete, onResetPassword, onEdit, onChangeRole }: {
   user: User;
   canWrite: boolean;
   canDelete: boolean;
@@ -225,8 +236,20 @@ function UserRow({ user, canWrite, canDelete, onSuspend, onActivate, onDelete, o
   onActivate: () => void;
   onDelete: () => void;
   onResetPassword: () => void;
+  onEdit: () => void;
+  onChangeRole: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  // The table scrolls and clips, so the menu is positioned against the viewport
+  // (fixed) from the button's own box; otherwise the last rows hide it.
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const openMenu = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const below = r.bottom + 4;
+    const top = below + 220 > window.innerHeight ? Math.max(8, r.top - 4 - 220) : below;
+    setPos({ top, right: Math.max(8, window.innerWidth - r.right) });
+    setMenuOpen((o) => !o);
+  };
   const primaryRole = user.roles?.[0];
 
   return (
@@ -266,15 +289,18 @@ function UserRow({ user, canWrite, canDelete, onSuspend, onActivate, onDelete, o
         {canWrite && (
           <div className="relative inline-block">
             <button
-              onClick={() => setMenuOpen((o) => !o)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors opacity-0 group-hover:opacity-100"
+              onClick={openMenu}
+              aria-label={`Actions for ${user.full_name}`}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
             >
               <MoreVertical size={15} />
             </button>
-            {menuOpen && (
-              <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl border border-slate-200 shadow-lg z-50 py-1">
-                <MenuItem icon={Edit} label="Edit user" onClick={() => setMenuOpen(false)} />
-                <MenuItem icon={Shield} label="Change role" onClick={() => setMenuOpen(false)} />
+            {menuOpen && pos && (
+              <>
+              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+              <div style={{ top: pos.top, right: pos.right }} className="fixed w-44 bg-white rounded-xl border border-slate-200 shadow-lg z-50 py-1">
+                <MenuItem icon={Edit} label="Edit user" onClick={() => { onEdit(); setMenuOpen(false); }} />
+                <MenuItem icon={Shield} label="Change role" onClick={() => { onChangeRole(); setMenuOpen(false); }} />
                 <MenuItem icon={KeyRound} label="Reset password" onClick={() => { onResetPassword(); setMenuOpen(false); }} />
                 {user.status === "active"
                   ? <MenuItem icon={Ban} label="Suspend" onClick={() => { onSuspend(); setMenuOpen(false); }} className="text-orange-600" />
@@ -284,6 +310,7 @@ function UserRow({ user, canWrite, canDelete, onSuspend, onActivate, onDelete, o
                   <MenuItem icon={Trash2} label="Remove user" onClick={() => { onDelete(); setMenuOpen(false); }} className="text-red-600" />
                 )}
               </div>
+              </>
             )}
           </div>
         )}
@@ -316,7 +343,7 @@ function AvatarCell({ user, canWrite }: { user: User; canWrite: boolean }) {
             onClick={() => inputRef.current?.click()}
             disabled={setAvatar.isPending}
             title={user.avatar_url ? "Change photo" : "Set photo"}
-            className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-slate-700 text-white flex items-center justify-center shadow ring-2 ring-white opacity-0 group-hover/av:opacity-100 transition disabled:opacity-100"
+            className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-slate-700 text-white flex items-center justify-center shadow ring-2 ring-white opacity-0 [@media(hover:none)]:opacity-100 group-hover/av:opacity-100 transition disabled:opacity-100"
           >
             {setAvatar.isPending ? <Loader2 size={10} className="animate-spin" /> : <Camera size={10} />}
           </button>

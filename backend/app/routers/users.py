@@ -17,7 +17,7 @@ from app.schemas.user import (
 )
 from app.services.user_service import create_user, invite_user, get_users_paginated
 from app.services.audit_service import log_action
-from app.services.teaching_roles import require_sections_for_teachers
+from app.services.teaching_roles import TEACHING_ROLE_SLUGS, require_sections_for_teachers
 from app.models.audit import AuditAction
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -299,8 +299,15 @@ async def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
+    # Same bar as status / roles / reset-password: a lower tier must not be able to
+    # rewrite the Super User's account. Editing your own record is always allowed.
+    assert_can_manage_user(current_user, user)
+
     old = {"full_name": user.full_name, "department": user.department}
-    for field, value in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    if "full_name" in changes and not (changes["full_name"] or "").strip():
+        raise HTTPException(status_code=422, detail="full_name: must not be blank")
+    for field, value in changes.items():
         setattr(user, field, value)
 
     await log_action(
@@ -370,6 +377,18 @@ async def assign_roles(
     # Super User / Accountant / Head of Administration → finance_admin).
     assert_can_manage_user(current_user, user)
     assert_can_grant_roles(current_user, roles)
+    # A teaching role needs a school section on file (assign it first via
+    # PUT /users/{id}/sections — the Edit user form does that in the right order).
+    if {r.slug.lower() for r in roles} & TEACHING_ROLE_SLUGS:
+        from app.models.modules.school import TeacherSection
+        has_section = (await db.execute(select(TeacherSection.id).where(
+            TeacherSection.org_id == current_user.org_id, TeacherSection.teacher_id == user.id).limit(1))).first()
+        if not has_section:
+            raise HTTPException(
+                status_code=422,
+                detail="section_ids: choose at least one section for a teacher before giving them a teaching role.")
+        if not (user.job_title or "").strip():
+            user.job_title = "Teacher"
     old_roles = [r.slug for r in user.roles]
     user.roles = list(roles)
 
@@ -380,6 +399,37 @@ async def assign_roles(
         severity="warning", request=request,
     )
     return UserResponse.from_orm_with_roles(user, loaded_roles=list(user.roles))
+
+
+@router.put("/{user_id}/sections", dependencies=[_can_write])
+async def set_user_sections(
+    user_id: str,
+    section_ids: list[str],
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Make `section_ids` exactly this user's school sections (a teacher's menu and
+    pupils follow them). An empty list clears them — refused while the user holds a
+    teaching role, which must always belong to a section."""
+    user = (await db.execute(
+        select(User).options(selectinload(User.roles)).where(
+            User.id == user_id, User.org_id == current_user.org_id, User.is_deleted == False)  # noqa: E712
+    )).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    assert_can_manage_user(current_user, user)
+    wanted = [s for s in dict.fromkeys(section_ids) if s]
+    if not wanted and any((r.slug or "").lower() in TEACHING_ROLE_SLUGS for r in user.roles):
+        raise HTTPException(status_code=422, detail="section_ids: a teacher must belong to at least one section.")
+    from app.routers.modules.school import _set_teacher_sections
+    await _set_teacher_sections(db, current_user.org_id, user.id, wanted)
+    await log_action(
+        db, AuditAction.USER_UPDATED, current_user.org_id, actor=current_user,
+        resource_type="User", resource_id=user.id, resource_label=user.full_name,
+        new_values={"section_ids": wanted}, request=request,
+    )
+    return {"section_ids": wanted}
 
 
 @router.post("/{user_id}/reset-password", dependencies=[_can_write])

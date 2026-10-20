@@ -179,7 +179,7 @@ function PhotoCell({ teacher, canWrite }: { teacher: Teacher; canWrite: boolean 
       {canWrite && (
         <>
           <button onClick={() => inputRef.current?.click()} disabled={setPhoto.isPending} title="Set photo"
-            className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-slate-700 text-white flex items-center justify-center shadow ring-2 ring-white opacity-0 group-hover/av:opacity-100 transition disabled:opacity-100">
+            className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-slate-700 text-white flex items-center justify-center shadow ring-2 ring-white opacity-0 [@media(hover:none)]:opacity-100 group-hover/av:opacity-100 transition disabled:opacity-100">
             {setPhoto.isPending ? <Loader2 size={10} className="animate-spin" /> : <Camera size={10} />}
           </button>
           <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setPhoto.mutate(f); e.target.value = ""; }} />
@@ -205,7 +205,8 @@ function TeacherForm({ teacher, sections, onClose }: { teacher: Teacher | null; 
   const busy = create.isPending || update.isPending;
 
   const submit = () => {
-    if (!f.first_name.trim() || !f.last_name.trim() || !f.email.trim()) { toast.error("First name, last name and email are required."); return; }
+    // Last name is optional: teachers created by Bulk Add have a first name only.
+    if (!f.first_name.trim() || !f.email.trim()) { toast.error("First name and email are required."); return; }
     const payload: any = { ...f, section_ids: sectionIds, section_id: sectionIds[0] ?? null };
     if (teacher) update.mutate({ id: teacher.id, data: payload }, { onSuccess: onClose });
     else create.mutate(payload, { onSuccess: onClose });
@@ -215,7 +216,7 @@ function TeacherForm({ teacher, sections, onClose }: { teacher: Teacher | null; 
     <Modal title={teacher ? "Edit Teacher" : "Add a Teacher"} onClose={onClose} wide>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Field label="First Name *"><input value={f.first_name} onChange={(e) => set("first_name", e.target.value)} className="input" /></Field>
-        <Field label="Last Name *"><input value={f.last_name} onChange={(e) => set("last_name", e.target.value)} className="input" /></Field>
+        <Field label="Last Name"><input value={f.last_name} onChange={(e) => set("last_name", e.target.value)} className="input" /></Field>
         <Field label="Other Names"><input value={f.other_names} onChange={(e) => set("other_names", e.target.value)} className="input" /></Field>
         <Field label="Employee ID"><input value={f.employee_id} onChange={(e) => set("employee_id", e.target.value)} className="input" /></Field>
         <Field label="E-mail *"><input type="email" value={f.email} onChange={(e) => set("email", e.target.value)} className="input" /></Field>

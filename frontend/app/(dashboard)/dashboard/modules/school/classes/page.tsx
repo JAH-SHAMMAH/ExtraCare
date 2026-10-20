@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useClasses, useCreateClass, useUpdateClass, useDeleteClass, useYearGroups, useTeachers } from "@/hooks/useSchool";
 import { cn } from "@/lib/utils";
 import { Search, Plus, School, MoreVertical, Edit2, Trash2, X, Loader2, Users2, AlertTriangle } from "lucide-react";
@@ -11,6 +11,10 @@ export default function ClassesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingClass, setEditingClass] = useState<SchoolClass | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  // The form sits above the class cards; on a phone the card you tapped is far
+  // below it, so bring the form into view or "Edit" looks like it did nothing.
+  const formRef = useRef<HTMLDivElement>(null);
+  const showFormSoon = () => setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
 
   const { data, isLoading } = useClasses({ search: search || undefined });
   const createClass = useCreateClass();
@@ -42,7 +46,7 @@ export default function ClassesPage() {
 
   const handleEdit = (c: SchoolClass) => {
     setForm({ name: c.name, grade_level: c.grade_level || "", section: c.section || "", capacity: String(c.capacity), class_teacher_id: c.class_teacher_id || "", academic_year: c.academic_year });
-    setEditingClass(c); setShowForm(true); setMenuOpen(null);
+    setEditingClass(c); setShowForm(true); setMenuOpen(null); showFormSoon();
   };
 
   const items = data?.items || (Array.isArray(data) ? data : []);
@@ -55,11 +59,11 @@ export default function ClassesPage() {
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Class Management</h1>
           <p className="text-slate-500 text-sm mt-0.5">Create and manage class groups and sections.</p>
         </div>
-        <button onClick={() => { resetForm(); setShowForm(true); }} className="btn-primary gap-2"><Plus size={15} /> New Class</button>
+        <button onClick={() => { resetForm(); setShowForm(true); showFormSoon(); }} className="btn-primary gap-2"><Plus size={15} /> New Class</button>
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6">
+        <div ref={formRef} className="bg-white rounded-xl border border-slate-200 p-6 mb-6 scroll-mt-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold text-slate-800">{editingClass ? "Edit Class" : "New Class"}</h2>
             <button onClick={resetForm} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>

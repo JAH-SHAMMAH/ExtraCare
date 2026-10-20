@@ -120,3 +120,21 @@ async def test_request_exactly_as_the_page_sends_it(db, org):
     admin = await _setup(db, org)
     body = await _call(db, admin, req.rows, dry_run=True)
     assert [r["name"] for r in body["rows"]] == ["Jeremiah", "Ada"]
+
+
+async def test_a_first_name_only_teacher_can_be_edited_and_created_by_hand(db, org):
+    """Bulk Add makes first-name-only teachers; the edit form must be able to save them."""
+    from app.routers.modules.school import update_teacher, create_teacher
+    from app.schemas.teacher import TeacherCreate, TeacherUpdate
+
+    admin = await _setup(db, org)
+    body = await _call(db, admin, [BulkTeacherRow(first_name="Isaiah", subject="ICT", department="primary")])
+    await db.commit()
+    t = (await db.execute(select(User).where(User.email == "isaiah@fairviewschoolng.com"))).scalar_one()
+    out = await update_teacher(t.id, TeacherUpdate(first_name="Isaiah", last_name="", phone="0803", department="Primary"),
+                               request=_Req(), db=db, current_user=admin)
+    assert out["first_name"] == "Isaiah" and out["phone"] == "0803"
+
+    made = await create_teacher(TeacherCreate(first_name="Ngozi", email="ngozi@fairviewschoolng.com"),
+                                request=_Req(), db=db, current_user=admin)
+    assert made["first_name"] == "Ngozi" and made["last_name"] == ""

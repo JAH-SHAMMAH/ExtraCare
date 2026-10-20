@@ -3002,7 +3002,7 @@ def _teacher_list_query(org_id: str, search: str | None, section: str | None):
 @router.get("/teachers", dependencies=[_teachers_read])
 async def list_teachers(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=200),
     search: str | None = None,
     section: str | None = None,   # school section id (Select School). Plain default: safe for direct calls.
     db: AsyncSession = Depends(get_db),
