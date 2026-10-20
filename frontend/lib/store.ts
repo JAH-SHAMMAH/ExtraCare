@@ -18,6 +18,8 @@ interface AuthState {
   /** Null until /me/contexts resolves — layout renders a splash meanwhile. */
   activeRole: ActiveRole | null;
   setUser: (user: AuthUser) => void;
+  /** After a successful password change: the server has cleared the "must change" flag, so clear our copy too. */
+  clearForcePasswordChange: () => void;
   setOrg: (org: Organization) => void;
   setActiveRole: (role: ActiveRole) => void;
   logout: () => void;
@@ -33,6 +35,8 @@ export const useAuthStore = create<AuthState>()(
       activeRole: null,
 
       setUser: (user) => set({ user, isAuthenticated: true }),
+      clearForcePasswordChange: () =>
+        set((s) => (s.user ? { user: { ...s.user, force_password_change: false } } : {})),
       setOrg: (org) => set({ org }),
       setActiveRole: (role) => set({ activeRole: role }),
 

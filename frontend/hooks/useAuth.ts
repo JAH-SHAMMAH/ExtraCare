@@ -117,6 +117,10 @@ export function useChangePassword() {
     mutationFn: (data: { current_password: string; new_password: string }) =>
       authApi.changePassword(data),
     onSuccess: () => {
+      // Synchronously, BEFORE the page navigates: the layout redirects anyone
+      // whose stored user still says force_password_change back to this page,
+      // and the /me refetch below lands too late to stop it.
+      useAuthStore.getState().clearForcePasswordChange();
       qc.invalidateQueries({ queryKey: ["me"] });
       toast.success("Password changed.");
     },
