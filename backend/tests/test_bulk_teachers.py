@@ -104,3 +104,19 @@ async def test_helpers():
     assert email_for("", "x.com") is None
     pw = temp_password()
     assert len(pw) == 10 and not set(pw) & set("0O1lI")
+
+
+async def test_request_exactly_as_the_page_sends_it(db, org):
+    """The page posts last_name "" and nulls for blanks; that must validate."""
+    payload = {"dry_run": True, "rows": [
+        {"title": "Mr", "first_name": "Jeremiah", "last_name": "", "subject": "CRS",
+         "department": "secondary", "email": None},
+        {"title": None, "first_name": "Ada", "last_name": None, "subject": None,
+         "department": "", "email": ""},
+    ]}
+    req = BulkTeacherRequest.model_validate(payload)
+    assert [r.last_name for r in req.rows] == ["", ""]
+    assert req.rows[1].department is None and req.rows[1].email is None
+    admin = await _setup(db, org)
+    body = await _call(db, admin, req.rows, dry_run=True)
+    assert [r["name"] for r in body["rows"]] == ["Jeremiah", "Ada"]

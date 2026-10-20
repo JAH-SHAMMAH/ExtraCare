@@ -140,12 +140,18 @@ class BulkTeacherRow(BaseModel):
             raise ValueError("must not be blank")
         return v.strip()
 
-    @field_validator("last_name", "title", "subject", "department", "email", mode="before")
+    @field_validator("last_name", mode="before")
+    @classmethod
+    def _last_name_text(cls, v):
+        # Surname is optional but always a string: blank/missing -> "".
+        return v.strip() if isinstance(v, str) else ""
+
+    @field_validator("title", "subject", "department", "email", mode="before")
     @classmethod
     def _strip(cls, v):
         if v is None:
             return None
-        return v.strip() or None if isinstance(v, str) else v
+        return (v.strip() or None) if isinstance(v, str) else v
 
 
 class BulkTeacherRequest(BaseModel):
