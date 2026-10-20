@@ -142,6 +142,26 @@ class TeacherSection(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class TeachingAssignment(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """One teacher teaches one SUBJECT to one CLASS.
+
+    Subject.teacher_id can only name one teacher per subject for the whole school,
+    and Timetable needs a day and a time slot just to say "teaches". This is the
+    plain relationship: several teachers can share a subject (each with their own
+    classes), and no timetable is needed. `_teacher_assignments` unions these rows
+    with the Timetable, so mark entry, comments and reports honour them."""
+    __tablename__ = "teaching_assignments"
+
+    teacher_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    class_id = Column(String(36), ForeignKey("school_classes.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "teacher_id", "class_id", "subject_id", name="uq_teaching_assignment"),
+        Index("ix_teaching_assignments_org_teacher", "org_id", "teacher_id"),
+    )
+
+
 class YearGroup(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A managed year group / level (Classes/YearGroups → Manage YearGroups). The
     ordered taxonomy above classes — e.g. YEAR 7 … YEAR 12, plus non-teaching

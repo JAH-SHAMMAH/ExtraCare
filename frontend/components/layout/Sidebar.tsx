@@ -530,6 +530,7 @@ export const MODULE_SECTIONS: ModuleSection[] = [
     items: [
       { href: "/dashboard/modules/school/teachers", label: "View Teachers", icon: UsersIcon },
       { href: "/dashboard/modules/school/teachers/assign", label: "Assign To School", icon: Building2 },
+      { href: "/dashboard/modules/school/teachers/assignments", label: "Teaching Assignments", icon: BookOpen },
     ],
   },
   {

@@ -158,3 +158,13 @@ class BulkTeacherRequest(BaseModel):
     rows: list[BulkTeacherRow] = Field(min_length=1, max_length=100)
     dry_run: bool = False                  # preview: resolve emails/sections, create nothing
     email_domain: Optional[str] = None     # default: the signed-in admin's own domain
+
+
+class TeachingPair(BaseModel):
+    class_id: str
+    subject_id: str
+
+
+class TeachingAssignmentsUpdate(BaseModel):
+    """REPLACES the teacher's class x subject assignments with exactly these pairs."""
+    pairs: list[TeachingPair] = Field(default_factory=list, max_length=500)

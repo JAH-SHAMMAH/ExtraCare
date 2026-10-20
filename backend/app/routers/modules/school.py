@@ -17,7 +17,7 @@ from app.models.modules.school import (
     LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus, TeacherRating,
     GradeStatus, AttendanceSettings, AbsenceReason, StudentReport,
     LessonPlanCategory, LessonPlannerSettings, LessonPlanSupervisor, LessonPlanSchedule,
-    YearGroup, TeacherSection,
+    YearGroup, TeacherSection, TeachingAssignment,
 )
 from app.models.modules.platform import (
     AcademicSession, AcademicTerm, SchoolSection, ReportTemplate, GradingBand,
@@ -40,7 +40,7 @@ from app.models.audit import AuditAction
 from app.schemas.student import StudentCreate, StudentUpdate
 from app.schemas.teacher import (
     TeacherCreate, TeacherUpdate, TeacherSubjectsUpdate, AssignSectionRequest,
-    BulkTeacherRequest,
+    BulkTeacherRequest, TeachingAssignmentsUpdate,
 )
 from app.schemas.school_class import ClassCreate, ClassUpdate
 from app.schemas.subject import SubjectCreate, SubjectUpdate
@@ -685,6 +685,7 @@ def _subject_dict(s: Subject) -> dict:
         "name": s.name,
         "code": s.code or "",
         "department": s.department,
+        "section_id": s.section_id,
         "class_ids": [],   # subject↔class linkage not modelled yet; round-trips empty
         "teacher_id": s.teacher_id,
         "teacher_name": s.teacher_name,
@@ -3028,6 +3029,62 @@ async def list_teachers(
     }
 
 
+_assignments_admin_read = Depends(AnyPermissionChecker("settings:read", "school_admin:read"))
+
+
+@router.get("/teachers/assignments", dependencies=[_assignments_admin_read])
+async def teaching_assignments_overview(
+    section: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Every teacher with what they teach: class-teacher of, sections, the subjects
+    they own outright (Subject.teacher_id) and their class x subject assignments."""
+    org_id = current_user.org_id
+    teachers = (await db.execute(_teacher_query_base(org_id).order_by(User.full_name))).scalars().all()
+    ids = [t.id for t in teachers]
+    smap = await _teacher_sections_map(db, org_id, ids)
+    if section:
+        teachers = [t for t in teachers if any(x["id"] == section for x in smap.get(t.id, (None, None, []))[2])]
+        ids = [t.id for t in teachers]
+
+    own_classes: dict[str, list[dict]] = {}
+    for c in (await db.execute(select(SchoolClass).where(SchoolClass.org_id == org_id, SchoolClass.teacher_id.in_(ids)))).scalars().all() if ids else []:
+        own_classes.setdefault(c.teacher_id, []).append({"id": c.id, "name": c.name})
+    owned: dict[str, list[dict]] = {}
+    for sub in (await db.execute(select(Subject).where(Subject.org_id == org_id, Subject.teacher_id.in_(ids)))).scalars().all() if ids else []:
+        owned.setdefault(sub.teacher_id, []).append({"id": sub.id, "name": sub.name})
+    pairs: dict[str, list[dict]] = {}
+    if ids:
+        rows = (await db.execute(
+            select(TeachingAssignment.teacher_id, TeachingAssignment.class_id, SchoolClass.name,
+                   TeachingAssignment.subject_id, Subject.name)
+            .join(SchoolClass, SchoolClass.id == TeachingAssignment.class_id)
+            .join(Subject, Subject.id == TeachingAssignment.subject_id)
+            .where(TeachingAssignment.org_id == org_id, TeachingAssignment.teacher_id.in_(ids))
+            .order_by(SchoolClass.name, Subject.name)
+        )).all()
+        for tid, cid, cname, sid, sname in rows:
+            pairs.setdefault(tid, []).append({"class_id": cid, "class_name": cname, "subject_id": sid, "subject_name": sname})
+    items = [{
+        "id": t.id, "name": t.full_name, "email": t.email, "department": t.department,
+        "sections": [x["name"] for x in smap.get(t.id, (None, None, []))[2]],
+        "class_teacher_of": own_classes.get(t.id, []),
+        "subjects": owned.get(t.id, []),
+        "assignments": pairs.get(t.id, []),
+    } for t in teachers]
+    # Catalogue for the editor: every class and subject with its section, so the
+    # page needs no further requests to offer "which classes does this subject run in".
+    classes = (await db.execute(select(SchoolClass).where(SchoolClass.org_id == org_id).order_by(SchoolClass.name))).scalars().all()
+    subjects = (await db.execute(select(Subject).where(Subject.org_id == org_id, Subject.is_active == True).order_by(Subject.name))).scalars().all()  # noqa: E712
+    secs = {x.id: x.name for x in (await db.execute(select(SchoolSection).where(SchoolSection.org_id == org_id))).scalars().all()}
+    return {"items": items, "total": len(items), "catalog": {
+        "sections": [{"id": i, "name": n} for i, n in sorted(secs.items(), key=lambda kv: kv[1])],
+        "classes": [{"id": c.id, "name": c.name, "section_id": c.section_id} for c in classes],
+        "subjects": [{"id": x.id, "name": x.name, "section_id": x.section_id} for x in subjects],
+    }}
+
+
 @router.get("/teachers/export", dependencies=[_settings_read])
 async def export_teachers(
     section: str | None = None,
@@ -3113,6 +3170,13 @@ async def bulk_create_teachers(
         select(User.email).where(User.org_id == org_id, User.is_deleted == False)  # noqa: E712
     )).scalars().all()}
 
+    from app.services.teaching import assign_subject_to_classes, classes_in_sections, match_subject
+    all_subjects = list((await db.execute(select(Subject).where(Subject.org_id == org_id, Subject.is_active == True))).scalars().all())  # noqa: E712
+    classes_by_section: dict[str, list] = {}
+    for c in await classes_in_sections(db, org_id, [s.id for s in sections]):
+        classes_by_section.setdefault(c.section_id, []).append(c)
+    matched_subject: dict[int, object] = {}
+
     results: list[dict] = []
     seen: set[str] = set()
     for idx, row in enumerate(data.rows):
@@ -3131,6 +3195,19 @@ async def bulk_create_teachers(
         elif row.department and not matched:
             out.update(status="error", message=f"Department '{row.department}' does not match any school section "
                                                f"({', '.join(s.name for s in sections) or 'none set up'}).")
+        # Subject -> a real Subject row (acronyms like CRS / ICT work), taught in
+        # every class of that subject's section. Not matching is a warning, never
+        # a block: the account is still made and the page says what to do.
+        if row.subject:
+            pool = [x for x in all_subjects if x.section_id in {m.id for m in matched}] or all_subjects
+            subj, why = match_subject(row.subject, pool)
+            if subj is not None:
+                matched_subject[idx] = subj
+                out.update(subject_matched=subj.name, class_count=len(classes_by_section.get(subj.section_id, [])))
+                if not classes_by_section.get(subj.section_id):
+                    out["subject_note"] = f"'{subj.name}' found, but its section has no classes yet."
+            else:
+                out.update(subject_matched=None, subject_note=f"Subject not linked: {why}. Set it on the Teaching Assignments page.")
         seen.add(email)
         results.append(out)
 
@@ -3155,6 +3232,11 @@ async def bulk_create_teachers(
             await db.flush()
             if matched:
                 await _set_teacher_sections(db, org_id, teacher.id, [s.id for s in matched])
+            subj = matched_subject.get(out["index"])
+            if subj is not None:
+                n = await assign_subject_to_classes(
+                    db, org_id, teacher.id, subj.id, [c.id for c in classes_by_section.get(subj.section_id, [])])
+                out["assigned_classes"] = n
             await log_action(
                 db, AuditAction.USER_CREATED, org_id, actor=current_user,
                 resource_type="Teacher", resource_id=teacher.id, resource_label=teacher.full_name,
@@ -3432,6 +3514,47 @@ async def set_teacher_subjects(
         select(Subject).where(Subject.org_id == org_id, Subject.teacher_id == id).order_by(Subject.name)
     )).scalars().all()
     return {"items": [{"id": s.id, "name": s.name, "code": getattr(s, "code", None)} for s in rows]}
+
+
+@router.put("/teachers/{id}/assignments", dependencies=[_settings_write])
+async def set_teaching_assignments(
+    id: str,
+    data: TeachingAssignmentsUpdate,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Replace this teacher's class x subject assignments with exactly `pairs`.
+    Unknown or foreign classes/subjects are refused, not skipped."""
+    org_id = current_user.org_id
+    await _require_teacher(db, org_id, id)
+    wanted = {(p.class_id, p.subject_id) for p in data.pairs}
+    cls_ids = {c for c, _ in wanted}
+    sub_ids = {sb for _, sb in wanted}
+    if cls_ids:
+        ok = set((await db.execute(select(SchoolClass.id).where(SchoolClass.org_id == org_id, SchoolClass.id.in_(cls_ids)))).scalars().all())
+        if ok != cls_ids:
+            raise HTTPException(status_code=422, detail="class_id: not a class in your organisation")
+    if sub_ids:
+        ok = set((await db.execute(select(Subject.id).where(Subject.org_id == org_id, Subject.id.in_(sub_ids)))).scalars().all())
+        if ok != sub_ids:
+            raise HTTPException(status_code=422, detail="subject_id: not a subject in your organisation")
+    existing = (await db.execute(select(TeachingAssignment).where(
+        TeachingAssignment.org_id == org_id, TeachingAssignment.teacher_id == id))).scalars().all()
+    have = {(e.class_id, e.subject_id): e for e in existing}
+    for key, row in have.items():
+        if key not in wanted:
+            await db.delete(row)
+    for cid, sid in wanted:
+        if (cid, sid) not in have:
+            db.add(TeachingAssignment(org_id=org_id, teacher_id=id, class_id=cid, subject_id=sid))
+    await db.flush()
+    await log_action(
+        db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
+        resource_type="Teacher", resource_id=id, resource_label="teaching assignments",
+        new_values={"pairs": len(wanted)}, request=request,
+    )
+    return {"count": len(wanted)}
 
 
 @router.post("/teachers/{id}/assign-section", dependencies=[_settings_write])

@@ -180,6 +180,9 @@ async def create_new_user(
     if data.section_ids:
         from app.routers.modules.school import _set_teacher_sections
         await _set_teacher_sections(db, current_user.org_id, user.id, data.section_ids)
+    if data.subject_ids and teaching:
+        from app.services.teaching import assign_subjects_by_section
+        await assign_subjects_by_section(db, current_user.org_id, user.id, data.subject_ids)
     await log_action(
         db, AuditAction.USER_CREATED, current_user.org_id, actor=current_user,
         resource_type="User", resource_id=user.id, resource_label=user.full_name,
@@ -212,6 +215,9 @@ async def invite_new_user(
     if data.section_ids:
         from app.routers.modules.school import _set_teacher_sections
         await _set_teacher_sections(db, current_user.org_id, user.id, data.section_ids)
+    if data.subject_ids and teaching:
+        from app.services.teaching import assign_subjects_by_section
+        await assign_subjects_by_section(db, current_user.org_id, user.id, data.subject_ids)
     await log_action(
         db, AuditAction.USER_INVITED, current_user.org_id, actor=current_user,
         resource_type="User", resource_id=user.id, resource_label=user.full_name, request=request,

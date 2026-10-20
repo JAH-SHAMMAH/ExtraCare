@@ -240,6 +240,11 @@ export const schoolApi = {
     subjects: (id: string) => api.get(`/school/teachers/${id}/subjects`).then((r) => r.data),
     setSubjects: (id: string, subject_ids: string[]) =>
       api.put(`/school/teachers/${id}/subjects`, { subject_ids }).then((r) => r.data),
+    /** Every teacher with sections, class-teacher-of, subjects and class x subject assignments (+ catalogue). */
+    assignments: (section?: string) =>
+      api.get("/school/teachers/assignments", { params: section ? { section } : {} }).then((r) => r.data),
+    setAssignments: (id: string, pairs: { class_id: string; subject_id: string }[]) =>
+      api.put(`/school/teachers/${id}/assignments`, { pairs }).then((r) => r.data),
     assignSection: (id: string, section_id: string | null, mode: "set" | "add" | "remove" = "set") =>
       api.post(`/school/teachers/${id}/assign-section`, { section_id, mode }).then((r) => r.data),
     exportCsv: (section?: string) =>

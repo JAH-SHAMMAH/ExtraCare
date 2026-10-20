@@ -170,8 +170,13 @@ async def _teacher_assignments(db: AsyncSession, org_id: str, user_id: str) -> s
     # Primary: Timetable-based assignments (fine-grained)
     timetable_rows = (await db.execute(select(Timetable.class_id, Timetable.subject_id).where(
         Timetable.org_id == org_id, Timetable.teacher_id == user_id))).all()
-    if timetable_rows:
-        return {(r.class_id, r.subject_id) for r in timetable_rows}
+    # Plain class x subject assignments (Teaching Assignments page / Bulk Add) count
+    # exactly like timetable entries: several teachers can share a subject.
+    from app.models.modules.school import TeachingAssignment
+    assigned_rows = (await db.execute(select(TeachingAssignment.class_id, TeachingAssignment.subject_id).where(
+        TeachingAssignment.org_id == org_id, TeachingAssignment.teacher_id == user_id))).all()
+    if timetable_rows or assigned_rows:
+        return {(r.class_id, r.subject_id) for r in [*timetable_rows, *assigned_rows]}
 
     # Fallback: Subject.teacher_id-based (org-wide subject assignment)
     # Find all subjects taught by this teacher, then all (class, subject) pairs

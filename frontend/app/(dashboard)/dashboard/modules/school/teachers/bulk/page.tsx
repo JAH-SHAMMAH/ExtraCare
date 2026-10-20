@@ -19,6 +19,7 @@ const STARTER = [
 interface Result {
   index: number; name: string; email: string; subject?: string; department?: string;
   sections: string[]; status: "ok" | "conflict" | "error"; message: string;
+  subject_matched?: string | null; class_count?: number; assigned_classes?: number; subject_note?: string;
   id?: string; temporary_password?: string;
 }
 
@@ -96,7 +97,7 @@ export default function BulkTeachersPage() {
         <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto mb-5">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-              <tr>{["Title", "First name", "Subject", "Department", "Email", "Sections", ""].map((h) => <th key={h} className="px-3 py-2 text-left">{h}</th>)}</tr>
+              <tr>{["Title", "First name", "Subject", "Department", "Email", "Sections", "Teaches", ""].map((h) => <th key={h} className="px-3 py-2 text-left">{h}</th>)}</tr>
             </thead>
             <tbody>
               {rows.map((r, i) => {
@@ -109,6 +110,12 @@ export default function BulkTeachersPage() {
                     <td className="px-3 py-2"><input className="input w-28" value={r.department} onChange={(e) => edit(i, "department", e.target.value)} /></td>
                     <td className="px-3 py-2"><input className="input w-56" value={r.email || res?.email || ""} onChange={(e) => edit(i, "email", e.target.value)} /></td>
                     <td className="px-3 py-2 text-slate-600">{res?.sections?.join(", ") || "—"}</td>
+                    <td className="px-3 py-2 text-xs max-w-[200px]">
+                      {res?.subject_matched
+                        ? <span className="text-emerald-700 font-semibold">{res.subject_matched}{res.class_count != null ? ` · ${res.class_count} class${res.class_count === 1 ? "" : "es"}` : ""}</span>
+                        : res?.subject_note ? <span className="text-amber-700">{res.subject_note}</span> : <span className="text-slate-300">—</span>}
+                      {res?.subject_matched && res.subject_note && <span className="block text-amber-700 font-normal">{res.subject_note}</span>}
+                    </td>
                     <td className="px-3 py-2">
                       {res && (res.status === "ok"
                         ? <span className="inline-flex items-center gap-1 text-emerald-700 text-xs font-semibold"><CheckCircle2 size={14} /> Ready</span>
@@ -136,12 +143,13 @@ export default function BulkTeachersPage() {
             These temporary passwords are shown <b>once</b>. Copy or download them now and hand them over privately. Each teacher will be asked to set a new password when they first sign in.
           </p>
           <table className="w-full text-sm mb-4">
-            <thead className="text-xs uppercase text-slate-500"><tr><th className="text-left py-1">Name</th><th className="text-left">Email</th><th className="text-left">Temporary password</th></tr></thead>
+            <thead className="text-xs uppercase text-slate-500"><tr><th className="text-left py-1">Name</th><th className="text-left">Email</th><th className="text-left">Temporary password</th><th className="text-left">Subject</th></tr></thead>
             <tbody>
               {results.map((r) => (
                 <tr key={r.index} className="border-t border-slate-100">
                   <td className="py-2">{r.name}</td><td>{r.email}</td>
                   <td className="font-mono">{r.temporary_password ?? <span className="text-amber-700 font-sans text-xs">Skipped — {r.message}</span>}</td>
+                  <td className="text-xs">{r.temporary_password ? (r.subject_matched ? <span className="text-emerald-700">{r.subject_matched} · {r.assigned_classes ?? 0} class(es)</span> : <span className="text-amber-700">{r.subject ? "Set on Teaching Assignments" : "—"}</span>) : ""}</td>
                 </tr>
               ))}
             </tbody>
@@ -149,6 +157,7 @@ export default function BulkTeachersPage() {
           <div className="flex gap-2">
             <button onClick={copy} className="btn-secondary gap-1.5 py-1.5"><Copy size={14} /> Copy all</button>
             <button onClick={download} className="btn-secondary gap-1.5 py-1.5"><Download size={14} /> Download CSV</button>
+            <Link href="/dashboard/modules/school/teachers/assignments" className="btn-secondary py-1.5">Teaching Assignments</Link>
             <Link href="/dashboard/modules/school/teachers" className="btn-primary py-1.5">Done</Link>
           </div>
         </div>

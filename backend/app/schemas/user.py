@@ -16,6 +16,8 @@ class UserCreate(BaseModel):
     # chosen role is a teaching role — the endpoint enforces it, since the role
     # list is only known server-side.
     section_ids: list[str] = []
+    # Subjects this teacher teaches (taught in every class of each subject's section).
+    subject_ids: list[str] = []
 
 
 class UserUpdate(BaseModel):
@@ -117,4 +119,5 @@ class InviteUserRequest(BaseModel):
     department: Optional[str] = None
     job_title: Optional[str] = None
     section_ids: list[str] = []   # required when a role is a teaching role
+    subject_ids: list[str] = []
     send_email: bool = True

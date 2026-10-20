@@ -112,6 +112,9 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // Teachers + Assign To School. (The shared /school/teachers API stays
   // school:read for Lesson Planner / Ratings.)
   { prefix: "/dashboard/modules/school/teachers/bulk", permission: "settings:write" },
+  // Teaching Assignments: who teaches which subject in which class. Viewable by the
+  // school head too; saving needs settings:write (the API enforces it).
+  { prefix: "/dashboard/modules/school/teachers/assignments", permission: "settings:read", anyOf: ["school_admin:read"] },
   // Assign To School writes sections, so it stays settings-only.
   { prefix: "/dashboard/modules/school/teachers/assign", permission: "settings:read" },
   // View Teachers is the staff list: also the school head (school_admin:read,

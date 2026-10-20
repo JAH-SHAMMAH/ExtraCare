@@ -5,6 +5,7 @@ import { X, Loader2, Eye, EyeOff } from "lucide-react";
 import { useCreateUser } from "@/hooks/useUsers";
 import { useHrList } from "@/hooks/useHrAdmin";
 import { useSections } from "@/hooks/usePlatform";
+import { useSubjectOptions } from "@/hooks/useAcademics";
 import { isTeachingRoleSlug } from "@/lib/teachingRoles";
 import { FormField } from "@/components/ui/FormField";
 import type { User } from "@/types";
@@ -26,6 +27,7 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
     job_title: "",
     role_ids: [] as string[],
     section_ids: [] as string[],
+    subject_ids: [] as string[],
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPassword, setShowPassword] = useState(false);
@@ -42,6 +44,10 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
   // it decides which report menus and pupils that teacher gets.
   const { data: sectionList } = useSections();
   const sections: Array<{ id: string; name: string }> = Array.isArray(sectionList) ? sectionList : [];
+  const { data: subjectData } = useSubjectOptions();
+  const allSubjects: Array<{ id: string; name: string; section_id?: string | null }> = subjectData?.items ?? [];
+  // Offer the subjects of the chosen section(s); drop ones whose section was un-ticked on save.
+  const subjectsForSections = allSubjects.filter((x) => formData.section_ids.includes(x.section_id ?? ""));
   const needsSection = availableRoles.some((r) => formData.role_ids.includes(r.id) && isTeachingRoleSlug(r.slug));
 
   // Reset form when modal opens
@@ -56,6 +62,7 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
         job_title: "",
         role_ids: [],
         section_ids: [],
+        subject_ids: [],
       });
       setErrors({});
       setShowPassword(false);
@@ -100,7 +107,11 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
       return;
     }
 
-    createUser({ ...formData, section_ids: needsSection ? formData.section_ids : [] }, {
+    createUser({
+      ...formData,
+      section_ids: needsSection ? formData.section_ids : [],
+      subject_ids: needsSection ? formData.subject_ids.filter((id) => subjectsForSections.some((x) => x.id === id)) : [],
+    }, {
       onSuccess: (user: User) => {
         setFormData({
           email: "",
@@ -111,6 +122,7 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
           job_title: "",
           role_ids: [],
           section_ids: [],
+          subject_ids: [],
         });
         setErrors({});
         onClose();
@@ -351,6 +363,27 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
                   ))}
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1">Decides which report menus and pupils this teacher sees. Pick more than one if they teach across sections.</p>
+              </FormField>
+            )}
+
+            {/* Subjects — optional; taught in every class of the subject's section (refine later on Teaching Assignments) */}
+            {needsSection && formData.section_ids.length > 0 && (
+              <FormField label="Subjects taught">
+                <div className="flex flex-wrap gap-2">
+                  {subjectsForSections.length === 0 ? (
+                    <p className="text-sm text-slate-500 italic">No subjects in the chosen section(s) yet</p>
+                  ) : subjectsForSections.map((sub) => (
+                    <label key={sub.id}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer text-sm transition-colors ${
+                        formData.subject_ids.includes(sub.id) ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}>
+                      <input type="checkbox" className="w-4 h-4 rounded border-slate-300" disabled={isPending}
+                        checked={formData.subject_ids.includes(sub.id)}
+                        onChange={() => setFormData((prev) => ({ ...prev, subject_ids: prev.subject_ids.includes(sub.id) ? prev.subject_ids.filter((x) => x !== sub.id) : [...prev.subject_ids, sub.id] }))} />
+                      {sub.name}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">Optional. Each subject is taught in all classes of its section; narrow it later under Teachers → Teaching Assignments.</p>
               </FormField>
             )}
 
