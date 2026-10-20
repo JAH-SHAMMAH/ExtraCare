@@ -12,6 +12,10 @@ class UserCreate(BaseModel):
     department: Optional[str] = None
     job_title: Optional[str] = None
     role_ids: list[str] = []
+    # School sections (Early Years / Primary / Secondary …). REQUIRED when any
+    # chosen role is a teaching role — the endpoint enforces it, since the role
+    # list is only known server-side.
+    section_ids: list[str] = []
 
 
 class UserUpdate(BaseModel):
@@ -112,4 +116,5 @@ class InviteUserRequest(BaseModel):
     role_ids: list[str]
     department: Optional[str] = None
     job_title: Optional[str] = None
+    section_ids: list[str] = []   # required when a role is a teaching role
     send_email: bool = True

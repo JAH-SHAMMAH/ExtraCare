@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { X, Loader2, Eye, EyeOff } from "lucide-react";
 import { useCreateUser } from "@/hooks/useUsers";
 import { useHrList } from "@/hooks/useHrAdmin";
+import { useSections } from "@/hooks/usePlatform";
+import { isTeachingRoleSlug } from "@/lib/teachingRoles";
 import { FormField } from "@/components/ui/FormField";
 import type { User } from "@/types";
 
@@ -23,6 +25,7 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
     department: "",
     job_title: "",
     role_ids: [] as string[],
+    section_ids: [] as string[],
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPassword, setShowPassword] = useState(false);
@@ -35,6 +38,12 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
 
   const { mutate: createUser, isPending } = useCreateUser();
 
+  // A teaching role (Teacher, Head Teacher, …) must belong to a school section:
+  // it decides which report menus and pupils that teacher gets.
+  const { data: sectionList } = useSections();
+  const sections: Array<{ id: string; name: string }> = Array.isArray(sectionList) ? sectionList : [];
+  const needsSection = availableRoles.some((r) => formData.role_ids.includes(r.id) && isTeachingRoleSlug(r.slug));
+
   // Reset form when modal opens
   useEffect(() => {
     if (open) {
@@ -46,6 +55,7 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
         department: "",
         job_title: "",
         role_ids: [],
+        section_ids: [],
       });
       setErrors({});
       setShowPassword(false);
@@ -75,6 +85,10 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
       newErrors.role_ids = "Select at least one role";
     }
 
+    if (needsSection && formData.section_ids.length === 0) {
+      newErrors.section_ids = "Choose at least one section for a teacher";
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -86,7 +100,7 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
       return;
     }
 
-    createUser(formData, {
+    createUser({ ...formData, section_ids: needsSection ? formData.section_ids : [] }, {
       onSuccess: (user: User) => {
         setFormData({
           email: "",
@@ -96,6 +110,7 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
           department: "",
           job_title: "",
           role_ids: [],
+          section_ids: [],
         });
         setErrors({});
         onClose();
@@ -114,6 +129,14 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
     if (errors.role_ids) {
       setErrors((prev) => ({ ...prev, role_ids: "" }));
     }
+  };
+
+  const handleSectionToggle = (id: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      section_ids: prev.section_ids.includes(id) ? prev.section_ids.filter((x) => x !== id) : [...prev.section_ids, id],
+    }));
+    if (errors.section_ids) setErrors((prev) => ({ ...prev, section_ids: "" }));
   };
 
   if (!open) return null;
@@ -302,6 +325,34 @@ export function UserCreateModal({ open, onClose, availableRoles = [], onSuccess 
                 )}
               </div>
             </FormField>
+
+            {/* Section — only for teaching roles, and then required */}
+            {needsSection && (
+              <FormField label="Section" error={errors.section_ids} required>
+                <div className="flex flex-wrap gap-2">
+                  {sections.length === 0 ? (
+                    <p className="text-sm text-slate-500 italic">No sections set up yet</p>
+                  ) : sections.map((sec) => (
+                    <label
+                      key={sec.id}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm font-medium transition-colors ${
+                        formData.section_ids.includes(sec.id) ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formData.section_ids.includes(sec.id)}
+                        onChange={() => handleSectionToggle(sec.id)}
+                        disabled={isPending}
+                        className="w-4 h-4 rounded border-slate-300"
+                      />
+                      {sec.name}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">Decides which report menus and pupils this teacher sees. Pick more than one if they teach across sections.</p>
+              </FormField>
+            )}
 
             {/* Actions */}
             <div className="flex gap-3 pt-4 border-t border-slate-200">

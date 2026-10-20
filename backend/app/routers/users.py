@@ -17,6 +17,7 @@ from app.schemas.user import (
 )
 from app.services.user_service import create_user, invite_user, get_users_paginated
 from app.services.audit_service import log_action
+from app.services.teaching_roles import require_sections_for_teachers
 from app.models.audit import AuditAction
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -171,7 +172,14 @@ async def create_new_user(
     if data.role_ids:
         grant = (await db.execute(select(Role).where(Role.id.in_(data.role_ids), Role.org_id == current_user.org_id))).scalars().all()
         assert_can_grant_roles(current_user, grant)
+    teaching = await require_sections_for_teachers(db, current_user.org_id, data.role_ids, data.section_ids)
+    if teaching and not (data.job_title or "").strip():
+        # The Teachers module lists people whose job title says "Teacher".
+        data.job_title = "Teacher"
     user = await create_user(db, current_user.org_id, data)
+    if data.section_ids:
+        from app.routers.modules.school import _set_teacher_sections
+        await _set_teacher_sections(db, current_user.org_id, user.id, data.section_ids)
     await log_action(
         db, AuditAction.USER_CREATED, current_user.org_id, actor=current_user,
         resource_type="User", resource_id=user.id, resource_label=user.full_name,
@@ -197,7 +205,13 @@ async def invite_new_user(
     if data.role_ids:
         grant = (await db.execute(select(Role).where(Role.id.in_(data.role_ids), Role.org_id == current_user.org_id))).scalars().all()
         assert_can_grant_roles(current_user, grant)
+    teaching = await require_sections_for_teachers(db, current_user.org_id, data.role_ids, data.section_ids)
+    if teaching and not (data.job_title or "").strip():
+        data.job_title = "Teacher"
     user = await invite_user(db, current_user.org_id, data, invited_by=current_user)
+    if data.section_ids:
+        from app.routers.modules.school import _set_teacher_sections
+        await _set_teacher_sections(db, current_user.org_id, user.id, data.section_ids)
     await log_action(
         db, AuditAction.USER_INVITED, current_user.org_id, actor=current_user,
         resource_type="User", resource_id=user.id, resource_label=user.full_name, request=request,
