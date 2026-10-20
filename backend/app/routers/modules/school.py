@@ -106,7 +106,9 @@ _exams_write = Depends(PermissionChecker("school:exams:write"))
 # (that grant reached every fine-grained child, incl. student deletion and
 # timetable structure), so the endpoints a teacher legitimately uses are gated on
 # their own feature scope. Admin/manager still reach them via school:read|write.
-_teachers_read = Depends(PermissionChecker("school:teachers:read"))
+# `hr:write` lets the HR manager read the staff list (the Teachers menu); the
+# teacher tier holds only hr:read, so it does not widen anything for teachers.
+_teachers_read = Depends(AnyPermissionChecker("school:teachers:read", "hr:write"))
 _timetable_read = Depends(PermissionChecker("school:timetable:read"))
 _attendance_write = Depends(PermissionChecker("school:attendance:write"))
 _grades_read = Depends(PermissionChecker("school:grades:read"))

@@ -47,7 +47,10 @@ router = APIRouter(
 # The school dashboard is every staff member's landing page, so it accepts the
 # classroom tier too (`school:classes:read`) — that tier no longer carries the
 # broad `school:read`. Widening only; students/parents still hold neither.
-_can_read = Depends(AnyPermissionChecker("school:read", "school:classes:read"))
+# `hr:read` / `payments:read` let the HR manager and the accountant through this
+# permission gate (they hold neither school scope); `_is_admin` below stays the
+# real whole-school boundary, and plain teachers still fail it.
+_can_read = Depends(AnyPermissionChecker("school:read", "school:classes:read", "hr:read", "payments:read"))
 _can_analytics_read = Depends(PermissionChecker("analytics:read"))
 
 # Roles that may see WHOLE-SCHOOL headcount aggregates on /dashboard/overview.
@@ -84,6 +87,12 @@ def _is_admin(user: User) -> bool:
         return True
     # Check 3: Any role with [*] wildcard scope (handles super_user, etc.)
     if any("*" in (r.permissions or []) for r in user.roles):
+        return True
+    # Check 4: the admin tier BY PERMISSION. Principal, Head, Vice Principal,
+    # Deputy Head and Head of Administration all hold `school_admin:read` (the
+    # teacher tier deliberately does not) but none has a slug in ADMIN_SLUGS, so
+    # the school head was refused her own headcounts.
+    if user.has_permission("school_admin:read"):
         return True
     return False
 

@@ -112,7 +112,11 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // Teachers + Assign To School. (The shared /school/teachers API stays
   // school:read for Lesson Planner / Ratings.)
   { prefix: "/dashboard/modules/school/teachers/bulk", permission: "settings:write" },
-  { prefix: "/dashboard/modules/school/teachers", permission: "settings:read" },
+  // Assign To School writes sections, so it stays settings-only.
+  { prefix: "/dashboard/modules/school/teachers/assign", permission: "settings:read" },
+  // View Teachers is the staff list: also the school head (school_admin:read,
+  // no settings scope) and the HR manager (hr:write).
+  { prefix: "/dashboard/modules/school/teachers", permission: "settings:read", anyOf: ["school_admin:read", "hr:write"] },
   { prefix: "/dashboard/modules/school/staff", permission: "school_admin:read" },
   // Class + YearGroup MANAGEMENT is admin taxonomy. The classroom tier keeps
   // `school:classes:read` so its class pickers resolve, but gets no nav item.

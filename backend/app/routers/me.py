@@ -456,7 +456,15 @@ async def contexts(
     # Normalize role slugs to lowercase for consistent comparison
     # (role slugs in DB may be capitalized, but we check against lowercase)
     role_slugs = {r.slug.lower() for r in current_user.roles}
-    has_admin_role = bool(role_slugs & {"org_admin", "manager", "super_admin"}) or current_user.is_superadmin
+    # Admin tier = the named admin roles, the HR manager and accountant (who run
+    # whole-school desks), or anyone holding `school_admin:read` / the `*`
+    # wildcard (Principal, Head, Vice Principal, Super User …). Slugs alone left
+    # those roles without an admin home.
+    has_admin_role = (
+        bool(role_slugs & {"org_admin", "manager", "super_admin", "hr_manager", "accountant"})
+        or current_user.is_superadmin
+        or current_user.has_permission("school_admin:read")
+    )
     has_teacher_role = "teacher" in role_slugs
     has_parent_role = "parent" in role_slugs
     has_student_role = "student" in role_slugs
