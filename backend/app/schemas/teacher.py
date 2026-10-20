@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 def _empty_to_none(v):
@@ -123,3 +123,32 @@ class AssignSectionRequest(BaseModel):
     section_id: Optional[str] = None       # null = unassign from any section
     # set = replace all (default); add = join this one too; remove = leave this one
     mode: Literal["set", "add", "remove"] = "set"
+
+
+class BulkTeacherRow(BaseModel):
+    first_name: str
+    last_name: str = ""
+    title: Optional[str] = None            # Mr / Mrs / Ms ... kept in preferences, not in the name
+    subject: Optional[str] = None
+    department: Optional[str] = None       # "Primary" / "Secondary" / "Early Years" -> the section
+    email: Optional[str] = None            # blank -> firstname@<school domain>
+
+    @field_validator("first_name", mode="before")
+    @classmethod
+    def _first_required(cls, v):
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("must not be blank")
+        return v.strip()
+
+    @field_validator("last_name", "title", "subject", "department", "email", mode="before")
+    @classmethod
+    def _strip(cls, v):
+        if v is None:
+            return None
+        return v.strip() or None if isinstance(v, str) else v
+
+
+class BulkTeacherRequest(BaseModel):
+    rows: list[BulkTeacherRow] = Field(min_length=1, max_length=100)
+    dry_run: bool = False                  # preview: resolve emails/sections, create nothing
+    email_domain: Optional[str] = None     # default: the signed-in admin's own domain

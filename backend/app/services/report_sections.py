@@ -77,3 +77,32 @@ def report_keys_for(sections: Iterable) -> dict[str, str]:
         out[rest[-1].id] = SECONDARY
 
     return out
+
+
+#: Words in a free-text department ("Primary", "Secondary Dept", "Early Years")
+#: that point at one of the report levels. A fallback after the section NAME.
+DEPT_WORDS: dict[str, tuple[str, ...]] = {
+    SECONDARY: ("secondary", "senior", "high school", "college"),
+    JUNIOR: ("primary", "junior", "basic"),
+    NURSERY: ("nursery", "early years", "eyfs", "playgroup", "kindergarten", "creche"),
+}
+
+
+def sections_for_department(department: str | None, sections: Iterable,
+                            report_keys: dict[str, str]) -> list:
+    """The sections a free-text department names.
+
+    A section's own name wins ("Primary" -> Primary, "Early Years" -> Early
+    Years, "Secondary Department" -> Secondary). Only when no name fits do level
+    keywords decide, so "Junior School" still finds the Primary row. Returns []
+    when nothing fits — callers decide whether that is an error or "unfiltered".
+    """
+    dept = (department or "").strip().lower()
+    if not dept:
+        return []
+    every = list(sections)
+    named = [s for s in every if (s.name or "").strip() and (s.name or "").strip().lower() in dept]
+    if named:
+        return named
+    return [s for s in every
+            if any(w in dept for w in DEPT_WORDS.get(report_keys.get(s.id, ""), ()))]

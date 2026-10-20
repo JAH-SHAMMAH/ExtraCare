@@ -53,17 +53,6 @@ async def _report_key_map(db: AsyncSession, org_id: str) -> dict[str, str]:
     return report_keys_for(rows)
 
 
-# Words in a free-text department ("Primary", "Secondary Dept", "Early Years")
-# that point at one of the three report levels. Used ONLY when a teacher has no
-# class and no admin-assigned section yet, so a brand-new account whose only
-# setup is its department still gets the right menu instead of all three.
-_DEPT_WORDS: dict[str, tuple[str, ...]] = {
-    "secondary-report": ("secondary", "senior", "high school", "college"),
-    "junior-report": ("primary", "junior", "basic"),
-    "nursery-report": ("nursery", "early years", "eyfs", "playgroup", "kindergarten", "creche"),
-}
-
-
 async def _teacher_nav_context(
     db: AsyncSession, user: User, report_keys: dict[str, str],
 ) -> tuple[list[SectionBrief], bool]:
@@ -117,18 +106,8 @@ async def _teacher_nav_context(
             every = (await db.execute(
                 select(SchoolSection).where(SchoolSection.org_id == org_id)
             )).scalars().all()
-            # Name first ("Primary", "Early Years", "Secondary Department"); only
-            # if no section's name fits, fall back to level keywords so a
-            # department called "Junior School" still finds the Primary row.
-            sections = [
-                s for s in every
-                if (s.name or "").strip() and (s.name or "").strip().lower() in dept
-            ]
-            if not sections:
-                sections = [
-                    s for s in every
-                    if any(w in dept for w in _DEPT_WORDS.get(report_keys.get(s.id, ""), ()))
-                ]
+            from app.services.report_sections import sections_for_department
+            sections = sections_for_department(dept, every, report_keys)
 
     briefs = [
         SectionBrief(id=s.id, name=s.name, report_key=report_keys.get(s.id))

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Link from "next/link";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   useTeachers, useCreateTeacher, useUpdateTeacher, useDeleteTeacher,
@@ -13,7 +14,7 @@ import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn, getInitials, resolveMediaUrl } from "@/lib/utils";
 import { toast } from "sonner";
 import {
-  Search, Download, Plus, Eye, Pencil, Power, Trash2, BookOpen, X, Loader2, Camera, Check,
+  Search, Download, Plus, Users, Eye, Pencil, Power, Trash2, BookOpen, X, Loader2, Camera, Check,
 } from "lucide-react";
 import type { Teacher, SchoolSection } from "@/types";
 
@@ -70,6 +71,7 @@ export default function ViewTeachersPage() {
           <h2 className="text-sm font-bold text-slate-800">Teacher&apos;s Information For <span className="uppercase">{sectionLabel}</span></h2>
           <div className="flex items-center gap-2">
             <button onClick={download} className="btn-secondary gap-1.5 py-1.5"><Download size={14} /> Download Teachers List</button>
+            {canWrite && <Link href="/dashboard/modules/school/teachers/bulk" className="btn-secondary gap-1.5 py-1.5"><Users size={14} /> Bulk Add</Link>}
             {canWrite && <button onClick={() => { setEditing(null); setFormOpen(true); }} className="btn-primary gap-1.5 py-1.5"><Plus size={14} /> Add a Teacher</button>}
           </div>
         </div>

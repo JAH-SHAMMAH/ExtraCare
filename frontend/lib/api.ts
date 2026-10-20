@@ -232,6 +232,9 @@ export const schoolApi = {
     list: (p?: object) => api.get("/school/teachers", { params: p }).then((r) => r.data),
     get: (id: string) => api.get(`/school/teachers/${id}`).then((r) => r.data),
     create: (data: object) => api.post("/school/teachers", data).then((r) => r.data),
+    /** Preview (dry_run) or create many teacher accounts; passwords come back once. */
+    bulkCreate: (data: { rows: object[]; dry_run?: boolean; email_domain?: string }) =>
+      api.post("/school/teachers/bulk", data).then((r) => r.data),
     update: (id: string, data: object) => api.patch(`/school/teachers/${id}`, data).then((r) => r.data),
     delete: (id: string) => api.delete(`/school/teachers/${id}`),
     subjects: (id: string) => api.get(`/school/teachers/${id}/subjects`).then((r) => r.data),

@@ -111,6 +111,7 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // Teachers module is Admin/Super-User-only (settings:read) — covers View
   // Teachers + Assign To School. (The shared /school/teachers API stays
   // school:read for Lesson Planner / Ratings.)
+  { prefix: "/dashboard/modules/school/teachers/bulk", permission: "settings:write" },
   { prefix: "/dashboard/modules/school/teachers", permission: "settings:read" },
   { prefix: "/dashboard/modules/school/staff", permission: "school_admin:read" },
   // Class + YearGroup MANAGEMENT is admin taxonomy. The classroom tier keeps

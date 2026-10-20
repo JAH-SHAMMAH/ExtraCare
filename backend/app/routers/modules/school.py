@@ -38,7 +38,10 @@ from app.core.school_identity import teacher_identity_filter
 from app.services.audit_service import log_action
 from app.models.audit import AuditAction
 from app.schemas.student import StudentCreate, StudentUpdate
-from app.schemas.teacher import TeacherCreate, TeacherUpdate, TeacherSubjectsUpdate, AssignSectionRequest
+from app.schemas.teacher import (
+    TeacherCreate, TeacherUpdate, TeacherSubjectsUpdate, AssignSectionRequest,
+    BulkTeacherRequest,
+)
 from app.schemas.school_class import ClassCreate, ClassUpdate
 from app.schemas.subject import SubjectCreate, SubjectUpdate
 from app.schemas.exam import ExamCreate, ExamUpdate, ExamResultRow, EXAM_TYPES, EXAM_STATUSES
@@ -3064,6 +3067,106 @@ async def get_teacher(
         raise HTTPException(status_code=404, detail=f"Teacher not found for id: {id}")
     smap = await _teacher_sections_map(db, current_user.org_id, [teacher.id])
     return _teacher_dict(teacher, smap.get(teacher.id, (None, None)))
+
+
+@router.post("/teachers/bulk", dependencies=[_settings_write])
+async def bulk_create_teachers(
+    data: BulkTeacherRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Create many teacher accounts at once.
+
+    Each row becomes an active user with the Teacher role, the section its
+    department names, an email of `firstname@<school domain>`, and a random
+    temporary password with `force_password_change` set — the teacher is sent to
+    the change-password page at first sign-in and cannot use the portal until
+    they choose their own. Temporary passwords are returned ONCE, here, and never
+    stored in clear. `dry_run` resolves everything and creates nothing, so the
+    admin can see conflicts (taken email, department that matches no section)
+    before committing. Rows with a problem are skipped and reported; the rest go
+    through.
+    """
+    from fastapi.responses import JSONResponse
+    from app.core.permissions import assert_can_grant_roles
+    from app.core.security import hash_password
+    from app.services.report_sections import report_keys_for, sections_for_department
+    from app.services.teacher_bulk import email_for, temp_password, valid_domain
+
+    org_id = current_user.org_id
+    domain = (data.email_domain or (current_user.email.split("@", 1)[1] if "@" in current_user.email else "")).strip().lower()
+    if not valid_domain(domain):
+        raise HTTPException(status_code=422, detail="Could not work out the school's email domain; pass email_domain.")
+
+    role = (await db.execute(select(Role).where(Role.org_id == org_id, Role.slug == "teacher"))).scalar_one_or_none()
+    if role is None:
+        raise HTTPException(status_code=422, detail="This school has no 'teacher' role to assign.")
+    if not data.dry_run:
+        assert_can_grant_roles(current_user, [role])
+
+    sections = list((await db.execute(select(SchoolSection).where(SchoolSection.org_id == org_id))).scalars().all())
+    report_keys = report_keys_for(sections)
+    taken = {e.lower() for e in (await db.execute(
+        select(User.email).where(User.org_id == org_id, User.is_deleted == False)  # noqa: E712
+    )).scalars().all()}
+
+    results: list[dict] = []
+    seen: set[str] = set()
+    for idx, row in enumerate(data.rows):
+        full_name = f"{row.first_name} {row.last_name}".strip()
+        email = (row.email or email_for(row.first_name, domain) or "").lower()
+        out = {"index": idx, "name": full_name, "title": row.title, "subject": row.subject,
+               "department": row.department, "email": email, "sections": [], "status": "ok", "message": ""}
+        matched = sections_for_department(row.department, sections, report_keys)
+        out["sections"] = [s.name for s in matched]
+        if not email or "@" not in email:
+            out.update(status="error", message="Could not build an email from this name.")
+        elif email in taken:
+            out.update(status="conflict", message=f"{email} is already used by another account. Give this teacher a different email.")
+        elif email in seen:
+            out.update(status="conflict", message=f"{email} appears twice in this list. Give one of them a different email.")
+        elif row.department and not matched:
+            out.update(status="error", message=f"Department '{row.department}' does not match any school section "
+                                               f"({', '.join(s.name for s in sections) or 'none set up'}).")
+        seen.add(email)
+        results.append(out)
+
+    if not data.dry_run:
+        for row, out in zip(data.rows, results):
+            if out["status"] != "ok":
+                continue
+            matched = sections_for_department(row.department, sections, report_keys)
+            pw = temp_password()
+            teacher = User(
+                email=out["email"], full_name=out["name"], hashed_password=hash_password(pw),
+                department=row.department, job_title=TEACHER_JOB_TITLE, org_id=org_id,
+                status=UserStatus.ACTIVE, email_verified=True, force_password_change=True,
+                preferences={_TEACHER_PREF_KEY: {
+                    "first_name": row.first_name, "last_name": row.last_name, "other_names": None,
+                    "qualification": None, "subjects": [row.subject] if row.subject else [],
+                    "hire_date": None, "title": row.title,
+                }},
+            )
+            teacher.roles = [role]
+            db.add(teacher)
+            await db.flush()
+            if matched:
+                await _set_teacher_sections(db, org_id, teacher.id, [s.id for s in matched])
+            await log_action(
+                db, AuditAction.USER_CREATED, org_id, actor=current_user,
+                resource_type="Teacher", resource_id=teacher.id, resource_label=teacher.full_name,
+                new_values={"email": teacher.email, "department": teacher.department, "bulk": True},
+                request=request,
+            )
+            out.update(id=teacher.id, temporary_password=pw, message="Created")
+        await db.flush()
+
+    body = {"dry_run": data.dry_run, "email_domain": domain, "rows": results,
+            "created": sum(1 for r in results if r.get("id")),
+            "skipped": sum(1 for r in results if r["status"] != "ok")}
+    # Temporary passwords are in this body: never cache it.
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/teachers", status_code=201, dependencies=[_settings_write])
