@@ -53,6 +53,90 @@ async def _report_key_map(db: AsyncSession, org_id: str) -> dict[str, str]:
     return report_keys_for(rows)
 
 
+# Words in a free-text department ("Primary", "Secondary Dept", "Early Years")
+# that point at one of the three report levels. Used ONLY when a teacher has no
+# class and no admin-assigned section yet, so a brand-new account whose only
+# setup is its department still gets the right menu instead of all three.
+_DEPT_WORDS: dict[str, tuple[str, ...]] = {
+    "secondary-report": ("secondary", "senior", "high school", "college"),
+    "junior-report": ("primary", "junior", "basic"),
+    "nursery-report": ("nursery", "early years", "eyfs", "playgroup", "kindergarten", "creche"),
+}
+
+
+async def _teacher_nav_context(
+    db: AsyncSession, user: User, report_keys: dict[str, str],
+) -> tuple[list[SectionBrief], bool]:
+    """(sections the teacher belongs to, whether they are a CLASS teacher).
+
+    Sections come from the classes they lead and from admin assignment; when
+    there are neither, the user's department text is matched to a section so the
+    sidebar can still show only that level. `is_class_teacher` is the same fact
+    the Reports View API enforces (SchoolClass.teacher_id), so the menu hides
+    exactly what the server would refuse.
+    """
+    from app.models.modules.school import TeacherSection
+
+    org_id = user.org_id
+    class_section_ids = (await db.execute(
+        select(distinct(SchoolClass.section_id)).where(
+            SchoolClass.teacher_id == user.id,
+            SchoolClass.org_id == org_id,
+            SchoolClass.section_id != None,  # noqa: E711
+        )
+    )).scalars().all()
+    # Sections the admin assigned the teacher to count too, so a teacher who
+    # belongs to both Primary and Secondary sees both report menus even before
+    # they hold a class in each.
+    assigned_ids = (await db.execute(
+        select(TeacherSection.section_id).where(
+            TeacherSection.teacher_id == user.id,
+            TeacherSection.org_id == org_id,
+        )
+    )).scalars().all()
+    section_ids = list(dict.fromkeys([*class_section_ids, *assigned_ids]))
+
+    is_class_teacher = (await db.execute(
+        select(SchoolClass.id).where(
+            SchoolClass.teacher_id == user.id,
+            SchoolClass.org_id == org_id,
+        ).limit(1)
+    )).first() is not None
+
+    sections: list = []
+    if section_ids:
+        sections = list((await db.execute(
+            select(SchoolSection).where(
+                SchoolSection.id.in_(section_ids),
+                SchoolSection.org_id == org_id,
+            )
+        )).scalars().all())
+    else:
+        dept = (getattr(user, "department", None) or "").strip().lower()
+        if dept:
+            every = (await db.execute(
+                select(SchoolSection).where(SchoolSection.org_id == org_id)
+            )).scalars().all()
+            # Name first ("Primary", "Early Years", "Secondary Department"); only
+            # if no section's name fits, fall back to level keywords so a
+            # department called "Junior School" still finds the Primary row.
+            sections = [
+                s for s in every
+                if (s.name or "").strip() and (s.name or "").strip().lower() in dept
+            ]
+            if not sections:
+                sections = [
+                    s for s in every
+                    if any(w in dept for w in _DEPT_WORDS.get(report_keys.get(s.id, ""), ()))
+                ]
+
+    briefs = [
+        SectionBrief(id=s.id, name=s.name, report_key=report_keys.get(s.id))
+        for s in sections
+    ]
+    return briefs, is_class_teacher
+
+
 @router.post(
     "/register",
     status_code=201,
@@ -240,36 +324,7 @@ async def login(
 
     # Compute teacher_sections (derived from their classes) — same logic as /me endpoint
     report_keys = await _report_key_map(db, user.org_id)
-    teacher_sections = []
-    section_ids = (await db.execute(
-        select(distinct(SchoolClass.section_id)).where(
-            SchoolClass.teacher_id == user.id,
-            SchoolClass.org_id == user.org_id,
-            SchoolClass.section_id != None,
-        )
-    )).scalars().all()
-    # Sections the admin assigned the teacher to count too, so a teacher who
-    # belongs to both Primary and Secondary sees both report menus even before
-    # they hold a class in each.
-    from app.models.modules.school import TeacherSection as _TS
-    assigned_ids = (await db.execute(
-        select(_TS.section_id).where(
-            _TS.teacher_id == user.id,
-            _TS.org_id == user.org_id,
-        )
-    )).scalars().all()
-    section_ids = list(dict.fromkeys([*section_ids, *assigned_ids]))
-    if section_ids:
-        sections = (await db.execute(
-            select(SchoolSection).where(
-                SchoolSection.id.in_(section_ids),
-                SchoolSection.org_id == user.org_id,
-            )
-        )).scalars().all()
-        teacher_sections = [
-            SectionBrief(id=s.id, name=s.name, report_key=report_keys.get(s.id))
-            for s in sections
-        ]
+    teacher_sections, is_class_teacher = await _teacher_nav_context(db, user, report_keys)
 
     # Compute student_sections — same logic as /me endpoint
     student_sections = []
@@ -306,7 +361,8 @@ async def login(
         access_token=access_token,
         refresh_token=refresh_token,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        user=UserMeResponse.from_user(user, org, teacher_sections, student_sections),
+        user=UserMeResponse.from_user(user, org, teacher_sections, student_sections,
+                                      is_class_teacher=is_class_teacher),
     )
 
 
@@ -457,35 +513,7 @@ async def get_me(
     # flow), derive sections directly from the teacher's actual class assignments.
     # This ensures teachers always see report sections matching where they actually teach.
     report_keys = await _report_key_map(db, current_user.org_id)
-    teacher_sections = []
-    section_ids = (await db.execute(
-        select(distinct(SchoolClass.section_id)).where(
-            SchoolClass.teacher_id == current_user.id,
-            SchoolClass.org_id == current_user.org_id,
-            SchoolClass.section_id != None,
-        )
-    )).scalars().all()
-    # Sections the admin assigned the teacher to count too, so a teacher who
-    # belongs to both Primary and Secondary sees both report menus even before
-    # they hold a class in each.
-    assigned_ids = (await db.execute(
-        select(TeacherSection.section_id).where(
-            TeacherSection.teacher_id == current_user.id,
-            TeacherSection.org_id == current_user.org_id,
-        )
-    )).scalars().all()
-    section_ids = list(dict.fromkeys([*section_ids, *assigned_ids]))
-    if section_ids:
-        sections = (await db.execute(
-            select(SchoolSection).where(
-                SchoolSection.id.in_(section_ids),
-                SchoolSection.org_id == current_user.org_id,
-            )
-        )).scalars().all()
-        teacher_sections = [
-            SectionBrief(id=s.id, name=s.name, report_key=report_keys.get(s.id))
-            for s in sections
-        ]
+    teacher_sections, is_class_teacher = await _teacher_nav_context(db, current_user, report_keys)
 
     # Fetch student's assigned section (if this user is a student).
     student_sections = []
@@ -514,7 +542,8 @@ async def get_me(
                     id=section.id, name=section.name,
                     report_key=report_keys.get(section.id))]
 
-    return UserMeResponse.from_user(current_user, org, teacher_sections, student_sections)
+    return UserMeResponse.from_user(current_user, org, teacher_sections, student_sections,
+                                    is_class_teacher=is_class_teacher)
 
 
 @router.post("/change-password", summary="Change your own password")

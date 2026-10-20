@@ -23,6 +23,8 @@ export interface AuthUser {
   active_role_id?: string | null;  // the role the session is scoped to, or null = full
   mfa_enabled: boolean;
   force_password_change?: boolean;
+  /** Leads at least one class — Reports View is class-teacher-only. */
+  is_class_teacher?: boolean;
   org?: Organization | null;
 }
 

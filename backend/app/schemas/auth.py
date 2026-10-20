@@ -111,11 +111,13 @@ class UserMeResponse(BaseModel):
     org: OrganizationSummary | None = None
     teacher_sections: list[SectionBrief] = []  # teacher's assigned sections (for report nav filtering)
     student_sections: list[SectionBrief] = []  # student's assigned section via class (for report nav filtering)
+    is_class_teacher: bool = False             # leads at least one class — Reports View is class-teacher-only
 
     model_config = {"from_attributes": True}
 
     @classmethod
-    def from_user(cls, user, org=None, teacher_sections=None, student_sections=None) -> "UserMeResponse":
+    def from_user(cls, user, org=None, teacher_sections=None, student_sections=None,
+                  is_class_teacher: bool = False) -> "UserMeResponse":
         return cls(
             id=user.id,
             email=user.email,
@@ -133,6 +135,7 @@ class UserMeResponse(BaseModel):
             org=OrganizationSummary.from_org(org) if org is not None else None,
             teacher_sections=teacher_sections or [],
             student_sections=student_sections or [],
+            is_class_teacher=is_class_teacher,
         )
 
 

@@ -78,13 +78,17 @@ export const CORE_NAV = [
 // teacher's broad `school:read` reveals every core teaching item automatically.
 const PARENT_HIDDEN = new Set(["/dashboard/hrm/leave", "/dashboard/hrm/my-info", "/dashboard/hrm/attendance/my", "/dashboard/hrm/disciplinary/my-actions"]);
 
-function navItemVisible(
-  item: { href: string; roleOnly?: ActiveRole; superOnly?: boolean; needs?: string },
+export function navItemVisible(
+  item: { href: string; roleOnly?: ActiveRole; superOnly?: boolean; needs?: string; classTeacherOnly?: boolean },
   roleScope: ActiveRole | null,
   hasPermission: (permission: string) => boolean,
-  ctx: { superUser?: boolean; ui?: any; staff?: boolean; student?: boolean; teacher?: boolean } = {},
+  ctx: { superUser?: boolean; ui?: any; staff?: boolean; student?: boolean; teacher?: boolean; admin?: boolean; classTeacher?: boolean } = {},
 ): boolean {
   if (item.superOnly) return !!ctx.superUser;
+  // Class-teacher-only pages (Reports View, Result Analysis): a school
+  // administrator always sees them; a teacher only if they lead a class. The API
+  // enforces the same rule, so this just stops the menu offering a dead end.
+  if (item.classTeacherOnly && !ctx.admin && ctx.classTeacher === false) return false;
   if (!ctx.superUser && blockingUi(item.href.split("?")[0], ctx.ui, { staff: ctx.staff, student: ctx.student, teacher: ctx.teacher })) return false;
   if (item.roleOnly) return roleScope === item.roleOnly;
   if (item.needs && !hasPermission(item.needs)) return false;
@@ -102,6 +106,8 @@ interface NavItem {
   icon: any;
   /** Extra permission required on top of the route's own (admin-only items). */
   needs?: string;
+  /** Shown to administrators and to teachers who lead a class — nobody else. */
+  classTeacherOnly?: boolean;
 }
 
 interface ModuleSection {
@@ -303,7 +309,7 @@ export const MODULE_SECTIONS: ModuleSection[] = [
     icon: FileText,
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
-      { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText, classTeacherOnly: true },
       { href: "/dashboard/modules/school/make-report", label: "Make Report", icon: NotebookPen },
       { href: "/dashboard/modules/school/teacher-reports", label: "Teacher Reports", icon: ClipboardList },
       { href: "/dashboard/modules/school/teacher-comments", label: "Teacher Comments", icon: MessageSquareText },
@@ -317,7 +323,7 @@ export const MODULE_SECTIONS: ModuleSection[] = [
       // Honours Roll, an administrator the whole-school reports. It belongs in
       // every report section beside Grade Analysis — the section filter above
       // then shows it only for the levels a teacher actually teaches in.
-      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3 },
+      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3, classTeacherOnly: true },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
     ],
   },
@@ -328,7 +334,7 @@ export const MODULE_SECTIONS: ModuleSection[] = [
     icon: FileText,
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
-      { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText, classTeacherOnly: true },
       { href: "/dashboard/modules/school/make-report", label: "Make Report", icon: NotebookPen },
       // Teacher Reports and Teacher Comments are phase-agnostic: the first shows
       // the teacher's OWN submissions whatever the class, the second gates per
@@ -346,7 +352,7 @@ export const MODULE_SECTIONS: ModuleSection[] = [
       // Honours Roll, an administrator the whole-school reports. It belongs in
       // every report section beside Grade Analysis — the section filter above
       // then shows it only for the levels a teacher actually teaches in.
-      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3 },
+      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3, classTeacherOnly: true },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
       { href: "/dashboard/modules/school/mark-books", label: "Mark Books & Transcripts", icon: BookOpen },
     ],
@@ -358,7 +364,7 @@ export const MODULE_SECTIONS: ModuleSection[] = [
     icon: FileText,
     items: [
       { href: "/dashboard/modules/school/report-setup", label: "Report Setup", icon: Settings2 },
-      { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText },
+      { href: "/dashboard/modules/school/reports-view", label: "Reports View", icon: FileText, classTeacherOnly: true },
       { href: "/dashboard/modules/school/make-report", label: "Make Report", icon: NotebookPen },
       // Teacher Reports and Teacher Comments are phase-agnostic: the first shows
       // the teacher's OWN submissions whatever the class, the second gates per
@@ -376,7 +382,7 @@ export const MODULE_SECTIONS: ModuleSection[] = [
       // Honours Roll, an administrator the whole-school reports. It belongs in
       // every report section beside Grade Analysis — the section filter above
       // then shows it only for the levels a teacher actually teaches in.
-      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3 },
+      { href: "/dashboard/modules/school/result-analysis", label: "Result Analysis", icon: BarChart3, classTeacherOnly: true },
       { href: "/dashboard/modules/school/result-publish", label: "Publish Report", icon: ClipboardList },
       { href: "/dashboard/modules/school/promotion", label: "Promotion Manager", icon: BarChart3 },
       { href: "/dashboard/modules/school/transfer", label: "Transfer Manager", icon: UserCog },
@@ -772,6 +778,11 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
     superUser: isSuperUser(user as any), ui: superUi,
     staff: hasPermission("school:students:read"),
     student: activeRole === "student", teacher: activeRole === "teacher",
+    admin: hasPermission("school_admin:write"),
+    // `undefined` (a session saved before this field existed) counts as "show":
+    // the server still refuses, and a class teacher must never be locked out by
+    // stale state.
+    classTeacher: (user as any)?.is_class_teacher,
   };
   const logout = useLogout();
   const roleScope = moduleAllowedForOrg(org, "school") ? activeRole : "admin";
