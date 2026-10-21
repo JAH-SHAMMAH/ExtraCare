@@ -58,11 +58,16 @@ export default function ProfilePage() {
       toast.error("Image must be under 5MB.");
       return;
     }
-    uploadAvatar.mutate(file);
+    uploadAvatar.mutate(file, {
+      onSuccess: (res: { url?: string }) => {
+        if (res?.url && user) setUser({ ...user, avatar_url: res.url });
+      },
+    });
+    e.target.value = "";
   };
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-4xl mx-auto">
       <div className="mb-8">
         <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2">
           <span>Account</span><span>/</span>
@@ -87,7 +92,7 @@ export default function ProfilePage() {
               </div>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="absolute inset-0 rounded-2xl bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                className="absolute inset-0 rounded-2xl bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity cursor-pointer"
               >
                 {uploadAvatar.isPending ? (
                   <Loader2 size={20} className="text-white animate-spin" />
@@ -108,6 +113,20 @@ export default function ProfilePage() {
             <div className="flex-1 min-w-0">
               <h2 className="text-lg font-bold text-slate-900">{user?.full_name}</h2>
               <p className="text-sm text-slate-500 mt-0.5 break-all">{user?.email}</p>
+              {(user?.job_title || user?.department || user?.phone) && (
+                <p className="text-sm text-slate-500 mt-1">
+                  {[user?.job_title, user?.department, user?.phone].filter(Boolean).join(" · ")}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadAvatar.isPending}
+                className="btn-secondary gap-2 mt-3 text-xs"
+              >
+                {uploadAvatar.isPending ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+                {user?.avatar_url ? "Change photo" : "Upload photo"}
+              </button>
               <div className="flex flex-wrap items-center gap-2 mt-3">
                 <span className="badge bg-brand-50 text-brand-700 border-brand-200 capitalize">
                   {user?.primary_role?.replace("_", " ")}

@@ -8,13 +8,6 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Copy, Download, KeyRound, CheckCircle2, AlertTriangle } from "lucide-react";
 
-// First-run convenience: the four teachers being onboarded. Clear it to paste your own.
-const STARTER = [
-  "Mr Jeremiah CRS, secondary",
-  "Ms Chiamaka Biology, secondary",
-  "Mrs Juliet French, primary",
-  "Mr Isaiah ICT, primary",
-].join("\n");
 
 interface Result {
   index: number; name: string; email: string; subject?: string; department?: string;
@@ -29,7 +22,7 @@ const payload = (rows: BulkRow[]) => rows.map((r) => ({
 }));
 
 export default function BulkTeachersPage() {
-  const [text, setText] = useState(STARTER);
+  const [text, setText] = useState("");
   const [rows, setRows] = useState<BulkRow[]>([]);
   const [results, setResults] = useState<Result[] | null>(null);
   const [created, setCreated] = useState(false);
@@ -88,7 +81,7 @@ export default function BulkTeachersPage() {
       {!created && (
         <div className="bg-white rounded-xl border border-slate-200 p-5 mb-5">
           <label className="text-sm font-semibold text-slate-600">Teachers</label>
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} className="input w-full mt-1 font-mono text-sm" placeholder={"Mr Jeremiah CRS, secondary\nMrs Juliet French, primary"} />
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} className="input w-full mt-1 font-mono text-sm" placeholder={"Title Firstname Subject, department"} />
           <button onClick={preview} disabled={busy} className="btn-primary gap-2 mt-3">{busy && <Loader2 size={15} className="animate-spin" />}Preview</button>
         </div>
       )}
