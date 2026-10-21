@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useStudents, useCreateStudent, useUpdateStudent, useDeleteStudent, useClasses } from "@/hooks/useSchool";
 import { uploadApi, schoolApi } from "@/lib/api";
 import { StudentAvatar } from "@/components/students/StudentAvatar";
@@ -252,7 +253,7 @@ export default function StudentsPage() {
                   <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
-                        <StudentAvatar name={`${s.first_name} ${s.last_name}`} url={s.avatar_url} size={44} />
+                        <StudentPhotoCell student={s} canWrite={canImport} />
                         <div className="min-w-0">
                           <Link href={`/dashboard/modules/school/students/${s.id}`} className="text-sm font-bold text-slate-900 hover:text-brand-700">{s.first_name} {s.last_name}</Link>
                           {s.email && <p className="text-xs text-slate-400">{s.email}</p>}
@@ -317,5 +318,36 @@ function SkeletonRow({ cols }: { cols: number }) {
         </td>
       ))}
     </tr>
+  );
+}
+
+
+/** Avatar with a camera button, so the photo can be set straight from the list. */
+function StudentPhotoCell({ student, canWrite }: { student: Student; canWrite: boolean }) {
+  const qc = useQueryClient();
+  const input = useRef<HTMLInputElement>(null);
+  const set = useMutation({
+    mutationFn: async (file: File) => {
+      const { url } = await uploadApi.studentPhoto(file);
+      return schoolApi.students.update(student.id, { photo_url: url });
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["students"] }); toast.success("Photo updated."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Photo upload failed."),
+  });
+  return (
+    <div className="relative w-11 h-11 shrink-0">
+      <StudentAvatar name={`${student.first_name} ${student.last_name}`} url={student.avatar_url} size={44} />
+      {canWrite && (
+        <>
+          <button type="button" onClick={() => input.current?.click()} disabled={set.isPending}
+            title={student.avatar_url ? "Change photo" : "Set photo"} aria-label="Set student photo"
+            className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-slate-700 text-white flex items-center justify-center shadow ring-2 ring-white disabled:opacity-100">
+            {set.isPending ? <Loader2 size={10} className="animate-spin" /> : <Camera size={10} />}
+          </button>
+          <input ref={input} type="file" accept="image/*" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) set.mutate(f); e.target.value = ""; }} />
+        </>
+      )}
+    </div>
   );
 }

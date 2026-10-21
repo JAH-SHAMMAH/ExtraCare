@@ -96,6 +96,12 @@ def _cloudinary_upload_sync(org_id: str, kind: str, filename: str | None, conten
     cloudinary.config(cloud_name=parsed.hostname, api_key=parsed.username,
                       api_secret=parsed.password, secure=True)
 
+    placeholders = ("your_", "<", "xxxx", "changeme")
+    if any(str(v or "").lower().startswith(placeholders) for v in (parsed.hostname, parsed.username, parsed.password)):
+        raise RuntimeError(
+            "CLOUDINARY_URL still has placeholder values (your_api_key...). Replace them with the real "
+            "API key, secret and cloud name from your Cloudinary dashboard.")
+
     res = cloudinary.uploader.upload(
         io.BytesIO(content),
         folder=f"extracare/{org_id}/{kind}",
