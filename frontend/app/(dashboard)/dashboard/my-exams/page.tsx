@@ -102,6 +102,7 @@ function ExamCard({ exam, attempts }: { exam: CBTExam; attempts: { status: strin
   const end = exam.end_time ? new Date(exam.end_time) : null;
   const upcoming = !!start && now < start;
   const closed = exam.status === "closed" || (!!end && now > end) || exam.status === "draft";
+  const notOpen = !upcoming && !closed && (exam as any).is_live === false;
   const done = attempts.filter((a) => a.status === "submitted" || a.status === "graded");
   const inProgress = attempts.some((a) => a.status === "in_progress");
   const used = exam.max_attempts > 0 && done.length >= exam.max_attempts;
@@ -113,7 +114,7 @@ function ExamCard({ exam, attempts }: { exam: CBTExam; attempts: { status: strin
   if (inProgress) action = <Cta onClick={() => router.push(`/dashboard/my-exams/${exam.id}/take`)} tone="green">Resume →</Cta>;
   else if (used) action = <p className="text-xs text-center text-slate-400">Completed</p>;
   else if (upcoming) action = <p className="text-xs text-center text-blue-600">Opens {formatDate(exam.start_time || "")}</p>;
-  else if (closed) action = <p className="text-xs text-center text-slate-400">Closed</p>;
+  else if (closed || notOpen) action = <p className="text-xs text-center text-slate-400">{notOpen ? "Not open yet" : "Closed"}</p>;
   else action = <Cta onClick={() => router.push(`/dashboard/my-exams/${exam.id}/take`)}>{done.length ? "Take again →" : "Start →"}</Cta>;
 
   return (
@@ -151,63 +152,89 @@ function Cta({ children, onClick, tone }: { children: React.ReactNode; onClick: 
 
 function PracticeTab() {
   const router = useRouter();
-  const { data, isLoading } = useQuery({ queryKey: ["practice-subjects"], queryFn: cbtApi.practice.subjects });
+  const { data: catalog, isLoading: catLoading } = useQuery({ queryKey: ["practice-catalog"], queryFn: cbtApi.practice.catalog });
   const { data: prog } = useQuery({ queryKey: ["my-progress"], queryFn: cbtApi.myProgress });
-  const [subjectId, setSubjectId] = useState("");
-  const [count, setCount] = useState(10);
-  const [difficulty, setDifficulty] = useState("any");
-  const subjects = data?.items ?? [];
-  const chosen = subjects.find((s) => s.id === subjectId);
+  const [source, setSource] = useState("jamb");
+  const [subject, setSubject] = useState("");
+  const [year, setYear] = useState<string>("");
+  const [count, setCount] = useState(20);
+  const isPast = source !== "school";
+
+  const { data: subs, isFetching } = useQuery({
+    queryKey: ["practice-subjects", source],
+    queryFn: () => cbtApi.practice.subjects(source),
+  });
+  const subjects = subs?.items ?? [];
 
   const start = useMutation({
-    mutationFn: () => cbtApi.practice.start({ subject_id: subjectId, count, difficulty }),
+    mutationFn: () => cbtApi.practice.start(isPast
+      ? { source, subject, year: year ? Number(year) : null, count }
+      : { source, subject_id: subject, count }),
     onSuccess: (r) => router.push(`/dashboard/my-exams/${r.exam_id}/take`),
     onError: (e: any) => toast.error(typeof e?.response?.data?.detail === "string" ? e.response.data.detail : "Couldn't start practice."),
   });
 
   const past = ((prog?.recent ?? []) as any[]).filter((r) => r.exam_type === "practice").slice(0, 8);
+  if (catLoading) return <Skeleton />;
+  const sources = catalog?.sources ?? [];
+  const notReady = isPast && catalog && !catalog.past_questions_ready;
 
-  if (isLoading) return <Skeleton />;
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
       <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 p-6">
-        <h2 className="text-lg font-black text-slate-900 flex items-center gap-2"><Dumbbell size={18} className="text-brand-600" /> Practise on your own</h2>
-        <p className="text-sm text-slate-500 mt-1 mb-5">Pick a subject and we'll make a fresh paper from the school's question bank. Your score is saved to your progress.</p>
-        {subjects.length === 0 ? (
-          <p className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-4">No practice questions are available yet. Ask your teacher to add questions to the question bank.</p>
-        ) : (
-          <div className="space-y-4">
+        <h2 className="text-lg font-black text-slate-900 flex items-center gap-2"><Dumbbell size={18} className="text-brand-600" /> Practise past questions</h2>
+        <p className="text-sm text-slate-500 mt-1 mb-5">Pick an exam body, a subject and a year, and practise any time you like. Your score is saved to your progress.</p>
+
+        <div className="flex flex-wrap gap-2 mb-5">
+          {sources.map((s) => (
+            <button key={s.key} onClick={() => { setSource(s.key); setSubject(""); }}
+              className={cn("px-4 py-2 rounded-xl border text-sm font-semibold transition",
+                source === s.key ? "bg-brand-600 border-brand-600 text-white" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50")}>
+              {s.key === "school" ? "School" : s.key.toUpperCase()}
+            </button>
+          ))}
+        </div>
+
+        {notReady && (
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+            Past questions aren't connected yet. Ask your administrator to add the past-questions key. Questions already used before will still work.
+          </p>
+        )}
+
+        <div className="space-y-4">
+          <div>
+            <label className="label">Subject</label>
+            <select className="input" value={subject} onChange={(e) => setSubject(e.target.value)} disabled={isFetching}>
+              <option value="">{isFetching ? "Loading…" : "Choose a subject…"}</option>
+              {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}{s.question_count != null ? ` (${s.question_count} questions)` : ""}</option>)}
+            </select>
+            {!isPast && !isFetching && subjects.length === 0 && (
+              <p className="text-xs text-slate-500 mt-1">Your teachers haven't added school practice questions yet. Try JAMB, WAEC or NECO.</p>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            {isPast && (
+              <div>
+                <label className="label">Year</label>
+                <select className="input" value={year} onChange={(e) => setYear(e.target.value)}>
+                  <option value="">All years (mixed)</option>
+                  {(catalog?.years ?? []).map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            )}
             <div>
-              <label className="label">Subject</label>
-              <select className="input" value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
-                <option value="">Choose a subject…</option>
-                {subjects.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.question_count} questions)</option>)}
+              <label className="label">Questions</label>
+              <select className="input" value={count} onChange={(e) => setCount(Number(e.target.value))}>
+                {[5, 10, 20, 40, 60].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="label">Questions</label>
-                <select className="input" value={count} onChange={(e) => setCount(Number(e.target.value))}>
-                  {[5, 10, 20, 30, 40].map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="label">Difficulty</label>
-                <select className="input" value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
-                  <option value="any">Mixed</option><option value="easy">Easy</option>
-                  <option value="medium">Medium</option><option value="hard">Hard</option>
-                </select>
-              </div>
-            </div>
-            {chosen && count > chosen.question_count && (
-              <p className="text-xs text-amber-600">Only {chosen.question_count} questions are available for this subject, so the paper will be shorter.</p>
-            )}
-            <button disabled={!subjectId || start.isPending} onClick={() => start.mutate()}
-              className="w-full bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
-              {start.isPending ? <Loader2 size={16} className="animate-spin" /> : null} Start practice
-            </button>
           </div>
-        )}
+          <button disabled={!subject || start.isPending} onClick={() => start.mutate()}
+            className="w-full bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
+            {start.isPending ? <Loader2 size={16} className="animate-spin" /> : null} Start practice
+          </button>
+          {isPast && <p className="text-[11px] text-slate-400">Past questions belong to {source.toUpperCase()} and are used here for practice only.</p>}
+        </div>
       </div>
 
       <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6">
@@ -217,7 +244,7 @@ function PracticeTab() {
             {past.map((r) => (
               <li key={r.attempt_id} className="py-2.5 flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-800 truncate">{r.subject_name || r.title}</p>
+                  <p className="text-sm font-medium text-slate-800 truncate">{r.title}</p>
                   <p className="text-[11px] text-slate-400">{r.submitted_at ? formatDate(r.submitted_at) : ""}</p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">

@@ -812,6 +812,8 @@ class CBTExam(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     # exam | test | mock — scheduled by staff; practice — a self-service paper a student
     # builds for themselves from the Question Bank (never shown to staff or the gradebook).
     exam_type = Column(String(12), default="exam", nullable=False, server_default="exam", index=True)
+    # Practice papers only: {"source": "jamb", "subject": "Biology", "year": 2019 | null}
+    practice_meta = Column(JSON, nullable=True)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 
@@ -887,6 +889,11 @@ class QuestionBankItem(Base, UUIDMixin, TimestampMixin, TenantMixin):
     explanation = Column(Text, nullable=True)      # shown with the answer
     is_examination = Column(Boolean, default=False, nullable=False, server_default=sa_false())
     answer_type = Column(String(10), default="text", nullable=False, server_default="text")  # text | file
+    # Exam-body past question (jamb / waec / neco) cached from the past-questions provider.
+    # NULL = a teacher's own bank item. Past questions never show in the teacher bank.
+    exam_body = Column(String(10), nullable=True, index=True)
+    exam_year = Column(Integer, nullable=True)
+    external_id = Column(String(60), nullable=True)
     created_by = Column(String(36), ForeignKey("users.id"), nullable=True)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 

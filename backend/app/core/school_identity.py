@@ -29,6 +29,18 @@ def teacher_identity_filter():
 
 
 async def resolve_linked_student_id(db: AsyncSession, user: User) -> str | None:
+    # The explicit link (Student.user_id) wins; the e-mail match is the legacy fallback.
+    # Matching on e-mail alone left a student whose account and student-record e-mails
+    # differ unable to sit anything ("No linked student record").
+    by_link = (await db.execute(
+        select(Student.id).where(
+            Student.user_id == user.id,
+            Student.org_id == user.org_id,
+            Student.is_deleted == False,
+        )
+    )).scalars().first()
+    if by_link:
+        return by_link
     if not user.email:
         return None
     result = await db.execute(

@@ -30,6 +30,7 @@ from app.models.modules.school import (
     QuestionBankItem, QuestionType, SchoolClass, Student, Subject,
 )
 from app.models.user import User
+from app.services import past_questions as pq
 
 router = APIRouter(
     prefix="/cbt",
@@ -60,13 +61,30 @@ async def _section_id(db: AsyncSession, student: Student) -> str | None:
 # ── Practice ──────────────────────────────────────────────────────────────────
 
 
-@router.get("/practice/subjects")
-async def practice_subjects(
+@router.get("/practice/catalog")
+async def practice_catalog(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
-    """Subjects the student can practise: their section's, with at least one
-    auto-markable question in the Question Bank."""
+    """What a student can practise: JAMB / WAEC / NECO past questions by subject and
+    year, plus the school's own question bank."""
+    await _me_student(db, current_user)
+    return {
+        "sources": [{"key": k, "label": v[0]} for k, v in pq.BODIES.items()] + [{"key": "school", "label": "School question bank"}],
+        "past_questions_ready": pq.configured(),
+        "years": pq.YEARS,
+    }
+
+
+@router.get("/practice/subjects")
+async def practice_subjects(
+    source: str = "school",
+    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
+):
+    """Subjects for a source. Past-question sources list the exam body's subjects; the
+    school source lists the student's section's subjects that have markable questions."""
     student = await _me_student(db, current_user)
+    if source in pq.BODIES:
+        return {"items": [{"id": slug, "name": name, "question_count": None} for slug, name in await pq.list_subjects()]}
     section_id = await _section_id(db, student)
     q = (
         select(Subject.id, Subject.name, func.count(QuestionBankItem.id))
@@ -74,6 +92,7 @@ async def practice_subjects(
         .where(
             Subject.org_id == current_user.org_id,
             QuestionBankItem.org_id == current_user.org_id,
+            QuestionBankItem.exam_body.is_(None),
             QuestionBankItem.question_type.in_(_OBJECTIVE),
             Subject.is_active == True,  # noqa: E712
         )
@@ -87,9 +106,38 @@ async def practice_subjects(
 
 
 class PracticeStart(BaseModel):
-    subject_id: str
-    count: int = Field(default=10, ge=5, le=40)
+    # "school" practises the teachers' bank by subject_id; jamb / waec / neco practise past
+    # questions by subject slug (+ optional year).
+    source: Literal["school", "jamb", "waec", "neco"] = "school"
+    subject_id: Optional[str] = None
+    subject: Optional[str] = None
+    year: Optional[int] = Field(default=None, ge=1990, le=2100)
+    count: int = Field(default=10, ge=5, le=60)
     difficulty: Literal["any", "easy", "medium", "hard"] = "any"
+
+
+async def _new_practice_exam(db, user, student, picked, title, subject_id, meta):
+    exam = CBTExam(
+        title=title,
+        description="Self-made practice. Your score is saved to your progress.",
+        class_id=student.class_id, subject_id=subject_id,
+        created_by=user.id, org_id=user.org_id,
+        duration_minutes=max(5, math.ceil(len(picked) * 1.0)),
+        total_points=sum(float(p.points or 1) for p in picked),
+        max_attempts=0, shuffle_questions=False, hold_results=False,
+        status=ExamStatus.ACTIVE, exam_type="practice", practice_meta=meta,
+    )
+    db.add(exam)
+    await db.flush()
+    for pos, item in enumerate(picked):
+        db.add(CBTQuestion(
+            exam_id=exam.id, question_text=item.question_text, question_type=item.question_type,
+            options=item.options, correct_answer=item.correct_answer,
+            points=item.points or 1.0, position=pos, answer_type="text", org_id=user.org_id,
+        ))
+    await db.flush()
+    return {"exam_id": exam.id, "title": exam.title, "question_count": len(picked),
+            "duration_minutes": exam.duration_minutes}
 
 
 @router.post("/practice/start", status_code=201)
@@ -97,18 +145,10 @@ async def start_practice(
     payload: PracticeStart,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
-    """Build a fresh practice paper for this student from the Question Bank and
-    return the exam id; the client then sits it through the normal attempt flow."""
+    """Build a fresh practice paper for this student and return the exam id; the
+    client then sits it through the normal attempt flow, any time they like."""
     student = await _me_student(db, current_user)
     org = current_user.org_id
-    subject = (await db.execute(select(Subject).where(
-        Subject.id == payload.subject_id, Subject.org_id == org,
-    ))).scalar_one_or_none()
-    if not subject:
-        raise HTTPException(status_code=404, detail="Subject not found.")
-    section_id = await _section_id(db, student)
-    if section_id and subject.section_id and subject.section_id != section_id:
-        raise HTTPException(status_code=404, detail="Subject not found.")
 
     since = datetime.now(timezone.utc) - timedelta(hours=24)
     made = (await db.execute(select(func.count()).select_from(CBTExam).where(
@@ -118,9 +158,38 @@ async def start_practice(
     if made >= PRACTICE_DAILY_CAP:
         raise HTTPException(status_code=429, detail="You've reached today's practice limit. Come back tomorrow.")
 
+    if payload.source in pq.BODIES:
+        if not payload.subject:
+            raise HTTPException(status_code=422, detail="Choose a subject.")
+        subjects = dict(await pq.list_subjects())
+        if payload.subject not in subjects:
+            raise HTTPException(status_code=404, detail="That subject isn't available.")
+        try:
+            picked = await pq.get_paper(db, org, payload.source, payload.subject, payload.year, payload.count)
+        except pq.PastQuestionsUnavailable as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.message)
+        if not picked:
+            raise HTTPException(status_code=404, detail="No questions found for that choice. Try another year or subject.")
+        body_label = pq.BODIES[payload.source][0].split(" ")[0]
+        label = subjects[payload.subject]
+        title = f"{body_label} {label} {payload.year}" if payload.year else f"{body_label} {label} (mixed years)"
+        meta = {"source": payload.source, "subject": label, "year": payload.year}
+        return await _new_practice_exam(db, current_user, student, picked, title, None, meta)
+
+    # School question bank
+    if not payload.subject_id:
+        raise HTTPException(status_code=422, detail="Choose a subject.")
+    subject = (await db.execute(select(Subject).where(
+        Subject.id == payload.subject_id, Subject.org_id == org,
+    ))).scalar_one_or_none()
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found.")
+    section_id = await _section_id(db, student)
+    if section_id and subject.section_id and subject.section_id != section_id:
+        raise HTTPException(status_code=404, detail="Subject not found.")
     bq = select(QuestionBankItem).where(
         QuestionBankItem.org_id == org, QuestionBankItem.subject_id == subject.id,
-        QuestionBankItem.question_type.in_(_OBJECTIVE),
+        QuestionBankItem.exam_body.is_(None), QuestionBankItem.question_type.in_(_OBJECTIVE),
     )
     if payload.difficulty != "any":
         bq = bq.where(QuestionBankItem.difficulty == payload.difficulty)
@@ -128,28 +197,10 @@ async def start_practice(
     if not pool:
         raise HTTPException(status_code=404, detail="There are no practice questions for that choice yet.")
     picked = random.sample(pool, min(payload.count, len(pool)))
-
-    exam = CBTExam(
-        title=f"Practice: {subject.name}",
-        description="Self-made practice. Your score is saved to your progress.",
-        class_id=student.class_id, subject_id=subject.id,
-        created_by=current_user.id, org_id=org,
-        duration_minutes=max(5, math.ceil(len(picked) * 1.0)),
-        total_points=sum(float(p.points or 1) for p in picked),
-        max_attempts=0, shuffle_questions=False, hold_results=False,
-        status=ExamStatus.ACTIVE, exam_type="practice",
+    return await _new_practice_exam(
+        db, current_user, student, picked, f"Practice: {subject.name}", subject.id,
+        {"source": "school", "subject": subject.name, "year": None},
     )
-    db.add(exam)
-    await db.flush()
-    for pos, item in enumerate(picked):
-        db.add(CBTQuestion(
-            exam_id=exam.id, question_text=item.question_text, question_type=item.question_type,
-            options=item.options, correct_answer=item.correct_answer,
-            points=item.points or 1.0, position=pos, answer_type="text", org_id=org,
-        ))
-    await db.flush()
-    return {"exam_id": exam.id, "title": exam.title, "question_count": len(picked),
-            "duration_minutes": exam.duration_minutes}
 
 
 @router.get("/practice/attempts/{attempt_id}/review")
@@ -225,14 +276,25 @@ async def my_progress(
         names = dict((await db.execute(select(Subject.id, Subject.name).where(Subject.id.in_(subj_ids)))).all())
 
     recent, by_type, by_subject, pending = [], defaultdict(list), defaultdict(list), 0
+    labels: dict[str, str] = {}
     for a, e in rows:
         released = e.exam_type == "practice" or (not e.hold_results) or e.results_published_at is not None
+        meta = e.practice_meta or {}
+        # Past-question practice has no local subject: group it by "JAMB · Biology".
+        if e.subject_id:
+            gkey, subj_name = e.subject_id, names.get(e.subject_id)
+        elif meta.get("subject"):
+            subj_name = f"{str(meta.get('source', '')).upper()} · {meta['subject']}"
+            gkey = f"pq:{meta.get('source')}:{meta['subject']}"
+        else:
+            gkey, subj_name = "_", None
+        labels[gkey] = subj_name or "General"
         if not released:
             pending += 1
         pct = _pct(a.score, a.max_score) if released else None
         item = {
             "attempt_id": a.id, "exam_id": e.id, "title": e.title, "exam_type": e.exam_type,
-            "subject_id": e.subject_id, "subject_name": names.get(e.subject_id),
+            "subject_id": e.subject_id, "subject_name": subj_name,
             "score": a.score if released else None, "max_score": a.max_score,
             "percentage": pct, "pending": not released,
             "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
@@ -240,11 +302,11 @@ async def my_progress(
         recent.append(item)
         if pct is not None:
             by_type[e.exam_type].append(pct)
-            by_subject[e.subject_id or "_"].append(pct)
+            by_subject[gkey].append(pct)
 
     all_pcts = [p for v in by_type.values() for p in v]
     subjects = [{
-        "subject_id": sid if sid != "_" else None, "name": names.get(sid, "General"),
+        "subject_id": sid if sid != "_" and not sid.startswith("pq:") else None, "name": labels.get(sid, "General"),
         "taken": len(v), "average": _avg(v), "last": v[-1], "best": max(v), "trend": v[-10:],
     } for sid, v in by_subject.items()]
     subjects.sort(key=lambda s: s["name"])

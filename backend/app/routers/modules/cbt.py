@@ -168,7 +168,6 @@ async def list_exams(
         taught_classes = await resolve_taught_class_ids(db, current_user)
         taught_subjects = await resolve_taught_subject_ids(db, current_user)
         if taught_classes or taught_subjects:
-            from sqlalchemy import or_
             conditions = []
             if taught_classes:
                 conditions.append(CBTExam.class_id.in_(taught_classes))
@@ -183,7 +182,9 @@ async def list_exams(
                     select(Student.class_id).where(Student.id == student_id)
                 )).scalar_one_or_none()
                 if student_class:
-                    query = query.where(CBTExam.class_id == student_class)
+                    query = query.where(or_(CBTExam.class_id == student_class, CBTExam.class_id.is_(None)))
+                    # A student never sees an exam still being drafted.
+                    query = query.where(CBTExam.status != ExamStatus.DRAFT)
                 else:
                     query = query.where(CBTExam.id == "__none__")
             else:
@@ -480,7 +481,7 @@ async def _ensure_exam_sittable(db: AsyncSession, user: User, exam: CBTExam) -> 
     student_class = (await db.execute(
         select(Student.class_id).where(Student.id == student_id)
     )).scalar_one_or_none()
-    if not student_class or exam.class_id != student_class:
+    if not student_class or (exam.class_id is not None and exam.class_id != student_class):
         raise HTTPException(status_code=404, detail="Exam not found.")
 
 
@@ -949,7 +950,7 @@ async def list_bank(
     current_user: User = Depends(get_current_active_user),
 ):
     org_id = current_user.org_id
-    query = select(QuestionBankItem).where(QuestionBankItem.org_id == org_id)
+    query = select(QuestionBankItem).where(QuestionBankItem.org_id == org_id, QuestionBankItem.exam_body.is_(None))
     if mine:
         query = query.where(QuestionBankItem.created_by == current_user.id)
     if tag:

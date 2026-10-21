@@ -131,6 +131,12 @@ class Settings(BaseSettings):
     # redeploys + multi-instance. Empty = local disk (dev). See DEPLOYMENT.md §5b.
     CLOUDINARY_URL: str = ""
 
+    # ── Past questions (JAMB / WAEC / NECO practice) ─────────────────────────
+    # Provider for exam-body past questions. Set the token in the host's environment
+    # (never in the repo). Questions are fetched on demand and cached in the DB.
+    PAST_QUESTIONS_API_URL: str = "https://sdashapi.com/api/v1"
+    PAST_QUESTIONS_API_TOKEN: str = ""
+
     # ── Subscription Tiers ───────────────────────────────────────────────────
     FREE_TIER_USER_LIMIT: int = 10
     STARTER_TIER_USER_LIMIT: int = 50

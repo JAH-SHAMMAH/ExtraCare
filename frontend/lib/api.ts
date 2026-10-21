@@ -495,8 +495,12 @@ export const cbtApi = {
     },
   },
   practice: {
-    subjects: () => api.get("/cbt/practice/subjects").then((r) => r.data as { items: { id: string; name: string; question_count: number }[] }),
-    start: (data: { subject_id: string; count: number; difficulty: string }) =>
+    catalog: () => api.get("/cbt/practice/catalog").then((r) => r.data as {
+      sources: { key: string; label: string }[]; past_questions_ready: boolean; years: number[];
+    }),
+    subjects: (source: string) =>
+      api.get("/cbt/practice/subjects", { params: { source } }).then((r) => r.data as { items: { id: string; name: string; question_count: number | null }[] }),
+    start: (data: { source: string; subject_id?: string; subject?: string; year?: number | null; count: number; difficulty?: string }) =>
       api.post("/cbt/practice/start", data).then((r) => r.data as { exam_id: string; title: string; question_count: number; duration_minutes: number }),
     review: (attemptId: string) => api.get(`/cbt/practice/attempts/${attemptId}/review`).then((r) => r.data),
   },
