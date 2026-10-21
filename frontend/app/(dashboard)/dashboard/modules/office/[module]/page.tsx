@@ -8,6 +8,8 @@ import { api, downloadCsv } from "@/lib/api";
 import { toast } from "sonner";
 import { useOfficeDelete, useOfficeRows, useOfficeSave, useOfficeSchema, useOfficeSummary } from "@/hooks/useOffice";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/lib/store";
+import { superSettingsApi } from "@/lib/api";
 
 const TITLES: Record<string, string> = { orders: "Purchase Orders", grns: "GRN Records", rfqs: "RFQs", requests: "Requests", limits: "Approval Limits" };
 const title = (s: string) => TITLES[s] ?? s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -224,12 +226,36 @@ export default function OfficeModulePage() {
   const { module } = useParams<{ module: string }>();
   const { data: schema, isLoading, isError } = useOfficeSchema(module);
   const [tab, setTab] = useState<string>("");
+  const user = useAuthStore((s) => s.user);
+  const qc = useQueryClient();
+  const [switching, setSwitching] = useState(false);
+  const isSuper = !!user && (user.permissions?.includes("*") || user.primary_role === "super_admin");
+  const switchOn = async () => {
+    setSwitching(true);
+    try {
+      await superSettingsApi.save({ [`module_${module}`]: true });
+      await qc.invalidateQueries({ queryKey: ["super-ui"] });
+      await qc.invalidateQueries({ queryKey: ["office", module] });
+      toast.success(`${title(module)} is now switched on.`);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Couldn't switch it on. Try Super Settings → Optional Modules.");
+    } finally { setSwitching(false); }
+  };
   if (isLoading) return <div className="py-24 text-center"><Loader2 className="animate-spin text-slate-400 mx-auto" /></div>;
   if (isError || !schema) {
     return (
       <div className="flex flex-col items-center py-24 text-slate-400 px-8">
         <Lock size={40} className="mb-3 opacity-40" /><p className="font-semibold text-slate-700 text-lg">Not available</p>
-        <p className="text-sm mt-1 text-center max-w-md">This module is switched off, or your role doesn&apos;t have access. The Super User can switch it on in Super Settings.</p>
+        {isSuper ? (
+          <>
+            <p className="text-sm mt-1 text-center max-w-md">{title(module)} is switched off for your school. Switch it on and it opens straight away.</p>
+            <button onClick={switchOn} disabled={switching} className="btn-primary gap-2 mt-4">
+              {switching && <Loader2 size={15} className="animate-spin" />} Switch on {title(module)}
+            </button>
+          </>
+        ) : (
+          <p className="text-sm mt-1 text-center max-w-md">This module is switched off, or your role doesn&apos;t have access. Ask the Super User to switch it on in Super Settings.</p>
+        )}
       </div>
     );
   }
