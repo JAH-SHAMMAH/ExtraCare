@@ -1,13 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useSwitchRole } from "@/hooks/useSwitchRole";
 import { UserCog, ChevronDown, Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/store";
-import { authApi, setAuth } from "@/lib/api";
 
 // Match the sidebar-footer row styling (dark theme).
 const ROW = "flex items-center gap-3 px-3 py-1 rounded-md text-sm font-semibold transition-colors w-full text-left";
@@ -21,42 +18,12 @@ const IDLE = "text-green-50/75 hover:bg-white/5 hover:text-white";
  */
 export function MyRolesMenu() {
   const user = useAuthStore((s) => s.user);
-  const setUser = useAuthStore((s) => s.setUser);
-  const qc = useQueryClient();
-  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<string | "all" | null>(null);
-
   const roles = user?.roles ?? [];
+  const { switchTo: handleSwitch, busy } = useSwitchRole(() => setOpen(false));
   if (roles.length < 2) return null;              // nothing to switch → no clutter
 
   const activeId = user?.active_role_id ?? null;  // null = full access ("All roles")
-
-  const handleSwitch = async (roleId: string | null) => {
-    if ((activeId ?? null) === roleId) { setOpen(false); return; }
-    setBusy(roleId ?? "all");
-    try {
-      const data = await authApi.switchRole(roleId);
-      setAuth(data.access_token, data.refresh_token);
-      setUser(data.user);
-      // Permissions changed → drop cached data so everything refetches scoped,
-      // and land on the always-accessible home so a now-forbidden route can't strand us.
-      qc.clear();
-      const label = roleId ? (roles.find((r) => r.id === roleId)?.name ?? "role") : "All roles";
-      toast.success(roleId ? `Now acting as ${label}` : "Back to full access");
-      setOpen(false);
-      router.push("/dashboard");
-      router.refresh();
-    } catch (e: any) {
-      // Surface the real reason (backend `detail` / status) instead of a generic
-      // message — otherwise a 403/500 is indistinguishable when debugging.
-      const detail = e?.response?.data?.detail;
-      const status = e?.response?.status;
-      toast.error(detail || (status ? `Couldn't switch role (HTTP ${status}).` : "Couldn't switch role."));
-    } finally {
-      setBusy(null);
-    }
-  };
 
   const activeLabel = activeId ? (roles.find((r) => r.id === activeId)?.name ?? "…") : "All roles";
 

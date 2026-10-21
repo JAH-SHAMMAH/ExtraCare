@@ -12,6 +12,7 @@ import {
   Key, Bell, Globe, Save,
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
+import { ProfileRoles } from "@/components/role/ProfileRoles";
 
 export default function ProfilePage() {
   const { user, org, setUser } = useAuthStore();
@@ -210,6 +211,8 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
+
+        <ProfileRoles />
 
         {/* Account Details */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
