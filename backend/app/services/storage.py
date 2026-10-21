@@ -30,8 +30,16 @@ from app.config import get_settings
 logger = logging.getLogger("extracare.storage")
 
 
+def _clean_cloudinary_url(raw: str) -> str:
+    """Tolerate the common paste mistakes: 'CLOUDINARY_URL=' prefix, quotes, <angle brackets>, spaces."""
+    v = (raw or "").strip().strip("\"'")
+    if v.upper().startswith("CLOUDINARY_URL="):
+        v = v.split("=", 1)[1].strip().strip("\"'")
+    return v.replace("<", "").replace(">", "").replace(" ", "")
+
+
 def cloudinary_enabled() -> bool:
-    return bool(get_settings().CLOUDINARY_URL)
+    return bool(_clean_cloudinary_url(get_settings().CLOUDINARY_URL))
 
 
 def _resource_type(content_type: str) -> str:
@@ -82,7 +90,9 @@ def _cloudinary_upload_sync(org_id: str, kind: str, filename: str | None, conten
 
     # Configure from CLOUDINARY_URL (cloudinary://<key>:<secret>@<cloud>). Parsed
     # explicitly so it works whether the value came from a real env var or a .env.
-    parsed = urlparse(get_settings().CLOUDINARY_URL)
+    parsed = urlparse(_clean_cloudinary_url(get_settings().CLOUDINARY_URL))
+    if parsed.scheme != "cloudinary" or not (parsed.hostname and parsed.username and parsed.password):
+        raise RuntimeError("CLOUDINARY_URL is malformed; it must look like cloudinary://API_KEY:API_SECRET@CLOUD_NAME")
     cloudinary.config(cloud_name=parsed.hostname, api_key=parsed.username,
                       api_secret=parsed.password, secure=True)
 

@@ -42,9 +42,11 @@ async def _store(org_id, kind, filename, content, content_type=""):
         return await save_upload(org_id, kind, filename, content, content_type)
     except HTTPException:
         raise
-    except Exception:
+    except Exception as exc:
         _logger.exception("upload.storage_failed kind=%s", kind)
-        raise HTTPException(status_code=503, detail="Photo storage isn't working right now. Please tell the administrator.")
+        # Cloudinary / config errors never contain the secret; show the reason so it can be fixed.
+        reason = str(exc).strip().splitlines()[0][:160] if str(exc).strip() else exc.__class__.__name__
+        raise HTTPException(status_code=503, detail=f"Photo storage isn't working: {reason}")
 
 
 async def _read_validated(file: UploadFile, allowed: set[str], max_size: int) -> bytes:
