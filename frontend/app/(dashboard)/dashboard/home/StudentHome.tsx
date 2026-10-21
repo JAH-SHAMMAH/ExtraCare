@@ -147,7 +147,7 @@ export function StudentHome() {
         {/* /my-exams, not the staff CBT console: students hold school:cbt:sit, never
             school:cbt:read, so the console route is guarded against them. Same
             narrowing that 697a543 fixed on the API side. */}
-        <QuickTile href="/dashboard/my-exams" icon={MonitorCheck} label="My Exams" color="bg-indigo-500" />
+        <QuickTile href="/dashboard/my-exams" icon={MonitorCheck} label="Exam Portal" color="bg-indigo-500" />
         <QuickTile href="/dashboard/my-library" icon={Library} label="My Library" color="bg-rose-500" />
         <QuickTile href="/dashboard/my-teachers" icon={Star} label="Rate My Teachers" color="bg-violet-500" />
         <QuickTile href="/dashboard/my-timetable" icon={Calendar} label="My Timetable" color="bg-emerald-500" />

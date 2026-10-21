@@ -20,7 +20,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 interface AttemptRow {
   id: string; student_id: string; student_name: string | null; score: number; max_score: number;
-  percentage: number; status: string; submitted_at: string | null; needs_review: boolean; submitted_late: boolean; passed: boolean | null; superseded: boolean;
+  percentage: number; status: string; submitted_at: string | null; needs_review: boolean; submitted_late: boolean; passed: boolean | null; superseded: boolean; idle_count?: number; blur_count?: number; paste_count?: number;
 }
 
 export default function CBTResultsPage() {
@@ -265,6 +265,11 @@ export default function CBTResultsPage() {
                           {a.passed === true && <span className="badge bg-emerald-50 text-emerald-700 border-emerald-200 ml-1">pass</span>}
                           {a.passed === false && <span className="badge bg-rose-50 text-rose-700 border-rose-200 ml-1">fail</span>}
                           {a.needs_review && <span className="badge bg-amber-50 text-amber-700 border-amber-200 ml-1 inline-flex items-center gap-1"><AlertTriangle size={10} />review</span>}
+                          {((a.idle_count ?? 0) + (a.blur_count ?? 0) + (a.paste_count ?? 0)) > 0 && (
+                            <span title="Exam-room flags: idle / left the exam tab / paste attempts" className="badge bg-rose-50 text-rose-700 border-rose-200 ml-1">
+                              flags {a.idle_count ?? 0}·{a.blur_count ?? 0}·{a.paste_count ?? 0}
+                            </span>
+                          )}
                           {a.submitted_late && <span className="badge bg-orange-50 text-orange-700 border-orange-200 ml-1 inline-flex items-center gap-1"><Clock size={10} />late</span>}
                         </>
                       )}

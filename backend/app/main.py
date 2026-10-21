@@ -33,6 +33,7 @@ from app.routers import upload as upload_router
 from app.routers.modules import (
     classroom,
     cbt,
+    cbt_student,
     behaviour,
     feedback as feedback_router,
     clubs,
@@ -441,6 +442,7 @@ app.include_router(eclassroom_router.router, prefix=API_V1)
 app.include_router(voting_router.router, prefix=API_V1)
 app.include_router(reports_router.router, prefix=API_V1)
 app.include_router(cbt.router, prefix=API_V1)
+app.include_router(cbt_student.router, prefix=API_V1)
 app.include_router(behaviour.router, prefix=API_V1)
 app.include_router(feedback_router.router, prefix=API_V1)
 app.include_router(clubs.router, prefix=API_V1)

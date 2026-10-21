@@ -44,7 +44,7 @@ export const CORE_NAV = [
   { href: "/dashboard/settings", label: "Phone Alerts", icon: Bell, roleOnly: "parent" as ActiveRole },
   { href: "/dashboard/communication-book", label: "Communication Book", icon: ClipboardList, roleOnly: "student" as ActiveRole },
   { href: "/dashboard/my-timetable", label: "My Timetable", icon: Calendar, roleOnly: "student" as ActiveRole },
-  { href: "/dashboard/my-exams", label: "My Exams", icon: MonitorCheck, roleOnly: "student" as ActiveRole },
+  { href: "/dashboard/my-exams", label: "Exam Portal", icon: MonitorCheck, roleOnly: "student" as ActiveRole },
   { href: "/dashboard/my-live-classes", label: "My Live Classes", icon: Radio, roleOnly: "student" as ActiveRole },
   { href: "/dashboard/my-library", label: "My Library", icon: Library, roleOnly: "student" as ActiveRole },
   { href: "/dashboard/my-teachers", label: "Rate My Teachers", icon: Star, roleOnly: "student" as ActiveRole },

@@ -127,6 +127,7 @@ async def list_exams(
     class_id: str | None = None,
     status_filter: str | None = Query(default=None, alias="status", description="Server-recognised values: draft, published, active, closed, live."),
     for_me: bool = Query(default=False, description="Scope to the caller: student → own class; teacher → owned classes/subjects."),
+    exam_type: str | None = Query(default=None, pattern="^(exam|test|mock)$", description="Filter by kind of sitting."),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -146,9 +147,12 @@ async def list_exams(
     query = select(CBTExam).where(
         CBTExam.org_id == current_user.org_id,
         CBTExam.is_deleted == False,
+        CBTExam.exam_type != "practice",   # a student's own practice papers are theirs alone
     )
     if class_id:
         query = query.where(CBTExam.class_id == class_id)
+    if exam_type:
+        query = query.where(CBTExam.exam_type == exam_type)
 
     # "live" is a derived status — exam is open AND now is within window.
     if status_filter == "live":
@@ -467,6 +471,9 @@ async def _ensure_exam_sittable(db: AsyncSession, user: User, exam: CBTExam) -> 
     """
     if user.has_permission("school:cbt:read"):
         return
+    # A practice paper belongs to the student who built it — nobody else in the class may open it.
+    if exam.exam_type == "practice" and exam.created_by != user.id:
+        raise HTTPException(status_code=404, detail="Exam not found.")
     student_id = await resolve_linked_student_id(db, user)
     if not student_id:
         raise HTTPException(status_code=404, detail="Exam not found.")
@@ -1223,6 +1230,9 @@ def _result_rows(attempts, names, ungraded, total_points, pass_fraction):
             "superseded": a.superseded_at is not None,
             "needs_review": ungraded.get(a.id, 0) > 0,
             "remark_note": a.remark_note,
+            "idle_count": a.idle_count or 0,
+            "blur_count": a.blur_count or 0,
+            "paste_count": a.paste_count or 0,
         })
     return rows
 

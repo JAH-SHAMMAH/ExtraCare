@@ -809,6 +809,9 @@ class CBTExam(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     results_published_by = Column(String(36), ForeignKey("users.id"), nullable=True)
     published_pass_percentage = Column(Integer, nullable=True)
     status = Column(Enum(ExamStatus), default=ExamStatus.DRAFT, nullable=False)
+    # exam | test | mock — scheduled by staff; practice — a self-service paper a student
+    # builds for themselves from the Question Bank (never shown to staff or the gradebook).
+    exam_type = Column(String(12), default="exam", nullable=False, server_default="exam", index=True)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 
@@ -846,6 +849,11 @@ class CBTAttempt(Base, UUIDMixin, TimestampMixin, TenantMixin):
     # Staff textual remark on the result ("Test Remark") — distinct from the
     # per-answer manual grading flow (which awards points).
     remark_note = Column(Text, nullable=True)
+    # Exam-room integrity signals reported by the student's browser while sitting:
+    # idle (3 min without activity), blur (left the exam tab/window), paste/copy attempts.
+    idle_count = Column(Integer, default=0, nullable=False, server_default="0")
+    blur_count = Column(Integer, default=0, nullable=False, server_default="0")
+    paste_count = Column(Integer, default=0, nullable=False, server_default="0")
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
 

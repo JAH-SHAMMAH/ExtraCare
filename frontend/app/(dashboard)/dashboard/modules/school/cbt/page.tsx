@@ -102,6 +102,7 @@ function TeacherCBTView() {
     max_attempts: 1,
     pass_percentage: "",
     hold_results: false,
+    exam_type: "exam" as "exam" | "test" | "mock",
     status: "draft" as CBTExamStatus,
   });
   // Default the term from the org's current session (only while still empty).
@@ -118,6 +119,7 @@ function TeacherCBTView() {
       max_attempts: 1,
       pass_percentage: "",
       hold_results: false,
+      exam_type: "exam",
       status: "draft",
     });
     setEditing(null);
@@ -156,6 +158,7 @@ function TeacherCBTView() {
       max_attempts: e.max_attempts ?? 1,
       pass_percentage: e.pass_percentage != null ? String(e.pass_percentage) : "",
       hold_results: e.hold_results ?? false,
+      exam_type: (e.exam_type === "test" || e.exam_type === "mock" ? e.exam_type : "exam") as "exam" | "test" | "mock",
       status: e.status,
     });
     setEditing(e);
@@ -251,6 +254,15 @@ function TeacherCBTView() {
                   No academic terms are set up yet — add them under Report Setup first.
                 </p>
               )}
+            </div>
+            <div>
+              <label className="label">Type</label>
+              <select value={form.exam_type} onChange={(e) => setForm({ ...form, exam_type: e.target.value as "exam" | "test" | "mock" })} className="input">
+                <option value="exam">Exam</option>
+                <option value="test">Test</option>
+                <option value="mock">Mock exam</option>
+              </select>
+              <p className="text-[11px] text-slate-400 mt-1">Students see Exams, Tests and Mocks in separate tabs.</p>
             </div>
             <div>
               <label className="label">Start Time</label>
@@ -374,7 +386,12 @@ function TeacherCBTView() {
                   )}
                 </div>
               </div>
-              <h3 className="text-sm font-bold text-slate-900 mb-1 line-clamp-2">{e.title}</h3>
+              <h3 className="text-sm font-bold text-slate-900 mb-1 line-clamp-2">
+                {e.exam_type && e.exam_type !== "exam" && (
+                  <span className="badge bg-indigo-50 text-indigo-700 border-indigo-200 mr-1.5 uppercase text-[9px]">{e.exam_type}</span>
+                )}
+                {e.title}
+              </h3>
               {e.description && <p className="text-xs text-slate-500 mb-3 line-clamp-2">{e.description}</p>}
               <div className="space-y-1 mb-3">
                 <div className="flex items-center gap-1.5 text-xs text-slate-500">

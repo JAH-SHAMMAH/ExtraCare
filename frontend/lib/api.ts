@@ -494,7 +494,16 @@ export const cbtApi = {
       return api.post("/cbt/question-bank/import", fd, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data);
     },
   },
+  practice: {
+    subjects: () => api.get("/cbt/practice/subjects").then((r) => r.data as { items: { id: string; name: string; question_count: number }[] }),
+    start: (data: { subject_id: string; count: number; difficulty: string }) =>
+      api.post("/cbt/practice/start", data).then((r) => r.data as { exam_id: string; title: string; question_count: number; duration_minutes: number }),
+    review: (attemptId: string) => api.get(`/cbt/practice/attempts/${attemptId}/review`).then((r) => r.data),
+  },
+  myProgress: () => api.get("/cbt/my-progress").then((r) => r.data),
   attempts: {
+    event: (attemptId: string, type: "idle" | "blur" | "paste") =>
+      api.post(`/cbt/attempts/${attemptId}/events`, { type }).catch(() => undefined),
     list: (p?: { exam_id?: string; student_id?: string }) =>
       api.get("/cbt/attempts", { params: p }).then((r) => r.data),
     get: (id: string) => api.get(`/cbt/attempts/${id}`).then((r) => r.data),

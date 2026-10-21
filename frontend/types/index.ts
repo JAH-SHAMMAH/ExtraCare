@@ -341,6 +341,7 @@ export interface CBTExam {
   results_published_at: string | null;
   published_pass_percentage: number | null;
   status: CBTExamStatus;
+  exam_type?: "exam" | "test" | "mock" | "practice";
   created_at: string;
   org_id: string;
 }

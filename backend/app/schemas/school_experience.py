@@ -129,6 +129,7 @@ class ExamCreate(BaseModel):
     max_attempts: int = Field(default=1, ge=0)  # 0 = unlimited
     pass_percentage: Optional[int] = Field(default=None, ge=0, le=100)  # None = org default
     hold_results: bool = False  # gate student result visibility until published
+    exam_type: str = Field(default="exam", pattern="^(exam|test|mock)$")
     status: str = "draft"
 
 
@@ -144,6 +145,7 @@ class ExamUpdate(BaseModel):
     max_attempts: Optional[int] = Field(default=None, ge=0)
     pass_percentage: Optional[int] = Field(default=None, ge=0, le=100)
     hold_results: Optional[bool] = None
+    exam_type: Optional[str] = Field(default=None, pattern="^(exam|test|mock)$")
     status: Optional[str] = None
 
 
@@ -169,6 +171,7 @@ class ExamResponse(_OrmBase):
     results_published_at: Optional[datetime]
     published_pass_percentage: Optional[int]
     status: str
+    exam_type: str = "exam"
     created_at: datetime
     org_id: str
 
@@ -231,6 +234,9 @@ class AttemptResponse(_OrmBase):
     # duration, capped by the exam window). Computed server-side; None if the
     # exam has no duration. Clients run their countdown against this.
     deadline: Optional[datetime] = None
+    idle_count: int = 0
+    blur_count: int = 0
+    paste_count: int = 0
     created_at: datetime
     org_id: str
 
