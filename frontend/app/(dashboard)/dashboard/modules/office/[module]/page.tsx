@@ -222,10 +222,7 @@ function SyncButton() {
   return <button onClick={run} disabled={busy} className="btn-secondary gap-1 print:hidden"><RefreshCw size={15} className={busy ? "animate-spin" : ""} /> Sync from fees &amp; payroll</button>;
 }
 
-export default function OfficeModulePage() {
-  const { module } = useParams<{ module: string }>();
-  const { data: schema, isLoading, isError } = useOfficeSchema(module);
-  const [tab, setTab] = useState<string>("");
+function NotAvailable({ module }: { module: string }) {
   const user = useAuthStore((s) => s.user);
   const qc = useQueryClient();
   const [switching, setSwitching] = useState(false);
@@ -241,24 +238,29 @@ export default function OfficeModulePage() {
       toast.error(e?.response?.data?.detail || "Couldn't switch it on. Try Super Settings → Optional Modules.");
     } finally { setSwitching(false); }
   };
+  return (
+    <div className="flex flex-col items-center py-24 text-slate-400 px-8">
+      <Lock size={40} className="mb-3 opacity-40" /><p className="font-semibold text-slate-700 text-lg">Not available</p>
+      {isSuper ? (
+        <>
+          <p className="text-sm mt-1 text-center max-w-md">{title(module)} is switched off for your school. Switch it on and it opens straight away.</p>
+          <button onClick={switchOn} disabled={switching} className="btn-primary gap-2 mt-4">
+            {switching && <Loader2 size={15} className="animate-spin" />} Switch on {title(module)}
+          </button>
+        </>
+      ) : (
+        <p className="text-sm mt-1 text-center max-w-md">This module is switched off, or your role doesn&apos;t have access. Ask the Super User to switch it on in Super Settings.</p>
+      )}
+    </div>
+  );
+}
+
+export default function OfficeModulePage() {
+  const { module } = useParams<{ module: string }>();
+  const { data: schema, isLoading, isError } = useOfficeSchema(module);
+  const [tab, setTab] = useState<string>("");
   if (isLoading) return <div className="py-24 text-center"><Loader2 className="animate-spin text-slate-400 mx-auto" /></div>;
-  if (isError || !schema) {
-    return (
-      <div className="flex flex-col items-center py-24 text-slate-400 px-8">
-        <Lock size={40} className="mb-3 opacity-40" /><p className="font-semibold text-slate-700 text-lg">Not available</p>
-        {isSuper ? (
-          <>
-            <p className="text-sm mt-1 text-center max-w-md">{title(module)} is switched off for your school. Switch it on and it opens straight away.</p>
-            <button onClick={switchOn} disabled={switching} className="btn-primary gap-2 mt-4">
-              {switching && <Loader2 size={15} className="animate-spin" />} Switch on {title(module)}
-            </button>
-          </>
-        ) : (
-          <p className="text-sm mt-1 text-center max-w-md">This module is switched off, or your role doesn&apos;t have access. Ask the Super User to switch it on in Super Settings.</p>
-        )}
-      </div>
-    );
-  }
+  if (isError || !schema) return <NotAvailable module={module} />;
   const names = Object.keys(schema.resources);
   const active = tab || names[0];
   return (

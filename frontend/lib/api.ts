@@ -697,7 +697,14 @@ export const clubsApi = {
 
 // Bulk SMS (Phase 6.6). Admin-only on the backend; the UI hides the nav
 // item for non-admin roles via the sidebar allow-list.
+export interface SmsGateway {
+  provider: string; live: boolean; configured: boolean; error?: string; sender_id?: string;
+  cost_per_unit_ngn?: number; balance?: { amount: number | string; currency: string } | null; balance_error?: string | null;
+  channel?: string | null; webhook_url?: string; webhook_protected?: boolean;
+}
 export const smsApi = {
+  gateway: () => api.get("/sms/gateway").then((r) => r.data as SmsGateway),
+  testSend: (phone: string) => api.post("/sms/gateway/test", { phone }).then((r) => r.data as { accepted: boolean; to: string; error: string | null }),
   classes: () => api.get("/sms/classes").then((r) => r.data),
   previewRecipients: (params: { target_type: string; target_value?: string }) =>
     api.get("/sms/recipients/preview", { params }).then((r) => r.data),

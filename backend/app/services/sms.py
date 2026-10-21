@@ -34,8 +34,11 @@ class SendResult:
 
 class SmsProvider(Protocol):
     name: str
+    configured: bool
 
     async def send(self, *, to: str, body: str, sender_id: str) -> SendResult: ...
+
+    async def balance(self) -> dict | None: ...
 
 
 class MockSmsProvider:
@@ -51,6 +54,10 @@ class MockSmsProvider:
     """
 
     name = "mock"
+    configured = True
+
+    async def balance(self) -> dict | None:
+        return None
 
     # Fraction of messages that simulate a delivery failure.
     FAIL_RATE = 0.08
@@ -82,17 +89,85 @@ class MockSmsProvider:
         )
 
 
+def _digits(e164: str) -> str:
+    return "".join(ch for ch in e164 if ch.isdigit())
+
+
+class TermiiProvider:
+    """Real SMS through Termii (https://termii.com), a Nigerian aggregator.
+
+    Needs TERMII_API_KEY and, for names like "FAIRVIEW" to show as the sender, a sender
+    ID approved in the Termii dashboard. Delivery is confirmed later by Termii's webhook
+    (POST /api/v1/sms/webhook/termii), so an accepted send is recorded as SENT, not DELIVERED.
+    """
+
+    name = "termii"
+
+    def _cfg(self):
+        from app.config import get_settings
+        return get_settings()
+
+    @property
+    def configured(self) -> bool:
+        return bool((self._cfg().TERMII_API_KEY or "").strip())
+
+    async def send(self, *, to: str, body: str, sender_id: str) -> SendResult:
+        import httpx
+        cfg = self._cfg()
+        if not self.configured:
+            return SendResult(False, None, error_message="SMS gateway is not configured")
+        payload = {
+            "api_key": cfg.TERMII_API_KEY.strip(), "to": _digits(to), "from": sender_id,
+            "sms": body, "type": "plain", "channel": (cfg.TERMII_CHANNEL or "generic"),
+        }
+        try:
+            async with httpx.AsyncClient(base_url=cfg.TERMII_BASE_URL.rstrip("/"), timeout=20.0) as c:
+                r = await c.post("/api/sms/send", json=payload)
+        except httpx.HTTPError:
+            return SendResult(False, None, error_message="Couldn't reach the SMS provider")
+        try:
+            data = r.json()
+        except ValueError:
+            data = {}
+        mid = data.get("message_id") or data.get("message_id_str")
+        if r.status_code == 200 and mid:
+            return SendResult(True, str(mid), delivered=False)
+        reason = str(data.get("message") or data.get("error") or r.text[:160] or f"HTTP {r.status_code}")
+        return SendResult(False, None, error_message=reason[:200])
+
+    async def balance(self) -> dict | None:
+        import httpx
+        cfg = self._cfg()
+        if not self.configured:
+            return None
+        try:
+            async with httpx.AsyncClient(base_url=cfg.TERMII_BASE_URL.rstrip("/"), timeout=15.0) as c:
+                r = await c.get("/api/get-balance", params={"api_key": cfg.TERMII_API_KEY.strip()})
+            data = r.json()
+        except (httpx.HTTPError, ValueError):
+            raise RuntimeError("Couldn't read the SMS balance")
+        if r.status_code != 200 or "balance" not in data:
+            raise RuntimeError(str(data.get("message") or "Couldn't read the SMS balance")[:120])
+        return {"amount": data.get("balance"), "currency": data.get("currency") or "NGN"}
+
+
 # Registry. Keyed by provider name (matches `SmsCampaign.provider`).
 _PROVIDERS: dict[str, SmsProvider] = {
     "mock": MockSmsProvider(),
+    "termii": TermiiProvider(),
 }
+
+
+def default_provider_name() -> str:
+    from app.config import get_settings
+    return (get_settings().SMS_PROVIDER or "mock").strip().lower()
 
 
 def get_provider(name: str | None = None) -> SmsProvider:
     """Resolve a provider by name. Falls back to the configured default
-    (env `SMS_PROVIDER`, else `mock`) when `name` is None."""
+    (SMS_PROVIDER, else `mock`) when `name` is None."""
     if name is None:
-        name = os.getenv("SMS_PROVIDER", "mock")
+        name = default_provider_name()
     provider = _PROVIDERS.get(name)
     if not provider:
         # Unknown name means a misconfiguration — fail loudly rather than

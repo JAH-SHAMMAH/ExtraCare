@@ -131,6 +131,15 @@ class Settings(BaseSettings):
     # redeploys + multi-instance. Empty = local disk (dev). See DEPLOYMENT.md §5b.
     CLOUDINARY_URL: str = ""
 
+    # ── SMS gateway ──────────────────────────────────────────────────────────
+    # "mock" records messages without sending; "termii" sends real SMS. The key and
+    # webhook secret live in the host's environment, never in the repo.
+    SMS_PROVIDER: str = "mock"
+    TERMII_API_KEY: str = ""
+    TERMII_BASE_URL: str = "https://api.ng.termii.com"
+    TERMII_CHANNEL: str = "generic"   # generic | dnd (dnd reaches Do-Not-Disturb numbers; needs an approved sender ID)
+    SMS_WEBHOOK_SECRET: str = ""      # shared secret the provider sends with delivery reports
+
     # ── Past questions (JAMB / WAEC / NECO practice) ─────────────────────────
     # Provider for exam-body past questions. Set the token in the host's environment
     # (never in the repo). Questions are fetched on demand and cached in the DB.

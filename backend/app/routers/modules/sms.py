@@ -17,6 +17,8 @@ Provider:
     deterministic delivery results so the demo is stable.
 """
 
+import asyncio
+import hmac
 from datetime import datetime, timezone
 from typing import Any
 
@@ -42,7 +44,7 @@ from app.models.sms import (
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
 from app.services.sms import (
-    get_provider, estimate_sms_units, default_sender_id,
+    get_provider, estimate_sms_units, default_sender_id, default_provider_name, SendResult,
     estimate_sms_cost_ngn, COST_PER_UNIT_NGN,
     check_rate_limit, normalise_phone_e164,
 )
@@ -261,6 +263,71 @@ def _message_dict(m: SmsMessage) -> dict[str, Any]:
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 
+def _live_provider():
+    """The configured gateway, or a clear 503 when it can't send yet."""
+    try:
+        provider = get_provider()
+    except ValueError as exc:
+        raise HTTPException(503, detail=str(exc))
+    if not provider.configured:
+        raise HTTPException(
+            503, detail="The SMS gateway isn't set up yet. Add the provider's API key in the server settings.")
+    return provider
+
+
+@router.get("/gateway", dependencies=[_can_read])
+async def gateway_status(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """What the SMS gateway is, whether it can send, and the account balance."""
+    _require_admin(current_user)
+    from app.config import get_settings
+    cfg = get_settings()
+    try:
+        provider = get_provider()
+    except ValueError as exc:
+        return {"provider": default_provider_name(), "live": False, "configured": False, "error": str(exc)}
+    org = (await db.execute(select(Organization).where(Organization.id == current_user.org_id))).scalar_one_or_none()
+    out: dict[str, Any] = {
+        "provider": provider.name, "live": provider.name != "mock", "configured": provider.configured,
+        "sender_id": default_sender_id(org.name if org else None),
+        "cost_per_unit_ngn": COST_PER_UNIT_NGN, "balance": None, "balance_error": None,
+        "channel": cfg.TERMII_CHANNEL if provider.name == "termii" else None,
+        "webhook_url": f"{str(request.base_url).rstrip('/')}/api/v1/sms/webhook/{provider.name}",
+        "webhook_protected": bool((cfg.SMS_WEBHOOK_SECRET or "").strip()),
+    }
+    if provider.configured:
+        try:
+            out["balance"] = await provider.balance()
+        except RuntimeError as exc:
+            out["balance_error"] = str(exc)
+    return out
+
+
+@router.post("/gateway/test", dependencies=[_can_write, Depends(rate_limit_auth("sms_send"))])
+async def gateway_test(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Send one test message to one number so the admin can confirm the gateway works."""
+    _require_admin(current_user)
+    e164 = normalise_phone_e164(str(payload.get("phone") or ""))
+    if not e164:
+        raise HTTPException(422, detail="Enter a valid phone number, e.g. 0803 123 4567.")
+    allowed, retry_in = check_rate_limit(current_user.org_id)
+    if not allowed:
+        raise HTTPException(429, detail=f"Too many sends. Try again in {retry_in} seconds.")
+    provider = _live_provider()
+    org = (await db.execute(select(Organization).where(Organization.id == current_user.org_id))).scalar_one_or_none()
+    res = await provider.send(to=e164, body="Test message from your school portal. SMS is working.",
+                              sender_id=default_sender_id(org.name if org else None))
+    return {"accepted": res.accepted, "to": e164, "provider": provider.name,
+            "error": res.error_message, "provider_message_id": res.provider_message_id}
+
+
 @router.get("/recipients/preview", dependencies=[_can_read])
 async def preview_recipients(
     target_type: str,
@@ -339,7 +406,7 @@ async def send_campaign(
             detail="No recipients matched — nobody with a phone number fits this target.",
         )
 
-    provider = get_provider(payload.get("provider") or None)
+    provider = _live_provider()
 
     campaign = SmsCampaign(
         subject=(payload.get("subject") or None),
@@ -365,10 +432,10 @@ async def send_campaign(
     failed = 0
     now = datetime.now(timezone.utc)
 
+    # Normalise first (a bad number never reaches the provider), then send the valid
+    # ones a handful at a time so a few hundred recipients finish in seconds.
+    jobs: list[tuple[User, str]] = []
     for u in recipients:
-        # Normalise to E.164 right before handing off — defensive even though
-        # we also normalise at user-write time. A bad number short-circuits
-        # to FAILED rather than tripping the provider with garbage input.
         e164 = normalise_phone_e164(u.phone)
         if not e164:
             failed += 1
@@ -381,9 +448,21 @@ async def send_campaign(
                 error_message="Invalid phone number",
                 org_id=current_user.org_id,
             ))
-            continue
+        else:
+            jobs.append((u, e164))
 
-        result = await provider.send(to=e164, body=body, sender_id=sender_id)
+    gate = asyncio.Semaphore(8)
+
+    async def _one(e164: str) -> SendResult:
+        async with gate:
+            try:
+                return await provider.send(to=e164, body=body, sender_id=sender_id)
+            except Exception:  # noqa: BLE001 — one bad send must not sink the campaign
+                return SendResult(False, None, error_message="Provider error")
+
+    results = await asyncio.gather(*[_one(e) for _, e in jobs])
+
+    for (u, e164), result in zip(jobs, results):
         if result.accepted:
             status = SmsMessageStatus.DELIVERED if result.delivered else (
                 SmsMessageStatus.FAILED if result.error_message else SmsMessageStatus.SENT
@@ -540,6 +619,7 @@ async def resend_campaign(
 async def provider_webhook(
     provider_name: str,
     payload: dict,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Async DLR (Delivery Report) webhook stub.
@@ -552,7 +632,13 @@ async def provider_webhook(
     Not in OpenAPI (`include_in_schema=False`) — wired but not part of the
     public surface yet. Auth happens via shared-secret header in production
     (TODO when we plug in a real provider)."""
-    pid = str(payload.get("provider_message_id") or payload.get("message_id") or "")
+    from app.config import get_settings
+    secret = (get_settings().SMS_WEBHOOK_SECRET or "").strip()
+    if secret:
+        given = request.headers.get("x-webhook-secret") or request.query_params.get("secret") or ""
+        if not hmac.compare_digest(given.encode(), secret.encode()):
+            raise HTTPException(401, detail="Bad webhook secret")
+    pid = str(payload.get("provider_message_id") or payload.get("message_id") or payload.get("messageId") or "")
     raw_status = str(payload.get("status") or "").lower()
     if not pid:
         raise HTTPException(422, detail="provider_message_id required")

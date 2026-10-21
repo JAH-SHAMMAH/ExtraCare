@@ -396,3 +396,18 @@ own database. If you raise either value, or the worker count in the Dockerfile
 
 See also: `GO_LIVE_CHECKLIST.md`, `OPERATIONS_RUNBOOK.md`, `BACKUP.md`,
 `RELEASE_NOTES_v1.0.md`.
+
+## SMS gateway (Termii)
+
+Bulk SMS sends through a pluggable gateway. Out of the box it runs in practice mode (`mock`): messages are
+recorded but never leave the server. To send real SMS, set these in the host's environment (never in the repo):
+
+| Variable | Meaning |
+|---|---|
+| `SMS_PROVIDER` | `termii` for real sending; `mock` (default) for practice |
+| `TERMII_API_KEY` | API key from the Termii dashboard |
+| `TERMII_CHANNEL` | `generic` (default) or `dnd` (reaches Do-Not-Disturb numbers; needs an approved sender ID) |
+| `SMS_WEBHOOK_SECRET` | random string; Termii posts delivery reports to `https://<api>/api/v1/sms/webhook/termii?secret=<value>` |
+
+Register the school's sender name (e.g. `FAIRVIEW`, max 11 letters) in Termii first; unapproved names are rejected.
+The SMS page shows the live balance and has a "Send test message" box to confirm everything works.

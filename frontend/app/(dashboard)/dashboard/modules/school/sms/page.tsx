@@ -15,6 +15,9 @@ import { useDelayedFlag } from "@/hooks/useDelayedFlag";
 import { TableSkeleton, Skeleton } from "@/components/loading/Skeleton";
 import { cn, formatDate } from "@/lib/utils";
 import { useAuthStore } from "@/lib/store";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { smsApi } from "@/lib/api";
+import { toast } from "sonner";
 
 type Tab = "compose" | "logs";
 
@@ -40,11 +43,7 @@ export default function SmsPage() {
         </div>
       </div>
 
-      {/* Honest status: no live SMS provider is wired yet. */}
-      <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-6 text-[12px] text-amber-800">
-        <AlertTriangle size={15} className="shrink-0 mt-0.5" />
-        <p><b>Mock mode — messages are NOT delivered to real phones.</b> Campaigns are recorded and unit costs estimated so you can try the flow, but a live SMS provider hasn&apos;t been connected yet. Don&apos;t rely on this for real notifications until a provider is configured.</p>
-      </div>
+      <GatewayPanel />
 
       <div className="bg-white rounded-xl border border-slate-200 p-1 inline-flex mb-5">
         {[
@@ -687,4 +686,58 @@ function initials(name: string | null): string {
 function deriveSenderId(orgName: string): string {
   const cleaned = orgName.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
   return (cleaned || "EXTRACARE").slice(0, 11);
+}
+
+
+function GatewayPanel() {
+  const { data: gw, isLoading, refetch, isFetching } = useQuery({ queryKey: ["sms-gateway"], queryFn: smsApi.gateway, retry: false });
+  const [phone, setPhone] = useState("");
+  const test = useMutation({
+    mutationFn: () => smsApi.testSend(phone),
+    onSuccess: (r) => (r.accepted ? toast.success(`Test message sent to ${r.to}.`) : toast.error(r.error || "The gateway refused the message.")),
+    onError: (e: any) => toast.error(typeof e?.response?.data?.detail === "string" ? e.response.data.detail : "Couldn't send the test."),
+  });
+  if (isLoading || !gw) return <div className="h-14 rounded-lg bg-slate-100 animate-pulse mb-6" />;
+
+  if (!gw.live) {
+    return (
+      <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-6 text-[12px] text-amber-800">
+        <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+        <p><b>Practice mode. Messages are NOT delivered to real phones.</b> Campaigns are recorded so you can try the flow. To send real SMS, your administrator sets <code>SMS_PROVIDER=termii</code> and the Termii API key in the server settings.</p>
+      </div>
+    );
+  }
+  if (!gw.configured) {
+    return (
+      <div className="flex items-start gap-2 rounded-lg bg-red-50 border border-red-200 px-4 py-3 mb-6 text-[12px] text-red-800">
+        <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+        <p><b>The SMS gateway isn&apos;t connected.</b> {gw.error || "The provider's API key is missing from the server settings, so nothing can be sent yet."}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 mb-6">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+        <span className="inline-flex items-center gap-1.5 font-bold text-emerald-700"><CheckCircle2 size={16} /> Live gateway: {gw.provider}</span>
+        <span className="text-slate-600">Sender name: <b className="text-slate-800">{gw.sender_id}</b></span>
+        <span className="text-slate-600">Balance: <b className="text-slate-800">
+          {gw.balance ? `${gw.balance.currency} ${Number(gw.balance.amount).toLocaleString()}` : gw.balance_error || "unavailable"}</b></span>
+        <button onClick={() => refetch()} className="text-xs text-slate-500 hover:text-slate-800 inline-flex items-center gap-1 ml-auto">
+          <RefreshCw size={12} className={isFetching ? "animate-spin" : ""} /> Refresh
+        </button>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Your number, e.g. 0803 123 4567" className="input max-w-xs" />
+        <button onClick={() => test.mutate()} disabled={!phone.trim() || test.isPending} className="btn-secondary gap-2">
+          {test.isPending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send test message
+        </button>
+      </div>
+      {gw.webhook_url && (
+        <p className="mt-3 text-[11px] text-slate-500 break-all">
+          Delivery reports URL (paste into the provider&apos;s dashboard): <code className="text-slate-700">{gw.webhook_url}{gw.webhook_protected ? "?secret=YOUR_SECRET" : ""}</code>
+          {!gw.webhook_protected && <span className="text-amber-700"> · not protected: set SMS_WEBHOOK_SECRET</span>}
+        </p>
+      )}
+    </div>
+  );
 }
