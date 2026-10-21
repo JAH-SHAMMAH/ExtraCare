@@ -14,6 +14,7 @@ from app.database import get_db
 from app.deps import get_current_active_user
 from app.core.permissions import PermissionChecker
 from app.models.user import User
+from app.models.modules.school import Student
 from app.services.storage import save_upload
 
 _logger = logging.getLogger("extracare.upload")
@@ -54,6 +55,13 @@ async def _read_validated(file: UploadFile, allowed: set[str], max_size: int) ->
     return content
 
 
+async def _sync_student_photo(db: AsyncSession, user: User, url: str) -> None:
+    """A student who sets their own profile photo should show it in the Students module too."""
+    await db.execute(
+        update(Student).where(Student.user_id == user.id, Student.org_id == user.org_id).values(photo_url=url)
+    )
+
+
 @router.post("/avatar", dependencies=[Depends(require_role_perm("avatar", "Changing your profile picture"))])
 async def upload_avatar(
     file: UploadFile = File(...),
@@ -64,6 +72,7 @@ async def upload_avatar(
     content = await _read_validated(file, _IMAGE_TYPES, _MAX_AVATAR)
     url = await save_upload(current_user.org_id, "avatars", file.filename, content, file.content_type)
     await db.execute(update(User).where(User.id == current_user.id).values(avatar_url=url))
+    await _sync_student_photo(db, current_user, url)
     _logger.info("upload.avatar user=%s url=%s", current_user.id, url)
     return {"url": url, "filename": file.filename}
 
@@ -86,6 +95,7 @@ async def upload_avatar_for_user(
     content = await _read_validated(file, _IMAGE_TYPES, _MAX_AVATAR)
     url = await save_upload(current_user.org_id, "avatars", file.filename, content, file.content_type)
     await db.execute(update(User).where(User.id == target.id).values(avatar_url=url))
+    await _sync_student_photo(db, target, url)
     _logger.info("upload.avatar.admin actor=%s target=%s url=%s", current_user.id, target.id, url)
     return {"url": url, "user_id": target.id, "filename": file.filename}
 

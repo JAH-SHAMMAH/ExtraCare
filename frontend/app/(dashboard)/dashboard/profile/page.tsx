@@ -11,7 +11,7 @@ import {
   User, Camera, Mail, Phone, Shield, Building2, Loader2,
   Key, Bell, Globe, Save,
 } from "lucide-react";
-import { cn, getInitials } from "@/lib/utils";
+import { cn, getInitials, resolveMediaUrl } from "@/lib/utils";
 import { ProfileRoles } from "@/components/role/ProfileRoles";
 
 export default function ProfilePage() {
@@ -86,7 +86,7 @@ export default function ProfilePage() {
             <div className="relative group">
               <div className="w-24 h-24 rounded-2xl bg-brand-600 flex items-center justify-center text-white text-2xl font-bold overflow-hidden border-4 border-white shadow-lg">
                 {user?.avatar_url ? (
-                  <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                  <img src={resolveMediaUrl(user.avatar_url)} alt="" className="w-full h-full object-cover" />
                 ) : (
                   getInitials(user?.full_name || "U")
                 )}

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useStaff } from "@/hooks/useUsers";
-import { cn, getInitials } from "@/lib/utils";
+import { cn, getInitials, resolveMediaUrl } from "@/lib/utils";
 import { Users as UsersIcon, Search, AlertTriangle, Mail, Phone, Briefcase } from "lucide-react";
 
 // The server already excludes teachers (job_title="Teacher") and students/
@@ -61,7 +61,7 @@ export function StaffDirectory({ breadcrumb = ["People & HR", "Staff & Admin"] }
             <div key={u.id} className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-start gap-3 mb-3">
                 <div className="w-11 h-11 rounded-lg bg-brand-600/10 flex items-center justify-center text-brand-700 font-bold shrink-0 overflow-hidden">
-                  {u.avatar_url ? <img src={u.avatar_url} alt="" className="w-full h-full object-cover" /> : getInitials(u.full_name || u.email || "?")}
+                  {u.avatar_url ? <img src={resolveMediaUrl(u.avatar_url)} alt="" className="w-full h-full object-cover" /> : getInitials(u.full_name || u.email || "?")}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold text-slate-900 truncate">{u.full_name || "—"}</p>

@@ -62,3 +62,15 @@ async def test_admin_avatar_rejects_unknown_or_cross_org(db, org, monkeypatch):
     with pytest.raises(HTTPException) as exc:
         await up.upload_avatar_for_user(user_id="does-not-exist", file=_png(), db=db, current_user=admin)
     assert exc.value.status_code == 404
+
+
+async def test_own_avatar_also_sets_linked_student_photo(db, org, monkeypatch):
+    from app.models.modules.school import Student
+    monkeypatch.setattr(up, "save_upload", _fake_save)
+    u = await _user(db, org, "Pupil")
+    st = Student(id=str(uuid.uuid4()), student_id="S1", first_name="P", last_name="Q", org_id=org.id, user_id=u.id)
+    db.add(st)
+    await db.commit()
+    res = await up.upload_avatar(file=_png(), db=db, current_user=u)
+    await db.refresh(st)
+    assert st.photo_url == res["url"]

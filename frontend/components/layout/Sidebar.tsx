@@ -17,7 +17,7 @@ import {
   CalendarClock, Gavel, ShieldAlert, Fingerprint, Newspaper, Radio, Library, Bus, ArrowLeftRight, UserMinus, UserX,
   FileQuestion, X, LifeBuoy, Settings2, KeyRound, Wrench,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, resolveMediaUrl } from "@/lib/utils";
 import { BrandMark } from "@/components/branding/Brand";
 import { useAuthStore, type ActiveRole } from "@/lib/store";
 import { effectiveModulesForOrg, moduleAllowedForOrg } from "@/lib/workspace";
@@ -991,7 +991,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-white/15 flex items-center justify-center text-white text-xs font-bold shrink-0 overflow-hidden">
                   {user.avatar_url ? (
-                    <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                    <img src={resolveMediaUrl(user.avatar_url)} alt="" className="w-full h-full object-cover" />
                   ) : (
                     user.full_name.charAt(0)
                   )}

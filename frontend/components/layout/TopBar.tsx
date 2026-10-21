@@ -6,7 +6,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { Bell, BookOpen, HelpCircle, Settings, Loader2, MessageSquare, Menu } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
-import { timeAgo } from "@/lib/utils";
+import { timeAgo, resolveMediaUrl } from "@/lib/utils";
 import { useNotifications, useMarkNotificationRead } from "@/hooks/useNotifications";
 
 const GlobalSearch = dynamic(() => import("./GlobalSearch").then((mod) => mod.GlobalSearch), { ssr: false });
@@ -156,7 +156,7 @@ export function TopBar({ onMenu }: { onMenu?: () => void }) {
         >
           <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white text-xs font-bold overflow-hidden">
             {user?.avatar_url ? (
-              <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+              <img src={resolveMediaUrl(user.avatar_url)} alt="" className="w-full h-full object-cover" />
             ) : (
               user?.full_name?.charAt(0) ?? "?"
             )}
