@@ -36,6 +36,17 @@ _MAX_AVATAR = 5 * 1024 * 1024    # 5 MB
 _MAX_DOC = 15 * 1024 * 1024      # 15 MB
 
 
+async def _store(org_id, kind, filename, content, content_type=""):
+    """save_upload, but a storage failure becomes a clear 503 instead of a bare 500."""
+    try:
+        return await save_upload(org_id, kind, filename, content, content_type)
+    except HTTPException:
+        raise
+    except Exception:
+        _logger.exception("upload.storage_failed kind=%s", kind)
+        raise HTTPException(status_code=503, detail="Photo storage isn't working right now. Please tell the administrator.")
+
+
 async def _read_validated(file: UploadFile, allowed: set[str], max_size: int) -> bytes:
     if not file.filename:
         raise HTTPException(status_code=422, detail="No file provided.")
@@ -70,7 +81,7 @@ async def upload_avatar(
 ):
     """Upload the caller's profile photo, persist it as avatar_url, return the URL."""
     content = await _read_validated(file, _IMAGE_TYPES, _MAX_AVATAR)
-    url = await save_upload(current_user.org_id, "avatars", file.filename, content, file.content_type)
+    url = await _store(current_user.org_id, "avatars", file.filename, content, file.content_type)
     await db.execute(update(User).where(User.id == current_user.id).values(avatar_url=url))
     await _sync_student_photo(db, current_user, url)
     _logger.info("upload.avatar user=%s url=%s", current_user.id, url)
@@ -93,7 +104,7 @@ async def upload_avatar_for_user(
     if not target:
         raise HTTPException(status_code=404, detail="User not found.")
     content = await _read_validated(file, _IMAGE_TYPES, _MAX_AVATAR)
-    url = await save_upload(current_user.org_id, "avatars", file.filename, content, file.content_type)
+    url = await _store(current_user.org_id, "avatars", file.filename, content, file.content_type)
     await db.execute(update(User).where(User.id == target.id).values(avatar_url=url))
     await _sync_student_photo(db, target, url)
     _logger.info("upload.avatar.admin actor=%s target=%s url=%s", current_user.id, target.id, url)
@@ -109,7 +120,7 @@ async def upload_document(
 ):
     """Store a document under the org and return its URL."""
     content = await _read_validated(file, _DOC_TYPES, _MAX_DOC)
-    url = await save_upload(current_user.org_id, "documents", file.filename, content, file.content_type)
+    url = await _store(current_user.org_id, "documents", file.filename, content, file.content_type)
     _logger.info("upload.document user=%s category=%s url=%s", current_user.id, category, url)
     return {"url": url, "filename": file.filename, "category": category}
 
@@ -122,7 +133,7 @@ async def upload_report_photo(
     """A picture of a child's work, for the Nursery report's SAMPLE PICTURE column.
     Returns a URL; attach it by sending photo_url with that goal's rating."""
     content = await _read_validated(file, _IMAGE_TYPES, _MAX_AVATAR)
-    url = await save_upload(current_user.org_id, "report-photos", file.filename, content, file.content_type)
+    url = await _store(current_user.org_id, "report-photos", file.filename, content, file.content_type)
     _logger.info("upload.report_photo user=%s url=%s", current_user.id, url)
     return {"url": url, "filename": file.filename}
 
@@ -134,7 +145,7 @@ async def upload_question_image(
 ):
     """An image placed inside a CBT question (diagram, figure). Verified image only."""
     content = await _read_validated(file, _IMAGE_TYPES, _MAX_AVATAR)
-    url = await save_upload(current_user.org_id, "question-images", file.filename, content, file.content_type)
+    url = await _store(current_user.org_id, "question-images", file.filename, content, file.content_type)
     _logger.info("upload.question_image user=%s url=%s", current_user.id, url)
     return {"url": url, "filename": file.filename}
 
@@ -146,7 +157,7 @@ async def upload_exam_answer(
 ):
     """A student's file answer for a 'File Upload' CBT question (PDF, Word, text or photo)."""
     content = await _read_validated(file, _DOC_TYPES - {"application/vnd.ms-excel", "text/csv"}, _MAX_DOC)
-    url = await save_upload(current_user.org_id, "exam-answers", file.filename, content, file.content_type)
+    url = await _store(current_user.org_id, "exam-answers", file.filename, content, file.content_type)
     _logger.info("upload.exam_answer user=%s url=%s", current_user.id, url)
     return {"url": url, "filename": file.filename}
 
@@ -159,5 +170,5 @@ async def upload_student_photo(
     """A student's profile picture. Returns a URL; attach it by saving the student
     with photo_url (create/edit student)."""
     content = await _read_validated(file, _IMAGE_TYPES, _MAX_AVATAR)
-    url = await save_upload(current_user.org_id, "student-photos", file.filename, content, file.content_type)
+    url = await _store(current_user.org_id, "student-photos", file.filename, content, file.content_type)
     return {"url": url, "filename": file.filename}

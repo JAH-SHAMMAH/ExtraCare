@@ -104,7 +104,7 @@ export default function StudentsPage() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast.error("Photo must be under 5MB."); return; }
+    if (file.size > 25 * 1024 * 1024) { toast.error("Photo must be under 25MB."); return; }
     setUploading(true);
     try {
       const r = await uploadApi.studentPhoto(file);

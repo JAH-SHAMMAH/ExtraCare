@@ -1,6 +1,7 @@
 import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from "axios";
 import Cookies from "js-cookie";
 import { env } from "./env";
+import { prepareImage, explainUploadError } from "./prepareImage";
 
 const API_URL = env.NEXT_PUBLIC_API_URL;
 
@@ -844,12 +845,12 @@ export const importApi = {
 // ── Upload API ───────────────────────────────────────────────────────────────
 
 export const uploadApi = {
-  avatar: (file: File) => {
+  avatar: async (file: File) => {
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", await prepareImage(file));
     return api.post("/upload/avatar", formData, {
       headers: { "Content-Type": "multipart/form-data" },
-    }).then((r) => r.data);
+    }).then((r) => r.data).catch(explainUploadError);
   },
   // A picture of a child's work for the Nursery report's SAMPLE PICTURE column.
   reportPhoto: (file: File) => {
@@ -859,12 +860,12 @@ export const uploadApi = {
       headers: { "Content-Type": "multipart/form-data" },
     }).then((r) => r.data as { url: string });
   },
-  studentPhoto: (file: File) => {
+  studentPhoto: async (file: File) => {
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", await prepareImage(file));
     return api.post("/upload/student-photo", formData, {
       headers: { "Content-Type": "multipart/form-data" },
-    }).then((r) => r.data as { url: string });
+    }).then((r) => r.data as { url: string }).catch(explainUploadError);
   },
   document: (file: File, category?: string) => {
     const formData = new FormData();
@@ -886,12 +887,12 @@ export const uploadApi = {
   },
   // Admin-set another user's photo (users:write). Powers photo-rich directories
   // + the feed Select-Users modal for people who never uploaded their own.
-  avatarForUser: (userId: string, file: File) => {
+  avatarForUser: async (userId: string, file: File) => {
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", await prepareImage(file));
     return api.post(`/upload/avatar/${userId}`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
-    }).then((r) => r.data);
+    }).then((r) => r.data).catch(explainUploadError);
   },
 };
 
