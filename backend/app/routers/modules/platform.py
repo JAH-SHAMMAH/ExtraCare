@@ -175,8 +175,18 @@ async def _teacher_assignments(db: AsyncSession, org_id: str, user_id: str) -> s
     from app.models.modules.school import TeachingAssignment
     assigned_rows = (await db.execute(select(TeachingAssignment.class_id, TeachingAssignment.subject_id).where(
         TeachingAssignment.org_id == org_id, TeachingAssignment.teacher_id == user_id))).all()
-    if timetable_rows or assigned_rows:
-        return {(r.class_id, r.subject_id) for r in [*timetable_rows, *assigned_rows]}
+    pairs = {(r.class_id, r.subject_id) for r in [*timetable_rows, *assigned_rows]}
+
+    # A class teacher owns their class's report, so they may enter every subject of that
+    # class when they have no timetable or subject assignment of their own there. (Before this, a
+    # teacher made class teacher of 10A but never given a subject saw "No teaching
+    # assignments" and could not make the report at all.)
+    # Only for a class where they have no explicit subject of their own: a teacher given
+    # specific subjects in their class keeps exactly those.
+    explicit_classes = {c for c, _ in pairs}
+    pairs |= {p for p in await _class_teacher_pairs(db, org_id, user_id) if p[0] not in explicit_classes}
+    if pairs:
+        return pairs
 
     # Fallback: Subject.teacher_id-based (org-wide subject assignment)
     # Find all subjects taught by this teacher, then all (class, subject) pairs
@@ -192,6 +202,23 @@ async def _teacher_assignments(db: AsyncSession, org_id: str, user_id: str) -> s
     # Return all combinations of this teacher's subjects × all classes
     # (Teacher is org-wide subject teacher, can grade in any class taking that subject)
     return {(c.id, s) for c in class_rows for s in subject_ids}
+
+
+async def _class_teacher_pairs(db: AsyncSession, org_id: str, user_id: str) -> set[tuple[str, str]]:
+    """(class, subject) for every class this user leads: each active subject of the
+    class's section (or every active subject when the class has no section)."""
+    led = (await db.execute(select(SchoolClass.id, SchoolClass.section_id).where(
+        SchoolClass.org_id == org_id, SchoolClass.teacher_id == user_id))).all()
+    if not led:
+        return set()
+    subs = (await db.execute(select(Subject.id, Subject.section_id).where(
+        Subject.org_id == org_id, Subject.is_active == True))).all()  # noqa: E712
+    out: set[tuple[str, str]] = set()
+    for c in led:
+        for sub in subs:
+            if not c.section_id or sub.section_id is None or sub.section_id == c.section_id:
+                out.add((c.id, sub.id))
+    return out
 
 
 async def _class_teacher_id(db: AsyncSession, org_id: str, class_id: str) -> str | None:

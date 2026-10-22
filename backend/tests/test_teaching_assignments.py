@@ -129,3 +129,27 @@ async def test_create_user_form_subjects(db, org):
     u = (await db.execute(select(User).where(User.email == "new@fv.com"))).scalar_one()
     assert await _teacher_assignments(db, org.id, u.id) == {
         (classes["Year 5"].id, subjects["French"].id), (classes["Year 6"].id, subjects["French"].id)}
+
+
+async def test_class_teacher_with_no_subject_assignment_can_enter_their_class_subjects(db, org):
+    """Zin leads 10A but was never given a subject: Make Report must still open for 10A."""
+    import uuid as _u
+    from app.models.modules.platform import SchoolSection
+    from app.models.modules.school import SchoolClass, Subject
+    from app.models.user import User, UserStatus
+    from app.routers.modules.platform import _teacher_assignments
+    sec = SchoolSection(id=str(_u.uuid4()), name=f"S-{_u.uuid4().hex[:5]}", org_id=org.id)
+    other = SchoolSection(id=str(_u.uuid4()), name=f"O-{_u.uuid4().hex[:5]}", org_id=org.id)
+    t = User(id=str(_u.uuid4()), email=f"z-{_u.uuid4().hex[:5]}@x.com", full_name="Zin", status=UserStatus.ACTIVE, org_id=org.id)
+    t.roles = []
+    db.add_all([sec, other, t])
+    await db.flush()
+    c10a = SchoolClass(id=str(_u.uuid4()), name="10A", level="10", section_id=sec.id, teacher_id=t.id, org_id=org.id)
+    c9b = SchoolClass(id=str(_u.uuid4()), name="9B", level="9", section_id=sec.id, org_id=org.id)
+    maths = Subject(id=str(_u.uuid4()), name="Maths", section_id=sec.id, org_id=org.id)
+    eng = Subject(id=str(_u.uuid4()), name="English", section_id=sec.id, org_id=org.id)
+    foreign = Subject(id=str(_u.uuid4()), name="Foreign", section_id=other.id, org_id=org.id)
+    db.add_all([c10a, c9b, maths, eng, foreign])
+    await db.commit()
+    pairs = await _teacher_assignments(db, org.id, t.id)
+    assert pairs == {(c10a.id, maths.id), (c10a.id, eng.id)}   # their class only, their section's subjects only

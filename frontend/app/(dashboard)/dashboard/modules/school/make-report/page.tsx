@@ -101,7 +101,7 @@ export default function MakeReportPage() {
     <div className="p-8 max-w-5xl mx-auto">
       <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2"><span>School Report</span><span>/</span><span className="text-brand-600 font-semibold">Make Report</span></nav>
       <h1 className="text-2xl font-black text-slate-900 tracking-tight mb-1 flex items-center gap-2"><NotebookPen size={22} className="text-brand-600" /> Make Report</h1>
-      <p className="text-slate-500 text-sm mb-5">Enter scores for the subjects you teach. You only see the classes and subjects assigned to you on the timetable.</p>
+      <p className="text-slate-500 text-sm mb-5">Enter scores for the subjects you teach. You see the subjects you teach, and every subject of a class you lead as class teacher.</p>
       <p className="text-sm bg-brand-50 border border-brand-100 text-brand-800 rounded-lg px-3 py-2 mb-5">
         Class teacher? Rate your pupils&apos; skills and behaviour (or Nursery learning goals) in{" "}
         <Link href="/dashboard/modules/school/skills-behaviour" className="font-semibold underline">Skills &amp; Behaviour</Link>.
@@ -113,7 +113,7 @@ export default function MakeReportPage() {
         <div className="bg-white rounded-xl border border-dashed border-slate-200 py-16 text-center text-slate-400">
           <NotebookPen size={30} className="mx-auto mb-3 opacity-40" />
           <p className="text-sm font-semibold text-slate-600">No teaching assignments</p>
-          <p className="text-xs mt-1">You aren&apos;t assigned any class/subject on the timetable yet. Ask an administrator to assign you.</p>
+          <p className="text-xs mt-1">You aren&apos;t a class teacher and haven&apos;t been given a class or subject yet. Ask an administrator to make you a class teacher (Classes → Edit) or assign you subjects (Teaching Assignments).</p>
         </div>
       ) : (
         <>
