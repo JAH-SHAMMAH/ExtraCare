@@ -129,3 +129,19 @@ async def test_create_user_form_subjects(db, org):
     u = (await db.execute(select(User).where(User.email == "new@fv.com"))).scalar_one()
     assert await _teacher_assignments(db, org.id, u.id) == {
         (classes["Year 5"].id, subjects["French"].id), (classes["Year 6"].id, subjects["French"].id)}
+
+
+async def test_class_teacher_who_teaches_nothing_sees_no_subjects_in_make_report(db, org):
+    """Make Report lists only what a teacher teaches. Leading a class adds no subjects."""
+    import uuid as _u
+    from app.models.modules.school import SchoolClass, Subject
+    from app.models.user import User, UserStatus
+    from app.routers.modules.platform import _teacher_assignments
+    t = User(id=str(_u.uuid4()), email=f"z-{_u.uuid4().hex[:5]}@x.com", full_name="Zin", status=UserStatus.ACTIVE, org_id=org.id)
+    t.roles = []
+    db.add(t)
+    await db.flush()
+    db.add_all([SchoolClass(id=str(_u.uuid4()), name="10A", level="10", teacher_id=t.id, org_id=org.id),
+                Subject(id=str(_u.uuid4()), name="Maths", org_id=org.id)])
+    await db.commit()
+    assert await _teacher_assignments(db, org.id, t.id) == set()
