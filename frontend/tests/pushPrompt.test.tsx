@@ -4,6 +4,8 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 const post = vi.fn().mockResolvedValue({});
 vi.mock("@/lib/api", () => ({ api: { put: vi.fn().mockResolvedValue({ data: {} }), get: vi.fn().mockImplementation((u: string) => Promise.resolve({ data: u === "/push/prefs" ? { kinds: { attendance: "My child arrives at or leaves school" }, values: { attendance: true } } : { key: "BAQ" } })), post: (...a: any[]) => post(...a) } }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+let mockHasChildren = true;
+vi.mock("@/hooks/useMyContexts", () => ({ useHasLinkedChildren: () => mockHasChildren }));
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { canAccessPath } from "@/lib/access";
 import { PushPrompt } from "@/components/layout/PushPrompt";
@@ -18,7 +20,7 @@ function fakeBrowser(permission: string) {
 }
 
 describe("PushPrompt", () => {
-  beforeEach(() => { localStorage.clear(); post.mockClear(); });
+  beforeEach(() => { localStorage.clear(); post.mockClear(); mockHasChildren = true; });
 
   it("asks, then sends the phone's subscription to the server when allowed", async () => {
     const reg = fakeBrowser("default");
@@ -26,6 +28,13 @@ describe("PushPrompt", () => {
     fireEvent.click(await screen.findByRole("button", { name: /allow alerts/i }));
     await waitFor(() => expect(post).toHaveBeenCalledWith("/push/subscribe", expect.objectContaining({ endpoint: "https://push.example/1" })));
     expect(reg.pushManager.subscribe).toHaveBeenCalledWith(expect.objectContaining({ userVisibleOnly: true }));
+  });
+
+  it("is not shown to an account with no linked child (students, staff)", () => {
+    mockHasChildren = false;
+    fakeBrowser("default");
+    render(<PushPrompt />);
+    expect(screen.queryByRole("region", { name: /phone alerts/i })).toBeNull();
   });
 
   it("stays out of the way when already allowed or blocked", () => {

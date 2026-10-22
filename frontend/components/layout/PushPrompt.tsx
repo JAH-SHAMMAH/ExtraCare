@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import { BellRing, X } from "lucide-react";
 import { toast } from "sonner";
 import { enablePush } from "@/lib/push";
+import { useHasLinkedChildren } from "@/hooks/useMyContexts";
 
 const KEY = "push-prompt-dismissed";
 
 /** Asks once whether this phone may show school alerts (a child arriving or leaving, etc.) outside the app. */
 export function PushPrompt() {
   const [state, setState] = useState<"hidden" | "ask" | "ios" | "busy">("hidden");
+  const hasChildren = useHasLinkedChildren();
 
   useEffect(() => {
     try {
@@ -38,7 +40,7 @@ export function PushPrompt() {
     }
   };
 
-  if (state === "hidden") return null;
+  if (state === "hidden" || !hasChildren) return null;
   return (
     <div role="region" aria-label="Phone alerts" className="mx-4 mt-3 sm:mx-8 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 print:hidden">
       <BellRing size={20} className="mt-0.5 shrink-0" />

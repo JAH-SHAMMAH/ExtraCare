@@ -158,6 +158,16 @@ async def create_parent_link(
     if not student:
         raise HTTPException(status_code=404, detail="student_id: student not found in your organisation.")
 
+    # A link alone shows a person their child's data only if they also hold the
+    # Parent role (it carries the own-child report/attendance permissions). Grant it
+    # here so "link a guardian" is one step; an existing role set is never reduced.
+    from app.models.role import Role
+    if not any(r.slug == "parent" for r in (parent.roles or [])):
+        parent_role = (await db.execute(select(Role).where(
+            Role.org_id == current_user.org_id, Role.slug == "parent"))).scalar_one_or_none()
+        if parent_role is not None:
+            parent.roles = [*(parent.roles or []), parent_role]
+
     link = ParentGuardian(
         user_id=parent.id,
         student_id=student.id,

@@ -160,3 +160,10 @@ export function useActiveRoleContext(): {
   if (activeRole === "student") return { activeRole, context: data.as_student, isAdmin: false };
   return { activeRole, context: null, isAdmin: false };
 }
+
+/** True only for an account that has at least one child linked to it. Drives
+ *  parent-only extras (phone alerts about a child arriving or leaving). */
+export function useHasLinkedChildren(): boolean {
+  const { data } = useMyContexts();
+  return (data?.as_parent?.children?.length ?? 0) > 0;
+}

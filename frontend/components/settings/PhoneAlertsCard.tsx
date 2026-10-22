@@ -5,6 +5,7 @@ import { BellRing, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { useHasLinkedChildren } from "@/hooks/useMyContexts";
 import { disablePush, enablePush, pushStatus, type PushStatus } from "@/lib/push";
 
 const NOTE: Record<PushStatus, string> = {
@@ -51,6 +52,7 @@ function AlertChoices() {
 export function PhoneAlertsCard() {
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const hasChildren = useHasLinkedChildren();
   useEffect(() => { pushStatus().then(setStatus); }, []);
   const usable = status === "on" || status === "off";
   const flip = async () => {
@@ -61,6 +63,8 @@ export function PhoneAlertsCard() {
       setStatus(await pushStatus());
     } catch { toast.error("Could not change phone alerts."); } finally { setBusy(false); }
   };
+  // Alerts are about a linked child arriving or leaving: nobody else gets the card.
+  if (!hasChildren) return null;
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-6">
       <h2 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2"><BellRing size={15} /> Phone alerts</h2>

@@ -175,3 +175,16 @@ async def test_rbac_parents_scope_visibility(db, org):
         u = await _preset_user(db, org, slug)
         assert not u.has_permission("school:parents:read"), f"{slug} must not read"
         assert not u.has_permission("school:parents:write"), f"{slug} must not write"
+
+
+async def test_linking_grants_the_parent_role(db, org, teacher, unlinked_user, student):
+    """A link alone shows nothing without the Parent role, so linking adds it."""
+    from sqlalchemy import select
+    db.add(Role(id=str(uuid.uuid4()), name="Parent", slug="parent",
+                permissions=list(SCHOOL_PERMISSION_PRESETS["parent"]), org_id=org.id, is_system=True))
+    await db.commit()
+
+    await _link(db, teacher, user_id=unlinked_user.id, student_id=student.id)
+
+    await db.refresh(unlinked_user, ["roles"])
+    assert "parent" in {r.slug for r in unlinked_user.roles}

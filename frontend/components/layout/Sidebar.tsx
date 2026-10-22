@@ -1,5 +1,6 @@
 "use client";
 
+import { useHasLinkedChildren } from "@/hooks/useMyContexts";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -834,10 +835,14 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
   // Phase 7: build the visible core-nav list, filtered by permission (+ the
   // active view-role for personal pages). Depends on `user`/`org` so it
   // recomputes when the signed-in identity or its permissions change.
+  const hasChildren = useHasLinkedChildren();
   const visibleCoreNav = useMemo(
-    () => CORE_NAV.filter((item) => navItemVisible(item, roleScope ?? null, hasPermission, navCtx)),
+    () => CORE_NAV
+      .filter((item) => navItemVisible(item, roleScope ?? null, hasPermission, navCtx))
+      // Phone Alerts is about a linked child: hide it for a parent role with no child linked.
+      .filter((item) => item.label !== "Phone Alerts" || hasChildren),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [roleScope, user, org, superUi],
+    [roleScope, user, org, superUi, hasChildren],
   );
 
   // Pre-filter module sections by module AND by permission. A teacher's broad
