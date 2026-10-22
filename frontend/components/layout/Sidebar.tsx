@@ -398,6 +398,7 @@ export const MODULE_SECTIONS: ModuleSection[] = [
     icon: Users2,
     items: [
       { href: "/dashboard/modules/school/students", label: "Students", icon: Users2 },
+      { href: "/dashboard/modules/school/parents", label: "Parents & Guardians", icon: Contact },
       { href: "/dashboard/modules/school/students/withdrawal", label: "Manage Withdrawal", icon: UserMinus },
       { href: "/dashboard/modules/school/students/withdrawal-list", label: "Withdrawal List", icon: ClipboardList },
       { href: "/dashboard/modules/school/students/inactive", label: "Manage Inactive Students", icon: UserX },
