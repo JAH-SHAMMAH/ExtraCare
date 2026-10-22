@@ -6,10 +6,12 @@ import { useSubjects, useCreateSubject, useUpdateSubject } from "@/hooks/useScho
 import { cn } from "@/lib/utils";
 import { BookMarked, Plus, Search, X, Loader2, MoreVertical, Edit2, Save, School, Coins } from "lucide-react";
 import type { Subject } from "@/types";
+import { useHasPermission } from "@/components/guards/PermissionGate";
 
 type Tab = "manage" | "create" | "credits";
 
 export default function SubjectsPage() {
+  const canWrite = useHasPermission("school:write");
   const [tab, setTab] = useState<Tab>("manage");
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Subject | null>(null);
@@ -38,7 +40,7 @@ export default function SubjectsPage() {
 
   const TABS: { key: Tab; label: string }[] = [
     { key: "manage", label: "Manage Subjects" },
-    { key: "create", label: editing ? "Edit Subject" : "Create Subject" },
+    ...(canWrite ? [{ key: "create" as Tab, label: editing ? "Edit Subject" : "Create Subject" }] : []),
     { key: "credits", label: "Credit Units" },
   ];
 
@@ -74,7 +76,7 @@ export default function SubjectsPage() {
         <>
           <div className="flex items-center justify-between gap-3 mb-4">
             <div className="relative flex-1 max-w-md"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search subjects..." className="input pl-9" /></div>
-            <button onClick={() => { resetForm(); setTab("create"); }} className="btn-primary gap-2 shrink-0"><Plus size={15} /> Add Subject</button>
+            {canWrite && <button onClick={() => { resetForm(); setTab("create"); }} className="btn-primary gap-2 shrink-0"><Plus size={15} /> Add Subject</button>}
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
@@ -100,12 +102,12 @@ export default function SubjectsPage() {
                     <td className="px-5 py-3.5 text-sm text-slate-600">{s.credit_hours}</td>
                     <td className="px-5 py-3.5"><span className={cn("badge", s.is_active ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600 border-slate-200")}>{s.is_active ? "Active" : "Inactive"}</span></td>
                     <td className="px-5 py-3.5">
-                      <div className="relative">
+                      {canWrite && <div className="relative">
                         <button onClick={() => setMenuOpen(menuOpen === s.id ? null : s.id)} className="p-1 rounded hover:bg-slate-100"><MoreVertical size={14} className="text-slate-400" /></button>
                         {menuOpen === s.id && (<div className="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg border border-slate-200 shadow-lg z-10 py-1">
                           <button onClick={() => handleEdit(s)} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"><Edit2 size={13} /> Edit</button>
                         </div>)}
-                      </div>
+                      </div>}
                     </td>
                   </tr>
                 ))}
@@ -116,7 +118,7 @@ export default function SubjectsPage() {
       )}
 
       {/* ── Create / Edit ── */}
-      {tab === "create" && (
+      {canWrite && tab === "create" && (
         <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-3xl">
           <div className="flex items-center justify-between mb-4"><h2 className="text-sm font-bold text-slate-800">{editing ? "Edit Subject" : "New Subject"}</h2>{editing && <button onClick={() => { resetForm(); }} className="text-xs text-slate-400 hover:text-slate-600 inline-flex items-center gap-1"><X size={13} />Clear</button>}</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
