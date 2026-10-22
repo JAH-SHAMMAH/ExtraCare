@@ -18,6 +18,7 @@ class ClassCreate(BaseModel):
     academic_year: Optional[str] = None
     class_teacher_id: Optional[str] = None     # -> teacher_id
     room: Optional[str] = None
+    section_id: Optional[str] = None           # the school (Early Years / Primary / Secondary)
 
 
 class ClassUpdate(BaseModel):

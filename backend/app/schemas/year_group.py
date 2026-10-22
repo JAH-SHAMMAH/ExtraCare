@@ -11,6 +11,7 @@ class YearGroupCreate(BaseModel):
     short_code: Optional[str] = Field(default=None, max_length=20)
     category: str = "active"          # active | alumni | prospective
     is_mock: bool = False
+    section_id: Optional[str] = None
 
 
 class YearGroupUpdate(BaseModel):
@@ -19,6 +20,7 @@ class YearGroupUpdate(BaseModel):
     category: Optional[str] = None
     is_mock: Optional[bool] = None
     position: Optional[int] = None
+    section_id: Optional[str] = None
 
 
 class YearGroupResponse(BaseModel):
@@ -28,6 +30,7 @@ class YearGroupResponse(BaseModel):
     category: str
     position: int
     is_mock: bool
+    section_id: Optional[str] = None
     org_id: str
 
 

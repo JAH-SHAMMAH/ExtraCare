@@ -261,7 +261,7 @@ export const schoolApi = {
     delete: (id: string) => api.delete(`/school/classes/${id}`),
   },
   yearGroups: {
-    list: () => api.get("/school/year-groups").then((r) => r.data),
+    list: (p?: object) => api.get("/school/year-groups", { params: p }).then((r) => r.data),
     create: (data: object) => api.post("/school/year-groups", data).then((r) => r.data),
     update: (id: string, data: object) => api.patch(`/school/year-groups/${id}`, data).then((r) => r.data),
     remove: (id: string) => api.delete(`/school/year-groups/${id}`),

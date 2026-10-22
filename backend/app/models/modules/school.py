@@ -174,6 +174,9 @@ class YearGroup(Base, UUIDMixin, TimestampMixin, TenantMixin):
     category = Column(String(20), default="active", nullable=False)  # active | alumni | prospective
     position = Column(Integer, default=0, nullable=False)
     is_mock = Column(Boolean, default=False, nullable=False)
+    # Which school (Early Years / Primary / Secondary) this year group sits in — the
+    # "Select School" step of Manage YearGroups and Manage Class.
+    section_id = Column(String(36), ForeignKey("school_sections.id", ondelete="SET NULL"), nullable=True, index=True)
     org_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
 
     __table_args__ = (

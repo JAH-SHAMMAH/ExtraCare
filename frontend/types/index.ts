@@ -177,6 +177,9 @@ export interface SchoolClass {
   section_id: string | null;   // managed report section (level) link, if assigned
   class_teacher_id: string | null;
   class_teacher_name: string | null;
+  year_group?: string | null;
+  category?: string;
+  pc_teachers?: { id: string; name: string }[];
   capacity: number;
   student_count: number;
   academic_year: string;

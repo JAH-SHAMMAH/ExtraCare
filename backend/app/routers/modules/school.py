@@ -512,8 +512,13 @@ async def _teacher_names(db: AsyncSession, org_id: str, teacher_ids: set[str]) -
     return {uid: name for uid, name in rows}
 
 
-def _class_dict(c: SchoolClass, student_count: int, teacher_name: str | None) -> dict:
+def _class_dict(c: SchoolClass, student_count: int, teacher_name: str | None,
+                category: str | None = None, pc_teachers: list[dict] | None = None) -> dict:
     return {
+        "year_group": c.level,
+        "category": category or "active",
+        "pc_teachers": pc_teachers if pc_teachers is not None else (
+            [{"id": c.teacher_id, "name": teacher_name}] if c.teacher_id and teacher_name else []),
         "id": c.id,
         "name": c.name,
         "grade_level": c.level,
@@ -553,23 +558,35 @@ async def list_classes(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=100, ge=1, le=200),
     search: str | None = None,
+    section_id: str | None = None,   # the school (Early Years / Primary / Secondary)
+    year_group: str | None = None,   # a year group's name
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     query = select(SchoolClass).where(SchoolClass.org_id == current_user.org_id)
+    if section_id:
+        query = query.where(SchoolClass.section_id == section_id)
+    if year_group:
+        query = query.where(func.lower(SchoolClass.level) == year_group.strip().lower())
     if search:
         term = f"%{search}%"
         query = query.where(
             SchoolClass.name.ilike(term) | SchoolClass.level.ilike(term) | SchoolClass.section.ilike(term)
         )
-    query = query.order_by(SchoolClass.name)
     total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar()
-    classes = (await db.execute(query.offset((page - 1) * page_size).limit(page_size))).scalars().all()
+    # Year-group order (Play Group … Year 12, then Alumni), then name — the order the
+    # school reads them in, not alphabetical.
+    pos = {y.name.lower(): (y.position, (y.category or "active")) for y in (await db.execute(
+        select(YearGroup).where(YearGroup.org_id == current_user.org_id))).scalars().all()}
+    classes = (await db.execute(query.order_by(SchoolClass.name))).scalars().all()
+    classes.sort(key=lambda c: (pos.get((c.level or "").lower(), (10**6, "active"))[0], c.name or ""))
+    classes = classes[(page - 1) * page_size: page * page_size]
 
     counts = await _class_student_counts(db, current_user.org_id, [c.id for c in classes])
     names = await _teacher_names(db, current_user.org_id, {c.teacher_id for c in classes})
     return {
-        "items": [_class_dict(c, counts.get(c.id, 0), names.get(c.teacher_id)) for c in classes],
+        "items": [_class_dict(c, counts.get(c.id, 0), names.get(c.teacher_id),
+                              category=pos.get((c.level or "").lower(), (0, "active"))[1]) for c in classes],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -597,6 +614,7 @@ async def create_class(
         name=data.name, level=data.grade_level, section=data.section,
         academic_year=data.academic_year, teacher_id=data.class_teacher_id or None,
         room=data.room, max_capacity=data.capacity if data.capacity is not None else 40,
+        section_id=await _check_section(db, org_id, data.section_id),
         org_id=org_id,
     )
     db.add(c)
@@ -4286,14 +4304,27 @@ async def run_due_schedules(db: AsyncSession = Depends(get_db), current_user: Us
 
 def _year_group_dict(y: YearGroup) -> dict:
     return {"id": y.id, "name": y.name, "short_code": y.short_code, "category": y.category,
-            "position": y.position, "is_mock": y.is_mock, "org_id": y.org_id}
+            "position": y.position, "is_mock": y.is_mock, "section_id": y.section_id, "org_id": y.org_id}
 
 
 @router.get("/year-groups", response_model=list[YearGroupResponse], dependencies=[_classes_read])
-async def list_year_groups(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    rows = (await db.execute(select(YearGroup).where(
-        YearGroup.org_id == current_user.org_id).order_by(YearGroup.position, YearGroup.name))).scalars().all()
+async def list_year_groups(section_id: str | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    q = select(YearGroup).where(YearGroup.org_id == current_user.org_id)
+    if section_id:
+        q = q.where(YearGroup.section_id == section_id)
+    rows = (await db.execute(q.order_by(YearGroup.position, YearGroup.name))).scalars().all()
     return [_year_group_dict(y) for y in rows]
+
+
+async def _check_section(db, org_id: str, section_id: str | None) -> str | None:
+    """A school id from the request, or None. 404 when it isn't this organisation's."""
+    sid = section_id or None
+    if sid:
+        ok = (await db.execute(select(SchoolSection.id).where(
+            SchoolSection.id == sid, SchoolSection.org_id == org_id))).scalar_one_or_none()
+        if not ok:
+            raise HTTPException(status_code=404, detail="School not found in your organisation.")
+    return sid
 
 
 @router.post("/year-groups", response_model=YearGroupResponse, status_code=201, dependencies=[_can_write])
@@ -4304,6 +4335,7 @@ async def create_year_group(payload: YearGroupCreate, db: AsyncSession = Depends
     y = YearGroup(
         name=payload.name.strip(), short_code=(payload.short_code or "").strip() or None,
         category=(payload.category or "active").strip().lower(), is_mock=payload.is_mock,
+        section_id=await _check_section(db, org_id, payload.section_id),
         position=(max_pos + 1) if max_pos is not None else 0, org_id=org_id,
     )
     db.add(y)
@@ -4332,8 +4364,16 @@ async def update_year_group(year_group_id: str, payload: YearGroupUpdate, db: As
         data["short_code"] = (data["short_code"] or "").strip() or None
     if "category" in data and data["category"]:
         data["category"] = data["category"].strip().lower()
+    if "section_id" in data:
+        data["section_id"] = await _check_section(db, current_user.org_id, data["section_id"])
+    old_name = y.name
     for k, v in data.items():
         setattr(y, k, v)
+    if "name" in data and data["name"] and data["name"] != old_name:
+        # Classes hold their year group as text; keep them pointing at the renamed group.
+        await db.execute(sa_update(SchoolClass).where(
+            SchoolClass.org_id == current_user.org_id, func.lower(SchoolClass.level) == old_name.lower()
+        ).values(level=data["name"]))
     try:
         await db.flush()
     except IntegrityError:
@@ -4354,9 +4394,14 @@ async def reorder_year_groups(payload: ReorderRequest, db: AsyncSession = Depend
     Ids not belonging to this org are ignored."""
     org_id = current_user.org_id
     rows = {y.id: y for y in (await db.execute(select(YearGroup).where(YearGroup.org_id == org_id))).scalars().all()}
-    for i, yid in enumerate(payload.ids):
-        y = rows.get(yid)
-        if y:
+    # Re-deal the positions this subset already holds, in the new order, so reordering
+    # one school's groups never disturbs another's.
+    chosen = [rows[i] for i in payload.ids if i in rows]
+    slots = sorted(y.position for y in chosen)
+    for y, pos in zip(chosen, slots):
+        y.position = pos
+    if len(set(slots)) != len(slots):   # legacy duplicate positions: fall back to list order
+        for i, y in enumerate(chosen):
             y.position = i
     await db.flush()
     ordered = (await db.execute(select(YearGroup).where(

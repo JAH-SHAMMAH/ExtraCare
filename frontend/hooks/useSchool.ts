@@ -165,7 +165,7 @@ export function useDeleteTeacher() {
 
 // ── Classes ──────────────────────────────────────────────────────────────────
 
-export function useClasses(params?: { page?: number; page_size?: number; search?: string }) {
+export function useClasses(params?: { page?: number; page_size?: number; search?: string; section_id?: string; year_group?: string }) {
   return useQuery({
     queryKey: ["classes", params],
     queryFn: () => schoolApi.classes.list(params),
@@ -209,9 +209,9 @@ export function useDeleteClass() {
 }
 
 // ── Year Groups (class-level taxonomy) ───────────────────────────────────────
-export interface YearGroup { id: string; name: string; short_code: string | null; category: string; position: number; is_mock: boolean; org_id: string; }
-export function useYearGroups() {
-  return useQuery<YearGroup[]>({ queryKey: ["year-groups"], queryFn: () => schoolApi.yearGroups.list() });
+export interface YearGroup { id: string; name: string; short_code: string | null; category: string; position: number; is_mock: boolean; section_id: string | null; org_id: string; }
+export function useYearGroups(sectionId?: string) {
+  return useQuery<YearGroup[]>({ queryKey: ["year-groups", sectionId ?? "all"], queryFn: () => schoolApi.yearGroups.list(sectionId ? { section_id: sectionId } : undefined) });
 }
 function ygMut<V>(fn: (v: V) => Promise<any>, ok: string) {
   return () => {
