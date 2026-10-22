@@ -36,6 +36,7 @@ function hasPermission(permission: string): boolean {
 // Admin surfaces that must NOT appear in a teacher's sidebar. Benchmarked
 // against Educare's teacher nav, where none of these exist teacher-side.
 const HIDDEN = [
+  "/dashboard/modules/school/subjects",
   // Students module — the whole roster-admin cluster
   "/dashboard/modules/school/students",
   "/dashboard/modules/school/students/withdrawal",
@@ -145,7 +146,6 @@ const VISIBLE = [
   "/dashboard/modules/school/report-cards",
   "/dashboard/modules/school/grades",
   "/dashboard/modules/school/exams",
-  "/dashboard/modules/school/subjects",
   "/dashboard/modules/school/subject-selection",
   "/dashboard/modules/school/lessons",
   "/dashboard/modules/school/cbt",

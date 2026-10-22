@@ -124,7 +124,8 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // Class + YearGroup MANAGEMENT is admin taxonomy. The classroom tier keeps
   // `school:classes:read` so its class pickers resolve, but gets no nav item.
   { prefix: "/dashboard/modules/school/classes", permission: "school_admin:read" },
-  { prefix: "/dashboard/modules/school/subjects", permission: "school:subjects:read" },
+  // Manage Subjects is admin taxonomy (create/edit need school:write); teachers keep Class List.
+  { prefix: "/dashboard/modules/school/subjects", permission: "school_admin:read" },
   // Student Enrolment (who takes which subject) is the admin register; the write endpoint needs settings:write.
   { prefix: "/dashboard/modules/school/student-enrolment", permission: "settings:write" },
   // Insights dashboard is admin-only; the marking page needs write.
