@@ -74,6 +74,15 @@ async def _teacher_nav_context(
             SchoolClass.section_id != None,  # noqa: E711
         )
     )).scalars().all()
+    # A class they assist counts for the sidebar's report sections too (not for is_class_teacher).
+    from app.core.school_identity import resolve_assisted_class_ids
+    assisted_ids = await resolve_assisted_class_ids(db, user)
+    if assisted_ids:
+        class_section_ids = list(class_section_ids) + list((await db.execute(
+            select(distinct(SchoolClass.section_id)).where(
+                SchoolClass.id.in_(assisted_ids), SchoolClass.org_id == org_id,
+                SchoolClass.section_id != None)  # noqa: E711
+        )).scalars().all())
     # Sections the admin assigned the teacher to count too, so a teacher who
     # belongs to both Primary and Secondary sees both report menus even before
     # they hold a class in each.

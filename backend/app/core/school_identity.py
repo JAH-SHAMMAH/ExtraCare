@@ -71,3 +71,17 @@ async def resolve_taught_subject_ids(db: AsyncSession, user: User) -> list[str]:
         )
     )
     return [r for r in result.scalars().all()]
+
+
+async def resolve_assisted_class_ids(db: AsyncSession, user: User) -> list[str]:
+    """Classes this user assists (the optional assistant teacher), not leads."""
+    from app.models.modules.platform import ClassAssistant
+    return list((await db.execute(select(ClassAssistant.class_id).where(
+        ClassAssistant.teacher_id == user.id, ClassAssistant.org_id == user.org_id))).scalars().all())
+
+
+async def is_class_assistant(db: AsyncSession, org_id: str, class_id: str, user_id: str) -> bool:
+    from app.models.modules.platform import ClassAssistant
+    return (await db.execute(select(ClassAssistant.id).where(
+        ClassAssistant.org_id == org_id, ClassAssistant.class_id == class_id,
+        ClassAssistant.teacher_id == user_id))).first() is not None

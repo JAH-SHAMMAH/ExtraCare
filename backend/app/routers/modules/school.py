@@ -512,13 +512,26 @@ async def _teacher_names(db: AsyncSession, org_id: str, teacher_ids: set[str]) -
     return {uid: name for uid, name in rows}
 
 
+async def _assistant_map(db: AsyncSession, org_id: str, class_ids: list[str]) -> dict[str, str]:
+    """class id -> the optional assistant teacher's user id."""
+    from app.models.modules.platform import ClassAssistant
+    if not class_ids:
+        return {}
+    rows = (await db.execute(select(ClassAssistant.class_id, ClassAssistant.teacher_id).where(
+        ClassAssistant.org_id == org_id, ClassAssistant.class_id.in_(class_ids)))).all()
+    return {cid: tid for cid, tid in rows}
+
+
 def _class_dict(c: SchoolClass, student_count: int, teacher_name: str | None,
-                category: str | None = None, pc_teachers: list[dict] | None = None) -> dict:
+                category: str | None = None, assistant: tuple[str, str | None] | None = None) -> dict:
+    pcs = [{"id": c.teacher_id, "name": teacher_name, "role": "class_teacher"}] if c.teacher_id and teacher_name else []
+    if assistant and assistant[1]:
+        pcs.append({"id": assistant[0], "name": assistant[1], "role": "assistant"})
     return {
         "year_group": c.level,
         "category": category or "active",
-        "pc_teachers": pc_teachers if pc_teachers is not None else (
-            [{"id": c.teacher_id, "name": teacher_name}] if c.teacher_id and teacher_name else []),
+        "pc_teachers": pcs,
+        "assistant_teacher_id": assistant[0] if assistant else None,
         "id": c.id,
         "name": c.name,
         "grade_level": c.level,
@@ -541,6 +554,33 @@ async def _load_class(db: AsyncSession, class_id: str, org_id: str) -> SchoolCla
     if not c:
         raise HTTPException(status_code=404, detail=f"Class not found for id: {class_id}")
     return c
+
+
+async def _class_response(db: AsyncSession, org_id: str, c: SchoolClass, student_count: int) -> dict:
+    assist = await _assistant_map(db, org_id, [c.id])
+    names = await _teacher_names(db, org_id, {c.teacher_id} | set(assist.values()))
+    return _class_dict(c, student_count, names.get(c.teacher_id),
+                       assistant=((assist[c.id], names.get(assist[c.id])) if c.id in assist else None))
+
+
+async def _set_assistant(db: AsyncSession, org_id: str, c: SchoolClass, teacher_id: str | None) -> None:
+    """Set, change or clear (None / "") the class's optional assistant teacher."""
+    from app.models.modules.platform import ClassAssistant
+    teacher_id = teacher_id or None
+    if teacher_id:
+        await _validate_teacher(db, org_id, teacher_id)
+        if teacher_id == c.teacher_id:
+            raise HTTPException(status_code=422, detail="The assistant must be a different teacher from the class teacher.")
+    row = (await db.execute(select(ClassAssistant).where(
+        ClassAssistant.org_id == org_id, ClassAssistant.class_id == c.id))).scalar_one_or_none()
+    if not teacher_id:
+        if row:
+            await db.delete(row)
+    elif row:
+        row.teacher_id = teacher_id
+    else:
+        db.add(ClassAssistant(org_id=org_id, class_id=c.id, teacher_id=teacher_id))
+    await db.flush()
 
 
 async def _validate_teacher(db: AsyncSession, org_id: str, teacher_id: str | None) -> None:
@@ -583,10 +623,12 @@ async def list_classes(
     classes = classes[(page - 1) * page_size: page * page_size]
 
     counts = await _class_student_counts(db, current_user.org_id, [c.id for c in classes])
-    names = await _teacher_names(db, current_user.org_id, {c.teacher_id for c in classes})
+    assist = await _assistant_map(db, current_user.org_id, [c.id for c in classes])
+    names = await _teacher_names(db, current_user.org_id, {c.teacher_id for c in classes} | set(assist.values()))
     return {
         "items": [_class_dict(c, counts.get(c.id, 0), names.get(c.teacher_id),
-                              category=pos.get((c.level or "").lower(), (0, "active"))[1]) for c in classes],
+                              category=pos.get((c.level or "").lower(), (0, "active"))[1],
+                              assistant=((assist[c.id], names.get(assist[c.id])) if c.id in assist else None)) for c in classes],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -597,8 +639,7 @@ async def list_classes(
 async def get_class(class_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     c = await _load_class(db, class_id, current_user.org_id)
     counts = await _class_student_counts(db, current_user.org_id, [c.id])
-    names = await _teacher_names(db, current_user.org_id, {c.teacher_id})
-    return _class_dict(c, counts.get(c.id, 0), names.get(c.teacher_id))
+    return await _class_response(db, current_user.org_id, c, counts.get(c.id, 0))
 
 
 @router.post("/classes", status_code=201, dependencies=[_can_write])
@@ -619,13 +660,14 @@ async def create_class(
     )
     db.add(c)
     await db.flush()
+    if data.assistant_teacher_id:
+        await _set_assistant(db, org_id, c, data.assistant_teacher_id)
     await log_action(
         db, AuditAction.RECORD_CREATED, org_id, actor=current_user,
         resource_type="SchoolClass", resource_id=c.id, resource_label=c.name,
         new_values={"name": c.name, "level": c.level, "section": c.section}, request=request,
     )
-    names = await _teacher_names(db, org_id, {c.teacher_id})
-    return _class_dict(c, 0, names.get(c.teacher_id))
+    return await _class_response(db, org_id, c, 0)
 
 
 @router.patch("/classes/{class_id}", dependencies=[_can_write])
@@ -639,6 +681,8 @@ async def update_class(
     org_id = current_user.org_id
     c = await _load_class(db, class_id, org_id)
     updates = data.model_dump(exclude_unset=True)
+    assistant_given = "assistant_teacher_id" in updates
+    assistant_id = updates.pop("assistant_teacher_id", None)
     if "class_teacher_id" in updates:
         # "" clears the assignment, as section_id already does. Without this the
         # empty string reaches teacher_id, which is a FK to users.id, and an
@@ -659,14 +703,23 @@ async def update_class(
     for field, value in updates.items():
         setattr(c, field_map.get(field, field), value)
     await db.flush()
+    if assistant_given:
+        await _set_assistant(db, org_id, c, assistant_id)
+    else:
+        # Promoting the assistant to class teacher: they can't hold both seats.
+        from app.models.modules.platform import ClassAssistant
+        cur = (await db.execute(select(ClassAssistant).where(
+            ClassAssistant.org_id == org_id, ClassAssistant.class_id == c.id))).scalar_one_or_none()
+        if cur and cur.teacher_id == c.teacher_id:
+            await db.delete(cur)
+            await db.flush()
     await log_action(
         db, AuditAction.RECORD_UPDATED, org_id, actor=current_user,
         resource_type="SchoolClass", resource_id=c.id, resource_label=c.name,
         new_values={k: v for k, v in updates.items()}, request=request,
     )
     counts = await _class_student_counts(db, org_id, [c.id])
-    names = await _teacher_names(db, org_id, {c.teacher_id})
-    return _class_dict(c, counts.get(c.id, 0), names.get(c.teacher_id))
+    return await _class_response(db, org_id, c, counts.get(c.id, 0))
 
 
 @router.delete("/classes/{class_id}", status_code=204, dependencies=[_can_write])
@@ -1679,6 +1732,9 @@ async def _ensure_class_rating_author(db: AsyncSession, current_user: User, clas
                    "who can record its assessments. Ask an administrator to assign one.",
         )
     if teacher_id != current_user.id:
+        from app.core.school_identity import is_class_assistant
+        if await is_class_assistant(db, current_user.org_id, class_id, current_user.id):
+            return   # the optional assistant teacher records ratings alongside the class teacher
         raise HTTPException(
             status_code=403,
             detail="Only this class's teacher can record its assessment ratings.",

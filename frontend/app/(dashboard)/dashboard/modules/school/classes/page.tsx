@@ -20,7 +20,7 @@ export default function ManageClassPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "n", dir: 1 });
-  const [form, setForm] = useState<null | { id?: string; name: string; year_group: string; capacity: string; class_teacher_id: string; academic_year: string }>(null);
+  const [form, setForm] = useState<null | { id?: string; name: string; year_group: string; capacity: string; class_teacher_id: string; assistant_teacher_id: string; academic_year: string }>(null);
 
   // Default to the first school (Early Years) once they load.
   const orderedSections = useMemo(() => [...sections].sort((a, b) => a.position - b.position), [sections]);
@@ -60,14 +60,16 @@ export default function ManageClassPage() {
     </th>
   );
 
-  const openNew = () => setForm({ name: "", year_group: yearGroup || "", capacity: "40", class_teacher_id: "", academic_year: "" });
-  const openEdit = (c: SchoolClass) => setForm({ id: c.id, name: c.name, year_group: c.year_group || c.grade_level || "", capacity: String(c.capacity ?? 40), class_teacher_id: c.class_teacher_id || "", academic_year: c.academic_year || "" });
+  const openNew = () => setForm({ name: "", year_group: yearGroup || "", capacity: "40", class_teacher_id: "", assistant_teacher_id: "", academic_year: "" });
+  const openEdit = (c: SchoolClass) => setForm({ id: c.id, name: c.name, year_group: c.year_group || c.grade_level || "", capacity: String(c.capacity ?? 40), class_teacher_id: c.class_teacher_id || "", assistant_teacher_id: (c as any).assistant_teacher_id || "", academic_year: c.academic_year || "" });
   const save = () => {
     if (!form || !form.name.trim()) return;
     const payload: any = {
       name: form.name.trim(), grade_level: form.year_group || null, capacity: parseInt(form.capacity) || 40,
       // null, not "": the API clears the assignment on a null, and teacher_id is a foreign key.
-      class_teacher_id: form.class_teacher_id || null, academic_year: form.academic_year || null,
+      class_teacher_id: form.class_teacher_id || null,
+      assistant_teacher_id: form.assistant_teacher_id || null,   // optional: null clears it
+      academic_year: form.academic_year || null,
     };
     if (form.id) updateClass.mutate({ id: form.id, data: payload }, { onSuccess: () => setForm(null) });
     else createClass.mutate({ ...payload, section_id: schoolId || null }, { onSuccess: () => setForm(null) });
@@ -149,7 +151,9 @@ export default function ManageClassPage() {
                       {(c.pc_teachers?.length ?? 0) > 0 ? (
                         <div className="flex flex-col gap-1.5 items-start">
                           {c.pc_teachers!.map((t) => (
-                            <span key={t.id} className="inline-flex items-center gap-1.5 rounded bg-green-600 text-white text-sm px-3 py-1.5"><User size={13} /> {t.name}</span>
+                            <span key={t.id} className={cn("inline-flex items-center gap-1.5 rounded text-white text-sm px-3 py-1.5", t.role === "assistant" ? "bg-teal-500" : "bg-green-600")}>
+                              <User size={13} /> {t.name}{t.role === "assistant" && <em className="not-italic text-[10px] font-bold uppercase opacity-90">· Assistant</em>}
+                            </span>
                           ))}
                         </div>
                       ) : <span className="text-xs font-semibold text-amber-700">No PC teacher</span>}
@@ -212,6 +216,15 @@ export default function ManageClassPage() {
                   <option value="">— None —</option>
                   {teachers.map((t) => <option key={t.id} value={t.id}>{[t.first_name, t.last_name].filter(Boolean).join(" ") || t.email}</option>)}
                 </select>
+              </div>
+              <div>
+                <label className="label">Assistant Teacher <span className="font-normal text-slate-400">(optional)</span></label>
+                {/* Helps with attendance, comments and skills ratings; cannot submit the report. */}
+                <select value={form.assistant_teacher_id} onChange={(e) => setForm({ ...form, assistant_teacher_id: e.target.value })} className="input">
+                  <option value="">— None —</option>
+                  {teachers.filter((t) => t.id !== form.class_teacher_id).map((t) => <option key={t.id} value={t.id}>{[t.first_name, t.last_name].filter(Boolean).join(" ") || t.email}</option>)}
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1">Helps with attendance, comments and skills ratings. Only the class teacher submits the report.</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Capacity</label><input type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} className="input" /></div>

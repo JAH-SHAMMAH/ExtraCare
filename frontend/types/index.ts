@@ -179,7 +179,8 @@ export interface SchoolClass {
   class_teacher_name: string | null;
   year_group?: string | null;
   category?: string;
-  pc_teachers?: { id: string; name: string }[];
+  assistant_teacher_id?: string | null;
+  pc_teachers?: { id: string; name: string; role?: "class_teacher" | "assistant" }[];
   capacity: number;
   student_count: number;
   academic_year: string;

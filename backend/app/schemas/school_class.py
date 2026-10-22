@@ -19,6 +19,7 @@ class ClassCreate(BaseModel):
     class_teacher_id: Optional[str] = None     # -> teacher_id
     room: Optional[str] = None
     section_id: Optional[str] = None           # the school (Early Years / Primary / Secondary)
+    assistant_teacher_id: Optional[str] = None  # optional second teacher
 
 
 class ClassUpdate(BaseModel):
@@ -29,4 +30,5 @@ class ClassUpdate(BaseModel):
     capacity: Optional[int] = Field(default=None, ge=0)
     academic_year: Optional[str] = None
     class_teacher_id: Optional[str] = None
+    assistant_teacher_id: Optional[str] = None  # "" / null clears the assistant
     room: Optional[str] = None

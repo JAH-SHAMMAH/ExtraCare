@@ -227,8 +227,13 @@ async def _gate_comment_access(db: AsyncSession, org_id: str, user: User, class_
                  else f"the {slot.name!r} comment")
         raise HTTPException(status_code=403,
                             detail=f"Only an administrator can enter {label}.")
-    if not class_id or await _pc_teacher_id(db, org_id, class_id) != user.id:
-        raise HTTPException(status_code=403, detail="You are not the PC teacher for this class.")
+    if class_id and await _pc_teacher_id(db, org_id, class_id) == user.id:
+        return
+    # The class's optional assistant teacher helps write these comments (never the head's).
+    from app.core.school_identity import is_class_assistant
+    if class_id and await is_class_assistant(db, org_id, class_id, user.id):
+        return
+    raise HTTPException(status_code=403, detail="You are not the PC teacher for this class.")
 
 
 async def _resolve_comment_slot(db: AsyncSession, org_id: str, comment_type_id: str | None):

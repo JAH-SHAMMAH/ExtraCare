@@ -58,3 +58,50 @@ async def test_create_in_a_school(db, org, teacher):
     assert yg["section_id"] == sec.id
     c = await create_class(ClassCreate(name="Year 9 Peridot", grade_level="Year 9", section_id=sec.id), db=db, current_user=teacher)
     assert c["year_group"] == "Year 9" and c["section_id"] == sec.id
+
+
+# ── optional assistant teacher ──────────────────────────────────────────────
+
+async def test_assistant_is_optional_and_shown(db, org, teacher):
+    from app.routers.modules.school import update_class
+    from app.schemas.school_class import ClassUpdate
+    _early, sec = await _world(db, org)
+    plain = await create_class(ClassCreate(name="Year 9 Peridot", grade_level="Year 9", section_id=sec.id), db=db, current_user=teacher)
+    assert plain["assistant_teacher_id"] is None and plain["pc_teachers"] == []   # no assistant needed
+    from app.models.user import User
+    other = User(email="asst@x.com", hashed_password="x", full_name="Asst One", org_id=org.id)
+    db.add(other); await db.flush()
+    c = await update_class(plain["id"], ClassUpdate(class_teacher_id=teacher.id, assistant_teacher_id=other.id), db=db, current_user=teacher)
+    assert [p["role"] for p in c["pc_teachers"]] == ["class_teacher", "assistant"]
+    cleared = await update_class(plain["id"], ClassUpdate(assistant_teacher_id=""), db=db, current_user=teacher)
+    assert cleared["assistant_teacher_id"] is None and len(cleared["pc_teachers"]) == 1
+
+
+async def test_assistant_cannot_equal_class_teacher(db, org, teacher):
+    from fastapi import HTTPException
+    from app.routers.modules.school import update_class
+    from app.schemas.school_class import ClassUpdate
+    _e, sec = await _world(db, org)
+    c = await create_class(ClassCreate(name="Year 9 Peridot", section_id=sec.id, class_teacher_id=teacher.id), db=db, current_user=teacher)
+    with pytest.raises(HTTPException) as e:
+        await update_class(c["id"], ClassUpdate(assistant_teacher_id=teacher.id), db=db, current_user=teacher)
+    assert e.value.status_code == 422
+
+
+async def test_assistant_can_comment_but_not_submit_or_open_results(db, org, teacher):
+    from fastapi import HTTPException
+    from app.models.user import User
+    from app.routers.modules.platform import _gate_comment_access, _class_for_reports_or_403
+    from app.routers.modules.school import update_class
+    from app.schemas.school_class import ClassUpdate
+    _e, sec = await _world(db, org)
+    asst = User(email="asst2@x.com", hashed_password="x", full_name="Asst Two", org_id=org.id)
+    db.add(asst); await db.flush(); await db.refresh(asst, ["roles"])
+    c = await create_class(ClassCreate(name="Year 9 Peridot", section_id=sec.id, class_teacher_id=teacher.id), db=db, current_user=teacher)
+    # Not an assistant yet: refused.
+    with pytest.raises(HTTPException):
+        await _gate_comment_access(db, org.id, asst, c["id"], "pc")
+    await update_class(c["id"], ClassUpdate(assistant_teacher_id=asst.id), db=db, current_user=teacher)
+    await _gate_comment_access(db, org.id, asst, c["id"], "pc")          # now allowed
+    with pytest.raises(HTTPException):                                      # still not the class teacher
+        await _class_for_reports_or_403(db, org.id, asst, c["id"])

@@ -89,6 +89,14 @@ async def school_context(
         {"id": c.id, "name": c.name, "level": c.level, "academic_year": c.academic_year}
         for c in classes_result.scalars().all()
     ]
+    from app.core.school_identity import resolve_assisted_class_ids
+    assisted = await resolve_assisted_class_ids(db, current_user)
+    if assisted:
+        have = {c["id"] for c in classes}
+        for c in (await db.execute(select(SchoolClass).where(
+                SchoolClass.id.in_(assisted), SchoolClass.org_id == current_user.org_id))).scalars().all():
+            if c.id not in have:
+                classes.append({"id": c.id, "name": c.name, "level": c.level, "academic_year": c.academic_year})
 
     subjects_result = await db.execute(
         select(Subject).where(
@@ -210,7 +218,9 @@ async def _teacher_context(db: AsyncSession, user: User) -> dict[str, Any] | Non
             Timetable.org_id == user.org_id,
         ).distinct()
     )).scalars().all()
-    extra_class_ids = [cid for cid in slot_class_ids if cid and cid not in {c.id for c in form_classes}]
+    from app.core.school_identity import resolve_assisted_class_ids
+    slot_class_ids = list(slot_class_ids) + await resolve_assisted_class_ids(db, user)   # classes they assist
+    extra_class_ids = list(dict.fromkeys(cid for cid in slot_class_ids if cid and cid not in {c.id for c in form_classes}))
     extra_classes = []
     if extra_class_ids:
         extra_classes = (await db.execute(

@@ -583,6 +583,21 @@ class ClassPcTeacher(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
 
+class ClassAssistant(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """An OPTIONAL assistant teacher for a class (at most one). They help with the
+    day-to-day — attendance, the pupil comments and skills ratings — but are not the
+    class teacher: they cannot submit the report, open Reports View / Result Analysis
+    or download results. Those stay with SchoolClass.teacher_id."""
+    __tablename__ = "class_assistants"
+
+    class_id = Column(String(36), ForeignKey("school_classes.id", ondelete="CASCADE"), nullable=False, index=True)
+    teacher_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "class_id", name="uq_class_assistant"),
+    )
+
+
 class SchoolHouse(Base, UUIDMixin, TimestampMixin, TenantMixin):
     """A school house (for the merit/conduct leaderboard + Pastoral House Setup)."""
     __tablename__ = "school_houses"
