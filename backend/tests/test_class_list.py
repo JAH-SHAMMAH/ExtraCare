@@ -158,3 +158,18 @@ async def test_an_unknown_subject_is_not_found(db, org):
     with pytest.raises(HTTPException) as e:
         await class_list(class_id=cls.id, subject_id=str(uuid.uuid4()), db=db, current_user=teacher)
     assert e.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_a_teaching_assignment_without_timetable_grants_the_roster(db, org):
+    """Teaching Assignments (no timetable slot) must count, as in Make Report."""
+    from app.models.modules.school import TeachingAssignment
+    teacher = await _user(db, org)
+    cls, _, subj = await _school(db, org)
+    db.add(TeachingAssignment(id=str(uuid.uuid4()), class_id=cls.id, subject_id=subj.id,
+                              teacher_id=teacher.id, org_id=org.id))
+    await db.commit()
+
+    out = await class_list(class_id=cls.id, subject_id=subj.id, db=db, current_user=teacher)
+
+    assert out["total"] == 3

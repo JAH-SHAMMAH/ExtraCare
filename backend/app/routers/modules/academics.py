@@ -524,15 +524,8 @@ async def class_list(
         raise HTTPException(status_code=404, detail="Subject not found.")
 
     if not current_user.has_permission("school_admin:read"):
-        taught = {
-            (t.class_id, t.subject_id)
-            for t in (await db.execute(
-                select(Timetable).where(
-                    Timetable.teacher_id == current_user.id,
-                    Timetable.org_id == org_id,
-                )
-            )).scalars().all()
-        }
+        from app.routers.modules.platform import _teacher_assignments
+        taught = await _teacher_assignments(db, org_id, current_user.id)
         if (class_id, subject_id) not in taught:
             raise HTTPException(
                 status_code=403,
