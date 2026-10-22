@@ -167,7 +167,6 @@ export function TeacherHome() {
             key: `${b.name}-${b.date_of_birth}-${idx}`,
             primary: b.name,
             secondary: `${b.role === "staff" ? "Staff" : "Student"} • ${new Date(b.date_of_birth).toLocaleDateString()}`,
-            href: `/dashboard/modules/school/staff`,
           }))}
           icon={Cake}
         />
@@ -237,7 +236,7 @@ function ListCard({
 }: {
   title: string;
   empty: string;
-  items: Array<{ key: string; primary: string; secondary: string | null; href: string }>;
+  items: Array<{ key: string; primary: string; secondary: string | null; href?: string }>;
   icon: typeof Clock;
 }) {
   return (
@@ -249,22 +248,24 @@ function ListCard({
         {items.length === 0 ? (
           <div className="px-5 py-8 text-center text-sm text-slate-400">{empty}</div>
         ) : (
-          items.map((it) => (
-            <Link
-              key={it.key}
-              href={it.href}
-              className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors"
-            >
-              <div className="w-9 h-9 rounded-lg bg-brand-50 text-brand-700 flex items-center justify-center shrink-0">
-                <Icon size={15} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-900 truncate">{it.primary}</p>
-                {it.secondary && <p className="text-xs text-slate-500 truncate">{it.secondary}</p>}
-              </div>
-              <ArrowRight size={14} className="text-slate-300" />
-            </Link>
-          ))
+          items.map((it) => {
+            const body = (
+              <>
+                <div className="w-9 h-9 rounded-lg bg-brand-50 text-brand-700 flex items-center justify-center shrink-0">
+                  <Icon size={15} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-900 truncate">{it.primary}</p>
+                  {it.secondary && <p className="text-xs text-slate-500 truncate">{it.secondary}</p>}
+                </div>
+                {it.href && <ArrowRight size={14} className="text-slate-300" />}
+              </>
+            );
+            const cls = "flex items-center gap-3 px-5 py-3.5";
+            return it.href
+              ? <Link key={it.key} href={it.href} className={`${cls} hover:bg-slate-50 transition-colors`}>{body}</Link>
+              : <div key={it.key} className={cls}>{body}</div>;
+          })
         )}
       </div>
     </div>

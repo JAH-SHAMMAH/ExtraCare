@@ -94,6 +94,8 @@ export function navItemVisible(
   if (item.needs && !hasPermission(item.needs)) return false;
   // Parents are not staff: the personal HR pages are not offered to them.
   if (roleScope === "parent" && PARENT_HIDDEN.has(item.href.split("?")[0])) return false;
+  // Nor to pupils: leave, staff attendance and disciplinary records are staff self-service.
+  if (roleScope === "student" && PARENT_HIDDEN.has(item.href.split("?")[0])) return false;
   // Real pages: the shared access map decides. A null requirement means the
   // route is open to any authenticated user. Strip any ?query (e.g. deep-linked
   // School Setup tabs) so the access map matches on the base path, not the full URL.
@@ -696,7 +698,7 @@ export const MODULE_SECTIONS: ModuleSection[] = [
     icon: ClipboardList,
     items: [
       { href: "/dashboard/modules/school/student-result-history", label: "Student Result History", icon: FileText },
-      { href: "/dashboard/modules/school/result-backup", label: "Result Backup Helper", icon: FolderOpen },
+      { href: "/dashboard/modules/school/result-backup", label: "Result Backup Helper", icon: FolderOpen, classTeacherOnly: true },
     ],
   },
   {

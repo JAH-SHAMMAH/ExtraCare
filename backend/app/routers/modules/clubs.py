@@ -340,7 +340,7 @@ async def delete_club(
 # ── Memberships ───────────────────────────────────────────────────────────────
 
 
-@router.get("/{club_id}/members", dependencies=[_can_read])
+@router.get("/{club_id}/members", dependencies=[_can_write])
 async def list_members(
     club_id: str,
     academic_year: str | None = None,
@@ -384,7 +384,7 @@ async def update_membership_status(
     return {"id": m.id, "status": m.status}
 
 
-@router.get("/{club_id}/enrollment-candidates", dependencies=[_can_read])
+@router.get("/{club_id}/enrollment-candidates", dependencies=[_can_write])
 async def enrollment_candidates(
     club_id: str,
     academic_year: str | None = None,

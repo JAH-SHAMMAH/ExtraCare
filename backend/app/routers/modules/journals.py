@@ -14,7 +14,7 @@ RBAC:
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -30,6 +30,7 @@ from app.schemas.school_experience import (
 from app.core.tenant import require_role_module
 from app.core.permissions import PermissionChecker
 from app.core.school_identity import resolve_linked_student_id
+from app.routers.modules.school import _owned_student_ids
 
 router = APIRouter(
     prefix="/journals",
@@ -58,6 +59,12 @@ async def list_journals(
         PhotoJournal.org_id == current_user.org_id,
         PhotoJournal.is_deleted == False,
     )
+    # Pupils and parents hold journals:read: show only their own class's journals
+    # (and school-wide ones), never another class's photos.
+    owned = await _owned_student_ids(db, current_user)
+    if owned is not None:
+        my_classes = select(Student.class_id).where(Student.id.in_(owned), Student.class_id.isnot(None))
+        query = query.where(or_(PhotoJournal.class_id.is_(None), PhotoJournal.class_id.in_(my_classes)))
     if class_id:
         query = query.where(PhotoJournal.class_id == class_id)
     if club_id:
@@ -129,6 +136,10 @@ async def list_remarks(
     current_user: User = Depends(get_current_active_user),
 ):
     query = select(WeeklyRemark).where(WeeklyRemark.org_id == current_user.org_id)
+    # A pupil / parent only ever sees remarks about their own children.
+    owned = await _owned_student_ids(db, current_user)
+    if owned is not None:
+        query = query.where(WeeklyRemark.student_id.in_(owned))
     if student_id:
         query = query.where(WeeklyRemark.student_id == student_id)
     if week_start:

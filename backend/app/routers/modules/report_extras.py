@@ -69,6 +69,10 @@ async def results_backup(class_id: str, term_id: str, sub_term_id: str, session_
     cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == class_id, SchoolClass.org_id == org))).scalar_one_or_none()
     if not cls:
         raise HTTPException(404, "Class not found.")
+    # A whole class's marks: the school's administrators, or that class's own teacher. Any
+    # other teacher holds reports:read for their own subjects, not for someone else's class.
+    if not (user.has_permission("school_admin:read") or cls.teacher_id == user.id):
+        raise HTTPException(403, "Only the class teacher or an administrator can download a class's results.")
     students = (await db.execute(select(Student).where(Student.org_id == org, Student.class_id == class_id, Student.is_deleted == False)  # noqa: E712
                                  .order_by(Student.first_name, Student.last_name))).scalars().all()
     cards = [await report_card(student_id=s.id, term_id=term_id, sub_term_id=sub_term_id, session_id=session_id, db=db, current_user=user) for s in students]

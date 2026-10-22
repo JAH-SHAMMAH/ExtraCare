@@ -458,7 +458,7 @@ async def generate_timetable(job_id: str, db: AsyncSession = Depends(get_db), cu
 
 # ── View Subject Student Attendance (filtered history over attendance) ─────────
 
-@router.get("/subject-attendance", response_model=SubjectAttendanceResponse, dependencies=[_can_read])
+@router.get("/subject-attendance", response_model=SubjectAttendanceResponse, dependencies=[_can_write])
 async def subject_student_attendance(
     class_id: str,
     start_date: date | None = None,

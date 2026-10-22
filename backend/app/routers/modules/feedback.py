@@ -57,7 +57,9 @@ _can_write = Depends(PermissionChecker("school:feedback:write"))
 # holds) rather than the broad school:read/write it no longer carries. Students and
 # parents hold neither feedback scope, so they stay excluded; a single student's
 # reports remain parent-visible via _reports_read below.
-_staff_read = Depends(PermissionChecker("school:feedback:read"))
+# Pupils and parents DO hold feedback:read (to submit/see their own feedback), so the
+# staff-only daily-report lists must key on the write scope they lack.
+_staff_read = Depends(PermissionChecker("school:feedback:write"))
 _staff_write = Depends(PermissionChecker("school:feedback:write"))
 # A single student's daily reports are parent/student-visible, ownership-scoped —
 # the same "reports" visibility parents already have for the report card.
