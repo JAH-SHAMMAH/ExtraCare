@@ -7,7 +7,7 @@ import { useAuthStore } from "@/lib/store";
 import { supportApi } from "@/lib/api";
 import { LifeBuoy, Mail, Send, CheckCircle2, Loader2 } from "lucide-react";
 
-const SUPPORT_EMAIL = "shammahbadman@gmail.com";
+const SUPPORT_EMAIL = "shamzyjayy@gmail.com";
 
 export default function SupportPage() {
   const { user, org } = useAuthStore();

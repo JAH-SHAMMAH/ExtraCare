@@ -97,7 +97,7 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     FROM_EMAIL: str = "noreply@fairviewschoolng.com"
-    SUPPORT_EMAIL: str = "shammahbadman@gmail.com"   # where the Support form routes
+    SUPPORT_EMAIL: str = "shamzyjayy@gmail.com"   # where the Support form routes
 
     # ── Remita payment gateway (parent fee payments) ─────────────────────────
     # Ships with Remita's PUBLIC demo/test credentials so the flow works out of
