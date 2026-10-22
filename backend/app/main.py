@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+import asyncio
 import time
 import logging
 
@@ -73,11 +74,26 @@ logger = logging.getLogger("extracare")
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
     logger.info("Starting %s...", settings.APP_NAME)
-    await init_db()
-    logger.info("Database initialized.")
-    from app.database import AsyncSessionLocal
-    from app.services.fairview_setup import auto_setup_on_boot
-    await auto_setup_on_boot(AsyncSessionLocal)
+
+    async def _boot_db_work():
+        """DB-dependent boot work (role-preset sync, report-card setup). Run AFTER the port
+        is open: when the database is slow, locked or briefly unreachable, a blocking
+        startup left Render with "no open ports detected" and a failed deploy, and no
+        log line saying why. Now the API comes up, /health answers, and the cause is
+        logged here."""
+        try:
+            await asyncio.wait_for(init_db(), timeout=300)
+            logger.info("Database initialized.")
+            from app.database import AsyncSessionLocal
+            from app.services.fairview_setup import auto_setup_on_boot
+            await asyncio.wait_for(auto_setup_on_boot(AsyncSessionLocal), timeout=300)
+            logger.info("Boot setup finished.")
+        except asyncio.TimeoutError:
+            logger.error("BOOT: database work timed out after 300s — the database is slow, locked or unreachable.")
+        except Exception:  # noqa: BLE001
+            logger.exception("BOOT: database initialisation failed")
+
+    boot_task = asyncio.create_task(_boot_db_work())
     start_flusher()
     logger.info("Usage flusher started.")
 
@@ -106,6 +122,7 @@ async def lifespan(app: FastAPI):
         logger.info("Paystack provider wired.")
 
     yield
+    boot_task.cancel()
     await stop_flusher()
     logger.info("Shutting down %s.", settings.APP_NAME)
 
