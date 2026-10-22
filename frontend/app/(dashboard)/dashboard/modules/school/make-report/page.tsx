@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMyTeachingAssignments, useReportEntryGrid, useSaveReportEntry, useSaveSubjectComments, useSubjectCommentGrid, useSubTerms, useTerms } from "@/hooks/usePlatform";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/lib/store";
 import { classesFromAssignments, defaultSubTermId, subjectsForClass, subTermDisplay } from "@/lib/reportEntry";
 import { useSubjectReadiness, useSubmitClassReport, useSubmitSubjectReport, useWithdrawSubjectReport } from "@/hooks/useAcademics";
 import { Loader2, Save, NotebookPen, AlertTriangle, SendHorizonal, CheckCircle2, Undo2, Clock, MessageSquare } from "lucide-react";
@@ -11,6 +12,7 @@ import { Loader2, Save, NotebookPen, AlertTriangle, SendHorizonal, CheckCircle2,
 export default function MakeReportPage() {
   const { data: assignments = [], isLoading: loadingA } = useMyTeachingAssignments();
   const { data: terms = [] } = useTerms();
+  const me = useAuthStore((st) => st.user);
   const { data: subTerms = [] } = useSubTerms();
   // Four fields, matching Report Entry (the admin page) rather than the single
   // combined "class - subject" list this page used to carry: a Fairview teacher
@@ -65,6 +67,7 @@ export default function MakeReportPage() {
     () => (commentGrid?.rows ?? []).filter((r: any) => (commentDraft[r.student_id] ?? r.text ?? "").trim()).length,
     [commentGrid, commentDraft],
   );
+  const isClassTeacher = !!me?.id && !!readiness?.class_teacher_id && readiness.class_teacher_id === me.id;
   // This teacher's own row for the subject currently open.
   const mySubjectRow = useMemo(
     () => (readiness?.subjects ?? []).find((r: any) => r.subject_id === subjectId),
@@ -159,8 +162,11 @@ export default function MakeReportPage() {
                         ? <>Submitted by {mySubjectRow.submitted_by_name || "a teacher"}
                             {mySubjectRow.submitted_at ? ` on ${new Date(mySubjectRow.submitted_at).toLocaleDateString("en-GB")}` : ""}.
                             Withdraw it if the marks need changing.</>
-                        : <>Tells your class teacher your marks for this subject are finished.
-                            It does not submit the whole class.</>}
+                        : isClassTeacher
+                          ? <>Marks this subject finished on the checklist below, so you can see what is left
+                              before you submit the whole class. It does not submit the class.</>
+                          : <>Tells your class teacher your marks for this subject are finished.
+                              It does not submit the whole class.</>}
                     </p>
                   </div>
                 </div>

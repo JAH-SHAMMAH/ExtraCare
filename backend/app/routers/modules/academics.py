@@ -1222,7 +1222,7 @@ async def subject_readiness(
             class_id=class_id, class_name=cls.name, term_id=term_id, term_name=term.name,
             sub_term_id=sub_term_id, sub_term_name=(sub.name if sub else None),
             subjects=[], submitted_count=0, total_count=0,
-            class_stage=None,
+            class_stage=None, class_teacher_id=cls.teacher_id,
         )
 
     subjects = {s.id: s for s in (await db.execute(select(Subject).where(
@@ -1283,6 +1283,7 @@ async def subject_readiness(
         submitted_count=sum(1 for r in rows if r.submitted),
         total_count=len(rows),
         class_stage=(appr.stage if appr else None),
+        class_teacher_id=cls.teacher_id,
     )
 
 

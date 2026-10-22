@@ -269,6 +269,8 @@ class SubjectReadinessResponse(BaseModel):
     # The class-level workflow stage, so one call tells the PC teacher both
     # whether their colleagues are done and whether they have already submitted.
     class_stage: Optional[str] = None
+    # Lets the UI word the sign-off differently for the class teacher themself.
+    class_teacher_id: Optional[str] = None
 
 
 # ── Merit & Awards (one typed model) ───────────────────────────────────────────
