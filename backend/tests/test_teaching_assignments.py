@@ -141,7 +141,11 @@ async def test_class_teacher_who_teaches_nothing_sees_no_subjects_in_make_report
     t.roles = []
     db.add(t)
     await db.flush()
-    db.add_all([SchoolClass(id=str(_u.uuid4()), name="10A", level="10", teacher_id=t.id, org_id=org.id),
-                Subject(id=str(_u.uuid4()), name="Maths", org_id=org.id)])
+    from app.models.modules.platform import SchoolSection
+    sec = SchoolSection(id=str(_u.uuid4()), name=f"S-{_u.uuid4().hex[:5]}", org_id=org.id)
+    db.add(sec)
+    await db.flush()
+    db.add_all([SchoolClass(id=str(_u.uuid4()), name="10A", level="10", section_id=sec.id, teacher_id=t.id, org_id=org.id),
+                Subject(id=str(_u.uuid4()), name="Maths", section_id=sec.id, org_id=org.id)])
     await db.commit()
     assert await _teacher_assignments(db, org.id, t.id) == set()
