@@ -220,6 +220,9 @@ async def _teacher_context(db: AsyncSession, user: User) -> dict[str, Any] | Non
     )).scalars().all()
     from app.core.school_identity import resolve_assisted_class_ids
     slot_class_ids = list(slot_class_ids) + await resolve_assisted_class_ids(db, user)   # classes they assist
+    from app.models.modules.school import TeachingAssignment
+    slot_class_ids += list((await db.execute(select(TeachingAssignment.class_id).where(
+        TeachingAssignment.teacher_id == user.id, TeachingAssignment.org_id == user.org_id).distinct())).scalars().all())
     extra_class_ids = list(dict.fromkeys(cid for cid in slot_class_ids if cid and cid not in {c.id for c in form_classes}))
     extra_classes = []
     if extra_class_ids:

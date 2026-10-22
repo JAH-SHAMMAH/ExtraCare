@@ -588,19 +588,12 @@ async def list_grade_analysis(
     (not just Subject.teacher_id, which would be org-wide per subject).
     """
     # Get teacher's Timetable rows (class_id, subject_id pairs they teach)
-    teacher_timetables = (await db.execute(
-        select(Timetable).where(
-            Timetable.teacher_id == current_user.id,
-            Timetable.org_id == current_user.org_id,
-        )
-    )).scalars().all()
+    from app.routers.modules.platform import _teacher_assignments
+    teacher_pairs = {(c, sb) for c, sb in await _teacher_assignments(db, current_user.org_id, current_user.id) if c and sb}
 
-    if not teacher_timetables:
+    if not teacher_pairs:
         # Teacher has no class assignments
         return {"items": [], "total": 0, "page": page, "page_size": page_size}
-
-    # Extract (class_id, subject_id) pairs from teacher's Timetable
-    teacher_pairs = set((t.class_id, t.subject_id) for t in teacher_timetables if t.class_id and t.subject_id)
 
     # Optional filtering by specific class/subject (must still be in teacher's Timetable)
     if class_id or subject_id:
