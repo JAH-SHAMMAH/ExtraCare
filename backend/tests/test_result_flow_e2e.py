@@ -182,3 +182,48 @@ async def test_year10_amethyst_summer_report_end_to_end(http, db, org, world):
     r = await http.get(f"{API}/platform/report-card", headers=_h(w["parent"]),
                        params=dict(pq, student_id=w["studs"][1].id))
     assert r.status_code in (403, 404)
+
+
+async def test_parent_contacts_are_staff_only(http, db, org, world):
+    """A parent must not be able to list (or message) other families."""
+    from app.models.role import Role
+    w = world
+    # Real system slugs, as in production.
+    for u, slug in ((w["parent"], "parent"),):
+        for r in u.roles:
+            r.slug = slug
+    other_parent = await _user(db, org, "parent", "Other Family")
+    for r in other_parent.roles:
+        r.slug = "parent"
+    stu = await _user(db, org, "student", "Some Pupil")
+    for r in stu.roles:
+        r.slug = "student"
+    for r in w["teacher"].roles:
+        r.slug = "teacher"
+    await db.commit()
+
+    r = await http.get(f"{API}/messenger/contacts", headers=_h(w["parent"]))
+    assert r.status_code == 200
+    names = {c["full_name"] for c in r.json()}
+    assert "Zin" in names and "Admin" in names, "staff stay reachable"
+    assert "Other Family" not in names and "Some Pupil" not in names, "other families must not be listed"
+
+    r = await http.post(f"{API}/messenger/conversations", headers=_h(w["parent"]),
+                        json=dict(kind="direct", peer_id=other_parent.id))
+    assert r.status_code == 403
+
+    # staff still see everyone
+    r = await http.get(f"{API}/messenger/contacts", headers=_h(w["teacher"]))
+    assert "Other Family" in {c["full_name"] for c in r.json()}
+
+
+async def test_parent_cannot_open_staff_hr_pages(http, db, org, world):
+    w = world
+    for r in w["parent"].roles:
+        r.slug = "parent"
+    for r in w["teacher"].roles:
+        r.slug = "teacher"
+    await db.commit()
+    for path in ("/hr/me", "/leave/entitlements", "/hr/attendance/my", "/hr/disciplinary/my-cases"):
+        assert (await http.get(f"{API}{path}", headers=_h(w["parent"]))).status_code == 403, path
+        assert (await http.get(f"{API}{path}", headers=_h(w["teacher"]))).status_code == 200, path

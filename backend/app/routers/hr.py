@@ -28,6 +28,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.deps import staff_self_service
 from app.deps import get_current_active_user
 from app.core.permissions import PermissionChecker
 from app.core.workspace import effective_modules_for
@@ -174,7 +175,7 @@ async def _get_or_create_profile(db: AsyncSession, user: User) -> HRProfile:
 
 # ── Self-service profile ─────────────────────────────────────────────────────
 
-@router.get("/me", response_model=HRProfileResponse)
+@router.get("/me", response_model=HRProfileResponse, dependencies=[Depends(staff_self_service)])
 async def get_my_profile(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -183,7 +184,7 @@ async def get_my_profile(
     return _profile_to_response(profile, current_user, include_sensitive=True)
 
 
-@router.patch("/me", response_model=HRProfileResponse)
+@router.patch("/me", response_model=HRProfileResponse, dependencies=[Depends(staff_self_service)])
 async def update_my_profile(
     data: HRProfileUpdate,
     db: AsyncSession = Depends(get_db),

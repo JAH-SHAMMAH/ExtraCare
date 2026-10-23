@@ -18,6 +18,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.deps import staff_self_service
 from app.deps import get_current_active_user
 from app.core.permissions import PermissionChecker
 from app.models.user import User
@@ -223,7 +224,7 @@ async def delete_case(case_id: str, db: AsyncSession = Depends(get_db), current_
 # against THEM (never anyone else's — the query is pinned to current_user.id, so it
 # cannot leak). Educare surfaces disciplinary outcomes to the affected staff.
 
-@router.get("/disciplinary/my-cases", response_model=list[MyDisciplinaryResponse])
+@router.get("/disciplinary/my-cases", response_model=list[MyDisciplinaryResponse], dependencies=[Depends(staff_self_service)])
 async def list_my_cases(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     rows = (await db.execute(
         select(DisciplinaryCase).where(

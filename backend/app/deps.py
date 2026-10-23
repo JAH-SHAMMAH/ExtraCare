@@ -93,3 +93,14 @@ async def get_current_active_user(
     if current_user.status != UserStatus.ACTIVE:
         raise HTTPException(status_code=400, detail="Inactive user.")
     return current_user
+
+
+async def staff_self_service(current_user: User = Depends(get_current_active_user)) -> User:
+    """Gate for the staff-only self-service HR pages (my profile, leave balance,
+    staff attendance, disciplinary record). A parent or pupil has no HR record,
+    and GET /hr/me would otherwise CREATE one for them on first open."""
+    from app.models.role import Role  # noqa: F401
+    slugs = {r.slug for r in current_user._scoped_roles()}
+    if slugs and slugs <= {"parent", "student"} and not current_user.is_superadmin:
+        raise HTTPException(status_code=403, detail="This page is for school staff.")
+    return current_user

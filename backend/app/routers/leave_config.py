@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.deps import staff_self_service
 from app.deps import get_current_active_user
 from app.core.permissions import PermissionChecker
 from app.models.user import User
@@ -80,7 +81,7 @@ async def upsert_policy(leave_type: LeaveType, payload: LeavePolicyUpdate, db: A
 
 # ── Entitlements ──────────────────────────────────────────────────────────────
 
-@router.get("/entitlements", response_model=list[EntitlementRow])
+@router.get("/entitlements", response_model=list[EntitlementRow], dependencies=[Depends(staff_self_service)])
 async def entitlements(
     user_id: str | None = None,
     db: AsyncSession = Depends(get_db),

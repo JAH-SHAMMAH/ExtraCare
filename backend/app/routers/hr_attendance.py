@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.deps import staff_self_service
 from app.deps import get_current_active_user
 from app.core.permissions import PermissionChecker
 from app.models.user import User
@@ -96,7 +97,7 @@ def _settings_response(s: StaffAttendanceSettings | None) -> AttendanceSettingsR
     )
 
 
-@router.get("/attendance/settings", response_model=AttendanceSettingsResponse)
+@router.get("/attendance/settings", response_model=AttendanceSettingsResponse, dependencies=[Depends(staff_self_service)])
 async def get_settings(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Readable by any staff — the clock UI needs work hours + geofence state."""
     return _settings_response(await _get_settings(db, current_user.org_id))
@@ -114,7 +115,7 @@ async def update_settings(payload: AttendanceSettingsUpdate, db: AsyncSession = 
     return _settings_response(s)
 
 
-@router.get("/attendance/my", response_model=list[AttendanceEventResponse])
+@router.get("/attendance/my", response_model=list[AttendanceEventResponse], dependencies=[Depends(staff_self_service)])
 async def list_my_attendance(
     limit: int = Query(default=200, le=1000),
     db: AsyncSession = Depends(get_db),

@@ -348,6 +348,11 @@ async def create_conversation(
         if not peer:
             raise HTTPException(status_code=404, detail="peer_id: user not found in your organisation")
 
+        if await _family_limited(db, current_user):
+            _is_staff = (await db.execute(select(User.id).where(User.id == peer.id, _is_staff_user_clause()))).first()
+            if not _is_staff:
+                raise HTTPException(status_code=403, detail="You can message the school's staff, not other families.")
+
         if not _ss.is_super_user(current_user):
             _rp = _st.get("role_perms", {})
             _allowed = [set(_rp.get(sl, {}).get("message_roles") or []) for sl in _ss._role_slugs(current_user) or [""]]
@@ -423,6 +428,36 @@ async def create_conversation(
     return await _to_conv_response(db, conv)
 
 
+
+# ── Who a parent / pupil may see and message ────────────────────────────────
+_FAMILY_SLUGS = {"parent", "student"}
+
+
+async def _family_limited(db: AsyncSession, user: User) -> bool:
+    """True for an account whose every role is parent/student and that has no
+    Super-User audience rule of its own. Such an account may reach STAFF only:
+    the contact picker used to list every active user in the school, so one
+    family could read every other family's name and email address."""
+    from app.services import super_settings as _ss
+    if _ss.is_super_user(user):
+        return False
+    slugs = set(_ss._role_slugs(user))
+    if not slugs or not slugs <= _FAMILY_SLUGS:
+        return False
+    st = await _ss.get_struct(db, user.org_id)
+    rp = st.get("role_perms", {})
+    # An explicit audience set by the Super User wins over this default.
+    return not all(rp.get(sl, {}).get("message_roles") for sl in slugs)
+
+
+def _is_staff_user_clause():
+    """SQL: the user holds at least one role that is not parent/student."""
+    from app.models.role import Role, user_roles
+    return User.id.in_(
+        select(user_roles.c.user_id).join(Role, Role.id == user_roles.c.role_id)
+        .where(Role.slug.notin_(_FAMILY_SLUGS))
+    )
+
 # ── REST: Contacts (messageable users) ──────────────────────────────────────
 
 @router.get("/contacts", response_model=list[MemberSummary])
@@ -449,6 +484,8 @@ async def list_contacts(
             User.id != current_user.id,
         )
     )
+    if await _family_limited(db, current_user):
+        q = q.where(_is_staff_user_clause())
     if search and search.strip():
         term = f"%{search.strip().lower()}%"
         q = q.where(or_(
