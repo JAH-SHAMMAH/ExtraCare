@@ -60,17 +60,17 @@ async def test_report_insight(db, org):
         await save_report_entry(payload=ReportEntrySave(subject_id=maths.id, class_id=c10.id, items=[
             ScoreItem(student_id=student, assessment_id=A["EXAM"].id, score=Decimal(exam))]), db=db, current_user=admin)
 
-    await enter(boy.id, 60)     # TOTAL 60 -> 60%
-    await enter(girl.id, 80)    # TOTAL 80 -> 80%
+    await enter(boy.id, 30)     # TOTAL 30 -> 30%  (EXAM is out of 60: marks above the max are refused)
+    await enter(girl.id, 50)    # TOTAL 50 -> 50%
 
     ins = await report_insight(term_id=autumn.id, sub_term_id=full.id, db=db, current_user=admin)
     assert ins.term_name == "Autumn"
     subj = next(s for s in ins.subjects if s.subject_name == "Mathematics")
-    assert subj.average == Decimal("70.0")           # (60 + 80) / 2
+    assert subj.average == Decimal("40.0")           # (30 + 50) / 2
     gen = next(g for g in ins.gender if g.subject_name == "Mathematics")
-    assert gen.male == Decimal("60.0") and gen.female == Decimal("80.0")
+    assert gen.male == Decimal("30.0") and gen.female == Decimal("50.0")
     cls = next(c for c in ins.classes if c.class_name == "Year 10")
-    assert cls.average == Decimal("70.0")
+    assert cls.average == Decimal("40.0")
 
     # Empty when nothing entered for the other sub-term set (half has no scores here
     # -> display still resolves but produces no subject rows only if no scores; here

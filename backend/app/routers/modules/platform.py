@@ -3045,6 +3045,19 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
     sess_id = await _session_for_items(db, org, {i.assessment_id for i in payload.items})
     valid_assessments = set((await db.execute(select(Assessment.id).where(
         Assessment.org_id == org, Assessment.session_id == sess_id))).scalars().all()) if sess_id else set()
+    # A mark must lie between 0 and the column's maximum. Refuse the WHOLE batch
+    # (like the enrolment gate above) rather than store 999/40 or drop it quietly.
+    _maxes = {a.id: (a.name, a.max_score) for a in (await db.execute(select(Assessment).where(
+        Assessment.org_id == org, Assessment.id.in_({i.assessment_id for i in payload.items})))).scalars().all()}
+    _bad = []
+    for it in payload.items:
+        if it.score is None or it.assessment_id not in _maxes:
+            continue
+        _name, _mx = _maxes[it.assessment_id]
+        if it.score < 0 or (_mx is not None and it.score > _mx):
+            _bad.append(f"{_name} must be between 0 and {_mx:g}")
+    if _bad:
+        raise HTTPException(status_code=422, detail="Mark out of range: " + "; ".join(sorted(set(_bad))) + ". Nothing was saved.")
     keys = {(i.student_id, i.assessment_id) for i in payload.items}
     existing = {(r.student_id, r.assessment_id): r for r in (await db.execute(select(StudentAssessmentScore).where(
         StudentAssessmentScore.org_id == org, StudentAssessmentScore.subject_id == payload.subject_id))).scalars().all()
