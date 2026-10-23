@@ -471,7 +471,7 @@ def _mentor_response(m: MentorReport, sname: str | None, mentor: str | None) -> 
     )
 
 
-@router.get("/mentor-reports", response_model=MentorReportListResponse, dependencies=[_beh_read])
+@router.get("/mentor-reports", response_model=MentorReportListResponse, dependencies=[Depends(PermissionChecker("school_admin:read"))])
 async def list_mentor_reports(
     student_id: str | None = None,
     mentor_id: str | None = None,
@@ -1009,13 +1009,13 @@ async def _analysis_rows(db: AsyncSession, org_id: str, section: str | None, hou
     return rows
 
 
-@router.get("/points-analysis", response_model=list[PointsAnalysisRow], dependencies=[_beh_read])
+@router.get("/points-analysis", response_model=list[PointsAnalysisRow], dependencies=[Depends(PermissionChecker("school:hostel:read"))])
 async def points_analysis(section: str | None = None, house: str | None = None,
                           db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     return await _analysis_rows(db, current_user.org_id, section, house)
 
 
-@router.get("/points-analysis/export", dependencies=[_beh_read])
+@router.get("/points-analysis/export", dependencies=[Depends(PermissionChecker("school:hostel:read"))])
 async def export_points_analysis(section: str | None = None, house: str | None = None,
                                  db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     rows = await _analysis_rows(db, current_user.org_id, section, house)

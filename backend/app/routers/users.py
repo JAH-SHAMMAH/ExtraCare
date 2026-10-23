@@ -158,7 +158,17 @@ async def list_staff(
         if (u.job_title or "").strip().lower() != "teacher"
         and not any((r.slug or "").lower() in EXCLUDE for r in (u.roles or []))
     ]
-    return [UserResponse.from_orm_with_roles(u, u.roles) for u in staff]
+    out = [UserResponse.from_orm_with_roles(u, u.roles) for u in staff]
+    if not current_user.has_permission("users:write"):
+        # Teachers hold users:read for pickers/directories: names, email and role
+        # only. Phone, login history and security flags are admin business.
+        for o in out:
+            o.phone = None
+            o.last_login_ip = None
+            o.last_login_at = None
+            o.mfa_enabled = False
+            o.email_verified = False
+    return out
 
 
 @router.post("", response_model=UserResponse, status_code=201, dependencies=[_can_write])
