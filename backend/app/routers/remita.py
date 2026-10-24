@@ -31,6 +31,7 @@ from app.models.modules.finance import Invoice, LedgerAccount
 from app.models.modules.school import Student, ParentGuardian
 from app.models.modules.remita import RemitaTransaction
 from app.services import ledger
+from app.services.fee_sync import apply_payment_to_fee_record
 from app.services.ledger import money
 from app.services import remita as remita_svc
 from app.services.payment_resolver import PaymentConfigError
@@ -140,6 +141,7 @@ async def _record_payment(db: AsyncSession, org_id: str, tx: RemitaTransaction, 
     )
     inv.payment_entry_id = entry.id
     inv.status = "paid"
+    await apply_payment_to_fee_record(db, org_id, inv.student_id, amount)
     tx.status = "paid"; tx.paid_at = now; tx.journal_entry_id = entry.id
 
 

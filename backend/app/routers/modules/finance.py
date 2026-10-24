@@ -1017,6 +1017,8 @@ async def pay_invoice(
     inv.payment_entry_id = entry.id
     if amount >= money(inv.total):
         inv.status = "paid"
+    from app.services.fee_sync import apply_payment_to_fee_record
+    await apply_payment_to_fee_record(db, current_user.org_id, inv.student_id, amount)
     await db.flush()
     return await _invoice_response(db, inv, current_user.org_id)
 

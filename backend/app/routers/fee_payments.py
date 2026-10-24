@@ -35,6 +35,7 @@ from app.models.payment import (
     TenantPaymentSettings, PaymentProvider, PaymentTransaction, PaymentStatus, PaymentType,
 )
 from app.services import ledger, crypto
+from app.services.fee_sync import apply_payment_to_fee_record
 from app.services.ledger import money
 from app.services.payment_resolver import get_payment_resolver, PaymentConfigError
 from app.services.flutterwave import FlutterwaveProvider
@@ -149,6 +150,7 @@ async def _settle_invoice(db, org_id, inv, amount, provider, reference, actor, r
     )
     inv.payment_entry_id = entry.id
     inv.status = "paid"
+    await apply_payment_to_fee_record(db, org_id, inv.student_id, amt)
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
