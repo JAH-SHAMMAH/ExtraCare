@@ -50,7 +50,7 @@ def upgrade() -> None:
             bind.execute(sa.text(
                 "UPDATE student_fee_records SET paid_amount=:p, outstanding_balance=:b, "
                 "is_paid=:ip, payment_status=:st WHERE id=:i"),
-                {"p": new_paid, "b": out, "ip": out <= 0, "st": "paid" if out <= 0 else "partial", "i": rid})
+                {"p": float(new_paid), "b": float(out), "ip": out <= 0, "st": "paid" if out <= 0 else "partial", "i": rid})
             left -= take
 
 
