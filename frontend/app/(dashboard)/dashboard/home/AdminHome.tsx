@@ -147,53 +147,54 @@ export function AdminHome() {
 function PrimaryStrip({
   data, loading,
 }: { data: ExecutiveOverview | undefined; loading: boolean }) {
+  const S = "/dashboard/modules/school";
   const cards: Array<{
     label: string;
     value: number | string;
     sub: string | null;
     icon: typeof Users;
-    accent: string;
-    iconBg: string;
+    gradient: string;
+    href: string;
   }> = [
     {
       label: "Active Students",
       value: data?.students.total ?? "—",
       sub: data ? `${data.students.male + data.students.female} with gender on file` : null,
       icon: GraduationCap,
-      accent: "text-brand-700",
-      iconBg: "bg-brand-50 text-brand-600",
+      gradient: "from-emerald-500 to-green-700",
+      href: `${S}/students?status=active`,
     },
     {
       label: "Male",
       value: data?.students.male ?? "—",
       sub: data && data.students.total ? `${pct(data.students.male, data.students.total)}% of roster` : null,
       icon: UserIcon,
-      accent: "text-sky-700",
-      iconBg: "bg-sky-50 text-sky-600",
+      gradient: "from-sky-500 to-blue-700",
+      href: `${S}/students?status=active&gender=male`,
     },
     {
       label: "Female",
       value: data?.students.female ?? "—",
       sub: data && data.students.total ? `${pct(data.students.female, data.students.total)}% of roster` : null,
       icon: UserCircle,
-      accent: "text-rose-700",
-      iconBg: "bg-rose-50 text-rose-600",
+      gradient: "from-pink-500 to-rose-700",
+      href: `${S}/students?status=active&gender=female`,
     },
     {
       label: "Classes",
       value: data?.classes ?? "—",
       sub: data?.classes ? "Across the school" : null,
       icon: SchoolIcon,
-      accent: "text-indigo-700",
-      iconBg: "bg-indigo-50 text-indigo-600",
+      gradient: "from-violet-500 to-indigo-700",
+      href: `${S}/classes`,
     },
     {
       label: "Teachers",
       value: data?.teachers ?? "—",
       sub: data?.teachers ? "On staff" : null,
       icon: UserCheck,
-      accent: "text-emerald-700",
-      iconBg: "bg-emerald-50 text-emerald-600",
+      gradient: "from-teal-500 to-emerald-700",
+      href: `${S}/teachers`,
     },
     {
       label: "Attendance Today",
@@ -202,8 +203,8 @@ function PrimaryStrip({
         ? `${pct(data.attendance_today, data.students.total)}% present`
         : null,
       icon: ClipboardCheck,
-      accent: "text-amber-700",
-      iconBg: "bg-amber-50 text-amber-600",
+      gradient: "from-amber-500 to-orange-600",
+      href: `${S}/attendance`,
     },
   ];
 
@@ -217,41 +218,50 @@ function PrimaryStrip({
 }
 
 function PrimaryCard({
-  label, value, sub, icon: Icon, accent, iconBg, loading,
+  label, value, sub, icon: Icon, gradient, href, loading,
 }: {
   label: string;
   value: number | string;
   sub: string | null;
   icon: typeof Users;
-  accent: string;
-  iconBg: string;
+  gradient: string;
+  href: string;
   loading: boolean;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200/70 p-4 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between mb-3">
-        <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center", iconBg)}>
+    <Link
+      href={href}
+      aria-label={`${label}: open the list`}
+      className={cn(
+        "group relative block overflow-hidden rounded-2xl bg-gradient-to-br p-4 text-white shadow-md",
+        "transition hover:-translate-y-0.5 hover:shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600",
+        gradient,
+      )}
+    >
+      <Icon size={72} className="pointer-events-none absolute -right-3 -bottom-3 opacity-15" aria-hidden />
+      <div className="relative flex items-center justify-between mb-3">
+        <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
           <Icon size={16} />
         </div>
-        <ArrowUpRight size={12} className="text-slate-300" />
+        <ArrowUpRight size={14} className="text-white/70 group-hover:text-white" />
       </div>
       {loading ? (
-        <div className="space-y-2">
-          <Skeleton className="h-7 w-16 rounded-lg" />
-          <Skeleton className="h-2.5 w-24" />
+        <div className="relative space-y-2">
+          <Skeleton className="h-7 w-16 rounded-lg bg-white/30" />
+          <Skeleton className="h-2.5 w-24 bg-white/30" />
         </div>
       ) : (
-        <>
-          <p className={cn("text-2xl font-black tracking-tight tabular-nums", accent)}>
+        <div className="relative">
+          <p className="text-3xl font-black tracking-tight tabular-nums">
             {typeof value === "number" ? value.toLocaleString() : value}
           </p>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mt-1">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-white/90 mt-1">
             {label}
           </p>
-          {sub && <p className="text-[10px] text-slate-400 mt-1 truncate">{sub}</p>}
-        </>
+          {sub && <p className="text-[11px] text-white/75 mt-1 truncate">{sub}</p>}
+        </div>
       )}
-    </div>
+    </Link>
   );
 }
 

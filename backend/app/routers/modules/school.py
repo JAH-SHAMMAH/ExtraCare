@@ -214,6 +214,8 @@ async def list_students(
     search: str | None = None,
     class_id: str | None = None,
     section_id: str | None = None,  # managed report section (level) — filters via class
+    year_group: str | None = None,  # year group name (SchoolClass.level)
+    gender: str | None = None,      # male | female
     status: str | None = None,  # active | inactive | (None/all)
     unassigned: bool = False,  # pupils with no class yet
     db: AsyncSession = Depends(get_db),
@@ -249,6 +251,10 @@ async def list_students(
             select(SchoolClass.id).where(
                 SchoolClass.org_id == current_user.org_id, SchoolClass.section_id == section_id)
         ))
+    if year_group:
+        query = query.where(Student.class_id.in_(
+            select(SchoolClass.id).where(
+                SchoolClass.org_id == current_user.org_id, SchoolClass.level == year_group)))
     # Roster filter — powers the Active / Inactive tabs. Anything other than the
     # two known values (incl. "all") is a no-op so the full roster is returned.
     if status == "active":
@@ -258,6 +264,14 @@ async def list_students(
     elif status == "withdrawn":
         query = query.where(Student.is_active == False, Student.withdrawal_date.isnot(None))  # noqa: E712
 
+    # Male/female counts are taken BEFORE the gender filter so the page can show
+    # both numbers for the chosen school / year group / class at once.
+    _counted = query.subquery()
+    _by_gender = dict((await db.execute(
+        select(func.lower(_counted.c.gender), func.count()).group_by(func.lower(_counted.c.gender)))).all())
+    if gender and gender.lower() in ("male", "female"):
+        query = query.where(func.lower(Student.gender) == gender.lower())
+
     total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar()
     result = await db.execute(query.order_by(Student.last_name, Student.first_name, Student.id).offset((page - 1) * page_size).limit(page_size))
     students = result.scalars().all()
@@ -265,6 +279,8 @@ async def list_students(
 
     return {
         "items": [_student_dict(s, names.get(s.class_id)) for s in students],
+        "male": int(_by_gender.get("male", 0)),
+        "female": int(_by_gender.get("female", 0)),
         "total": total,
         "page": page,
         "page_size": page_size,

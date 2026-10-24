@@ -11,7 +11,9 @@ vi.mock("@/lib/api", () => ({
   schoolApi: {
     students: { list: vi.fn().mockResolvedValue({ items: [student], total: 474, page: 1, page_size: 25, total_pages: 1 }), get: vi.fn() },
     classes: { list: vi.fn().mockResolvedValue({ items: [{ id: "c1", name: "Year 7 A" }] }) },
+    yearGroups: { list: vi.fn().mockResolvedValue([]) },
   },
+  platformApi: { sections: { list: vi.fn().mockResolvedValue([]) } },
   uploadApi: {},
 }));
 
@@ -26,5 +28,20 @@ describe("students page", () => {
     expect(screen.getByTitle("Edit profile")).toBeTruthy();
     expect(screen.getByTitle("Remove student")).toBeTruthy();
     expect(screen.getAllByText("474").length).toBeGreaterThan(0);
+  });
+
+  it("shows the school / year group / class / gender filters and the male and female counts", async () => {
+    render(<QueryClientProvider client={new QueryClient()}><StudentsPage /></QueryClientProvider>);
+    expect(await screen.findByText("Select School to View Students")).toBeTruthy();
+    expect(screen.getByText("Select Year Group")).toBeTruthy();
+    expect(screen.getByText(/No of Male\(s\)/)).toBeTruthy();
+    expect(screen.getByText(/No of Female\(s\)/)).toBeTruthy();
+  });
+
+  it("shows a visible 'No photo yet' placeholder when a pupil has no photo", async () => {
+    const { schoolApi } = await import("@/lib/api");
+    (schoolApi.students.list as any).mockResolvedValueOnce({ items: [{ ...student, id: "s2", avatar_url: null }], total: 1, page: 1, page_size: 25, total_pages: 1 });
+    render(<QueryClientProvider client={new QueryClient()}><StudentsPage /></QueryClientProvider>);
+    expect((await screen.findAllByText("No photo yet")).length).toBeGreaterThan(0);
   });
 });

@@ -1,6 +1,11 @@
+import { UserRound } from "lucide-react";
 import { cn, getInitials, resolveMediaUrl } from "@/lib/utils";
 
-/** Student photo, or initials when there's no picture. */
+/**
+ * Student photo. When none has been uploaded yet, a visible placeholder is shown
+ * instead, so everyone can see that a photo slot exists and is still empty.
+ * Large sizes (64px and up) spell it out: "No photo yet".
+ */
 export function StudentAvatar({
   name, url, size = 40, className,
 }: { name: string; url?: string | null; size?: number; className?: string }) {
@@ -12,10 +17,18 @@ export function StudentAvatar({
         className={cn("rounded-xl object-cover border border-slate-200 shrink-0", className)} />
     );
   }
+  const big = size >= 64;
   return (
-    <div style={style}
-      className={cn("rounded-xl bg-indigo-600/10 border border-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0", className)}>
-      <span style={{ fontSize: Math.max(11, size * 0.34) }}>{getInitials(name)}</span>
+    <div style={style} role="img" aria-label={`${name}: no photo uploaded yet`}
+      className={cn("rounded-xl bg-gradient-to-b from-slate-100 to-slate-200 border border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 shrink-0 overflow-hidden", className)}>
+      {big ? (
+        <>
+          <UserRound size={Math.round(size * 0.5)} strokeWidth={1.5} aria-hidden />
+          <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">No photo yet</span>
+        </>
+      ) : (
+        <span className="font-bold text-slate-500" style={{ fontSize: Math.max(11, size * 0.34) }}>{getInitials(name)}</span>
+      )}
     </div>
   );
 }

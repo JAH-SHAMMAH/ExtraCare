@@ -227,3 +227,18 @@ async def test_parent_cannot_open_staff_hr_pages(http, db, org, world):
     for path in ("/hr/me", "/leave/entitlements", "/hr/attendance/my", "/hr/disciplinary/my-cases"):
         assert (await http.get(f"{API}{path}", headers=_h(w["parent"]))).status_code == 403, path
         assert (await http.get(f"{API}{path}", headers=_h(w["teacher"]))).status_code == 200, path
+
+
+async def test_student_list_filters_and_gender_counts(http, db, org, world):
+    w = world
+    for r in w["admin"].roles:
+        r.slug = "org_admin"
+    w["studs"][0].gender, w["studs"][1].gender, w["studs"][2].gender = "Male", "female", "Female"
+    await db.commit()
+    H = _h(w["admin"])
+    r = (await http.get(f"{API}/school/students", headers=H, params=dict(year_group="Year 10"))).json()
+    assert r["total"] == 3 and r["male"] == 1 and r["female"] == 2
+    r = (await http.get(f"{API}/school/students", headers=H, params=dict(year_group="Year 10", gender="female"))).json()
+    assert r["total"] == 2 and r["male"] == 1 and r["female"] == 2, "counts ignore the gender filter"
+    r = (await http.get(f"{API}/school/students", headers=H, params=dict(year_group="Year 7"))).json()
+    assert r["total"] == 0
