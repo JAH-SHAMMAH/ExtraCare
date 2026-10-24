@@ -242,3 +242,20 @@ async def test_student_list_filters_and_gender_counts(http, db, org, world):
     assert r["total"] == 2 and r["male"] == 1 and r["female"] == 2, "counts ignore the gender filter"
     r = (await http.get(f"{API}/school/students", headers=H, params=dict(year_group="Year 7"))).json()
     assert r["total"] == 0
+
+
+async def test_other_name_saves_and_session_filter(http, db, org, world):
+    from datetime import date
+    w = world
+    for r in w["admin"].roles:
+        r.slug = "org_admin"
+    await db.commit()
+    H = _h(w["admin"])
+    sid = w["studs"][0].id
+    r = await http.patch(f"{API}/school/students/{sid}", headers=H, json=dict(other_name="Chiamaka Grace"))
+    assert r.status_code == 200 and r.json()["other_name"] == "Chiamaka Grace", r.text
+    # admitted after the session ends -> not in that session's list; no admission date -> still listed
+    w["studs"][1].admission_date = date(2030, 1, 1)
+    await db.commit()
+    r = (await http.get(f"{API}/school/students", headers=H, params=dict(session_id=w["sess"].id))).json()
+    assert r["total"] == 2

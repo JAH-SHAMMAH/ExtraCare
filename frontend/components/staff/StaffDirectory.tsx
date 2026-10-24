@@ -1,5 +1,6 @@
 "use client";
 
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 import { useMemo, useState } from "react";
 import { useStaff } from "@/hooks/useUsers";
 import { cn, getInitials, resolveMediaUrl } from "@/lib/utils";
@@ -60,9 +61,7 @@ export function StaffDirectory({ breadcrumb = ["People & HR", "Staff & Admin"] }
           {shown.map((u) => (
             <div key={u.id} className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-start gap-3 mb-3">
-                <div className="w-11 h-11 rounded-lg bg-brand-600/10 flex items-center justify-center text-brand-700 font-bold shrink-0 overflow-hidden">
-                  {u.avatar_url ? <img src={resolveMediaUrl(u.avatar_url)} alt="" className="w-full h-full object-cover" /> : getInitials(u.full_name || u.email || "?")}
-                </div>
+                <StudentAvatar name={u.full_name || u.email || "Staff"} url={u.avatar_url} size={72} />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold text-slate-900 truncate">{u.full_name || "—"}</p>
                   <p className="text-xs text-slate-500 truncate flex items-center gap-1"><Briefcase size={11} /> {u.job_title || "Staff"}{u.department ? ` · ${u.department}` : ""}</p>

@@ -1,5 +1,5 @@
 import { UserRound } from "lucide-react";
-import { cn, getInitials, resolveMediaUrl } from "@/lib/utils";
+import { cn, resolveMediaUrl } from "@/lib/utils";
 
 /**
  * Student photo. When none has been uploaded yet, a visible placeholder is shown
@@ -27,7 +27,7 @@ export function StudentAvatar({
           <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">No photo yet</span>
         </>
       ) : (
-        <span className="font-bold text-slate-500" style={{ fontSize: Math.max(11, size * 0.34) }}>{getInitials(name)}</span>
+        <UserRound size={Math.max(14, Math.round(size * 0.55))} strokeWidth={1.5} aria-hidden />
       )}
     </div>
   );

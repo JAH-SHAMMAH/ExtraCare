@@ -32,6 +32,7 @@ class Student(Base, UUIDMixin, TimestampMixin, TenantMixin, SoftDeleteMixin):
     student_id = Column(String(50), nullable=False, index=True)  # org-assigned ID
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
+    other_name = Column(String(100), nullable=True)  # middle / other names
     email = Column(String(320), nullable=True, index=True)
     phone = Column(String(50), nullable=True)
     date_of_birth = Column(Date, nullable=True)

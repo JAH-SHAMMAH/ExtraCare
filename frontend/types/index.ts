@@ -125,6 +125,7 @@ export interface Student {
   student_id: string;
   first_name: string;
   last_name: string;
+  other_name?: string | null;
   email: string | null;
   phone: string | null;
   date_of_birth: string | null;

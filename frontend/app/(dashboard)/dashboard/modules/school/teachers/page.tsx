@@ -11,6 +11,7 @@ import { useSections } from "@/hooks/usePlatform";
 import { useSubjectOptions } from "@/hooks/useAcademics";
 import { schoolApi, uploadApi } from "@/lib/api";
 import { useHasPermission } from "@/components/guards/PermissionGate";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 import { cn, getInitials, resolveMediaUrl } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -171,11 +172,7 @@ function PhotoCell({ teacher, canWrite }: { teacher: Teacher; canWrite: boolean 
   });
   return (
     <div className="relative w-11 h-11 shrink-0 group/av">
-      {teacher.photo_url ? (
-        <img src={resolveMediaUrl(teacher.photo_url)} alt="" className="w-11 h-11 rounded-full object-cover bg-slate-100" />
-      ) : (
-        <div className="w-11 h-11 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center text-sm font-bold">{getInitials(`${teacher.first_name} ${teacher.last_name}`)}</div>
-      )}
+      <StudentAvatar name={`${teacher.first_name} ${teacher.last_name}`} url={teacher.photo_url} size={64} />
       {canWrite && (
         <>
           <button onClick={() => inputRef.current?.click()} disabled={setPhoto.isPending} title="Set photo"
@@ -254,8 +251,7 @@ function DetailsModal({ teacher, onClose }: { teacher: Teacher; onClose: () => v
   return (
     <Modal title="Teacher Details" onClose={onClose}>
       <div className="flex items-center gap-3 mb-4">
-        {teacher.photo_url ? <img src={resolveMediaUrl(teacher.photo_url)} alt="" className="w-14 h-14 rounded-full object-cover" />
-          : <div className="w-14 h-14 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center font-bold">{getInitials(`${teacher.first_name} ${teacher.last_name}`)}</div>}
+        <StudentAvatar name={`${teacher.first_name} ${teacher.last_name}`} url={teacher.photo_url} size={72} />
         <div><p className="font-bold text-slate-800">{teacher.first_name} {teacher.last_name}</p><p className="text-xs text-slate-400">{teacher.email}</p></div>
       </div>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3">

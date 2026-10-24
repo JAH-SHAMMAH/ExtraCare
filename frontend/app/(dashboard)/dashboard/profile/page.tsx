@@ -1,5 +1,6 @@
 "use client";
 
+import { UserRound } from "lucide-react";
 import { useState, useRef } from "react";
 import { useAuthStore } from "@/lib/store";
 import { useLogout } from "@/hooks/useAuth";
@@ -88,7 +89,10 @@ export default function ProfilePage() {
                 {user?.avatar_url ? (
                   <img src={resolveMediaUrl(user.avatar_url)} alt="" className="w-full h-full object-cover" />
                 ) : (
-                  getInitials(user?.full_name || "U")
+                  <span className="flex flex-col items-center text-white/90">
+                    <UserRound size={40} strokeWidth={1.5} aria-hidden />
+                    <span className="text-[10px] font-semibold uppercase tracking-wide">No photo yet</span>
+                  </span>
                 )}
               </div>
               <button

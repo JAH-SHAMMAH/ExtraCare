@@ -1,5 +1,6 @@
 "use client";
 
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 import { useState, useRef } from "react";
 import { useUsers, useUpdateUserStatus, useDeleteUser, useAvailableRoles, useResetPassword, useSetUserAvatar } from "@/hooks/useUsers";
 import { UserCreateModal } from "@/components/users/UserCreateModal";
@@ -328,14 +329,8 @@ function AvatarCell({ user, canWrite }: { user: User; canWrite: boolean }) {
     e.target.value = "";
   };
   return (
-    <div className="relative w-9 h-9 shrink-0 group/av">
-      {user.avatar_url ? (
-        <img src={resolveMediaUrl(user.avatar_url)} alt="" className="w-9 h-9 rounded-lg object-cover bg-slate-100" />
-      ) : (
-        <div className="w-9 h-9 rounded-lg bg-brand-600/10 border border-brand-100 flex items-center justify-center text-brand-700 text-sm font-bold">
-          {getInitials(user.full_name)}
-        </div>
-      )}
+    <div className="relative w-11 h-11 shrink-0 group/av">
+      <StudentAvatar name={user.full_name} url={user.avatar_url} size={44} />
       {canWrite && (
         <>
           <button

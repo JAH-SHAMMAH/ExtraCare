@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useStudents, useCreateStudent, useUpdateStudent, useDeleteStudent, useClasses, useYearGroups } from "@/hooks/useSchool";
-import { useSections } from "@/hooks/usePlatform";
+import { useSections, useSessions } from "@/hooks/usePlatform";
 import { uploadApi, schoolApi } from "@/lib/api";
 import { StudentAvatar } from "@/components/students/StudentAvatar";
 import { cn, formatDate } from "@/lib/utils";
@@ -26,6 +26,8 @@ export default function StudentsPage() {
   const [yearGroup, setYearGroup] = useState(qs.get("year_group") || "");
   const [classId, setClassId] = useState(qs.get("class_id") || "");
   const [gender, setGender] = useState(qs.get("gender") || "");
+  const [sessionId, setSessionId] = useState(qs.get("session_id") || "");
+  const { data: sessions } = useSessions();
   const { data: sections } = useSections();
   const { data: yearGroups } = useYearGroups(sectionId || undefined);
   const [page, setPage] = useState(1);
@@ -40,7 +42,7 @@ export default function StudentsPage() {
   const { data, isLoading } = useStudents({
     page, page_size: 25, search: search || undefined, status: roster === "all" ? undefined : roster,
     section_id: sectionId || undefined, year_group: yearGroup || undefined,
-    class_id: classId || undefined, gender: gender || undefined,
+    class_id: classId || undefined, gender: gender || undefined, session_id: sessionId || undefined,
   });
   const schoolName = (sections ?? []).find((x: any) => x.id === sectionId)?.name;
   // Only show the skeleton after 300ms of loading — sub-300ms responses
@@ -55,13 +57,13 @@ export default function StudentsPage() {
   const deleteStudent = useDeleteStudent();
 
   const [form, setForm] = useState({
-    first_name: "", last_name: "", student_id: "", email: "", phone: "",
+    first_name: "", last_name: "", other_name: "", student_id: "", email: "", phone: "",
     date_of_birth: "", gender: "male", class_id: "",
     guardian_name: "", guardian_phone: "", address: "",
   });
 
   const resetForm = () => {
-    setForm({ first_name: "", last_name: "", student_id: "", email: "", phone: "", date_of_birth: "", gender: "male", class_id: "", guardian_name: "", guardian_phone: "", address: "" });
+    setForm({ first_name: "", last_name: "", other_name: "", student_id: "", email: "", phone: "", date_of_birth: "", gender: "male", class_id: "", guardian_name: "", guardian_phone: "", address: "" });
     setEditingStudent(null);
     setPhotoUrl("");
     setShowForm(false);
@@ -91,7 +93,7 @@ export default function StudentsPage() {
 
   const handleEdit = (s: Student) => {
     setForm({
-      first_name: s.first_name, last_name: s.last_name, student_id: s.student_id,
+      first_name: s.first_name, last_name: s.last_name, other_name: s.other_name || "", student_id: s.student_id,
       email: s.email || "", phone: s.phone || "", date_of_birth: s.date_of_birth || "",
       gender: s.gender || "male", class_id: s.class_id || "",
       guardian_name: s.guardian_name || "", guardian_phone: s.guardian_phone || "", address: s.address || "",
@@ -197,6 +199,7 @@ export default function StudentsPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div><label className="label">First Name *</label><input required value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} className="input" /></div>
             <div><label className="label">Last Name *</label><input required value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} className="input" /></div>
+            <div><label className="label">Other Name</label><input value={form.other_name} onChange={(e) => setForm({ ...form, other_name: e.target.value })} className="input" /></div>
             <div><label className="label">Student ID *</label><input required value={form.student_id} onChange={(e) => setForm({ ...form, student_id: e.target.value })} placeholder="STU001" className="input" /></div>
             <div><label className="label">Email</label><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input" /></div>
             <div><label className="label">Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+234..." className="input" /></div>
@@ -232,6 +235,14 @@ export default function StudentsPage() {
       <div className="rounded-xl border border-emerald-800/30 overflow-hidden mb-4 bg-white shadow-sm">
         <div className="bg-emerald-700 text-white px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
           <h2 className="font-bold tracking-wide">Select School to View Students</h2>
+          <div className="flex items-center gap-2">
+            <label htmlFor="sess" className="text-xs font-bold uppercase tracking-wide text-white/90">Select Session</label>
+            <select id="sess" value={sessionId} onChange={(e) => { setSessionId(e.target.value); setPage(1); }}
+              className="rounded-lg bg-white/95 text-slate-800 text-sm px-2 py-1.5 border-0">
+              <option value="">All sessions</option>
+              {(sessions ?? []).map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+          </div>
           <div className="flex bg-white/15 rounded-lg p-0.5 shrink-0">
             {([["all", "All"], ["active", "Active"], ["inactive", "Inactive"]] as const).map(([val, label]) => (
               <button key={val} onClick={() => { setRoster(val); setPage(1); }}
@@ -302,14 +313,14 @@ export default function StudentsPage() {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50/80 border-b border-slate-100">
-                {["#", "Profile Data", "Surname", "First Name", "Parent / Guardian", "Address", "Class", "Actions"].map((h) => (
+                {["#", "Profile Data", "Surname", "First Name", "Other Name", "Parent / Guardian", "Address", "Class", "Actions"].map((h) => (
                   <th key={h} className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-widest text-slate-500 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {showSkeleton ? (
-                Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={8} />)
+                Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={9} />)
               ) : isLoading ? null : (
                 data?.items?.map((s: Student, idx: number) => (
                   <tr key={s.id} className="align-top odd:bg-white even:bg-slate-50/60 hover:bg-emerald-50/40 transition-colors">
@@ -325,6 +336,7 @@ export default function StudentsPage() {
                       <Link href={`/dashboard/modules/school/students/${s.id}`} className="hover:text-emerald-700">{s.last_name}</Link>
                     </td>
                     <td className="px-4 py-4 text-sm font-semibold uppercase text-slate-800">{s.first_name}</td>
+                    <td className="px-4 py-4 text-sm uppercase text-slate-700">{s.other_name || ""}</td>
                     <td className="px-4 py-4 text-sm text-slate-700 min-w-44">
                       <p className="font-semibold uppercase">{s.guardian_name || "—"}</p>
                       {s.guardian_email && <p className="text-xs text-slate-500 break-all">{s.guardian_email}</p>}

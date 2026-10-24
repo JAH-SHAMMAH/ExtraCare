@@ -215,6 +215,7 @@ async def list_students(
     class_id: str | None = None,
     section_id: str | None = None,  # managed report section (level) — filters via class
     year_group: str | None = None,  # year group name (SchoolClass.level)
+    session_id: str | None = None,  # pupils admitted on/before this session ends
     gender: str | None = None,      # male | female
     status: str | None = None,  # active | inactive | (None/all)
     unassigned: bool = False,  # pupils with no class yet
@@ -251,6 +252,13 @@ async def list_students(
             select(SchoolClass.id).where(
                 SchoolClass.org_id == current_user.org_id, SchoolClass.section_id == section_id)
         ))
+    if session_id:
+        from app.models.modules.platform import AcademicSession
+        _end = (await db.execute(select(AcademicSession.end_date).where(
+            AcademicSession.id == session_id, AcademicSession.org_id == current_user.org_id))).scalar_one_or_none()
+        if _end is not None:
+            # No admission date on file counts as "already here" rather than hiding the pupil.
+            query = query.where(Student.admission_date.is_(None) | (Student.admission_date <= _end))
     if year_group:
         query = query.where(Student.class_id.in_(
             select(SchoolClass.id).where(
@@ -2056,6 +2064,7 @@ def _student_dict(s: Student, class_name: str | None = None) -> dict:
         "student_id": s.student_id,
         "first_name": s.first_name,
         "last_name": s.last_name,
+        "other_name": s.other_name,
         "email": s.email,
         "phone": s.phone,
         "date_of_birth": s.date_of_birth.isoformat() if s.date_of_birth else None,

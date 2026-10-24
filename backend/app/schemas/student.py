@@ -33,6 +33,7 @@ class StudentCreate(BaseModel):
     student_id: str
     first_name: str
     last_name: str
+    other_name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     date_of_birth: Optional[date] = None
@@ -48,7 +49,7 @@ class StudentCreate(BaseModel):
     guardian_relationship: Optional[str] = None
 
     @field_validator(
-        "email", "phone", "gender", "photo_url", "address",
+        "other_name", "email", "phone", "gender", "photo_url", "address",
         "class_id", "guardian_name", "guardian_phone",
         "guardian_email", "guardian_relationship",
         "date_of_birth", "admission_date", "graduation_date",
@@ -70,6 +71,7 @@ class StudentUpdate(BaseModel):
     student_id: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    other_name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     date_of_birth: Optional[date] = None
@@ -86,7 +88,7 @@ class StudentUpdate(BaseModel):
     is_active: Optional[bool] = None
 
     @field_validator(
-        "email", "phone", "gender", "photo_url", "address",
+        "other_name", "email", "phone", "gender", "photo_url", "address",
         "class_id", "guardian_name", "guardian_phone",
         "guardian_email", "guardian_relationship",
         "date_of_birth", "admission_date", "graduation_date",
