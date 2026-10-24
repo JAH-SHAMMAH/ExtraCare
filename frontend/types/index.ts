@@ -76,14 +76,12 @@ export interface PaginatedResponse<T> {
 // ── Organization ──────────────────────────────────────────────────────────────
 
 export type IndustryType = "school" | "hospital" | "business" | "hybrid";
-export type SubscriptionTier = "free" | "pro" | "starter" | "growth" | "enterprise";
 
 export interface Organization {
   id: string;
   name: string;
   slug: string;
   industry: IndustryType;
-  subscription_tier: SubscriptionTier;
   logo_url: string | null;
   primary_color: string;
   modules_enabled: string[];

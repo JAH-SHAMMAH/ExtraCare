@@ -27,7 +27,6 @@ const SUB_TABS = [
 // Tabs that are managed on pages the app already has.
 const LINKS: Record<string, { href: string; text: string; cta: string }> = {
   "Themes": { href: "/dashboard/settings", text: "School colours, logo and look are set under Settings.", cta: "Open Settings" },
-  "Module Manager": { href: "/dashboard/billing", text: "Which modules the school uses follows its plan.", cta: "Open Plan & Billing" },
   "Other Settings": { href: "/dashboard/settings", text: "Backups, profile and the rest of the organisation settings.", cta: "Open Settings" },
 };
 

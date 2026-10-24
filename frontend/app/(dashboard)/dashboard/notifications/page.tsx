@@ -1,13 +1,14 @@
 "use client";
 
-import { CheckCheck, Bell, LogIn, LogOut } from "lucide-react";
+import { CheckCheck, Bell, LogIn, LogOut, Trash2 } from "lucide-react";
 import { cn, timeAgo } from "@/lib/utils";
-import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead } from "@/hooks/useNotifications";
+import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useClearNotifications } from "@/hooks/useNotifications";
 
 export default function NotificationsPage() {
   const { data, isLoading } = useNotifications({ limit: 100 });
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
+  const clearAll = useClearNotifications();
   const items = data?.items ?? [];
   const unread = data?.unread_count ?? 0;
 
@@ -24,11 +25,18 @@ export default function NotificationsPage() {
             Alerts for you, including when your child arrives at or leaves school.
           </p>
         </div>
-        {unread > 0 && (
-          <button className="btn-secondary gap-2 text-sm" onClick={() => markAll.mutate()} disabled={markAll.isPending}>
-            <CheckCheck size={15} /> Mark all read ({unread})
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {unread > 0 && (
+            <button className="btn-secondary gap-2 text-sm" onClick={() => markAll.mutate()} disabled={markAll.isPending}>
+              <CheckCheck size={15} /> Mark all read ({unread})
+            </button>
+          )}
+          {items.length > 0 && (
+            <button className="btn-secondary gap-2 text-sm text-rose-600" onClick={() => clearAll.mutate()} disabled={clearAll.isPending}>
+              <Trash2 size={15} /> Clear all
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-50">

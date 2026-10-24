@@ -90,3 +90,27 @@ async def mark_all_notifications_read(
     )
     await db.commit()
     return {"marked": n}
+
+
+@router.delete("", summary="Clear my whole notification inbox")
+async def clear_notifications(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    n = await notif_svc.clear_all(db, org_id=current_user.org_id, user_id=current_user.id)
+    await db.commit()
+    return {"cleared": n}
+
+
+@router.delete("/{notification_id}", summary="Clear one notification from my inbox")
+async def clear_notification(
+    notification_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    ok = await notif_svc.clear_one(
+        db, org_id=current_user.org_id, user_id=current_user.id, notification_id=notification_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    await db.commit()
+    return {"id": notification_id, "cleared": True}

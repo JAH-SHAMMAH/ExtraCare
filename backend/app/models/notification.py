@@ -13,7 +13,7 @@ without a migration than carry an enum that drifts from reality. Keep
 them snake_case so grep/analytics stay sane.
 """
 
-from sqlalchemy import Column, String, Boolean, Text, ForeignKey, JSON, Index
+from sqlalchemy import UniqueConstraint, Column, String, Boolean, Text, ForeignKey, JSON, Index
 from app.models.base import Base, UUIDMixin, TimestampMixin, TenantMixin
 
 
@@ -47,4 +47,20 @@ class Notification(Base, UUIDMixin, TimestampMixin, TenantMixin):
     __table_args__ = (
         # Primary query shape: unread notifications for a user, newest first.
         Index("ix_notif_org_user_read", "org_id", "user_id", "read"),
+    )
+
+
+class NotificationDismissal(Base, UUIDMixin, TimestampMixin, TenantMixin):
+    """One person clearing one notification from their own inbox.
+
+    Org-wide notifications (user_id NULL) are shared rows, so "clear" cannot delete
+    them without clearing them for everyone; a dismissal hides the row for just
+    that user."""
+    __tablename__ = "notification_dismissals"
+
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    notification_id = Column(String(36), ForeignKey("notifications.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "notification_id", name="uq_notification_dismissal"),
     )

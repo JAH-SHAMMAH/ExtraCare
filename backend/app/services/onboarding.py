@@ -125,7 +125,6 @@ async def evaluate(db: AsyncSession, org: Organization, *, commit: bool = True) 
         if step == "done" and org.onboarding_completed_at is None:
             org.onboarding_completed_at = datetime.now(timezone.utc)
             _track_lifecycle(org.id, "onboarding_completed")
-        await _notify_step_advanced(db, org, prior, step)
         if commit:
             await db.commit()
             await db.refresh(org)

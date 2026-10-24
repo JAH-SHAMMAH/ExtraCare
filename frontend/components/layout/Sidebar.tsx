@@ -590,7 +590,6 @@ export const MODULE_SECTIONS: ModuleSection[] = [
       // Ours (not in Educare's finance list) — kept.
       { href: "/dashboard/modules/school/fee-assignment", label: "Fee Assignment", icon: Wallet },
       { href: "/dashboard/modules/school/fees", label: "Fee Management", icon: Wallet },
-      { href: "/dashboard/billing", label: "Billing & Subscription", icon: BadgeDollarSign },
     ],
   },
   {

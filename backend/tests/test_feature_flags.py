@@ -96,16 +96,14 @@ async def _mutate_org(client, slug, **fields):
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_plan_defaults_surface_in_me(client: AsyncClient):
+async def test_me_exposes_no_plan_or_subscription(client: AsyncClient):
+    """The school has no plans: /auth/me must not advertise a tier, plan or
+    plan-derived feature map."""
     res = await _register(client, "ff-pro", "school")
-    await _mutate_org(client, "ff-pro", subscription_tier=SubscriptionTier.PRO)
-
     r = await client.get("/api/v1/auth/me", headers=_auth(res["access_token"]))
     assert r.status_code == 200
-    features = r.json()["org"]["features"]
-    # Pro's default_features = ("advanced_reports",)
-    assert features.get("advanced_reports") is True
-    assert features.get("ai_assistant", False) is False
+    org = r.json()["org"]
+    assert "subscription_tier" not in org and "plan" not in org and "features" not in org
 
 
 @pytest.mark.asyncio
@@ -119,10 +117,7 @@ async def test_override_enables_beta_on_free(client: AsyncClient):
         features={"ai_assistant": True},
     )
 
-    r = await client.get("/api/v1/auth/me", headers=_auth(res["access_token"]))
-    assert r.json()["org"]["features"]["ai_assistant"] is True
-
-    # And the guarded route actually opens up.
+    # The guarded route is open.
     r = await client.get("/api/v1/_test/ai", headers=_auth(res["access_token"]))
     assert r.status_code == 200
 

@@ -7,7 +7,7 @@ import { notificationsApi } from "@/lib/api";
 
 export interface AppNotification {
   id: string;
-  type: string; // e.g. "attendance", "system", "plan_limit"
+  type: string; // e.g. "attendance", "system"
   title: string;
   message: string | null;
   payload: Record<string, unknown>;
@@ -48,6 +48,15 @@ export function useMarkAllNotificationsRead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => notificationsApi.markAllRead(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+}
+
+/** Clear the whole inbox for the signed-in person (other people's inboxes are untouched). */
+export function useClearNotifications() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => notificationsApi.clearAll(),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
   });
 }

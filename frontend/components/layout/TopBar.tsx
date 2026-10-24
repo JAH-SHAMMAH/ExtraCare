@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 import { Bell, BookOpen, HelpCircle, Settings, Loader2, MessageSquare, Menu } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import { timeAgo, resolveMediaUrl } from "@/lib/utils";
-import { useNotifications, useMarkNotificationRead } from "@/hooks/useNotifications";
+import { useNotifications, useMarkNotificationRead, useClearNotifications } from "@/hooks/useNotifications";
 
 const GlobalSearch = dynamic(() => import("./GlobalSearch").then((mod) => mod.GlobalSearch), { ssr: false });
 import { QuickGuideModal } from "@/components/guide/QuickGuide";
@@ -22,6 +22,7 @@ export function TopBar({ onMenu }: { onMenu?: () => void }) {
 
   const { data: inbox, isLoading: notifsLoading } = useNotifications({ limit: 6 });
   const markRead = useMarkNotificationRead();
+  const clearAll = useClearNotifications();
   const notifications = inbox?.items ?? [];
   const unreadCount = inbox?.unread_count ?? 0;
 
@@ -83,13 +84,25 @@ export function TopBar({ onMenu }: { onMenu?: () => void }) {
             <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
                 <h3 className="text-sm font-bold text-slate-800">Notifications</h3>
-                <Link
-                  href="/dashboard/notifications"
-                  onClick={() => setNotifOpen(false)}
-                  className="text-xs text-brand-600 font-semibold hover:underline"
-                >
-                  View all
-                </Link>
+                <div className="flex items-center gap-3">
+                  {notifications.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => clearAll.mutate()}
+                      disabled={clearAll.isPending}
+                      className="text-xs text-rose-600 font-semibold hover:underline disabled:opacity-50"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                  <Link
+                    href="/dashboard/notifications"
+                    onClick={() => setNotifOpen(false)}
+                    className="text-xs text-brand-600 font-semibold hover:underline"
+                  >
+                    View all
+                  </Link>
+                </div>
               </div>
               <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
                 {notifsLoading ? (

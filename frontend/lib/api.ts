@@ -211,13 +211,6 @@ export const analyticsApi = {
   auditLog: (limit = 100) => api.get("/analytics/audit-log", { params: { limit } }).then((r) => r.data),
 };
 
-export const paymentsApi = {
-  initialize: (data: { target_tier: "pro" | "enterprise"; email?: string }) =>
-    api.post("/payments/initialize", data).then((r) => r.data),
-  verify: (reference: string) =>
-    api.get(`/payments/verify/${reference}`).then((r) => r.data),
-  config: () => api.get("/payments/config").then((r) => r.data),
-};
 
 // ── School API ───────────────────────────────────────────────────────────────
 
@@ -847,6 +840,8 @@ export const notificationsApi = {
     api.get("/notifications", { params }).then((r) => r.data),
   markRead: (id: string) => api.patch(`/notifications/${id}/read`).then((r) => r.data),
   markAllRead: () => api.patch("/notifications/read-all").then((r) => r.data),
+  clearAll: () => api.delete("/notifications").then((r) => r.data),
+  clearOne: (id: string) => api.delete(`/notifications/${id}`).then((r) => r.data),
 };
 
 // ── Import History API ──────────────────────────────────────────────────────

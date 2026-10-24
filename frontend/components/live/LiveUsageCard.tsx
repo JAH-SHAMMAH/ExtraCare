@@ -43,16 +43,6 @@ function formatStorage(mb: number): string {
   return `${(mb / 1024).toFixed(1)} GB`;
 }
 
-// Storage quota per plan — mirrors backend/app/core/plans.py recording_storage_mb.
-// Kept here so the card can render a progress bar without another API call.
-const QUOTA_MB_BY_TIER: Record<string, number | null> = {
-  free: 0,
-  pro: 10_000,
-  enterprise: null, // unlimited
-  starter: 0,
-  growth: 10_000,
-};
-
 export function LiveUsageCard() {
   const org = useAuthStore((s) => s.org);
   const { data, isLoading } = useQuery({
@@ -67,7 +57,7 @@ export function LiveUsageCard() {
   const sessions = data?.[LIVE_EVENTS.sessions] ?? 0;
   const minutes = data?.[LIVE_EVENTS.minutes] ?? 0;
   const mb = data?.[LIVE_EVENTS.mb] ?? 0;
-  const quotaMb = QUOTA_MB_BY_TIER[org.subscription_tier] ?? null;
+  const quotaMb: number | null = null; // no plans: recording storage is not capped
   const pct = quotaMb && quotaMb > 0 ? Math.min(100, (mb / quotaMb) * 100) : 0;
   const nearCap = quotaMb !== null && pct >= 80;
 
@@ -105,7 +95,7 @@ export function LiveUsageCard() {
               ? "Unlimited"
               : quotaMb > 0
               ? `of ${formatStorage(quotaMb)}`
-              : "Upgrade to record"
+              : "Used"
           }
         />
       </div>
@@ -122,7 +112,7 @@ export function LiveUsageCard() {
           </div>
           {nearCap && (
             <p className="text-[11px] text-rose-600 mt-2">
-              You're using {pct.toFixed(0)}% of your recording storage.{" "}Please contact your administrator to free up space or upgrade.
+              You're using {pct.toFixed(0)}% of your recording storage.{" "}Please contact your administrator to free up space.
             </p>
           )}
         </div>

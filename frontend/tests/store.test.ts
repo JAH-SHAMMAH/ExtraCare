@@ -26,7 +26,6 @@ function makeOrg(overrides: Partial<Organization> = {}): Organization {
     name: "Business Org",
     slug: "business-org",
     industry: "business",
-    subscription_tier: "free",
     logo_url: null,
     primary_color: "#0057c2",
     modules_enabled: ["business"],

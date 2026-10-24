@@ -65,7 +65,6 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // The school-wide parts of the page are shown only to those holding settings:read.
   { prefix: "/dashboard/settings", permission: "settings:read", anyAuthenticated: true },
   { prefix: "/dashboard/settings/super", permission: "settings:read" },
-  { prefix: "/dashboard/billing", permission: "settings:read" },
   // HR — self-service vs admin. Order doesn't matter (longest-prefix wins).
   { prefix: "/dashboard/hrm/my-info", permission: "hr:read" },
   { prefix: "/dashboard/hrm/leave/admin", permission: "hr:write" },

@@ -13,7 +13,7 @@ import logging
 from app.config import get_settings
 from app.core.logging import configure_logging
 from app.database import init_db
-from app.routers import auth, users, analytics, imports, me, organizations, admin, usage as usage_router, notifications, ai, payments, hr, hr_development, leave as leave_router, messenger as messenger_router, feed as feed_router, live as live_router, dashboard as dashboard_router, branding
+from app.routers import auth, users, analytics, imports, me, organizations, admin, usage as usage_router, notifications, ai, hr, hr_development, leave as leave_router, messenger as messenger_router, feed as feed_router, live as live_router, dashboard as dashboard_router, branding
 from app.services.usage import start_flusher, stop_flusher, track, module_from_path
 from app.routers.modules import school, hospital, business
 from app.routers import support as support_router
@@ -106,20 +106,6 @@ async def lifespan(app: FastAPI):
     from app.services.branding_service import initialize_branding_service
     initialize_branding_service(settings.UPLOAD_DIR if hasattr(settings, "UPLOAD_DIR") else None)
     logger.info("Branding service initialized.")
-
-    # Wire the real billing provider when a Paystack secret is configured.
-    # Unset ⇒ leave the Noop provider in place so dev keeps working, and
-    # /payments/* returns a clear 503 instead of fake success.
-    if settings.PAYSTACK_SECRET_KEY:
-        from app.services.billing import set_billing_provider
-        from app.services.paystack import PaystackProvider
-        set_billing_provider(PaystackProvider(
-            secret_key=settings.PAYSTACK_SECRET_KEY,
-            public_key=settings.PAYSTACK_PUBLIC_KEY,
-            api_url=settings.PAYSTACK_API_URL,
-            callback_url=settings.PAYSTACK_CALLBACK_URL,
-        ))
-        logger.info("Paystack provider wired.")
 
     yield
     boot_task.cancel()
@@ -384,7 +370,6 @@ app.include_router(notifications.router, prefix=API_V1)
 from app.routers import push as push_router  # noqa: E402
 app.include_router(push_router.router, prefix=API_V1)
 app.include_router(ai.router, prefix=API_V1)
-app.include_router(payments.router, prefix=API_V1)
 app.include_router(hr.router, prefix=API_V1)
 app.include_router(hr_development.router, prefix=API_V1)
 app.include_router(leave_router.router, prefix=API_V1)

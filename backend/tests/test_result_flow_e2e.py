@@ -259,3 +259,25 @@ async def test_other_name_saves_and_session_filter(http, db, org, world):
     await db.commit()
     r = (await http.get(f"{API}/school/students", headers=H, params=dict(session_id=w["sess"].id))).json()
     assert r["total"] == 2
+
+
+async def test_clear_notifications_is_per_user_and_plan_chatter_is_hidden(http, db, org, world):
+    from app.models.notification import Notification
+    w = world
+    a, b = w["admin"], w["teacher"]
+    db.add_all([
+        Notification(org_id=org.id, user_id=a.id, type="system", title="mine", read=False),
+        Notification(org_id=org.id, user_id=None, type="system", title="shared", read=False),
+        Notification(org_id=org.id, user_id=None, type="plan_limit", title="You are on the Free plan", read=False),
+        Notification(org_id=org.id, user_id=None, type="onboarding_step", title="Onboarding: modules", read=False),
+    ])
+    await db.commit()
+    HA, HB = _h(a), _h(b)
+    r = (await http.get(f"{API}/notifications", headers=HA)).json()
+    assert {n["title"] for n in r["items"]} == {"mine", "shared"} and r["unread_count"] == 2
+    assert (await http.delete(f"{API}/notifications", headers=HA)).json()["cleared"] == 2
+    r = (await http.get(f"{API}/notifications", headers=HA)).json()
+    assert r["items"] == [] and r["unread_count"] == 0
+    # the shared notice is still there for someone else
+    r = (await http.get(f"{API}/notifications", headers=HB)).json()
+    assert {n["title"] for n in r["items"]} == {"shared"}

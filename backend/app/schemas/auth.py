@@ -6,16 +6,6 @@ from app.core.security import validate_password_strength
 IndustryLiteral = Literal["school", "hospital", "business", "hybrid"]
 
 
-class PlanSummary(BaseModel):
-    """What the frontend needs to decide 'can the user do this, or should
-    we route them to /billing?'. Caps are copied from the plan catalog at
-    response time so downgrades take effect immediately on the next /me."""
-    tier: str
-    name: str
-    max_modules: int  # -1 = unlimited
-    max_users: int    # -1 = unlimited
-
-
 class OrganizationSummary(BaseModel):
     """Org identity shipped alongside auth responses so the client can
     render an industry-specific shell without a second round-trip."""
@@ -23,14 +13,11 @@ class OrganizationSummary(BaseModel):
     name: str
     slug: str
     industry: IndustryLiteral
-    subscription_tier: str
     modules_enabled: list[str]
     modules_configured: list[str] = []
     workspace: dict[str, object] = {}
     logo_url: str | None = None
     primary_color: str | None = None
-    plan: PlanSummary | None = None
-    features: dict[str, bool] = {}
     onboarding_step: str = "modules"
     onboarding_completed: bool = False
 
@@ -38,28 +25,17 @@ class OrganizationSummary(BaseModel):
 
     @classmethod
     def from_org(cls, org) -> "OrganizationSummary":
-        from app.core.plans import plan_for
-        from app.core.features import resolve_features
         from app.core.workspace import effective_modules_for_org, workspace_for
-        plan = plan_for(org.subscription_tier)
         workspace = workspace_for(org.industry.value if org.industry else None)
         return cls(
             id=org.id,
             name=org.name,
             slug=org.slug,
             industry=org.industry.value,
-            subscription_tier=org.subscription_tier.value,
             modules_enabled=effective_modules_for_org(org),
             modules_configured=list(org.modules_enabled or []),
             logo_url=org.logo_url,
             primary_color=org.primary_color,
-            plan=PlanSummary(
-                tier=plan.tier.value,
-                name=plan.name,
-                max_modules=plan.max_modules,
-                max_users=plan.max_users,
-            ),
-            features=resolve_features(org),
             onboarding_step=org.onboarding_step or "modules",
             onboarding_completed=org.onboarding_completed_at is not None,
             workspace={

@@ -18,7 +18,6 @@ ALLOWED_OPEN = {
     ("POST", "/api/v1/payments/fees/webhook/flutterwave"),
     ("POST", "/api/v1/payments/fees/webhook/paystack"),
     ("POST", "/api/v1/payments/remita/webhook"),
-    ("POST", "/api/v1/payments/webhook"),
 }
 
 
