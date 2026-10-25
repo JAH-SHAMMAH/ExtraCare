@@ -23,6 +23,7 @@ class _Gateway:
         self.paid = set()
 
     async def initialize_payment(self, **kw):
+        self.last_kw = kw
         ref = f"REF-{uuid.uuid4().hex[:10]}"
         return {"reference": ref, "authorization_url": f"https://pay.test/{ref}", "_raw": {}}
 
@@ -181,3 +182,31 @@ async def test_assign_class_makes_fees_payable_and_parent_pays(http, db, org, wo
 
     d = (await http.get(f"{API}/finance/broad-view/dashboard", headers=A, params=dict(term="Summer"))).json()
     assert (d["total_revenue"], d["total_debt"], d["full_payments"], d["total_full_payment"]) == (15000000, 10000000, 1, 5000000)
+
+
+async def test_callback_url_and_unconfigured_message(http, db, org, world, monkeypatch):
+    w = world
+    acc = await _user(db, org, "accountant", "Acc4")
+    A, P = _h(acc), _h(w["parent"])
+    recv = await _acct(db, org, "1100", "Accounts Receivable", "asset")
+    inc = await _acct(db, org, "4000", "School Fees", "income")
+    r = await http.post(f"{API}/finance/invoices", headers=A, json=dict(
+        customer_name="x", student_id=w["studs"][0].id, receivable_account_id=recv.id, invoice_date=str(date.today()),
+        lines=[dict(description="Fees", quantity=1, unit_price=1000, income_account_id=inc.id)]))
+    iid = r.json()["id"]
+    await http.post(f"{API}/finance/invoices/{iid}/post", headers=A)
+    import app.routers.fee_payments as fp
+    from app.config import get_settings
+    import app.services.payment_resolver as pr
+    # no gateway saved + no platform key -> a clear, actionable message (not "unavailable")
+    monkeypatch.setattr(get_settings(), "PAYSTACK_SECRET_KEY", "", raising=False)
+    pr.initialize_payment_resolver(get_settings())
+    r = await http.post(f"{API}/payments/fees/initiate", headers=P, json=dict(invoice_id=iid, provider="paystack"))
+    assert r.status_code == 503 and "finished setting up" in r.json()["detail"]
+    # with a gateway: the parent's own site is the return address
+    gw = _Gateway()
+    monkeypatch.setattr(fp, "get_payment_resolver", lambda: _Resolver(gw))
+    r = await http.post(f"{API}/payments/fees/initiate", headers={**P, "Origin": "https://portal.example.ng"},
+                        json=dict(invoice_id=iid, provider="paystack"))
+    assert r.status_code == 200
+    assert gw.last_kw["callback_url"] == "https://portal.example.ng/dashboard/my-children/payments/callback?provider=paystack"

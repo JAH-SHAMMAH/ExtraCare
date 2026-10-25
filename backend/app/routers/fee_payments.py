@@ -184,7 +184,7 @@ async def available_providers(db: AsyncSession = Depends(get_db), current_user: 
 
 
 @router.post("/initiate", response_model=InitiateFeeResponse, dependencies=[_can_pay])
-async def initiate(payload: InitiateFeePayment, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def initiate(payload: InitiateFeePayment, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     try:
         provider = PaymentProvider(payload.provider)
     except ValueError:
@@ -203,15 +203,25 @@ async def initiate(payload: InitiateFeePayment, db: AsyncSession = Depends(get_d
     try:
         provider_obj = await resolver.resolve_for_org(current_user.org_id, db, provider_type=provider)
     except PaymentConfigError:
+        _logger.exception("fee_payments.initiate.misconfigured org=%s provider=%s", current_user.org_id, provider.value)
         raise HTTPException(status_code=503, detail=f"{provider.value} gateway is misconfigured. Contact the school.")
+    except ValueError:
+        _logger.error("fee_payments.initiate.no_gateway org=%s provider=%s", current_user.org_id, provider.value)
+        raise HTTPException(status_code=503, detail=f"The school hasn't finished setting up {provider.value} yet (no active key is saved). Please contact the school office.")
     except Exception:
+        _logger.exception("fee_payments.initiate.provider_error org=%s provider=%s", current_user.org_id, provider.value)
         raise HTTPException(status_code=503, detail=f"{provider.value} is not available. Contact the school.")
+
+    # Where the gateway sends the parent back: THIS site's callback page (the env
+    # default points at localhost). Taken from the browser's own origin.
+    origin = (request.headers.get("origin") or "").rstrip("/")
+    callback = f"{origin}/dashboard/my-children/payments/callback?provider={provider.value}" if origin.startswith("http") else None
 
     amount_ngn = int(money(inv.total))
     try:
         init = await provider_obj.initialize_payment(
             email=current_user.email or f"parent+{current_user.id}@example.com",
-            amount_ngn=amount_ngn, org_id=current_user.org_id,
+            amount_ngn=amount_ngn, org_id=current_user.org_id, callback_url=callback,
             metadata={"org_id": current_user.org_id, "invoice_id": inv.id, "student_id": inv.student_id, "payment_type": "school_fees"},
         )
     except Exception as exc:  # noqa: BLE001
