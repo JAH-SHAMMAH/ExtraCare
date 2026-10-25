@@ -184,7 +184,7 @@ async def available_providers(db: AsyncSession = Depends(get_db), current_user: 
 
 
 @router.post("/initiate", response_model=InitiateFeeResponse, dependencies=[_can_pay])
-async def initiate(payload: InitiateFeePayment, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def initiate(payload: InitiateFeePayment, request: Request = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     try:
         provider = PaymentProvider(payload.provider)
     except ValueError:
@@ -214,7 +214,7 @@ async def initiate(payload: InitiateFeePayment, request: Request, db: AsyncSessi
 
     # Where the gateway sends the parent back: THIS site's callback page (the env
     # default points at localhost). Taken from the browser's own origin.
-    origin = (request.headers.get("origin") or "").rstrip("/")
+    origin = ((request.headers.get("origin") if request is not None else "") or "").rstrip("/")
     callback = f"{origin}/dashboard/my-children/payments/callback?provider={provider.value}" if origin.startswith("http") else None
 
     amount_ngn = int(money(inv.total))
