@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAccounts, useUpdateAccount, type AccountRow } from "@/hooks/useHrPim";
 import { cn, getInitials } from "@/lib/utils";
 import { Landmark, Search, AlertTriangle, Loader2, Check } from "lucide-react";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 export default function AccountNumbersPage() {
   const [search, setSearch] = useState("");
@@ -47,7 +48,7 @@ function Row({ row }: { row: AccountRow }) {
   return (
     <div className="flex flex-wrap items-center gap-3 px-4 py-3">
       <div className="flex items-center gap-2.5 min-w-[180px] flex-1">
-        <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-bold shrink-0">{getInitials(row.full_name || row.email || "?")}</div>
+        <StudentAvatar name={row.full_name || row.email || "?"} url={(row as any).avatar_url} size={44} />
         <div className="min-w-0">
           <p className="text-sm font-semibold text-slate-800 truncate">{row.full_name || "—"}</p>
           <p className="text-xs text-slate-400 truncate">{row.job_title || "Staff"}{row.department ? ` · ${row.department}` : ""}</p>

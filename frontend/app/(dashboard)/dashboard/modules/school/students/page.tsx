@@ -5,7 +5,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useStudents, useCreateStudent, useUpdateStudent, useDeleteStudent, useClasses, useYearGroups } from "@/hooks/useSchool";
 import { useSections, useSessions } from "@/hooks/usePlatform";
 import { uploadApi, schoolApi } from "@/lib/api";
-import { StudentAvatar } from "@/components/students/StudentAvatar";
 import { cn, formatDate } from "@/lib/utils";
 import Link from "next/link";
 import { Search, UserPlus, GraduationCap, Edit2, Trash2, X, Loader2, Eye, Upload, Camera, User as MaleIcon, UserRound as FemaleIcon, Users, UserCheck, UserX } from "lucide-react";
@@ -14,6 +13,7 @@ import { useHasPermission } from "@/components/guards/PermissionGate";
 import { useDelayedFlag } from "@/hooks/useDelayedFlag";
 import { Skeleton } from "@/components/loading/Skeleton";
 import type { Student } from "@/types";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 export default function StudentsPage() {
   const canImport = useHasPermission("school:write");

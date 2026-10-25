@@ -5,6 +5,7 @@ import { useRatingsSummary, useTeacherRatings } from "@/hooks/useSchool";
 import { cn, getInitials } from "@/lib/utils";
 import { Star, Loader2, EyeOff } from "lucide-react";
 import type { TeacherRating } from "@/types";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 function Stars({ value }: { value: number }) {
   return (
@@ -37,7 +38,7 @@ export default function RatingsPage() {
           : summary.map((t) => (
             <button key={t.teacher_id} onClick={() => setSelected(t.teacher_id)}
               className={cn("w-full flex items-center gap-3 px-4 py-3 border-b border-slate-50 hover:bg-slate-50 text-left", selected === t.teacher_id && "bg-brand-50")}>
-              <div className="w-9 h-9 rounded-lg bg-emerald-600/10 flex items-center justify-center text-emerald-700 text-xs font-bold shrink-0">{getInitials(t.name)}</div>
+              <StudentAvatar name={t.name} url={(t as any).avatar_url ?? (t as any).photo_url} size={44} />
               <div className="min-w-0 flex-1"><p className="text-sm font-medium text-slate-900 truncate">{t.name}</p><p className="text-xs text-slate-400">{t.count} rating{t.count !== 1 ? "s" : ""}</p></div>
               <div className="text-right"><p className="text-sm font-bold text-slate-900">{t.average.toFixed(1)}</p><Star size={12} className="fill-amber-400 text-amber-400 ml-auto" /></div>
             </button>

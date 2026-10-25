@@ -6,6 +6,7 @@ import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn, getInitials } from "@/lib/utils";
 import { UserX, RotateCcw, AlertTriangle, Loader2, UserCheck } from "lucide-react";
 import type { UserStatus } from "@/types";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 const STATUSES: { value: UserStatus; label: string }[] = [
   { value: "suspended", label: "Suspended" },
@@ -45,7 +46,7 @@ export default function DeactivatedUsersPage() {
         <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-50">
           {items.map((u) => (
             <div key={u.id} className="flex items-center gap-3 px-5 py-3.5">
-              <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-bold shrink-0">{getInitials(u.full_name || u.email || "?")}</div>
+              <StudentAvatar name={u.full_name || u.email || "?"} url={(u as any).avatar_url} size={44} />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-slate-800 truncate">{u.full_name || "—"}</p>
                 <p className="text-xs text-slate-400 truncate">{u.email}{u.primary_role ? ` · ${String(u.primary_role).replace(/_/g, " ")}` : ""}</p>

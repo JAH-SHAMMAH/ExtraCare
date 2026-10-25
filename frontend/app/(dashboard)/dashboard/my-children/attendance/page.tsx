@@ -17,6 +17,7 @@ import {
   formatClock,
   MONTH_NAMES,
 } from "@/components/attendance/shared";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 /**
  * Parent Attendance Dashboard.
@@ -80,12 +81,7 @@ export default function ParentAttendancePage() {
                         : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50",
                     )}
                   >
-                    <span className={cn(
-                      "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black",
-                      active ? "bg-white/20 text-white" : "bg-brand-50 text-brand-700",
-                    )}>
-                      {getInitials(`${c.first_name} ${c.last_name}`)}
-                    </span>
+                    <StudentAvatar name={`${c.first_name} ${c.last_name}`} url={(c as any).photo_url} size={28} />
                     {c.first_name}
                   </button>
                 );

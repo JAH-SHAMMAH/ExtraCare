@@ -7,6 +7,7 @@ import { useHasPermission } from "@/components/guards/PermissionGate";
 import { getInitials, resolveMediaUrl, cn } from "@/lib/utils";
 import { Search, Loader2, Building2, UserPlus, ArrowRight } from "lucide-react";
 import type { Teacher, SchoolSection } from "@/types";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 /**
  * Assign To School — Educare's "Transfer Teacher": choose a destination school
@@ -102,8 +103,7 @@ export default function AssignToSchoolPage() {
                   <tr key={t.id} className="hover:bg-slate-50/70">
                     <td className="px-5 py-3 text-sm text-slate-500">{i + 1}</td>
                     <td className="px-5 py-3">
-                      {t.photo_url ? <img src={resolveMediaUrl(t.photo_url)} alt="" className="w-11 h-11 rounded object-cover" />
-                        : <div className="w-11 h-11 rounded bg-slate-200 text-slate-500 flex items-center justify-center text-sm font-bold">{getInitials(`${t.first_name} ${t.last_name}`)}</div>}
+                      <StudentAvatar name={`${t.first_name} ${t.last_name}`} url={t.photo_url} size={56} />
                     </td>
                     <td className="px-5 py-3 text-sm font-semibold text-slate-800">{t.first_name} {t.last_name}{t.other_names ? ` ${t.other_names}` : ""}</td>
                     <td className="px-5 py-3">

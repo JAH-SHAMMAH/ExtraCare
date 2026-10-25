@@ -4,8 +4,8 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Edit2, Trash2, Loader2, Phone, Mail, MapPin, Cake, GraduationCap, Users, CalendarDays } from "lucide-react";
 import { useStudent, useDeleteStudent } from "@/hooks/useSchool";
-import { StudentAvatar } from "@/components/students/StudentAvatar";
 import { cn, formatDate } from "@/lib/utils";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 function Field({ icon: Icon, label, value }: { icon?: any; label: string; value?: string | null }) {
   return (

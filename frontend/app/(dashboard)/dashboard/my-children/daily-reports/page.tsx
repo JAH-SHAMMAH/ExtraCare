@@ -6,6 +6,7 @@ import { useMyContexts, type ParentChild } from "@/hooks/useMyContexts";
 import { useStudentDailyReportsForChild } from "@/hooks/useFeedbackExtras";
 import { getInitials, formatDate } from "@/lib/utils";
 import { GraduationCap, Loader2, ArrowLeft, Smile } from "lucide-react";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 /**
  * Parent daily-report view — a child's day-to-day mood/academic/behaviour notes.
@@ -49,7 +50,7 @@ export default function ParentDailyReportsPage() {
           )}
           {child && (
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-brand-600/10 text-brand-700 flex items-center justify-center text-sm font-bold">{getInitials(`${child.first_name} ${child.last_name}`)}</div>
+              <StudentAvatar name={`${child.first_name} ${child.last_name}`} url={(child as any).photo_url} size={44} />
               <div><h2 className="text-sm font-bold text-slate-900">{child.first_name} {child.last_name}</h2><p className="text-xs text-slate-400">{child.class_name || "No class"}</p></div>
             </div>
           )}

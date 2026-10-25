@@ -5,6 +5,7 @@ import { Star, Loader2, Check } from "lucide-react";
 import { toast } from "sonner";
 import { useMyTeachers, useRateMyTeacher, type MyTeacher } from "@/hooks/useSchool";
 import { cn, getInitials } from "@/lib/utils";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 function Stars({ value, onChange, label }: { value: number; onChange: (v: number) => void; label: string }) {
   return (
@@ -37,7 +38,7 @@ function TeacherCard({ t }: { t: MyTeacher }) {
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5">
       <div className="flex items-center gap-3 mb-3">
-        <div className="w-11 h-11 rounded-xl bg-violet-600/10 text-violet-700 flex items-center justify-center text-sm font-bold shrink-0">{getInitials(t.name)}</div>
+        <StudentAvatar name={t.name} url={(t as any).avatar_url ?? (t as any).photo_url} size={56} />
         <div className="min-w-0">
           <p className="font-semibold text-slate-900 truncate">{t.name}</p>
           <p className="text-xs text-slate-500 truncate">

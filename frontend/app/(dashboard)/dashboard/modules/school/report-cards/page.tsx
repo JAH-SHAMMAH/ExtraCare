@@ -13,6 +13,7 @@ import { PrintLetterhead } from "@/components/branding/Brand";
 import { ReportCardViewer } from "@/components/reports/ReportCardViewer";
 
 import type { Student, ReportCardDomain, SchoolClass, SchoolSection } from "@/types";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 export default function ReportCardsPage() {
   // Branch on the STAFF scope, not a role slug: slugs are per-org and a cloned
@@ -133,7 +134,7 @@ function TeacherReportCardsView() {
             : items.length === 0 ? (<div className="p-8 text-center text-slate-400 text-sm">No students found.</div>)
             : items.map((s: Student) => (
               <button key={s.id} onClick={() => { setSelectedStudent(s.id); setPickedStudent(s); window.scrollTo({ top: 0 }); }} className={cn("w-full flex items-center gap-3 px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors text-left", selectedStudent === s.id && "bg-brand-50 border-brand-100")}>
-                <div className="w-8 h-8 rounded-lg bg-indigo-600/10 flex items-center justify-center text-indigo-700 text-xs font-bold shrink-0">{getInitials(`${s.first_name} ${s.last_name}`)}</div>
+                <StudentAvatar name={`${s.first_name} ${s.last_name}`} url={s.photo_url} size={44} />
                 <div className="min-w-0"><p className="text-sm font-medium text-slate-900 truncate">{s.first_name} {s.last_name}</p><p className="text-xs text-slate-400">{s.student_id}</p></div>
               </button>
             ))}

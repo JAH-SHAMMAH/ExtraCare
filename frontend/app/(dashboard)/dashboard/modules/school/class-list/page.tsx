@@ -6,6 +6,7 @@ import { useMyTeachingAssignments } from "@/hooks/usePlatform";
 import { classesFromAssignments, subjectsForClass } from "@/lib/reportEntry";
 import { getInitials } from "@/lib/utils";
 import { Loader2, Search, ShieldAlert, Users2 } from "lucide-react";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 export default function ClassListPage() {
   const { data: assignments = [], isLoading: loadingAssignments } = useMyTeachingAssignments();
@@ -169,14 +170,7 @@ export default function ClassListPage() {
                   <td className="px-4 py-2.5 text-xs text-slate-400 tabular-nums">{i + 1}</td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2.5">
-                      {s.photo_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={s.photo_url} alt="" className="w-7 h-7 rounded-full object-cover" />
-                      ) : (
-                        <span className="w-7 h-7 rounded-full bg-brand-50 text-brand-700 text-[10px] font-bold flex items-center justify-center">
-                          {getInitials(s.name || "")}
-                        </span>
-                      )}
+                      <StudentAvatar name={s.name || ""} url={s.photo_url} size={40} />
                       <span className="text-sm font-medium text-slate-800">{s.name}</span>
                     </div>
                   </td>

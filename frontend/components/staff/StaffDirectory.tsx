@@ -1,10 +1,10 @@
 "use client";
 
-import { StudentAvatar } from "@/components/students/StudentAvatar";
 import { useMemo, useState } from "react";
 import { useStaff } from "@/hooks/useUsers";
 import { cn, getInitials, resolveMediaUrl } from "@/lib/utils";
 import { Users as UsersIcon, Search, AlertTriangle, Mail, Phone, Briefcase } from "lucide-react";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 // The server already excludes teachers (job_title="Teacher") and students/
 // parents. Admins are still distinguished here for the filter chips.

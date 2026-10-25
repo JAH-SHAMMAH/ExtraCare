@@ -11,13 +11,13 @@ import { useSections } from "@/hooks/usePlatform";
 import { useSubjectOptions } from "@/hooks/useAcademics";
 import { schoolApi, uploadApi } from "@/lib/api";
 import { useHasPermission } from "@/components/guards/PermissionGate";
-import { StudentAvatar } from "@/components/students/StudentAvatar";
 import { cn, getInitials, resolveMediaUrl } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   Search, Download, Plus, Users, Eye, Pencil, Power, Trash2, BookOpen, X, Loader2, Camera, Check,
 } from "lucide-react";
 import type { Teacher, SchoolSection } from "@/types";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 export default function ViewTeachersPage() {
   const canWrite = useHasPermission("settings:write");

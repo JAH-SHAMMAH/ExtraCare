@@ -6,6 +6,7 @@ import { useMyContexts, type ParentChild } from "@/hooks/useMyContexts";
 import { useDelayedFlag } from "@/hooks/useDelayedFlag";
 import { PageHeaderSkeleton, TableSkeleton } from "@/components/loading/Skeleton";
 import { cn, getInitials } from "@/lib/utils";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 /**
  * Parent portal: full list of the authenticated user's children with
@@ -54,13 +55,7 @@ function ChildRow({ child }: { child: ParentChild }) {
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
       <div className="px-5 py-4 flex items-center gap-4 border-b border-slate-100">
-        <div className="w-12 h-12 rounded-xl bg-brand-600 flex items-center justify-center text-white font-black text-sm overflow-hidden shrink-0">
-          {child.photo_url ? (
-            <img src={child.photo_url} alt="" className="w-full h-full object-cover" />
-          ) : (
-            getInitials(`${child.first_name} ${child.last_name}`)
-          )}
-        </div>
+        <StudentAvatar name={`${child.first_name} ${child.last_name}`} url={child.photo_url} size={64} />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-black text-slate-900 truncate">
             {child.first_name} {child.last_name}

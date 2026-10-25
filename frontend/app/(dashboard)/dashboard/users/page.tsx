@@ -1,6 +1,5 @@
 "use client";
 
-import { StudentAvatar } from "@/components/students/StudentAvatar";
 import { useState, useRef } from "react";
 import { useUsers, useUpdateUserStatus, useDeleteUser, useAvailableRoles, useResetPassword, useSetUserAvatar } from "@/hooks/useUsers";
 import { UserCreateModal } from "@/components/users/UserCreateModal";
@@ -10,6 +9,7 @@ import { Search, Download, UserPlus, MoreVertical, Shield, Ban, Trash2, Edit, Ke
 import { downloadCsv } from "@/lib/csv";
 import type { User, UserStatus } from "@/types";
 import { useAuthStore } from "@/lib/store";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 export default function UsersPage() {
   const { hasPermission } = useAuthStore();

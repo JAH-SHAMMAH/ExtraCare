@@ -5,6 +5,7 @@ import { useStudents, useWithdrawStudent } from "@/hooks/useSchool";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { cn, getInitials } from "@/lib/utils";
 import { UserMinus, Search, Loader2, AlertTriangle, X, Lock } from "lucide-react";
+import { StudentAvatar } from "@/components/students/StudentAvatar";
 
 export default function ManageWithdrawalPage() {
   const canWrite = useHasPermission("school:write");
@@ -41,7 +42,7 @@ export default function ManageWithdrawalPage() {
         <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-50">
           {rows.map((s) => (
             <div key={s.id} className="flex items-center gap-3 px-5 py-3">
-              <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-bold shrink-0">{getInitials(`${s.first_name} ${s.last_name}`)}</div>
+              <StudentAvatar name={`${s.first_name} ${s.last_name}`} url={(s as any).photo_url} size={44} />
               <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-800 truncate">{s.first_name} {s.last_name}</p><p className="text-xs text-slate-400">{s.student_id}</p></div>
               {canWrite && <button onClick={() => setTarget(s)} className="btn-secondary gap-1.5 py-1.5 text-sm text-rose-600 border-rose-200 hover:bg-rose-50"><UserMinus size={14} /> Withdraw</button>}
             </div>
