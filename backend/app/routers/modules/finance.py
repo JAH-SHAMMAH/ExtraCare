@@ -441,6 +441,35 @@ async def financial_statements(
 # Gated payments:WRITE (org-wide financials) — same bar as /statements; a read
 # gate would leak the school's whole P&L to parents (who hold payments:read).
 
+async def _invoice_only_records(db: AsyncSession, org_id: str, have: set[str]) -> list:
+    """Fee-record look-alikes for pupils who were invoiced but never given a Fee
+    Assignment record. Without these, a school that bills by invoice alone sees an
+    all-zero Broad View. Paid invoices count as paid, posted ones as owed."""
+    from types import SimpleNamespace
+    rows = (await db.execute(
+        select(Invoice.student_id, Invoice.status, func.sum(Invoice.total))
+        .where(Invoice.org_id == org_id, Invoice.is_deleted == False,  # noqa: E712
+               Invoice.student_id.isnot(None), Invoice.status.in_(("posted", "paid")))
+        .group_by(Invoice.student_id, Invoice.status)
+    )).all()
+    agg: dict[str, dict] = {}
+    for sid, st, tot in rows:
+        if sid in have:
+            continue
+        a = agg.setdefault(sid, {"paid": money(0), "owed": money(0)})
+        a["paid" if st == "paid" else "owed"] += money(tot or 0)
+    out = []
+    zero = money(0)
+    for sid, a in agg.items():
+        total = a["paid"] + a["owed"]
+        out.append(SimpleNamespace(
+            student_id=sid, total_fee=total, paid_amount=a["paid"], outstanding_balance=a["owed"],
+            payment_status="paid" if a["owed"] <= 0 else ("partial" if a["paid"] > 0 else "unpaid"),
+            tuition_fee=zero, exam_fee=zero, activity_fee=zero, transport_fee=zero, hostel_fee=zero,
+            other_fees=total))
+    return out
+
+
 @router.get("/broad-view/dashboard", response_model=BroadViewDashboard, dependencies=[_finadmin_read])
 async def broad_view_dashboard(
     session: str | None = None,
@@ -458,7 +487,9 @@ async def broad_view_dashboard(
         fq = fq.where(StudentFeeRecord.session_year == session)
     if term:
         fq = fq.where(StudentFeeRecord.term == term)
-    records = (await db.execute(fq)).scalars().all()
+    records = list((await db.execute(fq)).scalars().all())
+    if not session and not term:
+        records += await _invoice_only_records(db, org_id, {r.student_id for r in records})
     total_revenue = sum((money(r.total_fee) for r in records), money(0))
     total_debt = sum((money(r.outstanding_balance) for r in records), money(0))
     full_payments = sum(1 for r in records if r.payment_status == "paid")
@@ -545,7 +576,9 @@ async def broad_view_termly_summary(session: str | None = None, term: str | None
         q = q.where(StudentFeeRecord.session_year == session)
     if term:
         q = q.where(StudentFeeRecord.term == term)
-    records = (await db.execute(q)).scalars().all()
+    records = list((await db.execute(q)).scalars().all())
+    if not session and not term:
+        records += await _invoice_only_records(db, org_id, {r.student_id for r in records})
     cats = [("Tuition", "tuition_fee"), ("Exam", "exam_fee"), ("Activity", "activity_fee"),
             ("Transport", "transport_fee"), ("Hostel", "hostel_fee"), ("Other", "other_fees")]
     items = [TermlyFeeRow(fee=label, amount=float(sum((money(getattr(r, attr)) for r in records), money(0)))) for label, attr in cats]
@@ -618,7 +651,9 @@ async def broad_view_students_ledger(session: str | None = None, term: str | Non
         q = q.where(StudentFeeRecord.session_year == session)
     if term:
         q = q.where(StudentFeeRecord.term == term)
-    records = (await db.execute(q)).scalars().all()
+    records = list((await db.execute(q)).scalars().all())
+    if not session and not term:
+        records += await _invoice_only_records(db, org_id, {r.student_id for r in records})
     agg: dict[str, dict] = {}
     for r in records:
         a = agg.setdefault(r.student_id, {"inv": money(0), "paid": money(0), "bal": money(0)})

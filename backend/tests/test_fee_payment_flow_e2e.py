@@ -126,3 +126,25 @@ async def test_parent_pays_summer_fee_and_broad_view_catches_it(http, db, org, w
     r = await http.post(f"{API}/payments/fees/initiate", headers=P,
                         json=dict(invoice_id=inv_ids[child.id], provider="paystack"))
     assert r.status_code == 409
+
+
+async def test_broad_view_counts_invoice_only_pupils(http, db, org, world):
+    """A school that bills by invoice (no Fee Assignment records) must not see zeros."""
+    w = world
+    acc = await _user(db, org, "accountant", "Acc2")
+    A = _h(acc)
+    recv = await _acct(db, org, "1100", "Accounts Receivable", "asset")
+    inc = await _acct(db, org, "4000", "School Fees", "income")
+    for s, pay in ((w["studs"][0], True), (w["studs"][1], False)):
+        r = await http.post(f"{API}/finance/invoices", headers=A, json=dict(
+            customer_name="x", student_id=s.id, receivable_account_id=recv.id, invoice_date=str(date.today()),
+            lines=[dict(description="Fees", quantity=1, unit_price=100000, income_account_id=inc.id)]))
+        iid = r.json()["id"]
+        await http.post(f"{API}/finance/invoices/{iid}/post", headers=A)
+        if pay:
+            cash = await _acct(db, org, "1000", "Cash", "asset")
+            await http.post(f"{API}/finance/invoices/{iid}/pay", headers=A, json=dict(cash_account_id=cash.id))
+    d = (await http.get(f"{API}/finance/broad-view/dashboard", headers=A)).json()
+    assert (d["total_revenue"], d["total_debt"], d["full_payments"]) == (200000, 100000, 1)
+    led = (await http.get(f"{API}/finance/broad-view/students-ledger", headers=A)).json()
+    assert led["total_paid"] == 100000 and led["total_balance"] == 100000
