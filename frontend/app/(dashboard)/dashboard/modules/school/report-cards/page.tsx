@@ -7,7 +7,8 @@ import { useTermState, useTermNames, useGradingScales, useSections, useTerms } f
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { useAuthStore } from "@/lib/store";
 import { cn, getInitials } from "@/lib/utils";
-import { FileText, Search, Printer, Loader2, Pencil, X, ClipboardCheck, GraduationCap } from "lucide-react";
+import Link from "next/link";
+import { FileText, Search, Printer, Loader2, Pencil, X, ClipboardCheck, GraduationCap, ArrowLeft, MessageSquare, Workflow } from "lucide-react";
 import { PrintLetterhead } from "@/components/branding/Brand";
 import { ReportCardViewer } from "@/components/reports/ReportCardViewer";
 
@@ -116,8 +117,8 @@ function TeacherReportCardsView() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Student list */}
-        <div className="no-print">
+        {/* Student list (on a phone it gives way to the report once one is picked) */}
+        <div className={cn("no-print", selectedStudent && "hidden lg:block")}>
           <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 space-y-2">
             <div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search students..." className="input pl-9" /></div>
             {scoped && (
@@ -131,7 +132,7 @@ function TeacherReportCardsView() {
             {studentsLoading ? Array.from({ length: 8 }).map((_, i) => (<div key={i} className="px-4 py-3 border-b border-slate-50"><div className="h-4 bg-slate-100 rounded animate-pulse w-32" /></div>))
             : items.length === 0 ? (<div className="p-8 text-center text-slate-400 text-sm">No students found.</div>)
             : items.map((s: Student) => (
-              <button key={s.id} onClick={() => { setSelectedStudent(s.id); setPickedStudent(s); }} className={cn("w-full flex items-center gap-3 px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors text-left", selectedStudent === s.id && "bg-brand-50 border-brand-100")}>
+              <button key={s.id} onClick={() => { setSelectedStudent(s.id); setPickedStudent(s); window.scrollTo({ top: 0 }); }} className={cn("w-full flex items-center gap-3 px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors text-left", selectedStudent === s.id && "bg-brand-50 border-brand-100")}>
                 <div className="w-8 h-8 rounded-lg bg-indigo-600/10 flex items-center justify-center text-indigo-700 text-xs font-bold shrink-0">{getInitials(`${s.first_name} ${s.last_name}`)}</div>
                 <div className="min-w-0"><p className="text-sm font-medium text-slate-900 truncate">{s.first_name} {s.last_name}</p><p className="text-xs text-slate-400">{s.student_id}</p></div>
               </button>
@@ -140,7 +141,18 @@ function TeacherReportCardsView() {
         </div>
 
         {/* Report card — the same designed report parents and pupils see */}
-        <div className="lg:col-span-2">
+        <div className={cn("lg:col-span-2", !selectedStudent && "hidden lg:block")}>
+          {selectedStudent && (
+            <div className="no-print mb-4 space-y-3">
+              <button onClick={() => { setSelectedStudent(""); setPickedStudent(null); }} className="lg:hidden inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600"><ArrowLeft size={15} /> All students</button>
+              <div className="bg-white rounded-xl border border-slate-200 p-3 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-400 mr-1">Edit</span>
+                <Link href="/dashboard/modules/school/make-report" className="btn-secondary gap-2 text-xs py-1.5"><Pencil size={13} /> Marks</Link>
+                <Link href="/dashboard/modules/school/teacher-comments" className="btn-secondary gap-2 text-xs py-1.5"><MessageSquare size={13} /> Comments</Link>
+                <Link href="/dashboard/modules/school/report-workflow" className="btn-secondary gap-2 text-xs py-1.5"><Workflow size={13} /> Approval &amp; publish</Link>
+              </div>
+            </div>
+          )}
           {!selectedStudent ? (
             <div className="bg-white rounded-xl border border-slate-200 py-16 text-center text-slate-400"><FileText size={40} className="mx-auto mb-3 opacity-40" /><p className="font-semibold">Select a student</p><p className="text-sm mt-1">Choose a student from the list to view their report card.</p></div>
           ) : (
