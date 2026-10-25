@@ -82,7 +82,7 @@ def _event_response(e: CalendarEvent) -> CalendarEventResponse:
 
 @router.get("/calendar", response_model=CalendarEventListResponse, dependencies=[_cal_read])
 async def list_events(
-    page: int = Query(default=1, ge=1), page_size: int = Query(default=100, ge=1, le=200),
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=100, ge=1, le=500),
     upcoming_only: bool = False,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
@@ -146,7 +146,7 @@ async def _load_facility(db, fid, org_id) -> Facility:
 
 @router.get("/facilities", response_model=FacilityListResponse, dependencies=[_adm_read])
 async def list_facilities(
-    page: int = Query(default=1, ge=1), page_size: int = Query(default=50, ge=1, le=100),
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     base = select(Facility).where(Facility.org_id == current_user.org_id, Facility.is_deleted == False)  # noqa: E712
@@ -246,7 +246,7 @@ def _visitor_response(v: VisitorLog) -> VisitorResponse:
 
 @router.get("/visitors", response_model=VisitorListResponse, dependencies=[_adm_read])
 async def list_visitors(
-    status: str | None = None, page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=100),
+    status: str | None = None, page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     base = select(VisitorLog).where(VisitorLog.org_id == current_user.org_id, VisitorLog.is_deleted == False)  # noqa: E712
@@ -315,7 +315,7 @@ async def _collection_response(db, c: StudentCollection, org_id: str) -> Collect
 
 @router.get("/collections", response_model=CollectionListResponse, dependencies=[_adm_read])
 async def list_collections(
-    student_id: str | None = None, page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=100),
+    student_id: str | None = None, page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     base = select(StudentCollection).where(StudentCollection.org_id == current_user.org_id, StudentCollection.is_deleted == False)  # noqa: E712

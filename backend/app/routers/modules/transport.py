@@ -48,7 +48,7 @@ _can_write = Depends(PermissionChecker("school_admin:write"))
 # Transport is an operational/admin function: dispatching vehicles, assigning
 # students to routes, marking boardings. Teachers technically have school:write
 # (for grading/attendance) but should NOT touch transport — same shape as SMS.
-ADMIN_SLUGS = {"org_admin", "manager", "super_admin"}
+ADMIN_SLUGS = {"org_admin", "manager", "super_admin", "super_user"}
 
 
 async def require_transport_admin(

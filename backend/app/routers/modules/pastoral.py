@@ -165,7 +165,7 @@ async def _load_hostel(db: AsyncSession, hid: str, org_id: str) -> Hostel:
 @router.get("/hostels", response_model=HostelListResponse, dependencies=[_hostel_read])
 async def list_hostels(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=1, le=100),
+    page_size: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -338,7 +338,7 @@ async def _exeat_with_names(db: AsyncSession, e: ExeatRequest, org_id: str) -> E
 async def list_exeats(
     status: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -476,7 +476,7 @@ async def list_mentor_reports(
     student_id: str | None = None,
     mentor_id: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

@@ -24,6 +24,7 @@ export function useSchoolPersona(): SchoolPersona {
 
   if (
     user.primary_role === "super_admin" ||
+    user.primary_role === "super_user" ||
     user.primary_role === "org_admin" ||
     user.primary_role === "manager"
   ) {

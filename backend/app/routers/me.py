@@ -474,7 +474,7 @@ async def contexts(
     # wildcard (Principal, Head, Vice Principal, Super User …). Slugs alone left
     # those roles without an admin home.
     has_admin_role = (
-        bool(role_slugs & {"org_admin", "manager", "super_admin", "hr_manager", "accountant"})
+        bool(role_slugs & {"org_admin", "manager", "super_admin", "super_user", "hr_manager", "accountant"})
         or current_user.is_superadmin
         or current_user.has_permission("school_admin:read")
     )

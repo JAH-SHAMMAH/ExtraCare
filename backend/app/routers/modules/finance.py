@@ -326,7 +326,7 @@ async def _entry_response(db: AsyncSession, e: JournalEntry, org_id: str) -> Jou
 @router.get("/journal", response_model=JournalListResponse, dependencies=[_finadmin_read])
 async def list_journal(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -883,7 +883,7 @@ async def _load_invoice(db, iid, org_id) -> Invoice:
 async def list_invoices(
     status: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -1121,7 +1121,7 @@ async def _load_run(db, rid, org_id) -> PayrollRun:
 async def list_payroll(
     status: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

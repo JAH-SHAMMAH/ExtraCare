@@ -191,7 +191,7 @@ async def list_assessments(
     staff_user_id: str | None = None,
     status: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -334,7 +334,7 @@ async def list_candidates(
     stage: str | None = None,
     search: str | None = Query(default=None, description="Filter by name, email, or role applied."),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

@@ -1518,7 +1518,7 @@ async def _poll_response(db, p: Poll, org_id: str, voter_id: str | None) -> Poll
 
 
 @router.get("/polls", response_model=PollListResponse, dependencies=[Depends(require_module("school"))])
-async def list_polls(status: str | None = None, page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=100),
+async def list_polls(status: str | None = None, page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=500),
                      db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     base = select(Poll).where(Poll.org_id == current_user.org_id, Poll.is_deleted == False)  # noqa: E712
     if status:

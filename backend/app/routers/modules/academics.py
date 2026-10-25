@@ -131,7 +131,7 @@ async def list_subject_selections(
     subject_id: str | None = None,
     status: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -269,7 +269,7 @@ async def _entries_for(db: AsyncSession, transcript_ids: list[str]) -> dict[str,
 async def list_transcripts(
     student_id: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -441,7 +441,7 @@ async def _report_responses(db: AsyncSession, org_id: str,
 async def list_report_workflow(
     stage: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -461,7 +461,7 @@ async def list_report_workflow(
 @router.get("/report-workflow/mine", response_model=ReportApprovalListResponse, dependencies=[Depends(PermissionChecker("school:reports:read"))])
 async def list_my_report_workflow(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -574,7 +574,7 @@ async def list_grade_analysis(
     term_id: str | None = None,
     sub_term_id: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -1403,7 +1403,7 @@ async def list_recognitions(
     house: str | None = None,
     term: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

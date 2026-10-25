@@ -178,7 +178,7 @@ async def _load_wallet(db, wid, org_id) -> StudentWallet:
 
 @router.get("/wallets", response_model=WalletListResponse, dependencies=[_fin_read])
 async def list_wallets(
-    page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=100),
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     base = select(StudentWallet).where(StudentWallet.org_id == current_user.org_id)
@@ -457,7 +457,7 @@ async def delete_pocketmoney_item(item_id: str, db: AsyncSession = Depends(get_d
 
 @router.get("/pocketmoney-transactions", response_model=PocketMoneyTxnListResponse, dependencies=[_fin_read])
 async def list_pocketmoney_transactions(
-    page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=100),
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     """Pocket-money spend transactions — the SPEND subledger of the student wallets."""
@@ -478,7 +478,7 @@ async def list_pocketmoney_transactions(
 
 @router.get("/pocketmoney-students", response_model=PocketMoneyStudentListResponse, dependencies=[_spend])
 async def list_pocketmoney_students(
-    page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1, le=100),
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1, le=500),
     search: str | None = None,
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
@@ -599,7 +599,7 @@ async def _load_member(db, mid, org_id) -> CooperativeMember:
 
 
 @router.get("/cooperative/members", response_model=CoopMemberListResponse, dependencies=[_fin_read])
-async def list_members(page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=100),
+async def list_members(page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=500),
                        db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     base = select(CooperativeMember).where(CooperativeMember.org_id == current_user.org_id)
     total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0

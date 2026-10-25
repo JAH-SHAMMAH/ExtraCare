@@ -161,7 +161,7 @@ async def list_applications(
     appointment_status: str | None = None,  # none|scheduled|attended|no_show — Enquiry Appointment view
     search: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -347,7 +347,7 @@ async def _load_exam(db: AsyncSession, exam_id: str, org_id: str) -> EntranceExa
 async def list_entrance_exams(
     status: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -560,7 +560,7 @@ async def _load_promotion_students(db: AsyncSession, org_id: str, student_ids: l
 async def list_promotions(
     student_id: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=1, le=200),
+    page_size: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -769,7 +769,7 @@ async def list_transfers(
     status: str | None = None,
     transfer_type: str | None = None,  # transfer_out | withdrawal
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -897,7 +897,7 @@ async def list_pickups(
     student_id: str | None = None,
     active_only: bool = False,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -1033,7 +1033,7 @@ async def list_post_entrance(
     application_id: str | None = None,
     status: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -1178,7 +1178,7 @@ async def list_acceptance(
     application_id: str | None = None,
     status: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

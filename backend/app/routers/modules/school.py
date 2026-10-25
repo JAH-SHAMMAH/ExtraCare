@@ -210,7 +210,7 @@ async def _ensure_student_visible(db: AsyncSession, user: User, student_id: str)
 @router.get("/students")
 async def list_students(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     search: str | None = None,
     class_id: str | None = None,
     section_id: str | None = None,  # managed report section (level) — filters via class
@@ -620,7 +620,7 @@ async def _validate_teacher(db: AsyncSession, org_id: str, teacher_id: str | Non
 @router.get("/classes", dependencies=[_classes_read])
 async def list_classes(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=100, ge=1, le=200),
+    page_size: int = Query(default=100, ge=1, le=500),
     search: str | None = None,
     section_id: str | None = None,   # the school (Early Years / Primary / Secondary)
     year_group: str | None = None,   # a year group's name
@@ -802,7 +802,7 @@ async def _load_subject(db: AsyncSession, subject_id: str, org_id: str) -> Subje
 @router.get("/subjects", dependencies=[_subjects_read])
 async def list_subjects(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=100, ge=1, le=200),
+    page_size: int = Query(default=100, ge=1, le=500),
     search: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -2343,7 +2343,7 @@ async def _exam_entered_counts(db: AsyncSession, org_id: str, exam_ids: list[str
 @router.get("/exams", dependencies=[_exams_read])
 async def list_exams(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=1, le=200),
+    page_size: int = Query(default=50, ge=1, le=500),
     status: str | None = None,
     class_id: str | None = None,
     term: str | None = None,
@@ -2593,7 +2593,7 @@ def _rating_dict(r: TeacherRating, student_name: str | None) -> dict:
 @router.get("/ratings", dependencies=[_can_read])
 async def list_ratings(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=1, le=200),
+    page_size: int = Query(default=50, ge=1, le=500),
     teacher_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -3101,7 +3101,7 @@ def _teacher_list_query(org_id: str, search: str | None, section: str | None):
 @router.get("/teachers", dependencies=[_teachers_read])
 async def list_teachers(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=200),
+    page_size: int = Query(default=25, ge=1, le=500),
     search: str | None = None,
     section: str | None = None,   # school section id (Select School). Plain default: safe for direct calls.
     db: AsyncSession = Depends(get_db),
@@ -3740,7 +3740,7 @@ def _lesson_dict(lp: LessonPlan, subject_name: str | None = None, class_name: st
 
 def _is_admin_role(user: User) -> bool:
     return user.is_superadmin or any(
-        r.slug in {"org_admin", "manager", "super_admin"} for r in user.roles
+        r.slug in {"org_admin", "manager", "super_admin", "super_user"} for r in user.roles
     )
 
 

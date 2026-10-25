@@ -166,7 +166,7 @@ async def create_import_job(
 async def list_import_jobs(
     entity: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, le=100),
+    page_size: int = Query(default=20, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

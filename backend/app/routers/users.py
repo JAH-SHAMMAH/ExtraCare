@@ -30,7 +30,7 @@ _can_delete = Depends(PermissionChecker("users:delete"))
 @router.get("", response_model=UserListResponse, dependencies=[_can_read])
 async def list_users(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     search: str | None = None,
     status: UserStatus | None = None,
     db: AsyncSession = Depends(get_db),

@@ -36,7 +36,7 @@ _finance_write = Depends(PermissionChecker("finance:write"))
 @router.get("/employees", dependencies=[_biz_read])
 async def list_employees(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, le=100),
+    page_size: int = Query(default=25, le=500),
     department: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -231,7 +231,7 @@ def _item_dict(i: InventoryItem) -> dict:
 @router.get("/finance/transactions", dependencies=[_finance_read])
 async def list_transactions(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, le=100),
+    page_size: int = Query(default=25, le=500),
     type: str | None = None,
     category: str | None = None,
     start_date: str | None = None,

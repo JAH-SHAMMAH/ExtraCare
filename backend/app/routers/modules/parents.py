@@ -88,7 +88,7 @@ async def _load_link(db: AsyncSession, link_id: str, org_id: str) -> ParentGuard
 async def list_parent_links(
     search: str | None = Query(default=None, description="Filter by parent name/email or student name/id."),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

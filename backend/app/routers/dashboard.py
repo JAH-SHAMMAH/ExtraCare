@@ -68,7 +68,7 @@ _can_analytics_read = Depends(PermissionChecker("analytics:read"))
 # Scope note: this set is LOCAL to the executive dashboard. sms.py and transport.py
 # each define their own identically-named ADMIN_SLUGS; they are separate constants
 # and are intentionally NOT widened here.
-ADMIN_SLUGS = {"org_admin", "manager", "super_admin", "hr_manager", "accountant"}
+ADMIN_SLUGS = {"org_admin", "manager", "super_admin", "super_user", "hr_manager", "accountant"}
 
 
 def _is_admin(user: User) -> bool:

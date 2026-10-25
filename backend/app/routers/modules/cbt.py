@@ -129,7 +129,7 @@ async def list_exams(
     for_me: bool = Query(default=False, description="Scope to the caller: student → own class; teacher → owned classes/subjects."),
     exam_type: str | None = Query(default=None, pattern="^(exam|test|mock)$", description="Filter by kind of sitting."),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -938,7 +938,7 @@ async def _load_bank_item(db: AsyncSession, item_id: str, org_id: str) -> Questi
 @router.get("/question-bank", dependencies=[_bank_read])
 async def list_bank(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=1, le=200),
+    page_size: int = Query(default=50, ge=1, le=500),
     subject_id: str | None = None,
     topic: str | None = None,
     difficulty: str | None = None,

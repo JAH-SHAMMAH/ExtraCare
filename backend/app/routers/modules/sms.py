@@ -59,7 +59,7 @@ _can_read = Depends(PermissionChecker("school_admin:read"))
 _can_write = Depends(PermissionChecker("school_admin:write"))
 
 
-ADMIN_SLUGS = {"org_admin", "manager", "super_admin"}
+ADMIN_SLUGS = {"org_admin", "manager", "super_admin", "super_user"}
 
 
 def _require_admin(user: User) -> None:
@@ -515,7 +515,7 @@ async def send_campaign(
 async def list_campaigns(
     status: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

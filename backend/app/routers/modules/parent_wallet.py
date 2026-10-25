@@ -150,7 +150,7 @@ async def _parent_user_ids(db: AsyncSession, org_id: str) -> list[str]:
 
 @router.get("/parent-wallets", response_model=ParentWalletListResponse, dependencies=[_fin_read])
 async def list_parent_wallets(
-    page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=100),
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     base = select(ParentWallet).where(ParentWallet.org_id == current_user.org_id)

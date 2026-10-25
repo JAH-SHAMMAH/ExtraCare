@@ -10,7 +10,7 @@ import { StudentAvatar } from "@/components/students/StudentAvatar";
 // parents. Admins are still distinguished here for the filter chips.
 const roleSlugs = (u: any): string[] =>
   (u.roles ?? []).map((r: any) => (r.slug || r.name || "").toString().toLowerCase()).concat(u.primary_role ? [String(u.primary_role).toLowerCase()] : []);
-const isAdmin = (u: any) => roleSlugs(u).some((s) => s === "org_admin" || s === "manager" || s === "admin");
+const isAdmin = (u: any) => roleSlugs(u).some((s) => s === "org_admin" || s === "manager" || s === "admin" || s === "super_user");
 
 type Filter = "all" | "admins" | "staff";
 

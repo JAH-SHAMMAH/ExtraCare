@@ -206,7 +206,7 @@ def _petty_response(t: PettyCashTxn, exp_name: str | None, warning: str | None =
 
 @router.get("/petty-cash", response_model=PettyCashListResponse, dependencies=[_fin_read])
 async def list_petty_cash(
-    page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=100),
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     base = select(PettyCashTxn).where(PettyCashTxn.org_id == current_user.org_id)
@@ -287,7 +287,7 @@ def _cash_response(t: CashTransaction, cash_name: str | None, counter_name: str 
 
 @router.get("/cash", response_model=CashTxnListResponse, dependencies=[_fin_read])
 async def list_cash(
-    type: str | None = None, page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=100),
+    type: str | None = None, page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=1, le=500),
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     base = select(CashTransaction).where(CashTransaction.org_id == current_user.org_id)
@@ -374,7 +374,7 @@ async def _load_item(db, iid, org_id) -> StoreItem:
 
 @router.get("/store/items", response_model=StoreItemListResponse, dependencies=[_fin_read])
 async def list_store_items(
-    page: int = Query(default=1, ge=1), page_size: int = Query(default=50, ge=1, le=100),
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user),
 ):
     base = select(StoreItem).where(StoreItem.org_id == current_user.org_id, StoreItem.is_deleted == False)  # noqa: E712

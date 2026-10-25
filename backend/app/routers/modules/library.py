@@ -62,7 +62,7 @@ _can_write = Depends(PermissionChecker("school:library:write"))
 
 def _is_admin(user: User) -> bool:
     return user.is_superadmin or any(
-        r.slug in {"org_admin", "manager", "super_admin"} for r in user.roles
+        r.slug in {"org_admin", "manager", "super_admin", "super_user"} for r in user.roles
     )
 
 
@@ -146,7 +146,7 @@ async def list_books(
     category: str | None = None,
     available_only: bool = False,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=24, ge=1, le=100),
+    page_size: int = Query(default=24, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -302,7 +302,7 @@ async def list_loans(
     borrower_user_id: str | None = None,
     book_id: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=1, le=200),
+    page_size: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
