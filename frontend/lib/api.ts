@@ -1540,6 +1540,7 @@ export const financeApi = {
     update: (id: string, data: object) => api.patch(`/finance/fee-records/${id}`, data).then((r) => r.data),
     remove: (id: string) => api.delete(`/finance/fee-records/${id}`),
     assignClass: (data: object) => api.post("/finance/fee-records/assign-class", data).then((r) => r.data),
+    generateInvoices: (data: object = {}) => api.post("/finance/fee-records/generate-invoices", data).then((r) => r.data),
   },
   classes: {
     list: () => api.get("/finance/classes").then((r) => r.data),

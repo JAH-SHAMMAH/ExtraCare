@@ -57,7 +57,7 @@ async def test_parent_pays_summer_fee_and_broad_view_catches_it(http, db, org, w
     inc = await _acct(db, org, "4000", "School Fees", "income")
 
     # 1. Admin assigns Summer fees (Fee Assignment) to the child and a non-linked pupil.
-    fee = dict(term="Summer", session_year="2026/2027", tuition_fee=150000, exam_fee=20000)
+    fee = dict(term="Summer", session_year="2026/2027", tuition_fee=150000, exam_fee=20000, create_invoices=False)
     for s in (child, sibling):
         r = await http.post(f"{API}/finance/fee-records", headers=A, json=dict(student_id=s.id, **fee))
         assert r.status_code == 201, r.text
@@ -148,3 +148,36 @@ async def test_broad_view_counts_invoice_only_pupils(http, db, org, world):
     assert (d["total_revenue"], d["total_debt"], d["full_payments"]) == (200000, 100000, 1)
     led = (await http.get(f"{API}/finance/broad-view/students-ledger", headers=A)).json()
     assert led["total_paid"] == 100000 and led["total_balance"] == 100000
+
+
+async def test_assign_class_makes_fees_payable_and_parent_pays(http, db, org, world, monkeypatch):
+    """Assign Year 10 Amethyst ₦5,000,000 -> each pupil gets a posted invoice -> the linked
+    parent can pay it -> Broad View shows it. No manual invoice step."""
+    w = world
+    acc = await _user(db, org, "accountant", "Acc3")
+    A, P = _h(acc), _h(w["parent"])
+    gw = _Gateway()
+    import app.routers.fee_payments as fp
+    monkeypatch.setattr(fp, "get_payment_resolver", lambda: _Resolver(gw))
+
+    body = dict(class_id=w["cls"].id, term="Summer", session_year="2026/2027", tuition_fee=4500000, exam_fee=500000)
+    r = await http.post(f"{API}/finance/fee-records/assign-class", headers=A, json=body)
+    assert r.status_code == 200 or r.status_code == 201, r.text
+    assert r.json()["created"] == 3 and r.json()["invoiced"] == 3
+    # repeating is harmless
+    r2 = await http.post(f"{API}/finance/fee-records/assign-class", headers=A, json=body)
+    assert r2.json()["created"] == 0 and r2.json()["invoiced"] == 0
+    g = await http.post(f"{API}/finance/fee-records/generate-invoices", headers=A,
+                        json=dict(class_id=w["cls"].id, term="Summer", session_year="2026/2027"))
+    assert g.json()["invoiced"] == 0 and g.json()["already_invoiced"] == 3
+
+    inv = (await http.get(f"{API}/payments/remita/invoices", headers=P)).json()
+    assert len(inv) == 1 and inv[0]["total"] == 5000000 and inv[0]["student_id"] == w["studs"][0].id
+
+    ref = (await http.post(f"{API}/payments/fees/initiate", headers=P,
+                           json=dict(invoice_id=inv[0]["id"], provider="paystack"))).json()["reference"]
+    gw.paid.add(ref)
+    assert (await http.get(f"{API}/payments/fees/verify/{ref}", headers=P)).json()["status"] == "successful"
+
+    d = (await http.get(f"{API}/finance/broad-view/dashboard", headers=A, params=dict(term="Summer"))).json()
+    assert (d["total_revenue"], d["total_debt"], d["full_payments"], d["total_full_payment"]) == (15000000, 10000000, 1, 5000000)

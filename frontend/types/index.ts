@@ -2006,6 +2006,7 @@ export interface ClassFeeAssignResult {
   skipped: number;
   total_students: number;
   records: FeeRecord[];
+  invoiced?: number;
 }
 
 export interface ClassOption {

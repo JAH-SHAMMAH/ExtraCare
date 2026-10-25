@@ -386,8 +386,16 @@ export function useAssignClassFees() {
   const qc = useQueryClient();
   return useMutation<ClassFeeAssignResult, any, object>({
     mutationFn: (data: object) => financeApi.feeRecords.assignClass(data),
-    onSuccess: (res) => { invalidate(qc, ["fee-records", "fees"]); toast.success(`Assigned to ${res.created} student(s)${res.skipped ? `, ${res.skipped} skipped` : ""}.`); },
+    onSuccess: (res) => { invalidate(qc, ["fee-records", "fees"]); toast.success(`Assigned to ${res.created} student(s)${res.skipped ? `, ${res.skipped} skipped` : ""}${res.invoiced ? `; ${res.invoiced} invoice(s) ready for parents to pay` : ""}.`); },
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to assign class fees."),
+  });
+}
+export function useGenerateFeeInvoices() {
+  const qc = useQueryClient();
+  return useMutation<{ records: number; invoiced: number; already_invoiced: number }, any, void>({
+    mutationFn: () => financeApi.feeRecords.generateInvoices({}),
+    onSuccess: (res) => { invalidate(qc, ["fee-records", "fees", "invoices"]); toast.success(res.invoiced ? `${res.invoiced} invoice(s) created — parents can now pay.` : "Every fee record already has an invoice."); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to create invoices."),
   });
 }
 export function useFinanceClasses() {

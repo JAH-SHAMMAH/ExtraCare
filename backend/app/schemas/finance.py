@@ -485,6 +485,7 @@ class FeeRecordCreate(_FeeBreakdown):
     term: str = Field(min_length=1, max_length=50)
     session_year: str = Field(min_length=1, max_length=10)
     due_date: Optional[date] = None
+    create_invoices: bool = True   # also raise + post the payable invoice for parents
 
 
 class FeeRecordUpdate(_FeeBreakdown):
@@ -498,6 +499,14 @@ class ClassFeeAssign(_FeeBreakdown):
     term: str = Field(min_length=1, max_length=50)
     session_year: str = Field(min_length=1, max_length=10)
     due_date: Optional[date] = None
+    create_invoices: bool = True   # also raise + post each pupil's payable invoice
+
+
+class GenerateFeeInvoices(BaseModel):
+    """All optional: omit everything to invoice every fee record that has none."""
+    class_id: Optional[str] = None
+    term: Optional[str] = None
+    session_year: Optional[str] = None
 
 
 class FeeRecordResponse(BaseModel):
@@ -528,6 +537,7 @@ class ClassFeeAssignResult(BaseModel):
     skipped: int              # students who already had a record for this term/session
     total_students: int
     records: list[FeeRecordResponse]
+    invoiced: int = 0         # payable invoices raised (parents can pay these)
 
 
 class ClassOption(BaseModel):

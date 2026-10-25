@@ -37,6 +37,7 @@ from app.models.modules.finance import (
     FeeDiscount, BankAccount, OrgFinanceSettings,
 )
 from app.schemas.finance import (
+    GenerateFeeInvoices,
     LedgerAccountCreate, LedgerAccountUpdate, LedgerAccountResponse,
     PeriodCreate, PeriodResponse,
     ManualJournalCreate, JournalEntryResponse, JournalLineResponse, JournalListResponse,
@@ -2351,6 +2352,8 @@ async def create_fee_record(
     db.add(fr)
     await db.flush()
     name = " ".join(p for p in [getattr(student, "first_name", None), getattr(student, "last_name", None)] if p) or None
+    if payload.create_invoices:
+        await _invoice_fee_record(db, current_user, fr, name or "Student", request)
     await log_action(
         db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
         resource_type="StudentFeeRecord", resource_id=fr.id,
@@ -2409,6 +2412,64 @@ async def delete_fee_record(
     await db.flush()
 
 
+FEE_INCOME_ACCOUNT_CODE = "4100"
+FEE_INCOME_ACCOUNT_NAME = "School Fees Income"
+_FEE_LABELS = {"tuition_fee": "Tuition", "exam_fee": "Exam", "activity_fee": "Activity",
+               "transport_fee": "Transport", "hostel_fee": "Hostel", "other_fees": "Other fees"}
+
+
+async def _invoice_fee_record(db: AsyncSession, user: User, fr: StudentFeeRecord, name: str, request) -> bool:
+    """Raise (and post, if the user may) the invoice parents pay for this fee record.
+    Idempotent: a record already carrying a non-void invoice is left alone."""
+    marker = f"fee-record:{fr.id}"
+    exists = (await db.execute(select(Invoice.id).where(
+        Invoice.org_id == user.org_id, Invoice.memo.like(f"%{marker}%"),
+        Invoice.is_deleted == False, Invoice.status != "void").limit(1))).first()  # noqa: E712
+    if exists or money(fr.outstanding_balance) <= 0:
+        return False
+    recv = await _ensure_account_by_code(db, user.org_id, RECEIVABLE_ACCOUNT_CODE, RECEIVABLE_ACCOUNT_NAME, "asset")
+    income = await _ensure_account_by_code(db, user.org_id, FEE_INCOME_ACCOUNT_CODE, FEE_INCOME_ACCOUNT_NAME, "income")
+    inv = Invoice(
+        number=f"INV-{uuid.uuid4().hex[:8].upper()}", customer_name=name, student_id=fr.student_id,
+        invoice_date=datetime.now(timezone.utc).date(), due_date=fr.due_date.date() if fr.due_date else None,
+        status="draft", memo=f"{fr.term} {fr.session_year} school fees [{marker}]",
+        receivable_account_id=recv.id, created_by=user.id, org_id=user.org_id, total=money(0),
+    )
+    db.add(inv)
+    await db.flush()
+    total = money(0)
+    # Bill what is still owed (after any discount), shown per fee head.
+    owed = money(fr.outstanding_balance)
+    parts = [(lbl, money(getattr(fr, f) or 0)) for f, lbl in _FEE_LABELS.items() if money(getattr(fr, f) or 0) > 0]
+    gross = sum((a for _, a in parts), money(0)) or owed
+    for lbl, amt in parts:
+        line_amt = money(amt * owed / gross) if gross else amt
+        db.add(InvoiceLine(invoice_id=inv.id, org_id=user.org_id, description=f"{lbl} — {fr.term} {fr.session_year}",
+                           quantity=1, unit_price=line_amt, amount=line_amt, income_account_id=income.id))
+        total += line_amt
+    drift = owed - total                      # rounding: put the cent on the last line
+    if drift and parts:
+        last = (await db.execute(select(InvoiceLine).where(InvoiceLine.invoice_id == inv.id)
+                                 .order_by(InvoiceLine.created_at.desc()))).scalars().first()
+        if last:
+            last.amount = last.unit_price = money(last.amount) + drift
+            total += drift
+    inv.total = total
+    await db.flush()
+    if user.has_permission("payments:post"):
+        lines = (await db.execute(select(InvoiceLine).where(InvoiceLine.invoice_id == inv.id))).scalars().all()
+        entry = await ledger.post_journal_entry(
+            db, org_id=user.org_id, entry_date=inv.invoice_date, memo=f"Invoice {inv.number} — {name}",
+            source="invoice", source_id=inv.id, actor=user, request=request,
+            lines=[{"account_id": recv.id, "debit": total, "credit": 0, "description": f"Invoice {inv.number}"}]
+                  + [{"account_id": ln.income_account_id, "debit": 0, "credit": money(ln.amount), "description": ln.description} for ln in lines],
+        )
+        inv.status, inv.journal_entry_id = "posted", entry.id
+        inv.posted_by, inv.posted_at = user.id, datetime.now(timezone.utc)
+    await db.flush()
+    return True
+
+
 @router.post("/fee-records/assign-class", response_model=ClassFeeAssignResult, dependencies=[_fin_write])
 async def assign_class_fees(
     payload: ClassFeeAssign,
@@ -2444,17 +2505,48 @@ async def assign_class_fees(
         db.add(fr)
         created.append(fr)
     await db.flush()
+    names = await _student_names(db, current_user.org_id, {fr.student_id for fr in created})
+    invoiced = 0
+    if payload.create_invoices:
+        for fr in created:
+            if await _invoice_fee_record(db, current_user, fr, names.get(fr.student_id) or "Student", request):
+                invoiced += 1
     await log_action(
         db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
         resource_type="StudentFeeRecord", resource_id=cls.id,
-        resource_label=f"assigned {payload.term} fees to class {getattr(cls, 'name', cls.id)}: {len(created)} created, {skipped} skipped",
+        resource_label=f"assigned {payload.term} fees to class {getattr(cls, 'name', cls.id)}: {len(created)} created, {skipped} skipped, {invoiced} invoiced",
         request=request,
     )
-    names = await _student_names(db, current_user.org_id, {fr.student_id for fr in created})
     return ClassFeeAssignResult(
-        created=len(created), skipped=skipped, total_students=len(students),
+        created=len(created), skipped=skipped, total_students=len(students), invoiced=invoiced,
         records=[_fee_record_response(fr, names.get(fr.student_id)) for fr in created],
     )
+
+
+@router.post("/fee-records/generate-invoices", dependencies=[_fin_write])
+async def generate_fee_invoices(
+    payload: GenerateFeeInvoices,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Raise payable invoices for a class's EXISTING fee records that have none yet
+    (e.g. fees assigned before invoices were automatic). Safe to repeat."""
+    q = select(StudentFeeRecord).where(
+        StudentFeeRecord.org_id == current_user.org_id, StudentFeeRecord.is_deleted == False)  # noqa: E712
+    if payload.term:
+        q = q.where(StudentFeeRecord.term == payload.term)
+    if payload.session_year:
+        q = q.where(StudentFeeRecord.session_year == payload.session_year)
+    if payload.class_id:
+        q = q.join(Student, Student.id == StudentFeeRecord.student_id).where(Student.class_id == payload.class_id)
+    recs = (await db.execute(q)).scalars().all()
+    names = await _student_names(db, current_user.org_id, {r.student_id for r in recs})
+    made = 0
+    for fr in recs:
+        if await _invoice_fee_record(db, current_user, fr, names.get(fr.student_id) or "Student", request):
+            made += 1
+    return {"records": len(recs), "invoiced": made, "already_invoiced": len(recs) - made}
 
 
 # ── Bank Accounts (Account Numbers) ─────────────────────────────────────────────

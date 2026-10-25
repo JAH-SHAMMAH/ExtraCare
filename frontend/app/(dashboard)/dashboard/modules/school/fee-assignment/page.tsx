@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
-  useFeeRecords, useCreateFeeRecord, useUpdateFeeRecord, useDeleteFeeRecord, useAssignClassFees, useFinanceClasses,
+  useFeeRecords, useCreateFeeRecord, useUpdateFeeRecord, useDeleteFeeRecord, useAssignClassFees, useFinanceClasses, useGenerateFeeInvoices,
 } from "@/hooks/useFinance";
 import { useHasPermission } from "@/components/guards/PermissionGate";
 import { EntityPicker } from "@/components/inputs/EntityPicker";
@@ -37,6 +37,7 @@ export default function FeeAssignmentPage() {
   const update = useUpdateFeeRecord();
   const del = useDeleteFeeRecord();
   const assignClass = useAssignClassFees();
+  const genInvoices = useGenerateFeeInvoices();
 
   const [show, setShow] = useState(false);
   const [mode, setMode] = useState<"student" | "class">("student");
@@ -92,7 +93,12 @@ export default function FeeAssignmentPage() {
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Fee Assignment</h1>
           <p className="text-slate-500 text-sm mt-0.5">Set what students owe for a term. This is the source of the balances parents see, and what discounts apply against.</p>
         </div>
-        {canWrite && <button onClick={() => { reset(); setShow(true); }} className="btn-primary gap-2"><Plus size={15} /> Assign Fees</button>}
+        {canWrite && (
+          <div className="flex gap-2">
+            <button onClick={() => genInvoices.mutate()} disabled={genInvoices.isPending} title="Make every assigned fee payable by parents" className="btn-secondary gap-2">{genInvoices.isPending && <Loader2 size={15} className="animate-spin" />}Create missing invoices</button>
+            <button onClick={() => { reset(); setShow(true); }} className="btn-primary gap-2"><Plus size={15} /> Assign Fees</button>
+          </div>
+        )}
       </div>
 
       {show && canWrite && (
