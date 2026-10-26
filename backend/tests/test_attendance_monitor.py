@@ -28,7 +28,7 @@ async def _staff(db, org) -> User:
     u = User(id=str(uuid.uuid4()), email=f"s-{uuid.uuid4().hex[:6]}@x.com", full_name="Staff",
              status=UserStatus.ACTIVE, org_id=org.id)
     role = Role(id=str(uuid.uuid4()), name="admin", slug="org_admin",
-                permissions=["school:students:read", "school:attendance:read"], org_id=org.id, is_system=False)
+                permissions=["school:students:read", "school:attendance:read", "school_admin:read"], org_id=org.id, is_system=False)
     db.add(role)
     u.roles = [role]
     db.add(u)

@@ -60,6 +60,8 @@ router = APIRouter(
     dependencies=[Depends(require_role_module("school"))],
 )
 
+from app.services.class_scope import teacher_class_scope, require_class
+
 _can_read = Depends(PermissionChecker("school:attendance:read"))
 _can_write = Depends(PermissionChecker("school:attendance:write"))
 
@@ -153,6 +155,11 @@ async def record_manual(
     """Staff records a single check-in/out from the portal (triggers the same
     daily-record derivation + parent notification as a device punch)."""
     org = await _load_org(db, current_user)
+    scope = await teacher_class_scope(db, current_user)
+    if scope is not None:
+        sid_class = (await db.execute(select(Student.class_id).where(
+            Student.id == payload.student_id, Student.org_id == org.id))).scalar_one_or_none()
+        require_class(scope, sid_class, "clock in pupils from")
     # "Mark Previous Attendance": when the Super User has switched it off, only
     # today can be recorded.
     from datetime import date as _date
@@ -190,6 +197,9 @@ async def daily_summary(
     if not current_user.has_permission("school:students:read"):
         raise HTTPException(status_code=403, detail="School-wide attendance is staff-only.")
     target = date or _today_local(getattr(org, "timezone", None))
+    scope = await teacher_class_scope(db, current_user)
+    if scope is not None and class_id:
+        require_class(scope, class_id, "view attendance for")
 
     student_q = select(Student).where(
         Student.org_id == org.id,
@@ -198,6 +208,8 @@ async def daily_summary(
     )
     if class_id:
         student_q = student_q.where(Student.class_id == class_id)
+    elif scope is not None:
+        student_q = student_q.where(Student.class_id.in_(scope or {"-"}))
     students = (await db.execute(student_q)).scalars().all()
 
     record_q = select(AttendanceRecord).where(
@@ -317,6 +329,7 @@ async def monthly_summary(
 
     start = date_type(year, month, 1)
     end = date_type(year + 1, 1, 1) if month == 12 else date_type(year, month + 1, 1)
+    scope = await teacher_class_scope(db, current_user) if not student_id else None
 
     q = (
         select(AttendanceRecord.status, func.count())
@@ -329,6 +342,8 @@ async def monthly_summary(
     )
     if student_id:
         q = q.where(AttendanceRecord.student_id == student_id)
+    elif scope is not None:
+        q = q.where(AttendanceRecord.class_id.in_(scope or {"-"}))
     counts = {status: n for status, n in (await db.execute(q)).all()}
 
     days_q = select(func.count(func.distinct(AttendanceRecord.date))).where(
@@ -338,6 +353,8 @@ async def monthly_summary(
     )
     if student_id:
         days_q = days_q.where(AttendanceRecord.student_id == student_id)
+    elif scope is not None:
+        days_q = days_q.where(AttendanceRecord.class_id.in_(scope or {"-"}))
     days_recorded = int((await db.execute(days_q)).scalar() or 0)
 
     return MonthlyAttendanceSummary(
@@ -365,8 +382,8 @@ async def live_monitor(
     a recent-activity feed, and the late-departure log — all derived from the
     AttendanceEvent backbone. School-wide, so staff-only."""
     org = await _load_org(db, current_user)
-    if not current_user.has_permission("school:students:read"):
-        raise HTTPException(status_code=403, detail="The live attendance monitor is staff-only.")
+    if not current_user.has_permission("school:students:read") or (await teacher_class_scope(db, current_user)) is not None:
+        raise HTTPException(status_code=403, detail="The school-wide attendance monitor is for school administrators.")
     tz = getattr(org, "timezone", None)
     target = date or _today_local(tz)
     start_utc, end_utc = _local_day_bounds(target, tz)

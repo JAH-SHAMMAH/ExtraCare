@@ -134,7 +134,7 @@ export const ROUTE_ACCESS: RouteAccess[] = [
   // own child, so a read gate let them into this whole-school admin page. Teachers
   // and admins hold :write, so nothing staff-side changes. Parents get their own
   // children's attendance via /dashboard/my-children.
-  { prefix: "/dashboard/modules/school/attendance/monitor", permission: "school:attendance:write" },
+  { prefix: "/dashboard/modules/school/attendance/monitor", permission: "school_admin:read" },
   // Attendance Setup edits org-wide config (late cutoff + reason codes) — admin-only.
   { prefix: "/dashboard/modules/school/attendance/setup", permission: "settings:read" },
   { prefix: "/dashboard/modules/school/attendance", permission: "school:attendance:write" },

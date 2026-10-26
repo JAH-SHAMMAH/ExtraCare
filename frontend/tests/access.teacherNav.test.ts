@@ -37,6 +37,7 @@ function hasPermission(permission: string): boolean {
 // against Educare's teacher nav, where none of these exist teacher-side.
 const HIDDEN = [
   "/dashboard/modules/school/subjects",
+  "/dashboard/modules/school/attendance/monitor",
   // Students module — the whole roster-admin cluster
   "/dashboard/modules/school/students",
   "/dashboard/modules/school/students/withdrawal",
@@ -154,7 +155,6 @@ const VISIBLE = [
   "/dashboard/modules/eclassroom/manage",
   "/dashboard/modules/school/eclassroom",
   "/dashboard/modules/school/attendance",
-  "/dashboard/modules/school/attendance/monitor",
   "/dashboard/modules/school/behaviour",
   "/dashboard/modules/school/behaviour-sanction",
   "/dashboard/modules/school/merits",

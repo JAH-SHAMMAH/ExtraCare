@@ -970,16 +970,8 @@ async def mark_attendance(
     sids = {r.get("student_id") for r in records if r.get("student_id")}
     studs = {s.id: s for s in (await db.execute(
         select(Student).where(Student.org_id == org, Student.id.in_(sids), Student.is_deleted == False))).scalars().all()}  # noqa: E712
-    is_admin = current_user.is_superadmin or current_user.has_permission("school_admin:read")
-    allowed: set[str] | None = None
-    if not is_admin:
-        from app.models.modules.platform import ClassAssistant
-        from app.routers.modules.platform import _teacher_assignments
-        allowed = set((await db.execute(select(SchoolClass.id).where(
-            SchoolClass.org_id == org, SchoolClass.teacher_id == current_user.id))).scalars().all())
-        allowed |= set((await db.execute(select(ClassAssistant.class_id).where(
-            ClassAssistant.org_id == org, ClassAssistant.teacher_id == current_user.id))).scalars().all())
-        allowed |= {c for c, _ in await _teacher_assignments(db, org, current_user.id)}
+    from app.services.class_scope import teacher_class_scope
+    allowed = await teacher_class_scope(db, current_user)
     prepared: dict[str, tuple[str, str, str | None]] = {}
     for rec in records:
         st = studs.get(rec.get("student_id"))
