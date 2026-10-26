@@ -2829,6 +2829,20 @@ def _gateway_response(g: TenantPaymentSettings) -> PaymentGatewayResponse:
     )
 
 
+def _clean_secret(provider: str, value: str | None) -> str | None:
+    """Trim pasted whitespace/newlines (a very common cause of "invalid key") and
+    catch the classic Paystack mix-up of pasting the PUBLIC key into the secret field."""
+    if value is None:
+        return None
+    v = value.strip().strip('"').strip("'").strip()
+    if provider == "paystack" and v:
+        if v.startswith("pk_"):
+            raise HTTPException(status_code=422, detail="That is Paystack's PUBLIC key (pk_…). Paste the SECRET key, which starts with sk_live_ or sk_test_.")
+        if not v.startswith("sk_"):
+            raise HTTPException(status_code=422, detail="A Paystack secret key starts with sk_live_ or sk_test_. Copy it again from Paystack → Settings → API Keys.")
+    return v
+
+
 def _require_crypto_for(*secrets: str | None) -> None:
     """If any secret is being stored, the encryption key must be configured —
     fail closed with a clear 503 rather than persisting a recoverable secret."""
@@ -2892,6 +2906,9 @@ async def create_payment_gateway(
         raise HTTPException(status_code=422, detail=f"Unknown provider. Choose one of: {', '.join(GATEWAY_PROVIDERS)}.")
     if payload.mode not in GATEWAY_MODES:
         raise HTTPException(status_code=422, detail="mode must be 'test' or 'live'.")
+    payload.secret_key = _clean_secret(payload.provider, payload.secret_key)
+    payload.webhook_secret = _clean_secret("", payload.webhook_secret)
+    payload.public_key = (payload.public_key or "").strip() or None
     _require_crypto_for(payload.secret_key, payload.webhook_secret)
     provider = PaymentProvider(payload.provider)
 
@@ -2942,6 +2959,12 @@ async def update_payment_gateway(
     data = payload.model_dump(exclude_unset=True)
     if "mode" in data and data["mode"] not in GATEWAY_MODES:
         raise HTTPException(status_code=422, detail="mode must be 'test' or 'live'.")
+    if "secret_key" in data:
+        data["secret_key"] = _clean_secret(g.provider.value, data["secret_key"])
+    if "webhook_secret" in data:
+        data["webhook_secret"] = _clean_secret("", data["webhook_secret"])
+    if data.get("public_key"):
+        data["public_key"] = data["public_key"].strip()
     _require_crypto_for(data.get("secret_key"), data.get("webhook_secret"))
 
     changed_secret = _apply_gateway_fields(

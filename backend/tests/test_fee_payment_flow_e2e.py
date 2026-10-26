@@ -210,3 +210,16 @@ async def test_callback_url_and_unconfigured_message(http, db, org, world, monke
                         json=dict(invoice_id=iid, provider="paystack"))
     assert r.status_code == 200
     assert gw.last_kw["callback_url"] == "https://portal.example.ng/dashboard/my-children/payments/callback?provider=paystack"
+
+
+async def test_gateway_save_trims_and_rejects_public_key_in_secret_field(http, db, org, world, monkeypatch):
+    import base64, os
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode(), raising=False)
+    AD = _h(world["admin"])
+    r = await http.post(f"{API}/finance/payment-gateways", headers=AD,
+                        json=dict(provider="paystack", mode="live", secret_key="pk_live_abc"))
+    assert r.status_code == 422 and "PUBLIC key" in r.json()["detail"]
+    r = await http.post(f"{API}/finance/payment-gateways", headers=AD,
+                        json=dict(provider="paystack", mode="live", secret_key="  sk_live_abc123\n"))
+    assert r.status_code == 201, r.text
