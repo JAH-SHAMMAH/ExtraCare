@@ -13,7 +13,7 @@ from app.database import get_db
 from app.deps import get_current_active_user
 from app.models.user import User, UserStatus
 from app.models.modules.school import (
-    Student, SchoolClass, AttendanceRecord, Grade, Subject, Timetable,
+    Student, SchoolClass, AttendanceRecord, AttendanceStatus, Grade, Subject, Timetable,
     LessonPlan, LessonPlanStatus, ParentGuardian, Exam, ExamSittingStatus, TeacherRating,
     GradeStatus, AttendanceSettings, AbsenceReason, StudentReport,
     LessonPlanCategory, LessonPlannerSettings, LessonPlanSupervisor, LessonPlanSchedule,
@@ -959,21 +959,57 @@ async def mark_attendance(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Bulk mark attendance for a class."""
+    """Bulk mark attendance. ``class_id`` is optional per row (defaults to the pupil's
+    own class); marking the same pupil/day again updates the mark instead of failing
+    on the one-row-per-day rule. Non-admin staff may only mark their own classes."""
     target_date = attendance_date or date.today()
-    created = []
+    org = current_user.org_id
+    if not records:
+        raise HTTPException(status_code=422, detail="Nothing to save: no pupils were marked.")
+    valid = {s.value for s in AttendanceStatus}
+    sids = {r.get("student_id") for r in records if r.get("student_id")}
+    studs = {s.id: s for s in (await db.execute(
+        select(Student).where(Student.org_id == org, Student.id.in_(sids), Student.is_deleted == False))).scalars().all()}  # noqa: E712
+    is_admin = current_user.is_superadmin or current_user.has_permission("school_admin:read")
+    allowed: set[str] | None = None
+    if not is_admin:
+        from app.models.modules.platform import ClassAssistant
+        from app.routers.modules.platform import _teacher_assignments
+        allowed = set((await db.execute(select(SchoolClass.id).where(
+            SchoolClass.org_id == org, SchoolClass.teacher_id == current_user.id))).scalars().all())
+        allowed |= set((await db.execute(select(ClassAssistant.class_id).where(
+            ClassAssistant.org_id == org, ClassAssistant.teacher_id == current_user.id))).scalars().all())
+        allowed |= {c for c, _ in await _teacher_assignments(db, org, current_user.id)}
+    prepared: dict[str, tuple[str, str, str | None]] = {}
     for rec in records:
-        obj = AttendanceRecord(
-            student_id=rec["student_id"],
-            class_id=rec["class_id"],
-            date=target_date,
-            status=rec.get("status", "present"),
-            reason_id=rec.get("reason_id") or None,
-            marked_by=current_user.id,
-            org_id=current_user.org_id,
-        )
-        db.add(obj)
-        created.append(rec["student_id"])
+        st = studs.get(rec.get("student_id"))
+        if not st:
+            raise HTTPException(status_code=404, detail="A pupil in this list was not found in your school.")
+        cid = rec.get("class_id") or st.class_id
+        if not cid:
+            raise HTTPException(status_code=422, detail=f"{st.first_name} {st.last_name} has no class. Assign a class first.")
+        if allowed is not None and cid not in allowed:
+            raise HTTPException(status_code=403, detail="You can only mark attendance for classes you teach.")
+        status = rec.get("status", "present")
+        if status not in valid:
+            raise HTTPException(status_code=422, detail=f"Status must be one of: {', '.join(sorted(valid))}.")
+        prepared[st.id] = (cid, status, rec.get("reason_id") or None)
+    cls_ok = set((await db.execute(select(SchoolClass.id).where(
+        SchoolClass.org_id == org, SchoolClass.id.in_({c for c, _, _ in prepared.values()})))).scalars().all())
+    if any(c not in cls_ok for c, _, _ in prepared.values()):
+        raise HTTPException(status_code=404, detail="That class was not found in your school.")
+    existing = {r.student_id: r for r in (await db.execute(select(AttendanceRecord).where(
+        AttendanceRecord.org_id == org, AttendanceRecord.date == target_date,
+        AttendanceRecord.student_id.in_(list(prepared))))).scalars().all()}
+    created = []
+    for sid, (cid, status, reason) in prepared.items():
+        obj = existing.get(sid)
+        if obj:
+            obj.class_id, obj.status, obj.reason_id, obj.marked_by = cid, status, reason, current_user.id
+        else:
+            db.add(AttendanceRecord(student_id=sid, class_id=cid, date=target_date, status=status,
+                                    reason_id=reason, marked_by=current_user.id, org_id=org))
+        created.append(sid)
     await log_action(
         db, AuditAction.RECORD_CREATED, current_user.org_id, actor=current_user,
         resource_type="AttendanceRecord",
