@@ -292,18 +292,22 @@ async def _reconcile_pending(db: AsyncSession, org_id: str, request, user_id: st
     checked = settled = failed = 0
     reasons: list[dict] = []
     providers: dict = {}
-    for tx in txs:
+    # Plain values up front: after a rollback the ORM rows are expired and touching
+    # them again would raise, turning one bad payment into a 500 for the whole batch.
+    work = [(t.id, t.reference, t.provider) for t in txs]
+    for tx_id, ref, prov in work:
         try:
-            if tx.provider not in providers:
-                providers[tx.provider] = await resolver.resolve_for_org(org_id, db, provider_type=tx.provider)
-            status = await _confirm_and_settle(db, org_id, tx, providers[tx.provider], tx.reference, request)
+            if prov not in providers:
+                providers[prov] = await resolver.resolve_for_org(org_id, db, provider_type=prov)
+            tx = (await db.execute(select(PaymentTransaction).where(PaymentTransaction.id == tx_id))).scalar_one()
+            status = await _confirm_and_settle(db, org_id, tx, providers[prov], ref, request)
             checked += 1
             if status == "success":
                 settled += 1
         except Exception as exc:  # noqa: BLE001 - one bad reference must not stop the rest
             failed += 1
-            reasons.append({"reference": tx.reference, "reason": str(getattr(exc, "detail", None) or exc)[:240]})
-            _logger.exception("fee_payments.reconcile.failed org=%s ref=%s", org_id, tx.reference)
+            reasons.append({"reference": ref, "reason": str(getattr(exc, "detail", None) or exc)[:240]})
+            _logger.exception("fee_payments.reconcile.failed org=%s ref=%s", org_id, ref)
             await db.rollback()
     return {"pending": len(txs), "checked": checked, "settled": settled, "errors": failed, "problems": reasons[:5]}
 

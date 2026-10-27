@@ -253,3 +253,31 @@ async def test_reconcile_settles_a_payment_whose_parent_never_returned(http, db,
     # repeating is harmless; a parent cannot run the school-wide reconcile
     assert (await http.post(f"{API}/payments/fees/reconcile", headers=A)).json()["pending"] == 0
     assert (await http.post(f"{API}/payments/fees/reconcile", headers=P)).status_code == 403
+
+
+async def test_reconcile_reports_why_instead_of_500(http, db, org, world, monkeypatch):
+    """If settling fails (here: the ledger period is locked) the finance user gets the
+    reason, the payment stays pending for a retry, and nothing 500s."""
+    from app.models.modules.finance import AccountingPeriod
+    w = world
+    acc = await _user(db, org, "accountant", "Acc6")
+    A, P = _h(acc), _h(w["parent"])
+    gw = _Gateway()
+    import app.routers.fee_payments as fp
+    monkeypatch.setattr(fp, "get_payment_resolver", lambda: _Resolver(gw))
+    await http.post(f"{API}/finance/fee-records/assign-class", headers=A, json=dict(
+        class_id=w["cls"].id, term="Summer", session_year="2026/2027", tuition_fee=100000))
+    inv = (await http.get(f"{API}/payments/remita/invoices", headers=P)).json()[0]
+    refs = []
+    for _ in range(2):   # the parent paid twice -> two pending payments
+        refs.append((await http.post(f"{API}/payments/fees/initiate", headers=P,
+                                     json=dict(invoice_id=inv["id"], provider="paystack"))).json()["reference"])
+    gw.paid.update(refs)
+    today = date.today()
+    db.add(AccountingPeriod(id=str(uuid.uuid4()), name="Locked month", start_date=date(today.year, today.month, 1),
+                            end_date=date(today.year + (today.month == 12), today.month % 12 + 1, 1),
+                            status="locked", org_id=org.id))
+    await db.commit()
+    r = await http.post(f"{API}/payments/fees/reconcile", headers=A)
+    assert r.status_code == 200, r.text
+    assert r.json()["errors"] == 2 and "locked" in r.json()["problems"][0]["reason"].lower()
