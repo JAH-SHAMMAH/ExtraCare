@@ -28,7 +28,7 @@ class _Gateway:
         return {"reference": ref, "authorization_url": f"https://pay.test/{ref}", "_raw": {}}
 
     async def verify_transaction(self, ref):
-        return {"status": "success" if ref in self.paid else "pending", "id": "gw-1", "_raw": {}}
+        return {"status": "success" if ref in self.paid else "pending", "id": 6701016024, "_raw": {}}
 
     def webhook_signature_valid(self, raw, sig):
         return True
@@ -119,6 +119,7 @@ async def test_parent_pays_summer_fee_and_broad_view_catches_it(http, db, org, w
     assert (row["total_invoiced"], row["total_paid"], row["balance"]) == (170000, 170000, 0)
     tx = (await http.get(f"{API}/finance/broad-view/payment-transactions", headers=A)).json()
     assert tx["successful_amount"] == 170000 and tx["count"] == 1
+    assert tx["items"][0]["provider_reference"] == "6701016024"   # gateway's numeric id is stored as text
     inv = (await http.get(f"{API}/finance/invoices/{inv_ids[child.id]}", headers=A)).json()
     assert inv["status"] == "paid"
     # the parent's list is now empty (nothing left to pay)

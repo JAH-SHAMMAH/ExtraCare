@@ -267,7 +267,7 @@ async def verify(reference: str, request: Request, db: AsyncSession = Depends(ge
             await _settle_invoice(db, current_user.org_id, inv, tx.amount_ngn, tx.provider, reference, current_user, request)
         tx.status = PaymentStatus.SUCCESSFUL
         tx.verified_at = datetime.now(timezone.utc)
-        tx.provider_reference = verification.get("id") or tx.provider_reference
+        tx.provider_reference = (str(verification["id"]) if verification.get("id") is not None else tx.provider_reference)
         tx.provider_response = verification.get("_raw") or tx.provider_response
     await db.commit()
     return VerifyFeeResponse(
@@ -343,7 +343,7 @@ async def _confirm_and_settle(db, org_id, tx, provider_obj, reference, request) 
             await _settle_invoice(db, org_id, inv, tx.amount_ngn, tx.provider, reference, None, request)
         tx.status = PaymentStatus.SUCCESSFUL
         tx.verified_at = datetime.now(timezone.utc)
-        tx.provider_reference = verification.get("id") or tx.provider_reference
+        tx.provider_reference = (str(verification["id"]) if verification.get("id") is not None else tx.provider_reference)
         tx.provider_response = verification.get("_raw") or tx.provider_response
     await db.commit()
     return status
