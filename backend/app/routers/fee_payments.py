@@ -290,6 +290,7 @@ async def _reconcile_pending(db: AsyncSession, org_id: str, request, user_id: st
     txs = (await db.execute(q.order_by(PaymentTransaction.created_at.desc()).limit(100))).scalars().all()
     resolver = get_payment_resolver()
     checked = settled = failed = 0
+    reasons: list[dict] = []
     providers: dict = {}
     for tx in txs:
         try:
@@ -299,17 +300,20 @@ async def _reconcile_pending(db: AsyncSession, org_id: str, request, user_id: st
             checked += 1
             if status == "success":
                 settled += 1
-        except Exception:  # noqa: BLE001 - one bad reference must not stop the rest
+        except Exception as exc:  # noqa: BLE001 - one bad reference must not stop the rest
             failed += 1
+            reasons.append({"reference": tx.reference, "reason": str(getattr(exc, "detail", None) or exc)[:240]})
             _logger.exception("fee_payments.reconcile.failed org=%s ref=%s", org_id, tx.reference)
             await db.rollback()
-    return {"pending": len(txs), "checked": checked, "settled": settled, "errors": failed}
+    return {"pending": len(txs), "checked": checked, "settled": settled, "errors": failed, "problems": reasons[:5]}
 
 
 @router.post("/reconcile-mine", dependencies=[_can_pay])
 async def reconcile_mine(request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """Parent: confirm any of MY payments that are still pending (runs when the fees page opens)."""
-    return await _reconcile_pending(db, current_user.org_id, request, user_id=current_user.id)
+    res = await _reconcile_pending(db, current_user.org_id, request, user_id=current_user.id)
+    res["problems"] = []      # parents only learn the outcome; Finance sees the reasons
+    return res
 
 
 @router.post("/reconcile", dependencies=[Depends(PermissionChecker("payments:write"))])

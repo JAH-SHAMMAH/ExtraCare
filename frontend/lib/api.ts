@@ -1449,7 +1449,7 @@ export const feesApi = {
   initiate: (invoice_id: string, provider: string) => api.post("/payments/fees/initiate", { invoice_id, provider }).then((r) => r.data),
   verify: (reference: string) => api.get(`/payments/fees/verify/${reference}`).then((r) => r.data),
   reconcileMine: (): Promise<{ pending: number; settled: number }> => api.post("/payments/fees/reconcile-mine").then((r) => r.data),
-  reconcileAll: (): Promise<{ pending: number; checked: number; settled: number; errors: number }> => api.post("/payments/fees/reconcile").then((r) => r.data),
+  reconcileAll: (): Promise<{ pending: number; checked: number; settled: number; errors: number; problems?: { reference: string; reason: string }[] }> => api.post("/payments/fees/reconcile").then((r) => r.data),
 };
 
 // ── Finance & Accounting API (Batch 5) ────────────────────────────────────────

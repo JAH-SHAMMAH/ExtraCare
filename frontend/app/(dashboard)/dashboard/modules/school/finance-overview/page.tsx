@@ -243,7 +243,8 @@ function OnlineTxnTab({ admissionOnly, refView }: { admissionOnly: boolean; refV
   const reconcile = useMutation({
     mutationFn: () => feesApi.reconcileAll(),
     onSuccess: (r) => {
-      toast.success(r.pending === 0 ? "No pending payments." : `${r.settled} confirmed, ${r.pending - r.settled} still pending${r.errors ? `, ${r.errors} could not be checked` : ""}.`);
+      if (r.errors && r.problems?.length) toast.error(`${r.errors} payment(s) could not be settled: ${r.problems[0].reason}`, { duration: 15000 });
+      else toast.success(r.pending === 0 ? "No pending payments." : `${r.settled} confirmed, ${r.pending - r.settled} still pending.`);
       qc.invalidateQueries();
     },
     onError: (e: any) => toast.error(e?.response?.data?.detail || "Could not verify payments."),
