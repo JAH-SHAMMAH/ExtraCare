@@ -261,15 +261,7 @@ async def verify(reference: str, request: Request, db: AsyncSession = Depends(ge
     except Exception:
         raise HTTPException(status_code=502, detail="Payment verification failed.")
 
-    inv = (await db.execute(select(Invoice).where(Invoice.id == tx.related_id, Invoice.org_id == current_user.org_id))).scalar_one_or_none()
-    if str(verification.get("status") or "").lower() == "success":
-        if inv:
-            await _settle_invoice(db, current_user.org_id, inv, tx.amount_ngn, tx.provider, reference, current_user, request)
-        tx.status = PaymentStatus.SUCCESSFUL
-        tx.verified_at = datetime.now(timezone.utc)
-        tx.provider_reference = (str(verification["id"]) if verification.get("id") is not None else tx.provider_reference)
-        tx.provider_response = verification.get("_raw") or tx.provider_response
-    await db.commit()
+    await _apply_verification(db, current_user.org_id, tx, verification, reference, current_user, request)
     return VerifyFeeResponse(
         reference=reference, provider=tx.provider.value, status=tx.status.value,
         invoice_id=tx.related_id, amount_ngn=float(money(tx.amount_ngn)),
@@ -333,20 +325,47 @@ async def reconcile_all(request: Request, db: AsyncSession = Depends(get_db), cu
 # confirmation; these are the async backup. Idempotent (settling a paid invoice is a
 # no-op). No public endpoint is registered yet — see the go-live checklist.
 
-async def _confirm_and_settle(db, org_id, tx, provider_obj, reference, request) -> str:
-    """Re-verify with the provider; on success settle the invoice + mark the tx paid."""
-    verification = await provider_obj.verify_transaction(reference)
+async def _apply_verification(db, org_id, tx, verification: dict, reference: str, actor, request) -> str:
+    """Act on what the gateway says about a payment (the ONLY place that does):
+      success   -> settle the invoice (idempotent) and mark the payment successful;
+                   refuses if the gateway reports LESS than the invoice amount.
+      failed    -> mark the payment failed (e.g. the card was declined: insufficient funds);
+      abandoned -> left pending for a day (the parent may still finish), then cancelled.
+    Commits and returns the gateway's status word."""
     status = str(verification.get("status") or "").lower()
+    now = datetime.now(timezone.utc)
     if status == "success":
+        got = verification.get("amount")
+        if tx.provider == PaymentProvider.PAYSTACK and got is not None:        # Paystack reports kobo
+            if money(got) < money(tx.amount_ngn) * 100:
+                _logger.error("fee_payments.amount_mismatch org=%s ref=%s paid_kobo=%s expected_ngn=%s", org_id, reference, got, tx.amount_ngn)
+                raise HTTPException(status_code=409, detail=f"Amount paid ({money(got) / 100}) is less than the invoice ({money(tx.amount_ngn)}); not settled.")
         inv = (await db.execute(select(Invoice).where(Invoice.id == tx.related_id, Invoice.org_id == org_id))).scalar_one_or_none()
         if inv:
-            await _settle_invoice(db, org_id, inv, tx.amount_ngn, tx.provider, reference, None, request)
+            if inv.status == "paid" and tx.status != PaymentStatus.SUCCESSFUL:
+                tx.description = f"{tx.description or ''} [DUPLICATE: invoice already paid — refund]".strip()
+            await _settle_invoice(db, org_id, inv, tx.amount_ngn, tx.provider, reference, actor, request)
         tx.status = PaymentStatus.SUCCESSFUL
-        tx.verified_at = datetime.now(timezone.utc)
+        tx.verified_at = now
         tx.provider_reference = (str(verification["id"]) if verification.get("id") is not None else tx.provider_reference)
         tx.provider_response = verification.get("_raw") or tx.provider_response
+    elif status in ("failed", "reversed"):
+        tx.status = PaymentStatus.FAILED
+        tx.verified_at = now
+        tx.provider_response = verification.get("_raw") or tx.provider_response
+    elif status == "abandoned":
+        created = tx.created_at.replace(tzinfo=timezone.utc) if tx.created_at and tx.created_at.tzinfo is None else tx.created_at
+        if created and (now - created).total_seconds() > 24 * 3600:
+            tx.status = PaymentStatus.CANCELLED
+            tx.verified_at = now
     await db.commit()
     return status
+
+
+async def _confirm_and_settle(db, org_id, tx, provider_obj, reference, request) -> str:
+    """Re-verify with the provider, then act on the answer."""
+    verification = await provider_obj.verify_transaction(reference)
+    return await _apply_verification(db, org_id, tx, verification, reference, None, request)
 
 
 async def _org_from_meta_or_tx(db, org_id, reference) -> str | None:

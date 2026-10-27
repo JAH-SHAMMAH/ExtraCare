@@ -21,14 +21,21 @@ pytestmark = pytest.mark.asyncio
 class _Gateway:
     def __init__(self):
         self.paid = set()
+        self.failed = set()
+        self.amounts = {}
+        self.underpay = set()
 
     async def initialize_payment(self, **kw):
         self.last_kw = kw
         ref = f"REF-{uuid.uuid4().hex[:10]}"
+        self.amounts[ref] = kw["amount_ngn"]
         return {"reference": ref, "authorization_url": f"https://pay.test/{ref}", "_raw": {}}
 
     async def verify_transaction(self, ref):
-        return {"status": "success" if ref in self.paid else "pending", "id": 6701016024, "_raw": {}}
+        if ref in self.failed:
+            return {"status": "failed", "id": 1, "_raw": {}}
+        kobo = int(self.amounts.get(ref, 0)) * 100 // (2 if ref in self.underpay else 1)
+        return {"status": "success" if ref in self.paid else "pending", "id": 6701016024, "amount": kobo, "_raw": {}}
 
     def webhook_signature_valid(self, raw, sig):
         return True
@@ -282,3 +289,31 @@ async def test_reconcile_reports_why_instead_of_500(http, db, org, world, monkey
     r = await http.post(f"{API}/payments/fees/reconcile", headers=A)
     assert r.status_code == 200, r.text
     assert r.json()["errors"] == 2 and "locked" in r.json()["problems"][0]["reason"].lower()
+
+
+async def test_declined_card_is_failed_underpay_refused_and_duplicate_flagged(http, db, org, world, monkeypatch):
+    w = world
+    acc = await _user(db, org, "accountant", "Acc7")
+    A, P = _h(acc), _h(w["parent"])
+    gw = _Gateway()
+    import app.routers.fee_payments as fp
+    monkeypatch.setattr(fp, "get_payment_resolver", lambda: _Resolver(gw))
+    await http.post(f"{API}/finance/fee-records/assign-class", headers=A, json=dict(
+        class_id=w["cls"].id, term="Summer", session_year="2026/2027", tuition_fee=100000))
+    inv = (await http.get(f"{API}/payments/remita/invoices", headers=P)).json()[0]
+    new = lambda: http.post(f"{API}/payments/fees/initiate", headers=P, json=dict(invoice_id=inv["id"], provider="paystack"))
+    declined = (await new()).json()["reference"]      # card declined: insufficient funds
+    short = (await new()).json()["reference"]         # gateway reports half the amount
+    good = (await new()).json()["reference"]          # the transfer that worked
+    dup = (await new()).json()["reference"]           # a second success for the same invoice
+    gw.failed.add(declined); gw.underpay.add(short); gw.paid.update([short, good, dup])
+    r = (await http.post(f"{API}/payments/fees/reconcile", headers=A)).json()
+    assert r["errors"] == 1 and "less than the invoice" in r["problems"][0]["reason"]
+    tx = {t["reference"]: t for t in (await http.get(f"{API}/finance/broad-view/payment-transactions", headers=A)).json()["items"]}
+    assert tx[declined]["status"] == "failed"                       # no longer "pending" forever
+    assert tx[short]["status"] == "pending"                         # underpayment NOT settled
+    assert tx[good]["status"] == "successful" and tx[dup]["status"] == "successful"
+    assert sum(1 for t in (await http.get(f"{API}/finance/broad-view/payment-transactions", headers=A)).json()["items"]
+               if "DUPLICATE" in (t["description"] or "")) == 1      # one of the two successes is flagged for refund
+    d = (await http.get(f"{API}/finance/broad-view/dashboard", headers=A)).json()
+    assert d["full_payments"] == 1 and d["total_full_payment"] == 100000   # counted ONCE
