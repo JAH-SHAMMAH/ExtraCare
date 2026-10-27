@@ -223,3 +223,33 @@ async def test_gateway_save_trims_and_rejects_public_key_in_secret_field(http, d
     r = await http.post(f"{API}/finance/payment-gateways", headers=AD,
                         json=dict(provider="paystack", mode="live", secret_key="  sk_live_abc123\n"))
     assert r.status_code == 201, r.text
+
+
+async def test_reconcile_settles_a_payment_whose_parent_never_returned(http, db, org, world, monkeypatch):
+    """Parent paid at the gateway, browser never reached the callback page: the invoice must
+    still get settled by reconcile (parent page open, or Finance 'Verify pending')."""
+    w = world
+    acc = await _user(db, org, "accountant", "Acc5")
+    A, P = _h(acc), _h(w["parent"])
+    gw = _Gateway()
+    import app.routers.fee_payments as fp
+    monkeypatch.setattr(fp, "get_payment_resolver", lambda: _Resolver(gw))
+    r = await http.post(f"{API}/finance/fee-records/assign-class", headers=A, json=dict(
+        class_id=w["cls"].id, term="Summer", session_year="2026/2027", tuition_fee=100000))
+    inv = (await http.get(f"{API}/payments/remita/invoices", headers=P)).json()[0]
+    ref = (await http.post(f"{API}/payments/fees/initiate", headers=P,
+                           json=dict(invoice_id=inv["id"], provider="paystack"))).json()["reference"]
+    # still unpaid at the gateway: nothing changes
+    r = await http.post(f"{API}/payments/fees/reconcile-mine", headers=P)
+    assert r.json()["settled"] == 0
+    assert len((await http.get(f"{API}/payments/remita/invoices", headers=P)).json()) == 1
+    # money lands; parent never visits the callback. Opening the fees page reconciles.
+    gw.paid.add(ref)
+    r = await http.post(f"{API}/payments/fees/reconcile-mine", headers=P)
+    assert r.json()["settled"] == 1, r.text
+    assert (await http.get(f"{API}/payments/remita/invoices", headers=P)).json() == []
+    d = (await http.get(f"{API}/finance/broad-view/dashboard", headers=A)).json()
+    assert d["full_payments"] == 1
+    # repeating is harmless; a parent cannot run the school-wide reconcile
+    assert (await http.post(f"{API}/payments/fees/reconcile", headers=A)).json()["pending"] == 0
+    assert (await http.post(f"{API}/payments/fees/reconcile", headers=P)).status_code == 403

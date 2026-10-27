@@ -1,6 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { feesApi } from "@/lib/api";
 import { useBroadViewDashboard, useAccountHeadSummary, useTermlySummary, useDiscountLog, useWalletLog, useInvoiceItemsReport, useStudentsLedger, useAllTransactionsLog, useAuditReport, usePaymentTransactions } from "@/hooks/useFinance";
 import { useSessions } from "@/hooks/usePlatform";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -236,6 +239,15 @@ function TxnCards({ data }: { data: any }) {
 
 function OnlineTxnTab({ admissionOnly, refView }: { admissionOnly: boolean; refView?: boolean }) {
   const { data, isLoading } = usePaymentTransactions(admissionOnly, true);
+  const qc = useQueryClient();
+  const reconcile = useMutation({
+    mutationFn: () => feesApi.reconcileAll(),
+    onSuccess: (r) => {
+      toast.success(r.pending === 0 ? "No pending payments." : `${r.settled} confirmed, ${r.pending - r.settled} still pending${r.errors ? `, ${r.errors} could not be checked` : ""}.`);
+      qc.invalidateQueries();
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Could not verify payments."),
+  });
   const rows = data?.items ?? [];
   const headers = refView
     ? ["SN", "Reference", "Provider Ref", "Provider", "Amount", "Status", "Date"]
@@ -244,6 +256,13 @@ function OnlineTxnTab({ admissionOnly, refView }: { admissionOnly: boolean; refV
   return (
     <>
       <TxnCards data={data} />
+      {!admissionOnly && (
+        <div className="flex justify-end mb-3">
+          <button onClick={() => reconcile.mutate()} disabled={reconcile.isPending} className="btn-secondary gap-2 text-xs py-1.5" title="Ask Paystack/Flutterwave about every pending payment and settle the ones that succeeded">
+            {reconcile.isPending && <Loader2 size={13} className="animate-spin" />}Verify pending payments
+          </button>
+        </div>
+      )}
       <TabTable headers={headers}>
         {isLoading ? <tr><td colSpan={headers.length} className="px-5 py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></td></tr>
         : rows.length ? rows.map((r: any, i: number) => refView ? (

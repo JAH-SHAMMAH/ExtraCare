@@ -1,6 +1,7 @@
 "use client";
 
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { toast } from "sonner";
 import { remitaApi, feesApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -11,6 +12,14 @@ const fmt = (n: number) => "₦" + n.toLocaleString(undefined, { minimumFraction
 const PROVIDER_LABEL: Record<string, string> = { remita: "Remita", paystack: "Paystack", flutterwave: "Flutterwave" };
 
 export default function ParentPaymentsPage() {
+  const qc = useQueryClient();
+  // A payment can succeed at the gateway while this browser never returns to the
+  // callback page. Confirm any still-pending payment of mine as soon as the page opens.
+  useEffect(() => {
+    feesApi.reconcileMine()
+      .then((r) => { if (r?.settled) { toast.success(`${r.settled} payment(s) confirmed.`); qc.invalidateQueries({ queryKey: ["fee-invoices"] }); } })
+      .catch(() => {});
+  }, [qc]);
   const { data: invData, isLoading, isError, refetch } = useQuery<any[]>({
     queryKey: ["fee-invoices"],
     queryFn: () => remitaApi.invoices(),   // invoice list is provider-agnostic

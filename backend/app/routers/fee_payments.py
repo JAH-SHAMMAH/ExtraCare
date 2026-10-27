@@ -276,6 +276,48 @@ async def verify(reference: str, request: Request, db: AsyncSession = Depends(ge
     )
 
 
+async def _reconcile_pending(db: AsyncSession, org_id: str, request, user_id: str | None = None) -> dict:
+    """Re-verify every still-PENDING card payment with the gateway and settle the ones
+    that actually succeeded. This is the safety net for a parent who paid but whose
+    browser never made it back to the callback page (closed tab, lost signal, a
+    return URL that pointed elsewhere) -- the money arrived, the invoice stayed open."""
+    q = select(PaymentTransaction).where(
+        PaymentTransaction.org_id == org_id, PaymentTransaction.status == PaymentStatus.PENDING,
+        PaymentTransaction.payment_type == PaymentType.SCHOOL_FEES,
+        PaymentTransaction.provider.in_(list(_CARD_PROVIDERS)))
+    if user_id:
+        q = q.where(PaymentTransaction.user_id == user_id)
+    txs = (await db.execute(q.order_by(PaymentTransaction.created_at.desc()).limit(100))).scalars().all()
+    resolver = get_payment_resolver()
+    checked = settled = failed = 0
+    providers: dict = {}
+    for tx in txs:
+        try:
+            if tx.provider not in providers:
+                providers[tx.provider] = await resolver.resolve_for_org(org_id, db, provider_type=tx.provider)
+            status = await _confirm_and_settle(db, org_id, tx, providers[tx.provider], tx.reference, request)
+            checked += 1
+            if status == "success":
+                settled += 1
+        except Exception:  # noqa: BLE001 - one bad reference must not stop the rest
+            failed += 1
+            _logger.exception("fee_payments.reconcile.failed org=%s ref=%s", org_id, tx.reference)
+            await db.rollback()
+    return {"pending": len(txs), "checked": checked, "settled": settled, "errors": failed}
+
+
+@router.post("/reconcile-mine", dependencies=[_can_pay])
+async def reconcile_mine(request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Parent: confirm any of MY payments that are still pending (runs when the fees page opens)."""
+    return await _reconcile_pending(db, current_user.org_id, request, user_id=current_user.id)
+
+
+@router.post("/reconcile", dependencies=[Depends(PermissionChecker("payments:write"))])
+async def reconcile_all(request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+    """Finance: confirm every pending card payment in the school with the gateway."""
+    return await _reconcile_pending(db, current_user.org_id, request)
+
+
 # ── Webhooks (async confirmation for the card providers) ─────────────────────────
 # Provider → server callbacks. Both verify the provider signature and REJECT a
 # mismatch, then RE-VERIFY with the provider (never trust the payload) before
