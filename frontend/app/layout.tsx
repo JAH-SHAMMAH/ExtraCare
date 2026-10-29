@@ -57,9 +57,12 @@ export const viewport: Viewport = {
   themeColor: "#1d8a3a",
 };
 
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} /></head>
       <body className="font-sans" suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>

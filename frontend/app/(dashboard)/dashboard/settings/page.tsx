@@ -3,6 +3,7 @@
 import { useAuthStore } from "@/lib/store";
 import { useLogout } from "@/hooks/useAuth";
 import { PhoneAlertsCard } from "@/components/settings/PhoneAlertsCard";
+import { ThemeCard } from "@/components/settings/ThemeCard";
 import BackupCard from "@/components/settings/BackupCard";
 import { Settings, Building2, User, Shield, Bell, LogOut } from "lucide-react";
 
@@ -24,6 +25,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-6">
+        <ThemeCard />
         <PhoneAlertsCard />
         {/* Profile */}
         <div className="bg-white rounded-xl border border-slate-200 p-6">

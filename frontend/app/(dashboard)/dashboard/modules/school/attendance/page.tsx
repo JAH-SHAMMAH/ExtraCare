@@ -28,6 +28,13 @@ export default function AttendancePage() {
     if (status === "present") setReasons((prev) => { const n = { ...prev }; delete n[studentId]; return n; });
   };
 
+  const markAll = (status: string) => {
+    const next: Record<string, string> = {};
+    items.forEach((st: any) => { next[st.id] = status; });
+    setRecords((prev) => ({ ...prev, ...next }));
+    if (status === "present") setReasons({});
+  };
+
   const handleSubmit = () => {
     const payload = Object.entries(records).map(([student_id, status]) => ({
       student_id, status, ...(classId ? { class_id: classId } : {}), reason_id: reasons[student_id] || null,
@@ -80,6 +87,14 @@ export default function AttendancePage() {
       <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6 flex flex-wrap items-end gap-4">
         <div className="min-w-[200px]"><label className="label">Class</label><select value={classId} onChange={(e) => { setClassId(e.target.value); setRecords({}); setReasons({}); }} className="input"><option value="">Select a class…</option>{classes.map((c: any) => (<option key={c.id} value={c.id}>{c.name}</option>))}</select></div>
         <div><label className="label">Date</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input" /></div>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => markAll("present")} disabled={!classId || items.length === 0} className="btn-secondary gap-1.5 disabled:opacity-50">
+            <Check size={15} />Mark all present
+          </button>
+          <button type="button" onClick={() => markAll("absent")} disabled={!classId || items.length === 0} className="btn-ghost border border-slate-200 gap-1.5 disabled:opacity-50">
+            <XIcon size={15} />All absent
+          </button>
+        </div>
         <button onClick={handleSubmit} disabled={markAttendance.isPending || !classId || Object.keys(records).length === 0} className="btn-primary gap-2">
           {markAttendance.isPending && <Loader2 size={15} className="animate-spin" />}Save Attendance
         </button>
