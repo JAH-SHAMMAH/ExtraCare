@@ -765,11 +765,11 @@ export const MODULE_SECTIONS: ModuleSection[] = [
 // Dark-green rail (Educare-style). Idle text is a soft near-white green; the
 // active row is a lighter tint (white/10 reads as a lighter green over the base)
 // with bright white text; hover is a very subtle white overlay.
-const NAV_ROW = "flex items-center gap-3 px-3 py-1 rounded-md text-sm font-semibold transition-colors";
+const NAV_ROW = "flex items-center gap-3 px-3 py-1.5 rounded-md text-[15px] font-bold transition-colors";
 const NAV_ACTIVE = "bg-white/10 text-white";
 const NAV_IDLE = "text-green-50/75 hover:bg-white/5 hover:text-white";
-const NAV_ICON = 18;      // uniform outline icon size across all items
-const NAV_STROKE = 1.75;  // uniform stroke width
+const NAV_ICON = 22;      // uniform outline icon size across all items
+const NAV_STROKE = 2.25;  // uniform stroke width
 
 export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void } = {}) {
   const pathname = usePathname();
@@ -922,7 +922,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
         </div>
         {/* Mobile: close the drawer */}
         <button onClick={onClose} aria-label="Close menu" className="lg:hidden p-1.5 -mr-1.5 rounded-lg text-green-100 hover:bg-white/10">
-          <X size={18} />
+          <X size={24} strokeWidth={2.4} />
         </button>
       </div>
 
@@ -996,7 +996,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
           <Link href="/dashboard/profile" className="block mt-3">
             <div className="px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-white/15 flex items-center justify-center text-white text-xs font-bold shrink-0 overflow-hidden">
+                <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center text-white text-base font-black shrink-0 overflow-hidden">
                   {user.avatar_url ? (
                     <img src={resolveMediaUrl(user.avatar_url)} alt="" className="w-full h-full object-cover" />
                   ) : (
@@ -1004,7 +1004,7 @@ export function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: (
                   )}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-white truncate">{user.full_name}</p>
+                  <p className="text-sm font-bold text-white truncate">{user.full_name}</p>
                   <p className="text-[10px] text-green-200/70 truncate">{user.email}</p>
                 </div>
               </div>
@@ -1068,7 +1068,7 @@ const CollapsibleSection = memo(function CollapsibleSection({
         <ModuleIcon size={NAV_ICON} strokeWidth={NAV_STROKE} className="shrink-0" />
         <span className="flex-1 text-left truncate">{section.label}</span>
         <ChevronDown
-          size={16}
+          size={18}
           className={cn("shrink-0 text-green-200/60 transition-transform duration-200", !open && "-rotate-90")}
         />
       </button>
