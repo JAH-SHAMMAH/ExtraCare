@@ -73,9 +73,9 @@ export function GlobalSearch() {
     <div ref={containerRef} className="relative">
       <button
         onClick={() => { setOpen(true); setTimeout(() => inputRef.current?.focus(), 50); }}
-        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 text-sm transition-colors"
+        className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium transition-colors"
       >
-        <Search size={14} />
+        <Search size={22} strokeWidth={2.4} />
         <span className="hidden md:inline">Search...</span>
         <kbd className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono bg-white border border-slate-200 text-slate-400">
           Ctrl K

@@ -37,14 +37,14 @@ export function TopBar({ onMenu }: { onMenu?: () => void }) {
   }, [notifOpen]);
 
   return (
-    <header className="no-print fixed top-0 left-0 lg:left-60 right-0 z-30 h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/70 flex items-center px-4 md:px-6 gap-3 md:gap-4 shadow-sm shadow-slate-100/50">
+    <header className="no-print fixed top-0 left-0 lg:left-60 right-0 z-30 h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/70 flex items-center px-4 md:px-6 gap-1 sm:gap-3 md:gap-4 shadow-sm shadow-slate-100/50">
       {/* Mobile: open the sidebar drawer */}
       <button
         onClick={onMenu}
         aria-label="Open menu"
-        className="lg:hidden -ml-1 p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors shrink-0"
+        className="lg:hidden -ml-2 p-2 rounded-lg text-slate-800 hover:bg-slate-100 transition-colors shrink-0"
       >
-        <Menu size={20} />
+        <Menu size={26} strokeWidth={2.4} />
       </button>
 
       {/* Global Search */}
@@ -59,20 +59,20 @@ export function TopBar({ onMenu }: { onMenu?: () => void }) {
             it here once that lands. */}
         <Link
           href="/messenger"
-          className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+          className="p-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
           title="Messenger"
           aria-label="Open messenger"
         >
-          <MessageSquare size={18} />
+          <MessageSquare size={24} strokeWidth={2.2} />
         </Link>
 
         {/* Notifications */}
         <div className="relative" ref={notifRef}>
           <button
             onClick={() => setNotifOpen((o) => !o)}
-            className="relative p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+            className="relative p-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
           >
-            <Bell size={18} />
+            <Bell size={24} strokeWidth={2.2} />
             {unreadCount > 0 && (
               <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full border-2 border-white flex items-center justify-center">
                 {unreadCount > 9 ? "9+" : unreadCount}
@@ -135,11 +135,11 @@ export function TopBar({ onMenu }: { onMenu?: () => void }) {
         {(!activeRole || activeRole === "admin") && (
           <button
             onClick={() => setGuideOpen(true)}
-            className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+            className="p-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
             title="Quick Guide"
             aria-label="Open Quick Guide"
           >
-            <BookOpen size={18} />
+            <BookOpen size={24} strokeWidth={2.2} />
           </button>
         )}
         {guideOpen && <QuickGuideModal onClose={() => setGuideOpen(false)} />}
@@ -147,27 +147,27 @@ export function TopBar({ onMenu }: { onMenu?: () => void }) {
         {/* Help */}
         <button
           onClick={() => router.push("/support")}
-          className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+          className="p-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
           title="Help & Support"
         >
-          <HelpCircle size={18} />
+          <HelpCircle size={24} strokeWidth={2.2} />
         </button>
 
         {/* Settings */}
         <button
           onClick={() => router.push("/dashboard/settings")}
-          className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+          className="p-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
           title="Settings"
         >
-          <Settings size={18} />
+          <Settings size={24} strokeWidth={2.2} />
         </button>
 
         {/* Avatar */}
         <Link
           href="/dashboard/profile"
-          className="ml-2 flex items-center gap-2 pl-3 border-l border-slate-200 hover:opacity-80 transition-opacity"
+          className="ml-1 sm:ml-2 flex items-center gap-2 pl-2 sm:pl-3 border-l border-slate-200 hover:opacity-80 transition-opacity"
         >
-          <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white text-xs font-bold overflow-hidden">
+          <div className="w-11 h-11 rounded-xl bg-brand-600 flex items-center justify-center text-white text-lg font-black overflow-hidden shadow-sm">
             {user?.avatar_url ? (
               <img src={resolveMediaUrl(user.avatar_url)} alt="" className="w-full h-full object-cover" />
             ) : (
