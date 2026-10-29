@@ -13,7 +13,7 @@
 
   /* Larger, easier-to-read type app-wide (rem-based spacing scales with it). */
   html { font-size: 106.25%; }
-  @media (max-width: 640px) { html { font-size: 112.5%; } }
+  @media (max-width: 640px) { html { font-size: 100%; } }
   * { @apply border-slate-200; }
   body { @apply bg-slate-50 text-slate-900 antialiased font-sans; }
   html.dark body { @apply bg-slate-950 text-slate-100; }
