@@ -358,6 +358,15 @@ async def test_non_author_cannot_delete_post(db, teacher, second_user):
     assert exc.value.status_code == 403
 
 
+async def test_super_user_can_delete_any_post(db, teacher, second_user, monkeypatch):
+    from app.routers import feed as feed_router
+    post = await create_post(data=PostCreate(content="x"), db=db, current_user=teacher)
+    monkeypatch.setattr(feed_router, "is_super_user", lambda u: u.id == second_user.id)
+    await delete_post(post_id=post.id, db=db, current_user=second_user)
+    rows = await list_posts(limit=20, before=None, db=db, current_user=teacher)
+    assert rows == []
+
+
 # ── Tenant isolation ──────────────────────────────────────────────────────────
 
 async def test_other_org_cannot_see_post(db, teacher, other_org_user):

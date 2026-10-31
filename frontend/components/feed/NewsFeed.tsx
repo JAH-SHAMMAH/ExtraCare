@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import {
   Heart, MessageCircle, Image as ImageIcon, Film, Loader2, Trash2,
-  Send, X, Newspaper, Paperclip, FileText, ExternalLink, Link2, Plus, Lock,
+  Send, X, Newspaper, Paperclip, FileText, ExternalLink, Link2, Plus, Lock, ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -326,17 +326,19 @@ function PostCard({ post, currentUserId }: { post: FeedPost; currentUserId?: str
     await del.mutateAsync(post.id);
   };
 
-  const isAuthor = currentUserId && currentUserId === post.user_id;
+  const isSuper = !!useAuthStore((st) => st.user)?.permissions?.includes("*");
+  const canDelete = isSuper || (!!currentUserId && currentUserId === post.user_id);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <article className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
       <header className="flex items-center gap-3 px-4 pt-4">
         <Avatar name={post.author_name} url={post.author_avatar_url} />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-slate-800 truncate">
+          <p className="text-base font-bold text-slate-900 truncate">
             {post.author_name || "Unknown"}
           </p>
-          <p className="text-xs text-slate-400 flex items-center gap-1.5">
+          <p className="text-sm text-slate-500 flex items-center gap-1.5">
             {timeAgo(post.created_at)}
             {((post.audience_roles?.length ?? 0) + (post.audience_user_ids?.length ?? 0) > 0) && (
               <span className="inline-flex items-center gap-0.5 text-indigo-500" title="Limited audience — not shared with everyone">
@@ -345,20 +347,36 @@ function PostCard({ post, currentUserId }: { post: FeedPost; currentUserId?: str
             )}
           </p>
         </div>
-        {isAuthor && (
-          <button
-            onClick={handleDelete}
-            disabled={del.isPending}
-            className="text-slate-400 hover:text-red-500 p-1.5 rounded-md hover:bg-red-50 disabled:opacity-50"
-            aria-label="Delete post"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+        {canDelete && (
+          <div className="relative">
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              className="text-slate-600 hover:text-slate-900 p-2 rounded-md border border-slate-300 hover:bg-slate-100"
+              aria-label="Post options"
+              aria-expanded={menuOpen}
+            >
+              <ChevronDown className="w-5 h-5" strokeWidth={2.5} />
+            </button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 z-20 min-w-[9rem] rounded-lg border border-slate-200 bg-white shadow-lg py-1">
+                  <button
+                    onClick={() => { setMenuOpen(false); handleDelete(); }}
+                    disabled={del.isPending}
+                    className="flex w-full items-center gap-2 px-4 py-2.5 text-base font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" /> Delete
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         )}
       </header>
 
       {post.content && (
-        <p className="px-4 pt-3 text-sm text-slate-700 whitespace-pre-wrap break-words">
+        <p className="px-4 pt-3 text-base leading-7 text-slate-800 whitespace-pre-wrap break-words">
           {post.content}
         </p>
       )}
@@ -413,6 +431,7 @@ function CommentSection({ postId, currentUserId }: { postId: string; currentUser
   const create = useCreateComment(postId);
   const del = useDeleteComment(postId);
   const [draft, setDraft] = useState("");
+  const isSuper = !!useAuthStore((st) => st.user)?.permissions?.includes("*");
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -441,7 +460,7 @@ function CommentSection({ postId, currentUserId }: { postId: string; currentUser
               </div>
               <div className="flex items-center gap-3 mt-0.5 px-1">
                 <span className="text-[10px] text-slate-400">{timeAgo(c.created_at)}</span>
-                {currentUserId === c.user_id && (
+                {(isSuper || currentUserId === c.user_id) && (
                   <button
                     onClick={() => del.mutate(c.id)}
                     className="text-[10px] text-slate-400 hover:text-red-500"

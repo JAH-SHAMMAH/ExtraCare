@@ -37,7 +37,7 @@ from app.schemas.feed import (
 )
 
 logger = logging.getLogger("extracare.feed")
-from app.services.super_settings import require_role_perm
+from app.services.super_settings import require_role_perm, is_super_user
 
 router = APIRouter(prefix="/feed", tags=["News Feed"])
 
@@ -274,8 +274,8 @@ async def delete_post(
     current_user: User = Depends(get_current_active_user),
 ):
     post = await _load_post(db, post_id, current_user.org_id, viewer=current_user)
-    if post.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Only the author can delete this post.")
+    if post.user_id != current_user.id and not is_super_user(current_user):
+        raise HTTPException(status_code=403, detail="Only the author or the Super User can delete this post.")
     post.is_deleted = True
     post.deleted_at = datetime.utcnow()
     await db.flush()
@@ -389,8 +389,8 @@ async def delete_comment(
     )).scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Comment not found.")
-    if c.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Only the author can delete this comment.")
+    if c.user_id != current_user.id and not is_super_user(current_user):
+        raise HTTPException(status_code=403, detail="Only the author or the Super User can delete this comment.")
     c.is_deleted = True
     c.deleted_at = datetime.utcnow()
     await db.flush()

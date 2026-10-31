@@ -6,10 +6,10 @@ import { NewsFeed } from "@/components/feed/NewsFeed";
 export default function NewsFeedPage() {
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50">
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+      <div className="w-full px-3 sm:px-6 py-6 space-y-6">
         <header className="flex items-center gap-2">
           <Newspaper className="w-5 h-5 text-indigo-600" />
-          <h1 className="text-lg font-semibold text-slate-800">News Feed</h1>
+          <h1 className="text-2xl font-black text-slate-900">News Feed</h1>
         </header>
 
         <NewsFeed limit={30} />
