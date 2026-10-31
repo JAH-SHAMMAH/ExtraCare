@@ -200,3 +200,27 @@ async def test_an_admin_can_still_submit_and_move_the_workflow(db, org):
         payload=ReportSubmitRequest(class_id=w["cls"].id, term_id=w["term"].id),
         db=db, current_user=w["admin"])
     assert out.stage == "submitted"
+
+
+# ── the Super User is the one exception ──────────────────────────────────────
+
+async def _super(db, org):
+    r = Role(id=str(uuid.uuid4()), name="Super User", slug=f"super_user_{uuid.uuid4().hex[:4]}",
+             permissions=["*"], org_id=org.id, is_system=False)
+    u = User(id=str(uuid.uuid4()), email=f"su-{uuid.uuid4().hex[:6]}@x.com",
+             full_name="Director", status=UserStatus.ACTIVE, org_id=org.id)
+    db.add(r)
+    u.roles = [r]
+    db.add(u)
+    await db.commit()
+    return u
+
+
+async def test_super_user_can_open_and_save_without_teaching_the_class(db, org):
+    w = await _world(db, org)
+    su = await _super(db, org)
+    grid = await report_entry_grid(class_id=w["cls"].id, subject_id=w["maths"].id,
+                                   term_id=w["term"].id, sub_term_id=w["full"].id,
+                                   db=db, current_user=su)
+    assert [s.name for s in grid.students] == ["Ada Obi"]
+    assert (await save_report_entry(payload=_payload(w), db=db, current_user=su))["saved"] == 1

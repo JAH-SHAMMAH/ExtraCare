@@ -29,7 +29,7 @@ export default function ReportEntryPage() {
     if (!subTermId && (subTerms as any[]).length) setSubTermId(defaultSubTermId(subTerms as any[]));
   }, [subTerms, subTermId]);
 
-  const { data: grid, isLoading } = useReportEntryGrid({ class_id: classId, subject_id: subjectId, term_id: termId, sub_term_id: subTermId || undefined });
+  const { data: grid, isLoading, error: gridError } = useReportEntryGrid({ class_id: classId, subject_id: subjectId, term_id: termId, sub_term_id: subTermId || undefined });
   const save = useSaveReportEntry();
 
   // draft[studentId][assessmentId] = string
@@ -83,6 +83,10 @@ export default function ReportEntryPage() {
         <div className="bg-white rounded-xl border border-dashed border-slate-200 py-16 text-center text-slate-400"><NotebookPen size={30} className="mx-auto mb-3 opacity-40" /><p className="text-sm">Choose a class, subject and term to enter marks.</p></div>
       ) : isLoading ? (
         <div className="py-16 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
+      ) : gridError ? (
+        <p className="text-base text-red-700 py-14 px-4 text-center bg-red-50 rounded-xl border border-red-200">
+          {(gridError as any)?.response?.data?.detail || "Could not load this class. Please try again."}
+        </p>
       ) : !grid || grid.students.length === 0 ? (
         <p className="text-sm text-slate-400 py-14 text-center bg-white rounded-xl border border-slate-200">No pupils in this class.</p>
       ) : grid.assessments.length === 0 ? (

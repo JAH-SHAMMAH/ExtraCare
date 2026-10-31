@@ -40,7 +40,7 @@ export default function MakeReportPage() {
   }, [mySubjects, subjectId]);
 
   const ready = !!classId && !!subjectId && !!termId;
-  const { data: grid, isLoading } = useReportEntryGrid({ class_id: classId, subject_id: subjectId, term_id: termId, sub_term_id: subTermId || undefined });
+  const { data: grid, isLoading, error: gridError } = useReportEntryGrid({ class_id: classId, subject_id: subjectId, term_id: termId, sub_term_id: subTermId || undefined });
   const save = useSaveReportEntry();
   const submitReport = useSubmitClassReport();
   // Per-subject sign-off. Readiness is fetched for the CLASS, not the selected
@@ -289,6 +289,10 @@ export default function MakeReportPage() {
 
           {!ready ? (
             <p className="text-sm text-slate-400 py-10 text-center bg-white rounded-xl border border-slate-200">Pick a class and subject to enter scores.</p>
+          ) : gridError ? (
+            <p className="text-base text-red-700 py-10 px-4 text-center bg-red-50 rounded-xl border border-red-200">
+              {(gridError as any)?.response?.data?.detail || "Could not load this class. Please try again."}
+            </p>
           ) : isLoading || !grid ? (
             <div className="py-14 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
           ) : (grid.assessments?.length ?? 0) === 0 ? (

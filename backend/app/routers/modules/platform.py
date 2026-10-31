@@ -12,6 +12,7 @@ from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 
 from app.models.audit import AuditAction
+from app.services.super_settings import is_super_user
 from app.services.audit_service import log_action
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from sqlalchemy import select, func, update
@@ -2761,22 +2762,24 @@ async def report_entry_grid(class_id: str, subject_id: str, term_id: str,
     #
     # Section-scoping: a teacher may only access classes in their assigned section(s).
     # BUT: teachers with org-wide subject assignments (via Subject.teacher_id) can teach in any section.
-    if cls.section_id:
-        # Check if teacher has this (class, subject) pair via Timetable or Subject assignment
-        assignments = await _teacher_assignments(db, org, current_user.id)
-        if (class_id, subject_id) not in assignments:
-            # Not assigned via Timetable or Subject — check TeacherSection as fallback
-            teacher_sections = (await db.execute(
-                select(TeacherSection.section_id).where(
-                    TeacherSection.teacher_id == current_user.id,
-                    TeacherSection.org_id == org,
-                )
-            )).scalars().all()
-            if cls.section_id not in teacher_sections:
-                raise HTTPException(status_code=403, detail="You do not teach in this academic section.")
-    # Teacher scoping: only a teacher of this (class, subject) may touch it.
-    if (class_id, subject_id) not in await _teacher_assignments(db, org, current_user.id):
-        raise HTTPException(status_code=403, detail="You do not teach this subject in this class.")
+    # The Super User is the one exception: unrestricted everywhere, by design.
+    if not is_super_user(current_user):
+        if cls.section_id:
+            # Check if teacher has this (class, subject) pair via Timetable or Subject assignment
+            assignments = await _teacher_assignments(db, org, current_user.id)
+            if (class_id, subject_id) not in assignments:
+                # Not assigned via Timetable or Subject — check TeacherSection as fallback
+                teacher_sections = (await db.execute(
+                    select(TeacherSection.section_id).where(
+                        TeacherSection.teacher_id == current_user.id,
+                        TeacherSection.org_id == org,
+                    )
+                )).scalars().all()
+                if cls.section_id not in teacher_sections:
+                    raise HTTPException(status_code=403, detail="You do not teach in this academic section.")
+        # Teacher scoping: only a teacher of this (class, subject) may touch it.
+        if (class_id, subject_id) not in await _teacher_assignments(db, org, current_user.id):
+            raise HTTPException(status_code=403, detail="You do not teach this subject in this class.")
     subs = {s.id: s.name for s in (await db.execute(select(AcademicSubTerm).where(AcademicSubTerm.org_id == org))).scalars().all()}
     assessments = await _entry_assessments(db, org, term_id, getattr(cls, "level", None), sub_term_id,
                                            session_id=await session_or_current(db, org, session_id))
@@ -2933,24 +2936,25 @@ async def save_report_entry(payload: ReportEntrySave, db: AsyncSession = Depends
     if not payload.class_id:
         raise HTTPException(status_code=422, detail="class_id is required.")
     assignments = await _teacher_assignments(db, org, current_user.id)
-    # Section-scoping: teacher may only save scores for classes in their assigned
-    # section(s) — BUT an explicit (class, subject) assignment via Timetable or
-    # Subject.teacher_id already proves they teach it, so it takes precedence.
-    # This mirrors the GET /report-entry check. Without the `assignments` guard a
-    # teacher with Timetable rows but no TeacherSection row could READ the grid
-    # and then get a 403 trying to SAVE it.
-    cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == payload.class_id, SchoolClass.org_id == org))).scalar_one_or_none()
-    if cls and cls.section_id and (payload.class_id, payload.subject_id) not in assignments:
-        teacher_sections = (await db.execute(
-            select(TeacherSection.section_id).where(
-                TeacherSection.teacher_id == current_user.id,
-                TeacherSection.org_id == org,
-            )
-        )).scalars().all()
-        if cls.section_id not in teacher_sections:
-            raise HTTPException(status_code=403, detail="You do not teach in this academic section.")
-    if (payload.class_id, payload.subject_id) not in assignments:
-        raise HTTPException(status_code=403, detail="You do not teach this subject in this class.")
+    if not is_super_user(current_user):  # Super User is unrestricted
+        # Section-scoping: teacher may only save scores for classes in their assigned
+        # section(s) — BUT an explicit (class, subject) assignment via Timetable or
+        # Subject.teacher_id already proves they teach it, so it takes precedence.
+        # This mirrors the GET /report-entry check. Without the `assignments` guard a
+        # teacher with Timetable rows but no TeacherSection row could READ the grid
+        # and then get a 403 trying to SAVE it.
+        cls = (await db.execute(select(SchoolClass).where(SchoolClass.id == payload.class_id, SchoolClass.org_id == org))).scalar_one_or_none()
+        if cls and cls.section_id and (payload.class_id, payload.subject_id) not in assignments:
+            teacher_sections = (await db.execute(
+                select(TeacherSection.section_id).where(
+                    TeacherSection.teacher_id == current_user.id,
+                    TeacherSection.org_id == org,
+                )
+            )).scalars().all()
+            if cls.section_id not in teacher_sections:
+                raise HTTPException(status_code=403, detail="You do not teach in this academic section.")
+        if (payload.class_id, payload.subject_id) not in assignments:
+            raise HTTPException(status_code=403, detail="You do not teach this subject in this class.")
     # Student scoping: every pupil in the payload must belong to this org, and --
     # when a class is given -- to THAT class. Without this a teacher legitimately
     # scoped to one (class, subject) could post scores for any pupil in the school,
