@@ -54,15 +54,20 @@ function Portal() {
         <p className="text-slate-500 text-sm mt-0.5">Sit your school exams, tests and mocks, practise on your own, and watch your progress.</p>
       </div>
 
-      <div className="flex gap-1 overflow-x-auto border-b border-slate-200 mb-6" role="tablist">
-        {TABS.map(({ key, label, icon: Icon }) => (
-          <button key={key} role="tab" aria-selected={tab === key} onClick={() => go(key)}
-            className={cn("flex items-center gap-2 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition",
-              tab === key ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-800")}>
-            <Icon size={15} /> {label}
+      {tab !== "home" && (
+        <div className="flex items-center gap-2 overflow-x-auto border-b border-slate-200 mb-6" role="tablist">
+          <button onClick={() => go("home")} className="flex items-center gap-1.5 px-3 py-2 mr-1 rounded-lg text-sm font-bold text-violet-700 bg-violet-50 hover:bg-violet-100 whitespace-nowrap">
+            ← Dashboard
           </button>
-        ))}
-      </div>
+          {TABS.filter((t) => t.key !== "home").map(({ key, label, icon: Icon }) => (
+            <button key={key} role="tab" aria-selected={tab === key} onClick={() => go(key)}
+              className={cn("flex items-center gap-2 px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition",
+                tab === key ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-800")}>
+              <Icon size={15} /> {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {tab === "home" ? <ExamHome go={go} /> : tab === "practice" ? <PracticeTab /> : tab === "progress" ? <ProgressTab /> : <ScheduledTab kind={tab as "exam" | "test" | "mock"} />}
     </div>
