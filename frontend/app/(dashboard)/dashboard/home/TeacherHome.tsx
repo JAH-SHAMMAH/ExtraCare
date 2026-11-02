@@ -60,24 +60,28 @@ export function TeacherHome() {
           icon={BookOpen}
           iconClass="bg-emerald-50 text-emerald-600"
           label="My Classes"
+          href="/dashboard/my-classes"
           value={stats?.classes_count ?? 0}
         />
         <StatCard
           icon={GraduationCap}
           iconClass="bg-indigo-50 text-indigo-600"
           label="My Subjects"
+          href="/dashboard/my-classes"
           value={stats?.subjects_count ?? 0}
         />
         <StatCard
           icon={Clock}
           iconClass="bg-sky-50 text-sky-600"
           label="Today's Lessons"
+          href="/dashboard/modules/school/timetable"
           value={stats?.today_lessons ?? 0}
         />
         <StatCard
           icon={CheckSquare}
           iconClass="bg-amber-50 text-amber-600"
           label="Pending Grades"
+          href="/dashboard/modules/school/grades"
           value={stats?.pending_grades ?? 0}
           highlight={!!stats?.pending_grades}
         />
@@ -192,16 +196,19 @@ function StatCard({
   label,
   value,
   highlight = false,
+  href,
 }: {
   icon: typeof Clock;
   iconClass: string;
   label: string;
   value: number | string;
   highlight?: boolean;
+  href?: string;
 }) {
+  const Wrap: any = href ? Link : "div";
   return (
-    <div className={cn(
-      "bg-white rounded-xl border p-5 shadow-sm",
+    <Wrap {...(href ? { href } : {})} className={cn(
+      "block bg-white rounded-xl border p-5 shadow-sm",href && " hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer",
       highlight ? "border-amber-300 bg-amber-50/40" : "border-slate-200/70",
     )}>
       <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center mb-4", iconClass)}>
@@ -209,7 +216,7 @@ function StatCard({
       </div>
       <div className="text-2xl font-black tracking-tight text-slate-900">{value}</div>
       <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mt-1">{label}</p>
-    </div>
+    </Wrap>
   );
 }
 

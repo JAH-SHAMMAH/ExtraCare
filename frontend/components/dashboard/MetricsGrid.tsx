@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/loading/Skeleton";
@@ -13,6 +14,7 @@ interface Stat {
   pulse?: boolean;
   icon: LucideIcon;
   color: string;
+  href?: string;
 }
 
 interface MetricsGridProps {
@@ -33,8 +35,9 @@ export function MetricsGrid({ stats, loading }: MetricsGridProps) {
 function StatCard({ stat, loading }: { stat: Stat; loading?: boolean }) {
   const Icon = stat.icon;
 
+  const Wrap: any = stat.href ? Link : "div";
   return (
-    <div className="bg-white rounded-xl border border-slate-200/70 p-5 shadow-sm hover:shadow-md transition-shadow">
+    <Wrap {...(stat.href ? { href: stat.href } : {})} className={cn("block bg-white rounded-xl border border-slate-200/70 p-5 shadow-sm hover:shadow-md transition-shadow", stat.href && "cursor-pointer hover:-translate-y-0.5")}>
       <div className="flex items-start justify-between mb-4">
         <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center", stat.color)}>
           <Icon size={16} />
@@ -69,6 +72,6 @@ function StatCard({ stat, loading }: { stat: Stat; loading?: boolean }) {
           {stat.sublabel && <p className="text-[10px] text-slate-400 mt-0.5">{stat.sublabel}</p>}
         </>
       )}
-    </div>
+    </Wrap>
   );
 }

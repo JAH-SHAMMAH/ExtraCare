@@ -95,6 +95,7 @@ export function StudentHome() {
           icon={BookOpen}
           iconClass="bg-amber-50 text-amber-600"
           label="Assignments"
+          href="/dashboard/modules/school/eclassroom"
           value={stats?.pending_assignments ?? 0}
           sublabel="pending"
           highlight={!!stats?.pending_assignments}
@@ -103,6 +104,7 @@ export function StudentHome() {
           icon={CheckSquare}
           iconClass="bg-indigo-50 text-indigo-600"
           label="Lessons Today"
+          href="/dashboard/my-timetable"
           value={today.length}
           sublabel={today.length === 1 ? "1 lesson" : null}
         />
@@ -180,7 +182,7 @@ function toMin(t: string): number {
 }
 
 function StatCard({
-  icon: Icon, iconClass, label, value, sublabel, highlight = false,
+  icon: Icon, iconClass, label, value, sublabel, highlight = false, href,
 }: {
   icon: typeof Clock;
   iconClass: string;
@@ -188,10 +190,12 @@ function StatCard({
   value: number | string;
   sublabel?: string | null;
   highlight?: boolean;
+  href?: string;
 }) {
+  const Wrap: any = href ? Link : "div";
   return (
-    <div className={cn(
-      "bg-white rounded-xl border p-5 shadow-sm",
+    <Wrap {...(href ? { href } : {})} className={cn(
+      "block bg-white rounded-xl border p-5 shadow-sm",href && " hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer",
       highlight ? "border-amber-300 bg-amber-50/40" : "border-slate-200/70",
     )}>
       <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center mb-4", iconClass)}>
@@ -200,7 +204,7 @@ function StatCard({
       <div className="text-2xl font-black tracking-tight text-slate-900">{value}</div>
       <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mt-1">{label}</p>
       {sublabel && <p className="text-[10px] text-slate-400 mt-0.5">{sublabel}</p>}
-    </div>
+    </Wrap>
   );
 }
 
