@@ -11,6 +11,7 @@ import {
   CheckCircle2, BookOpenCheck,
 } from "lucide-react";
 import type { CBTExam } from "@/types";
+import { ExamHome } from "@/components/exams/ExamHome";
 
 /**
  * Student exam portal. Tabs: school Exams, Tests and Mock exams (scheduled by
@@ -18,8 +19,9 @@ import type { CBTExam } from "@/types";
  * signed-in student server-side.
  */
 
-type Tab = "exam" | "test" | "mock" | "practice" | "progress";
+type Tab = "home" | "exam" | "test" | "mock" | "practice" | "progress";
 const TABS: { key: Tab; label: string; icon: typeof FileText }[] = [
+  { key: "home", label: "Home", icon: MonitorCheck },
   { key: "exam", label: "Exams", icon: FileText },
   { key: "test", label: "Tests", icon: ClipboardList },
   { key: "mock", label: "Mock", icon: FlaskConical },
@@ -38,12 +40,12 @@ export default function MyExamsPage() {
 function Portal() {
   const router = useRouter();
   const sp = useSearchParams();
-  const initial = (TABS.find((t) => t.key === sp.get("tab"))?.key ?? "exam") as Tab;
+  const initial = (TABS.find((t) => t.key === sp.get("tab"))?.key ?? "home") as Tab;
   const [tab, setTab] = useState<Tab>(initial);
   const go = (t: Tab) => { setTab(t); router.replace(`/dashboard/my-exams?tab=${t}`, { scroll: false }); };
 
   return (
-    <div className="p-4 sm:p-8 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-6xl mx-auto">
       <div className="mb-6">
         <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2">
           <span>Education</span><span>/</span><span className="text-brand-600 font-semibold">Exam Portal</span>
@@ -62,7 +64,7 @@ function Portal() {
         ))}
       </div>
 
-      {tab === "practice" ? <PracticeTab /> : tab === "progress" ? <ProgressTab /> : <ScheduledTab kind={tab} />}
+      {tab === "home" ? <ExamHome go={go} /> : tab === "practice" ? <PracticeTab /> : tab === "progress" ? <ProgressTab /> : <ScheduledTab kind={tab as "exam" | "test" | "mock"} />}
     </div>
   );
 }
