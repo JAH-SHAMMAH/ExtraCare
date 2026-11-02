@@ -347,6 +347,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 API_V1 = "/api/v1"
 
+from app.routers import restore as restore_router  # noqa: E402
+app.include_router(restore_router.router, prefix=API_V1)
 app.include_router(auth.router, prefix=API_V1)
 app.include_router(users.router, prefix=API_V1)
 app.include_router(super_settings_router.router, prefix=API_V1)
