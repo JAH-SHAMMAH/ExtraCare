@@ -65,7 +65,11 @@ export default function CBTPage() {
 
 function TeacherCBTView() {
   const canWrite = useHasPermission("school:write");
-  const { mine, setMine } = useMineFilter();
+  const { mine: mineParam, setMine } = useMineFilter();
+  // A teacher sees only what concerns them (their own classes and subjects). Admins
+  // see everything and can narrow to "mine" themselves.
+  const isAdmin = useHasPermission("school_admin:read");
+  const mine = mineParam || !isAdmin;
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<CBTExam | null>(null);
@@ -202,7 +206,7 @@ function TeacherCBTView() {
           <div>
             <p className="text-sm font-semibold text-white/80">Education / CBT</p>
             <h1 className="text-2xl sm:text-3xl font-black mt-1">Computer-Based Tests</h1>
-            <p className="text-white/85 mt-1">Build online exams, auto-grade objective questions, and track every attempt.</p>
+            <p className="text-white/85 mt-1">{isAdmin ? "Build online exams, auto-grade objective questions, and track every attempt." : "Your exams, your classes and your pupils' results, all in one place."}</p>
           </div>
           {canWrite && (
             <button onClick={() => { resetForm(); setShowForm(true); }}
@@ -233,13 +237,13 @@ function TeacherCBTView() {
       {/* Tool blocks */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
         {[
-          { href: "results", label: "Results", icon: BarChart3, c: "bg-violet-50 text-violet-700 border-violet-200" },
-          { href: "question-bank", label: "Question bank", icon: Library, c: "bg-sky-50 text-sky-700 border-sky-200" },
-          { href: "live", label: "Live monitor", icon: Radio, c: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-          { href: "remark", label: "Re-mark", icon: PenLine, c: "bg-amber-50 text-amber-700 border-amber-200" },
-          { href: "interventions", label: "Interventions", icon: LifeBuoy, c: "bg-rose-50 text-rose-700 border-rose-200" },
-          { href: "settings", label: "Settings", icon: Cog, c: "bg-slate-50 text-slate-700 border-slate-200" },
-        ].map(({ href, label, icon: I, c }) => (
+          { href: "results", label: "My results", adminLabel: "Results", icon: BarChart3, c: "bg-violet-50 text-violet-700 border-violet-200", admin: false },
+          { href: "question-bank", label: "Question bank", icon: Library, c: "bg-sky-50 text-sky-700 border-sky-200", admin: false },
+          { href: "live", label: "Live monitor", icon: Radio, c: "bg-emerald-50 text-emerald-700 border-emerald-200", admin: false },
+          { href: "remark", label: "Re-mark", icon: PenLine, c: "bg-amber-50 text-amber-700 border-amber-200", admin: false },
+          { href: "interventions", label: "Interventions", icon: LifeBuoy, c: "bg-rose-50 text-rose-700 border-rose-200", admin: true },
+          { href: "settings", label: "Settings", icon: Cog, c: "bg-slate-50 text-slate-700 border-slate-200", admin: true },
+        ].filter((t) => isAdmin || !t.admin).map(({ adminLabel, ...t }) => ({ ...t, label: isAdmin && adminLabel ? adminLabel : t.label })).map(({ href, label, icon: I, c }) => (
           <Link key={href} href={`/dashboard/modules/school/cbt/${href}`}
             className={cn("rounded-2xl border p-4 flex flex-col items-center gap-2 text-center font-bold text-sm hover:shadow-md hover:-translate-y-0.5 transition-all", c)}>
             <I size={26} strokeWidth={2.2} />
@@ -370,7 +374,12 @@ function TeacherCBTView() {
         <select aria-label="Filter class" value={fClass} onChange={(e) => setFClass(e.target.value)} className="input max-w-44"><option value="">All classes</option>{classOpts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
         <select aria-label="Filter subject" value={fSubject} onChange={(e) => setFSubject(e.target.value)} className="input max-w-44"><option value="">All subjects</option>{subjectOpts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
         <input aria-label="Search tests" value={fSearch} onChange={(e) => setFSearch(e.target.value)} placeholder="Search tests" className="input max-w-44" />
-        {mine && (
+        {isAdmin && !mine && (
+          <button onClick={() => setMine(true)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-100">
+            Show only mine
+          </button>
+        )}
+        {isAdmin && mine && (
           <button
             onClick={() => setMine(false)}
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 bg-brand-50 border border-brand-200 rounded-lg px-3 py-1.5 hover:bg-brand-100"

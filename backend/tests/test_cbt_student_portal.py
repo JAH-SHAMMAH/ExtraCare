@@ -229,3 +229,19 @@ async def test_student_never_sees_draft_exams_but_sees_school_wide_ones(db, org)
     await db.commit()
     lst = await cbt_mod.list_exams(class_id=None, status_filter=None, for_me=True, exam_type=None, page=1, page_size=25, db=db, current_user=u)
     assert sorted(i["title"] for i in lst["items"]) == ["Live one", "School wide"]
+
+
+async def test_teacher_for_me_sees_only_own_exams_without_403(db, org):
+    u, st, subj = await _setup(db, org)
+    role = Role(id=str(uuid.uuid4()), name="teacher", slug=f"t-{uuid.uuid4().hex[:6]}",
+                permissions=list(SCHOOL_PERMISSION_PRESETS["teacher"]), org_id=org.id, is_system=False)
+    t = User(id=str(uuid.uuid4()), email=f"t-{uuid.uuid4().hex[:6]}@x.com", full_name="Tee", status=UserStatus.ACTIVE, org_id=org.id)
+    t.roles = [role]
+    db.add_all([role, t])
+    await db.flush()
+    mine = CBTExam(id=str(uuid.uuid4()), title="Mine", duration_minutes=30, org_id=org.id, created_by=t.id)
+    theirs = CBTExam(id=str(uuid.uuid4()), title="Not mine", duration_minutes=30, org_id=org.id, created_by=u.id)
+    db.add_all([mine, theirs])
+    await db.commit()
+    lst = await cbt_mod.list_exams(class_id=None, status_filter=None, for_me=True, exam_type=None, page=1, page_size=25, db=db, current_user=t)
+    assert [e["title"] for e in lst["items"]] == ["Mine"]

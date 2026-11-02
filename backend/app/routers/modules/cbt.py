@@ -136,7 +136,8 @@ async def list_exams(
     # Permission check: for_me (student view) accepts school:cbt:sit; broader access requires school:cbt:read
     if for_me:
         # Student taking their own exams: allow school:cbt:sit (sit assigned exams)
-        if not current_user.has_permission("school:cbt:sit"):
+        # Staff (school:cbt:read) use for_me too: "show only the exams that concern me".
+        if not (current_user.has_permission("school:cbt:sit") or current_user.has_permission("school:cbt:read")):
             raise HTTPException(status_code=403, detail="Insufficient permissions to view exams.")
     else:
         # Admin/teacher view: requires school:cbt:read (broader CBT access)
@@ -167,7 +168,7 @@ async def list_exams(
     if for_me:
         taught_classes = await resolve_taught_class_ids(db, current_user)
         taught_subjects = await resolve_taught_subject_ids(db, current_user)
-        if taught_classes or taught_subjects:
+        if taught_classes or taught_subjects or current_user.has_permission("school:cbt:read"):
             conditions = []
             if taught_classes:
                 conditions.append(CBTExam.class_id.in_(taught_classes))
