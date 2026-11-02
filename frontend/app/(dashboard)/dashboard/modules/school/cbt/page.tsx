@@ -25,7 +25,9 @@ import { cn, formatDate } from "@/lib/utils";
 import {
   MonitorCheck, Plus, X, Loader2, Edit2, Trash2, ArrowLeft,
   ListChecks, Clock, Award, FileQuestion, MoreVertical, Search,
+  Radio, Send, PenLine, Lock, BarChart3, Library, LifeBuoy, Cog,
 } from "lucide-react";
+import Link from "next/link";
 import type { CBTExam, CBTExamStatus, CBTQuestion, CBTQuestionType } from "@/types";
 
 const EXAM_STATUS_STYLES: Record<CBTExamStatus, string> = {
@@ -33,6 +35,13 @@ const EXAM_STATUS_STYLES: Record<CBTExamStatus, string> = {
   published: "bg-sky-50 text-sky-700 border-sky-200",
   active: "bg-emerald-50 text-emerald-700 border-emerald-200",
   closed: "bg-amber-50 text-amber-700 border-amber-200",
+};
+
+const CARD_TOP: Record<CBTExamStatus, string> = {
+  draft: "border-t-amber-400",
+  published: "border-t-sky-500",
+  active: "border-t-emerald-500",
+  closed: "border-t-rose-400",
 };
 
 const SANITIZE_CONFIG = {
@@ -185,36 +194,57 @@ function TeacherCBTView() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
-        <div>
-          <nav className="flex items-center gap-2 text-xs text-slate-400 mb-2">
-            <span>Education</span><span>/</span>
-            <span className="text-brand-600 font-semibold">CBT</span>
-          </nav>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Computer-Based Tests</h1>
-          <p className="text-slate-500 text-sm mt-0.5">
-            Build online exams, auto-grade objective questions, and track attempts.
-          </p>
+      {/* Hero */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 p-6 sm:p-8 text-white shadow-lg mb-6">
+        <div className="absolute -right-10 -top-10 w-56 h-56 rounded-full bg-white/10" />
+        <div className="absolute right-24 -bottom-16 w-48 h-48 rounded-full bg-white/10" />
+        <div className="relative flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-white/80">Education / CBT</p>
+            <h1 className="text-2xl sm:text-3xl font-black mt-1">Computer-Based Tests</h1>
+            <p className="text-white/85 mt-1">Build online exams, auto-grade objective questions, and track every attempt.</p>
+          </div>
+          {canWrite && (
+            <button onClick={() => { resetForm(); setShowForm(true); }}
+              className="inline-flex items-center gap-2 bg-white text-violet-700 font-bold px-5 py-3 rounded-xl hover:scale-105 transition-transform">
+              <Plus size={18} strokeWidth={2.6} /> New Exam
+            </button>
+          )}
         </div>
-        {canWrite && (
-          <button onClick={() => { resetForm(); setShowForm(true); }} className="btn-primary gap-2">
-            <Plus size={15} />
-            New Exam
-          </button>
-        )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      {/* Live numbers */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         {[
-          { label: "Total Exams", value: data?.total ?? "—" },
-          { label: "Active", value: exams?.filter((e) => e.status === "active").length ?? "—" },
-          { label: "Published", value: exams?.filter((e) => e.status === "published").length ?? "—" },
-          { label: "Drafts", value: exams?.filter((e) => e.status === "draft").length ?? "—" },
-        ].map(({ label, value }) => (
-          <div key={label} className="bg-white rounded-xl border border-slate-200 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">{label}</p>
-            <p className="text-xl font-black text-slate-900">{value}</p>
+          { label: "Total exams", value: data?.total ?? "—", grad: "from-slate-700 to-slate-900", icon: FileQuestion },
+          { label: "Live now", value: exams?.filter((e) => e.status === "active").length ?? "—", grad: "from-emerald-500 to-green-600", icon: Radio },
+          { label: "Published", value: exams?.filter((e) => e.status === "published").length ?? "—", grad: "from-sky-500 to-blue-600", icon: Send },
+          { label: "Drafts", value: exams?.filter((e) => e.status === "draft").length ?? "—", grad: "from-amber-500 to-orange-600", icon: PenLine },
+          { label: "Closed", value: exams?.filter((e) => e.status === "closed").length ?? "—", grad: "from-rose-500 to-pink-600", icon: Lock },
+        ].map(({ label, value, grad, icon: I }) => (
+          <div key={label} className={cn("relative overflow-hidden rounded-2xl bg-gradient-to-br p-4 text-white shadow-md", grad)}>
+            <I size={52} strokeWidth={1.5} className="absolute -right-2 -bottom-2 opacity-20" />
+            <p className="text-3xl font-black relative">{value}</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-white/85 relative">{label}</p>
           </div>
+        ))}
+      </div>
+
+      {/* Tool blocks */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
+        {[
+          { href: "results", label: "Results", icon: BarChart3, c: "bg-violet-50 text-violet-700 border-violet-200" },
+          { href: "question-bank", label: "Question bank", icon: Library, c: "bg-sky-50 text-sky-700 border-sky-200" },
+          { href: "live", label: "Live monitor", icon: Radio, c: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+          { href: "remark", label: "Re-mark", icon: PenLine, c: "bg-amber-50 text-amber-700 border-amber-200" },
+          { href: "interventions", label: "Interventions", icon: LifeBuoy, c: "bg-rose-50 text-rose-700 border-rose-200" },
+          { href: "settings", label: "Settings", icon: Cog, c: "bg-slate-50 text-slate-700 border-slate-200" },
+        ].map(({ href, label, icon: I, c }) => (
+          <Link key={href} href={`/dashboard/modules/school/cbt/${href}`}
+            className={cn("rounded-2xl border p-4 flex flex-col items-center gap-2 text-center font-bold text-sm hover:shadow-md hover:-translate-y-0.5 transition-all", c)}>
+            <I size={26} strokeWidth={2.2} />
+            {label}
+          </Link>
         ))}
       </div>
 
@@ -360,7 +390,7 @@ function TeacherCBTView() {
       ) : exams && exams.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {exams.map((e) => (
-            <div key={e.id} className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-md transition-shadow">
+            <div key={e.id} className={cn("bg-white rounded-2xl border border-slate-200 border-t-4 p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all", CARD_TOP[e.status])}>
               <div className="flex items-start justify-between mb-3">
                 <div className="w-10 h-10 rounded-lg bg-sky-50 border border-sky-100 flex items-center justify-center shrink-0">
                   <MonitorCheck size={18} className="text-sky-600" />
