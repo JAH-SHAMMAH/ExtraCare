@@ -184,3 +184,45 @@ async def test_payroll_tenant_scoped(db, org, teacher):
     await db.commit()
     theirs = await list_payroll(status=None, page=1, page_size=25, db=db, current_user=other_user)
     assert theirs.total == 0
+
+
+# ── Part-payments and overpayment on an invoice ────────────────────────────────
+
+async def _posted_invoice(db, org, user, total_unit_price=100):
+    ar = await _acct(db, org, "1100", "Accounts Receivable", "asset")
+    fees = await _acct(db, org, "4000", "Tuition", "income")
+    cash = await _acct(db, org, "1000", "Cash", "asset")
+    inv = await create_invoice(
+        InvoiceCreate(customer_name="Mr Bello", invoice_date=date(2026, 2, 1), receivable_account_id=ar.id,
+                      lines=[InvoiceLineInput(description="Term fees", quantity=1, unit_price=total_unit_price, income_account_id=fees.id)]),
+        request=None, db=db, current_user=user,
+    )
+    posted = await post_invoice(inv.id, request=None, db=db, current_user=user)
+    return posted, cash
+
+
+async def test_part_payments_add_up_and_mark_invoice_paid(db, org, teacher):
+    inv, cash = await _posted_invoice(db, org, teacher)
+    first = await pay_invoice(inv.id, PaymentRequest(cash_account_id=cash.id, amount=30), request=None, db=db, current_user=teacher)
+    assert first.status == "posted"          # still owes 70
+    second = await pay_invoice(inv.id, PaymentRequest(cash_account_id=cash.id, amount=70), request=None, db=db, current_user=teacher)
+    assert second.status == "paid"           # 30 + 70 settles it
+
+
+async def test_payment_above_outstanding_balance_is_refused(db, org, teacher):
+    inv, cash = await _posted_invoice(db, org, teacher)
+    with pytest.raises(HTTPException) as e:
+        await pay_invoice(inv.id, PaymentRequest(cash_account_id=cash.id, amount=250), request=None, db=db, current_user=teacher)
+    assert e.value.status_code == 422
+    await pay_invoice(inv.id, PaymentRequest(cash_account_id=cash.id, amount=60), request=None, db=db, current_user=teacher)
+    with pytest.raises(HTTPException) as e2:   # only 40 left
+        await pay_invoice(inv.id, PaymentRequest(cash_account_id=cash.id, amount=50), request=None, db=db, current_user=teacher)
+    assert e2.value.status_code == 422
+
+
+async def test_paid_invoice_cannot_be_paid_again(db, org, teacher):
+    inv, cash = await _posted_invoice(db, org, teacher)
+    await pay_invoice(inv.id, PaymentRequest(cash_account_id=cash.id), request=None, db=db, current_user=teacher)
+    with pytest.raises(HTTPException) as e:
+        await pay_invoice(inv.id, PaymentRequest(cash_account_id=cash.id, amount=5), request=None, db=db, current_user=teacher)
+    assert e.value.status_code == 409

@@ -1037,9 +1037,31 @@ async def pay_invoice(
     if inv.status != "posted":
         raise HTTPException(status_code=409, detail="Only a posted invoice can be paid.")
     await _require_account(db, current_user.org_id, payload.cash_account_id)
-    amount = money(payload.amount) if payload.amount is not None else money(inv.total)
+    # What has already been settled against this invoice: every credit to its
+    # receivable account on an invoice-sourced entry (manual payments AND gateway
+    # settlements post this way). Lets part-payments add up, and stops a payment
+    # larger than what is still owed.
+    paid_so_far = money((await db.execute(
+        select(func.coalesce(func.sum(JournalLine.credit), 0))
+        .join(JournalEntry, JournalEntry.id == JournalLine.entry_id)
+        .where(
+            JournalEntry.org_id == current_user.org_id,
+            JournalEntry.source == "invoice",
+            JournalEntry.source_id == inv.id,
+            JournalLine.account_id == inv.receivable_account_id,
+        )
+    )).scalar() or 0)
+    balance = money(inv.total) - paid_so_far
+    if balance <= 0:
+        raise HTTPException(status_code=409, detail="This invoice is already fully paid.")
+    amount = money(payload.amount) if payload.amount is not None else balance
     if amount <= 0:
         raise HTTPException(status_code=422, detail="Payment amount must be positive.")
+    if amount > balance:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Payment is more than the outstanding balance of {balance}.",
+        )
     # Dr Cash / Cr Receivable.
     entry = await ledger.post_journal_entry(
         db, org_id=current_user.org_id, entry_date=payload.payment_date or datetime.now(timezone.utc).date(),
@@ -1051,7 +1073,7 @@ async def pay_invoice(
         actor=current_user, request=request,
     )
     inv.payment_entry_id = entry.id
-    if amount >= money(inv.total):
+    if paid_so_far + amount >= money(inv.total):
         inv.status = "paid"
     from app.services.fee_sync import apply_payment_to_fee_record
     await apply_payment_to_fee_record(db, current_user.org_id, inv.student_id, amount)

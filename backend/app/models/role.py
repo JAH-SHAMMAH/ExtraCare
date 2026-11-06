@@ -153,7 +153,8 @@ SCHOOL_PERMISSION_PRESETS = {
     # and a `payments:gateways:write` sub-scope would be auto-satisfied by any
     # `payments:write` holder (accountant/manager) via the scope hierarchy. Keeping
     # it its own namespace makes "org_admin only" real. See ENCRYPTION_SERVICE_SPEC.md §9.
-    "org_admin": _dedupe(CORE_ADMIN_PERMISSIONS + ["school:*", "school_admin:*", "payments:*", "payment_gateways:read", "payment_gateways:write", "store:*", "medical:*", "wallet:*"]),
+    # Audit Log is Super User only (`*`): school admins/principal/head do NOT hold audit_logs:read.
+    "org_admin": _dedupe([p for p in CORE_ADMIN_PERMISSIONS if p != "audit_logs:read"] + ["school:*", "school_admin:*", "payments:*", "payment_gateways:read", "payment_gateways:write", "store:*", "medical:*", "wallet:*"]),
     "manager": _dedupe(CORE_MANAGER_PERMISSIONS + ["school:read", "school:write", "school:cbt:manage", "school_admin:read", "school_admin:write", "payments:read", "payments:write", "wallet:spend"]),
     # Teacher = CLASSROOM tier: an ENUMERATED set of fine-grained scopes, never
     # the broad `school:read`/`school:write`.

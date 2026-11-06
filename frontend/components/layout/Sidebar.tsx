@@ -64,7 +64,7 @@ export const CORE_NAV = [
   { href: "/messenger", label: "Messenger", icon: MessageSquare },
   { href: "/news-feed", label: "News Feed", icon: Newspaper },
   { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
-  { href: "/dashboard/audit", label: "Audit Log", icon: Shield },
+  { href: "/dashboard/audit", label: "Audit Log", icon: Shield, superOnly: true },
   { href: "/dashboard/settings/super", label: "Super Settings", icon: Settings2, superOnly: true },
 ];
 
@@ -713,7 +713,7 @@ export const MODULE_SECTIONS: ModuleSection[] = [
     label: "Admin Management",
     icon: Shield,
     items: [
-      { href: "/dashboard/audit", label: "Audit Trail", icon: FileText },
+      { href: "/dashboard/audit", label: "Audit Trail", icon: FileText, superOnly: true },
       { href: "/dashboard/modules/school/deactivated-users", label: "Manage Deactivated Users", icon: UserCog },
       { href: "/dashboard/modules/school/week-entries", label: "Manage Week Entries", icon: CalendarClock },
       { href: "/dashboard/modules/school/result-publish", label: "Result Publish Helper", icon: ClipboardList },
