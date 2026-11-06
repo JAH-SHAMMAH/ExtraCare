@@ -24,12 +24,14 @@ export default function LoginPage() {
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-brand-600 via-brand-700 to-brand-900 flex items-center justify-center p-4">
-      {/* Background decorations */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-white/5 blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-white/5 blur-3xl" />
-      </div>
+    <div className="relative min-h-screen bg-brand-900 flex items-center justify-center p-4 overflow-hidden">
+      {/* Background photo with a brand-colour overlay so the form stays readable */}
+      <div
+        className="absolute inset-0 bg-cover bg-center pointer-events-none"
+        style={{ backgroundImage: "url('/login-bg.jpg')" }}
+        aria-hidden
+      />
+      <div className="absolute inset-0 bg-gradient-to-br from-brand-700/85 via-brand-800/80 to-brand-900/90 pointer-events-none" aria-hidden />
 
       <div className="relative w-full max-w-md">
         {/* Logo */}
